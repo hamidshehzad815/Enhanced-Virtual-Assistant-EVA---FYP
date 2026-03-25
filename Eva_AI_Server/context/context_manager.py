@@ -1,6 +1,7 @@
 """
 Context manager helpers for pending multi-turn flows.
 """
+import re
 from typing import Any, Dict, Optional
 
 from context.redis_client import redis_client
@@ -50,6 +51,15 @@ _COMMAND_START_HINTS = {
     "show",
     "learn",
     "rename",
+}
+
+_ALL_KEYWORDS = {
+    "all",
+    "all of them",
+    "delete all",
+    "every one",
+    "all tasks",
+    "everything",
 }
 
 
@@ -134,6 +144,44 @@ def handle_number_reply(text: str) -> Optional[int]:
     if normalized == "2":
         return 2
     return None
+
+
+def is_all_keyword(text: str) -> bool:
+    """Return True when user intends selecting all items in multi-delete flow."""
+    normalized = _normalize_text(text)
+    if not normalized:
+        return False
+
+    if normalized in _ALL_KEYWORDS:
+        return True
+
+    return any(keyword in normalized for keyword in _ALL_KEYWORDS)
+
+
+def handle_number_delete(text: str, context: Dict[str, Any]) -> Any:
+    """
+    Parse delete-list choice from pending context.
+    Returns selected task_id, "all", "invalid_range", or "invalid".
+    """
+    normalized = _normalize_text(text)
+    pending_action = context.get("pending_action") or {}
+    task_ids = list(pending_action.get("task_ids") or [])
+    total = len(task_ids)
+    if total == 0:
+        return "invalid"
+
+    if is_all_keyword(normalized):
+        return "all"
+
+    match = re.search(r"\b(\d+)\b", normalized)
+    if not match:
+        return "invalid"
+
+    selected_index = int(match.group(1))
+    if selected_index < 1 or selected_index > total:
+        return "invalid_range"
+
+    return task_ids[selected_index - 1]
 
 
 def should_block_new_command(model1_label: str) -> bool:

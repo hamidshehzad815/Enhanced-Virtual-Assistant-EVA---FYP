@@ -9,6 +9,14 @@ from bson import ObjectId
 from config.database import get_db
 
 
+_ALLOWED_ACTION_TYPES = {
+    "task_created",
+    "task_updated",
+    "task_deleted",
+    "task_completed",
+}
+
+
 def _to_object_id(value: Any) -> Any:
     try:
         if isinstance(value, ObjectId):
@@ -22,6 +30,10 @@ async def insert_log(log_data: Dict[str, Any]) -> str:
     """Insert an activity log and return inserted id as string."""
     db = get_db()
     payload = dict(log_data)
+    action_type = str(payload.get("action_type") or "").strip()
+    if action_type and action_type not in _ALLOWED_ACTION_TYPES:
+        # Keep inserts non-breaking for forward compatibility while still flagging unknown values.
+        print(f"[ActivityLogs] Unknown action_type '{action_type}', inserting anyway.")
     payload.setdefault("action_timestamp", datetime.utcnow())
     result = await db.activity_logs.insert_one(payload)
     return str(result.inserted_id)

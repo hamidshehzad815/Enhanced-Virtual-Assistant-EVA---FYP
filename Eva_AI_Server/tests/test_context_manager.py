@@ -6,8 +6,10 @@ from unittest.mock import AsyncMock, patch
 
 from context.context_manager import (
     handle_free_text_reply,
+    handle_number_delete,
     handle_number_reply,
     handle_yes_no_reply,
+    is_all_keyword,
     is_cancel,
     should_block_new_command,
 )
@@ -56,6 +58,28 @@ class TestContextManager(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(handle_number_reply("2"), 2)
         self.assertIsNone(handle_number_reply("3"))
         self.assertIsNone(handle_number_reply("one"))
+
+    def test_all_keyword_detection(self):
+        self.assertTrue(is_all_keyword("all"))
+        self.assertTrue(is_all_keyword("all of them"))
+        self.assertTrue(is_all_keyword("delete all"))
+        self.assertFalse(is_all_keyword("yes"))
+        self.assertFalse(is_all_keyword("1"))
+
+    def test_delete_number_selection(self):
+        context = {
+            "pending_action": {
+                "intent": "delete",
+                "task_ids": ["id1", "id2", "id3"],
+            }
+        }
+
+        self.assertEqual(handle_number_delete("1", context), "id1")
+        self.assertEqual(handle_number_delete("2", context), "id2")
+        self.assertEqual(handle_number_delete("all", context), "all")
+        self.assertEqual(handle_number_delete("delete all", context), "all")
+        self.assertEqual(handle_number_delete("4", context), "invalid_range")
+        self.assertEqual(handle_number_delete("yes", context), "invalid")
 
     def test_new_command_blocking(self):
         self.assertTrue(should_block_new_command("command"))

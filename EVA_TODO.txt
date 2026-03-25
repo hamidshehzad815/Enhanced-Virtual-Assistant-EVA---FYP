@@ -238,7 +238,7 @@ Goal: All DB functions needed by delete handler exist
 
   AI Server
   ─────────────────────────────────────────────────────────
-  [ ] Add to db/tasks.py:
+  [x] Add to db/tasks.py:
 
       find_tasks_for_delete(user_id, filters) → list
         → builds query from: task_name (regex, case insensitive),
@@ -264,12 +264,12 @@ Goal: All DB functions needed by delete handler exist
         → returns full task document including
           collaborators, google_calendar_event_id
 
-  [ ] Add to db/activity_logs.py:
+  [x] Add to db/activity_logs.py:
       → confirm insert_log accepts action_type = "task_deleted"
       → add "task_deleted" to allowed action_type values
         if not already present
 
-  [ ] Unit test each new DB function:
+  [x] Unit test each new DB function:
       → find_tasks_for_delete with task_name filter
       → find_tasks_for_delete with priority filter
       → find_tasks_for_delete with date filter
@@ -282,15 +282,15 @@ Goal: All DB functions needed by delete handler exist
 
   Node.js
   ─────────────────────────────────────────────────────────
-  [ ] Nothing new this phase.
+  [x] Nothing new this phase.
       Existing Task model already has is_deleted field.
 
   PHASE 14 TEST:
-  [ ] Call find_tasks_for_delete directly in test
-  [ ] Insert 3 tasks, query by priority → get 3 back
-  [ ] Soft delete one → verify is_deleted = true
-  [ ] Query again → deleted task not returned
-  [ ] Bulk delete 2 → verify both is_deleted = true
+  [x] Call find_tasks_for_delete directly in test
+  [x] Insert 3 tasks, query by priority → get 3 back
+  [x] Soft delete one → verify is_deleted = true
+  [x] Query again → deleted task not returned
+  [x] Bulk delete 2 → verify both is_deleted = true
 
 
 ================================================================
@@ -302,7 +302,7 @@ Goal: Context manager handles all 4 delete-specific states
 
   AI Server
   ─────────────────────────────────────────────────────────
-  [ ] Add to context/context_manager.py:
+  [x] Add to context/context_manager.py:
 
       is_all_keyword(text) → bool
         → trigger words:
@@ -323,7 +323,7 @@ Goal: Context manager handles all 4 delete-specific states
           handle_yes_no_reply function
         → separate function for clarity, or reuse existing
 
-  [ ] Update context manager routing to handle:
+  [x] Update context manager routing to handle:
       → State 1 (free_text): already works via existing
         free_text handler — treat reply as task_name,
         merge into entities, clear Redis, re-enter handler
@@ -341,7 +341,7 @@ Goal: Context manager handles all 4 delete-specific states
         bulk=true in pending state — existing yes_no handler
         should work — CONFIRM
 
-  [ ] Write unit tests for new context manager functions:
+  [x] Write unit tests for new context manager functions:
       → is_all_keyword("all") → True
       → is_all_keyword("all of them") → True
       → is_all_keyword("delete all") → True
@@ -360,7 +360,7 @@ Goal: Context manager handles all 4 delete-specific states
 
   Node.js
   ─────────────────────────────────────────────────────────
-  [ ] Nothing new this phase.
+  [x] Nothing new this phase.
 
   PHASE 15 TEST:
   [ ] Manually set Redis state 3 (number state, 3 tasks)

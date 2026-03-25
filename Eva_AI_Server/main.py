@@ -20,6 +20,7 @@ from handlers.general_handler import (
 from handlers.router import normalize_intent, route_intent
 from context.context_manager import (
     handle_free_text_reply,
+    handle_number_delete,
     handle_number_reply,
     handle_yes_no_reply,
     is_cancel,
@@ -374,13 +375,164 @@ async def process_message(payload: ProcessRequest):
 
             if expected_response == "number":
                 if label != "confirmation":
+                    response_text = _safe_reply("pending_number_prompt", user_name, history)
+                    if pending_intent in {"delete", "scheduling_delete"}:
+                        if user_name:
+                            response_text = (
+                                f"Please pick a number from the list or say 'all', {user_name}."
+                            )
+                        else:
+                            response_text = "Please pick a number from the list or say 'all'."
                     return {
                         "status": "ok",
                         "too_short": False,
                         "preprocessed": processed,
                         "context_handled": True,
                         "classification": classification,
-                        "response_text": _safe_reply("pending_number_prompt", user_name, history),
+                        "response_text": response_text,
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                if pending_intent in {"delete", "scheduling_delete"}:
+                    delete_choice = handle_number_delete(processed["processed"], pending_context)
+                    pending_task_ids = list(pending_action.get("task_ids") or [])
+                    pending_tasks = list(pending_action.get("tasks") or [])
+
+                    if delete_choice == "all":
+                        updated_context = dict(pending_context)
+                        updated_pending_action = dict(pending_action)
+                        updated_pending_action["bulk"] = True
+                        updated_context["pending_action"] = updated_pending_action
+                        updated_context["expected_response"] = "yes_no"
+                        await redis_client.set_context(payload.user_id, updated_context)
+
+                        total = len(pending_task_ids)
+                        if user_name:
+                            response_text = (
+                                f"Just to confirm, {user_name} — delete all {total} tasks? "
+                                "This cannot be undone."
+                            )
+                        else:
+                            response_text = (
+                                f"Just to confirm — delete all {total} tasks? "
+                                "This cannot be undone."
+                            )
+
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "number",
+                            "next_expected_response": "yes_no",
+                            "parsed_value": "all",
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    if delete_choice == "invalid_range":
+                        total = len(pending_task_ids)
+                        response_text = (
+                            f"That number is not on the list. Pick between 1 and {total}, or say 'all'."
+                        )
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "number",
+                            "parsed_value": "invalid_range",
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    if delete_choice == "invalid":
+                        if user_name:
+                            response_text = (
+                                f"Pick a number from the list or say 'all', {user_name}."
+                            )
+                        else:
+                            response_text = "Pick a number from the list or say 'all'."
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "number",
+                            "parsed_value": "invalid",
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    selected_index = None
+                    for index, task_id in enumerate(pending_task_ids):
+                        if str(task_id) == str(delete_choice):
+                            selected_index = index
+                            break
+
+                    selected_task = {}
+                    if (
+                        selected_index is not None
+                        and selected_index < len(pending_tasks)
+                        and isinstance(pending_tasks[selected_index], dict)
+                    ):
+                        selected_task = dict(pending_tasks[selected_index])
+
+                    updated_context = dict(pending_context)
+                    updated_pending_action = dict(pending_action)
+                    updated_pending_action["task_ids"] = [delete_choice]
+                    updated_pending_action["bulk"] = False
+                    if selected_task:
+                        updated_pending_action["tasks"] = [selected_task]
+                    updated_context["pending_action"] = updated_pending_action
+                    updated_context["expected_response"] = "yes_no"
+                    await redis_client.set_context(payload.user_id, updated_context)
+
+                    task_title = str(selected_task.get("title") or "that task")
+                    due_text = ""
+                    due_raw = selected_task.get("due_datetime")
+                    parsed_due = None
+                    if isinstance(due_raw, datetime):
+                        parsed_due = due_raw
+                    elif isinstance(due_raw, str):
+                        try:
+                            parsed_due = datetime.fromisoformat(due_raw.replace("Z", "+00:00"))
+                        except ValueError:
+                            parsed_due = None
+
+                    if parsed_due is not None:
+                        due_text = parsed_due.strftime("%A at %I:%M %p").replace(" 0", " ")
+
+                    if user_name:
+                        if due_text:
+                            response_text = (
+                                f"I got it, {user_name}. Delete {task_title} on {due_text}?"
+                            )
+                        else:
+                            response_text = f"I got it, {user_name}. Delete {task_title}?"
+                    else:
+                        if due_text:
+                            response_text = f"I got it. Delete {task_title} on {due_text}?"
+                        else:
+                            response_text = f"I got it. Delete {task_title}?"
+
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "classification": classification,
+                        "expected_response": "number",
+                        "next_expected_response": "yes_no",
+                        "parsed_value": delete_choice,
+                        "response_text": response_text,
                         "user_name": user_name,
                         "settings": settings_data,
                     }

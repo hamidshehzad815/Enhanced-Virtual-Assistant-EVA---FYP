@@ -3,7 +3,7 @@ Task database operations for scheduling handlers.
 """
 from datetime import date, datetime, time, timedelta
 import re
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from bson import ObjectId
 
@@ -198,3 +198,153 @@ async def find_overlapping_task(
         conflict = await _run(owner_id)
 
     return conflict
+
+
+def _build_delete_query(owner_value: Any, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    filters = filters or {}
+    query: Dict[str, Any] = {
+        "owner_id": owner_value,
+        "is_deleted": {"$ne": True},
+    }
+
+    task_name = str(filters.get("task_name") or "").strip()
+    if task_name:
+        query["title"] = {
+            "$regex": re.escape(task_name),
+            "$options": "i",
+        }
+
+    # Accept explicit date ranges first.
+    date_range = filters.get("date_range")
+    if isinstance(date_range, dict):
+        start_value = date_range.get("start")
+        end_value = date_range.get("end")
+        if isinstance(start_value, datetime) and isinstance(end_value, datetime):
+            query["due_datetime"] = {"$gte": start_value, "$lte": end_value}
+    else:
+        due_date = filters.get("date")
+        if due_date:
+            day_start, day_end = _day_bounds(due_date)
+            if day_start and day_end:
+                query["due_datetime"] = {"$gte": day_start, "$lte": day_end}
+
+    priority = str(filters.get("priority") or "").strip().lower()
+    if priority in {"low", "medium", "high"}:
+        query["priority"] = priority
+
+    status = str(filters.get("status") or "").strip().lower()
+    if status in {"pending", "ongoing", "complete"}:
+        query["status"] = status
+
+    return query
+
+
+async def find_tasks_for_delete(
+    user_id: str,
+    filters: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Return matching non-deleted tasks for delete flow.
+    Filters supported: task_name, date/date_range, priority, status.
+    """
+    db = get_db()
+    owner_object_id = _to_object_id(user_id)
+    owner_variants = [owner_object_id]
+    if owner_object_id != user_id:
+        owner_variants.append(user_id)
+
+    for owner_value in owner_variants:
+        query = _build_delete_query(owner_value, filters)
+        cursor = db.tasks.find(query).sort("due_datetime", 1).limit(10)
+        rows = await cursor.to_list(length=10)
+        if rows:
+            return [_normalize_doc(row) for row in rows]
+
+    return []
+
+
+async def soft_delete_task(task_id: str) -> bool:
+    """
+    Soft delete one task by id.
+    Returns True when a document matched.
+    """
+    db = get_db()
+    now = datetime.utcnow()
+    payload = {
+        "is_deleted": True,
+        "deleted_at": now,
+        "updated_at": now,
+    }
+
+    task_object_id = _to_object_id(task_id)
+    result = await db.tasks.update_one({"_id": task_object_id}, {"$set": payload})
+
+    if result.matched_count == 0 and task_object_id != task_id:
+        result = await db.tasks.update_one({"_id": task_id}, {"$set": payload})
+
+    return result.matched_count > 0
+
+
+async def soft_delete_many(task_ids: List[str]) -> int:
+    """
+    Soft delete many tasks by id list.
+    Returns matched document count.
+    """
+    if not task_ids:
+        return 0
+
+    db = get_db()
+    now = datetime.utcnow()
+    payload = {
+        "is_deleted": True,
+        "deleted_at": now,
+        "updated_at": now,
+    }
+
+    object_ids = [_to_object_id(task_id) for task_id in task_ids]
+    query = {
+        "_id": {"$in": object_ids},
+        "is_deleted": {"$ne": True},
+    }
+    result = await db.tasks.update_many(query, {"$set": payload})
+
+    if result.matched_count == 0 and any(obj_id != task_id for obj_id, task_id in zip(object_ids, task_ids)):
+        query = {
+            "_id": {"$in": list(task_ids)},
+            "is_deleted": {"$ne": True},
+        }
+        result = await db.tasks.update_many(query, {"$set": payload})
+
+    return int(result.matched_count)
+
+
+async def get_task_by_id(task_id: str, user_id: str) -> Optional[Dict[str, Any]]:
+    """
+    Fetch one non-deleted task by id with owner check.
+    Returns normalized full task document or None.
+    """
+    db = get_db()
+    task_object_id = _to_object_id(task_id)
+    owner_object_id = _to_object_id(user_id)
+
+    owner_variants = [owner_object_id]
+    if owner_object_id != user_id:
+        owner_variants.append(user_id)
+
+    task_variants = [task_object_id]
+    if task_object_id != task_id:
+        task_variants.append(task_id)
+
+    for owner_value in owner_variants:
+        for task_value in task_variants:
+            doc = await db.tasks.find_one(
+                {
+                    "_id": task_value,
+                    "owner_id": owner_value,
+                    "is_deleted": {"$ne": True},
+                }
+            )
+            if doc:
+                return _normalize_doc(doc)
+
+    return None
