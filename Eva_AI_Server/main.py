@@ -1,0 +1,559 @@
+"""
+EVA AI Server - FastAPI Entry Point
+"""
+from datetime import datetime
+from typing import Optional
+
+from contextlib import asynccontextmanager
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+
+from config.settings import settings
+from config.database import database
+from handlers.general_handler import (
+    handle_confirmation_unexpected,
+    handle_general,
+    handle_multiple_command,
+    handle_out_of_scope,
+)
+from handlers.router import normalize_intent, route_intent
+from context.context_manager import (
+    handle_free_text_reply,
+    handle_number_reply,
+    handle_yes_no_reply,
+    is_cancel,
+    should_block_new_command,
+)
+from context.redis_client import redis_client
+from pipeline.classifier1 import classifier1
+from pipeline.classifier2 import classifier2
+from pipeline.date_resolver import resolve_all
+from pipeline.entity_scoper import scope_entities
+from pipeline.ner import ner_extractor
+from pipeline.preprocessor import is_too_short, preprocess
+from services.self_fetch import self_fetch_all
+from services.duckling import duckling_client
+from services.gemini import gemini_service
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    Startup and shutdown events
+    """
+    # Startup
+    print("=" * 50)
+    print("EVA AI Server Starting...")
+    print("=" * 50)
+
+    # Connect to MongoDB
+    mongodb_ok = await database.connect()
+
+    # Connect to Redis
+    redis_ok = await redis_client.connect()
+
+    # Check Duckling connection
+    duckling_ok = await duckling_client.connect()
+
+    # Load Model 1 (input type classifier)
+    model1_ok = classifier1.load()
+
+    # Load Model 2 (intent classifier)
+    model2_ok = classifier2.load()
+
+    # Load NER model
+    ner_ok = ner_extractor.load()
+
+    print("=" * 50)
+    if mongodb_ok and redis_ok and duckling_ok and model1_ok and model2_ok and ner_ok:
+        print("All services connected successfully!")
+    else:
+        print("WARNING: Some services failed to connect")
+        if not mongodb_ok:
+            print("  - MongoDB: FAILED")
+        if not redis_ok:
+            print("  - Redis: FAILED")
+        if not duckling_ok:
+            print("  - Duckling: FAILED")
+        if not model1_ok:
+            print("  - Model1: FAILED")
+        if not model2_ok:
+            print("  - Model2: FAILED")
+        if not ner_ok:
+            print("  - NER: FAILED")
+    print("=" * 50)
+
+    yield
+
+    # Shutdown
+    print("EVA AI Server Shutting down...")
+    await database.disconnect()
+    await redis_client.disconnect()
+    print("Shutdown complete.")
+
+
+# Create FastAPI app
+app = FastAPI(
+    title="EVA AI Server",
+    description="AI Server for EVA - Enhanced Virtual Assistant",
+    version="1.0.0",
+    lifespan=lifespan
+)
+
+# CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Configure appropriately for production
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+class ProcessRequest(BaseModel):
+    message: str
+    user_id: str
+    session_id: str
+    input_type: str
+    timestamp: Optional[datetime] = None
+
+
+def _safe_reply(
+    action: str,
+    user_name: Optional[str] = None,
+    history=None,
+    action_context=None,
+) -> str:
+    try:
+        payload = {"action": action}
+        if action_context:
+            payload.update(action_context)
+        return gemini_service.generate_reply(payload, user_name, history or [])
+    except Exception:
+        return "I am still here, but I could not process that clearly. Please try again."
+
+
+@app.get("/health")
+async def health_check():
+    """
+    Health check endpoint - checks all service connections
+    """
+    mongodb_healthy = await database.health_check()
+    redis_healthy = await redis_client.health_check()
+    duckling_healthy = await duckling_client.health_check()
+    model1_healthy = classifier1.loaded
+    model2_healthy = classifier2.loaded
+    ner_healthy = ner_extractor.loaded
+
+    all_healthy = (
+        mongodb_healthy
+        and redis_healthy
+        and duckling_healthy
+        and model1_healthy
+        and model2_healthy
+        and ner_healthy
+    )
+
+    return {
+        "status": "ok" if all_healthy else "degraded",
+        "service": "eva-ai",
+        "connections": {
+            "mongodb": "connected" if mongodb_healthy else "disconnected",
+            "redis": "connected" if redis_healthy else "disconnected",
+            "duckling": "connected" if duckling_healthy else "disconnected",
+            "model1": "loaded" if model1_healthy else "not_loaded",
+            "model2": "loaded" if model2_healthy else "not_loaded",
+            "ner": "loaded" if ner_healthy else "not_loaded",
+        }
+    }
+
+
+@app.get("/")
+async def root():
+    """
+    Root endpoint
+    """
+    return {
+        "service": "EVA AI Server",
+        "version": "1.0.0",
+        "status": "running"
+    }
+
+
+@app.post("/process")
+async def process_message(payload: ProcessRequest):
+    """
+    Main conversational processing route.
+    Always returns a safe natural response even when internals fail.
+    """
+    fetched = None
+    processed = {"original": payload.message or "", "processed": (payload.message or "").strip().lower()}
+    user_name = None
+    history = []
+    settings_data = {}
+
+    try:
+        message = (payload.message or "").strip()
+        if not message:
+            return {
+                "status": "ok",
+                "too_short": True,
+                "preprocessed": processed,
+                "response_text": _safe_reply("empty_input"),
+                "user_name": None,
+                "settings": {},
+            }
+
+        fetched = await self_fetch_all(payload.user_id, payload.session_id)
+        history = fetched.history
+        settings_data = fetched.settings
+        user_name = fetched.user.get("name") if fetched.user else None
+        processed = preprocess(message)
+
+        route_context_base = {
+            "user_id": payload.user_id,
+            "session_id": payload.session_id,
+            "user": fetched.user,
+            "settings": settings_data,
+            "history": history,
+            "integrations": fetched.integrations,
+            "message": message,
+            "input_type": payload.input_type,
+            "timestamp": payload.timestamp.isoformat() if payload.timestamp else None,
+        }
+
+        pending_context = fetched.context
+        if pending_context:
+            pending_action = pending_context.get("pending_action") or {}
+            pending_intent = pending_action.get("intent")
+            expected_response = pending_context.get("expected_response")
+
+            if is_cancel(processed["processed"]):
+                await redis_client.delete_context(payload.user_id)
+                return {
+                    "status": "ok",
+                    "too_short": False,
+                    "preprocessed": processed,
+                    "context_handled": True,
+                    "response_text": _safe_reply("pending_cancelled", user_name, history),
+                    "user_name": user_name,
+                    "settings": settings_data,
+                }
+
+            if expected_response == "free_text":
+                merged_entities = await handle_free_text_reply(
+                    payload.user_id,
+                    pending_context,
+                    message,
+                )
+
+                if pending_intent in {"add", "scheduling_add"}:
+                    routed_result = await route_intent(
+                        "scheduling_add",
+                        entities=merged_entities,
+                        context={
+                            **route_context_base,
+                            "pending_context": pending_context,
+                            "pending_reply_type": "free_text",
+                        },
+                    )
+
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "expected_response": "free_text",
+                        "merged_entities": merged_entities,
+                        "route": routed_result,
+                        "handler_status": routed_result.get("status"),
+                        "notifications": routed_result.get("notifications", []),
+                        "response_text": routed_result.get("response_text")
+                        or _safe_reply("pending_free_text_captured", user_name, history),
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                return {
+                    "status": "ok",
+                    "too_short": False,
+                    "preprocessed": processed,
+                    "context_handled": True,
+                    "expected_response": "free_text",
+                    "merged_entities": merged_entities,
+                    "response_text": _safe_reply("pending_free_text_captured", user_name, history),
+                    "user_name": user_name,
+                    "settings": settings_data,
+                }
+
+            if not classifier1.loaded:
+                return {
+                    "status": "ok",
+                    "too_short": False,
+                    "preprocessed": processed,
+                    "context_handled": True,
+                    "response_text": _safe_reply("model_unavailable", user_name, history),
+                    "user_name": user_name,
+                    "settings": settings_data,
+                }
+
+            classification = classifier1.predict(processed["processed"])
+            label = classification["label"]
+
+            if should_block_new_command(label):
+                return {
+                    "status": "ok",
+                    "too_short": False,
+                    "preprocessed": processed,
+                    "context_handled": True,
+                    "classification": classification,
+                    "response_text": _safe_reply("pending_waiting_reply", user_name, history),
+                    "user_name": user_name,
+                    "settings": settings_data,
+                }
+
+            if expected_response == "yes_no":
+                if label != "confirmation":
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "classification": classification,
+                        "response_text": _safe_reply("pending_yes_no_prompt", user_name, history),
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                yes_no_value = handle_yes_no_reply(processed["processed"])
+                if pending_intent in {"add", "scheduling_add"} and yes_no_value in {"yes", "no"}:
+                    routed_result = await route_intent(
+                        "scheduling_add",
+                        entities=dict(pending_action.get("entities") or {}),
+                        context={
+                            **route_context_base,
+                            "pending_context": pending_context,
+                            "pending_reply_type": "yes_no",
+                            "pending_reply_value": yes_no_value,
+                        },
+                    )
+
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "classification": classification,
+                        "expected_response": "yes_no",
+                        "parsed_value": yes_no_value,
+                        "route": routed_result,
+                        "handler_status": routed_result.get("status"),
+                        "notifications": routed_result.get("notifications", []),
+                        "response_text": routed_result.get("response_text")
+                        or _safe_reply("pending_yes_no_processed", user_name, history),
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                if yes_no_value in {"yes", "no"}:
+                    await redis_client.delete_context(payload.user_id)
+
+                return {
+                    "status": "ok",
+                    "too_short": False,
+                    "preprocessed": processed,
+                    "context_handled": True,
+                    "classification": classification,
+                    "expected_response": "yes_no",
+                    "parsed_value": yes_no_value,
+                    "response_text": _safe_reply("pending_yes_no_processed", user_name, history),
+                    "user_name": user_name,
+                    "settings": settings_data,
+                }
+
+            if expected_response == "number":
+                if label != "confirmation":
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "classification": classification,
+                        "response_text": _safe_reply("pending_number_prompt", user_name, history),
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                number_value = handle_number_reply(processed["processed"])
+                if pending_intent in {"add", "scheduling_add"} and number_value in {1, 2}:
+                    routed_result = await route_intent(
+                        "scheduling_add",
+                        entities=dict(pending_action.get("entities") or {}),
+                        context={
+                            **route_context_base,
+                            "pending_context": pending_context,
+                            "pending_reply_type": "number",
+                            "pending_reply_value": number_value,
+                        },
+                    )
+
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "classification": classification,
+                        "expected_response": "number",
+                        "parsed_value": number_value,
+                        "route": routed_result,
+                        "handler_status": routed_result.get("status"),
+                        "notifications": routed_result.get("notifications", []),
+                        "response_text": routed_result.get("response_text")
+                        or _safe_reply("pending_number_processed", user_name, history),
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                if number_value == 1:
+                    await redis_client.delete_context(payload.user_id)
+
+                if number_value == 2:
+                    updated_context = dict(pending_context)
+                    updated_context["expected_response"] = "free_text"
+                    updated_context["missing_entity"] = "time"
+                    updated_context.pop("suggested_time", None)
+                    await redis_client.set_context(payload.user_id, updated_context)
+
+                return {
+                    "status": "ok",
+                    "too_short": False,
+                    "preprocessed": processed,
+                    "context_handled": True,
+                    "classification": classification,
+                    "expected_response": "number",
+                    "parsed_value": number_value,
+                    "response_text": _safe_reply("pending_number_processed", user_name, history),
+                    "user_name": user_name,
+                    "settings": settings_data,
+                }
+
+        if is_too_short(processed["processed"]):
+            return {
+                "status": "ok",
+                "too_short": True,
+                "preprocessed": processed,
+                "response_text": _safe_reply("too_short_input", user_name, history),
+                "user_name": user_name,
+                "settings": settings_data,
+            }
+
+        if not classifier1.loaded:
+            return {
+                "status": "ok",
+                "too_short": False,
+                "preprocessed": processed,
+                "response_text": _safe_reply("model_unavailable", user_name, history),
+                "user_name": user_name,
+                "settings": settings_data,
+            }
+
+        classification = classifier1.predict(processed["processed"])
+        label = classification["label"]
+
+        if label == "command":
+            if not classifier2.loaded or not ner_extractor.loaded:
+                return {
+                    "status": "ok",
+                    "too_short": False,
+                    "preprocessed": processed,
+                    "classification": classification,
+                    "intent_pending": False,
+                    "response_text": _safe_reply("model_unavailable", user_name, history),
+                    "user_name": user_name,
+                    "settings": settings_data,
+                }
+
+            intent_classification = classifier2.predict(processed["processed"])
+            canonical_intent = normalize_intent(intent_classification["label"])
+
+            raw_entities = ner_extractor.extract(message, intent_hint=canonical_intent)
+            scoped_entities = scope_entities(raw_entities, canonical_intent)
+            user_timezone = (fetched.user or {}).get("timezone") or "UTC"
+            resolved_entities = await resolve_all(scoped_entities, timezone=user_timezone)
+
+            routed_result = await route_intent(
+                intent_classification["label"],
+                entities=resolved_entities,
+                context=route_context_base,
+            )
+            return {
+                "status": "ok",
+                "too_short": False,
+                "preprocessed": processed,
+                "classification": classification,
+                "intent_classification": intent_classification,
+                "entities": {
+                    "raw": raw_entities,
+                    "scoped": scoped_entities,
+                    "resolved": resolved_entities,
+                },
+                "intent_pending": False,
+                "route": routed_result,
+                "handler_status": routed_result.get("status"),
+                "notifications": routed_result.get("notifications", []),
+                "response_text": routed_result.get("response_text")
+                or _safe_reply("unknown_input_type", user_name, history),
+                "user_name": user_name,
+                "settings": settings_data,
+            }
+
+        general_handlers = {
+            "general": lambda: handle_general(fetched.user, history, message),
+            "out_of_scope": lambda: handle_out_of_scope(fetched.user, history, message),
+            "confirmation": lambda: handle_confirmation_unexpected(fetched.user, history, message),
+            "multiple_command": lambda: handle_multiple_command(fetched.user, history, message),
+        }
+        general_result = general_handlers.get(
+            label,
+            lambda: {
+                "route": "unknown_input_type",
+                "response_text": _safe_reply("unknown_input_type", user_name, history),
+            },
+        )()
+
+        return {
+            "status": "ok",
+            "too_short": False,
+            "preprocessed": processed,
+            "classification": classification,
+            "intent_pending": False,
+            "route": general_result,
+            "response_text": general_result.get("response_text")
+            or _safe_reply("unknown_input_type", user_name, history),
+            "user_name": user_name,
+            "settings": settings_data,
+        }
+
+    except Exception as error:
+        print(f"[Process] Unexpected error handled safely: {error}")
+        return {
+            "status": "ok",
+            "too_short": False,
+            "preprocessed": processed,
+            "intent_pending": False,
+            "error_handled": True,
+            "response_text": _safe_reply("system_error", user_name, history),
+            "user_name": user_name,
+            "settings": settings_data,
+        }
+
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=settings.PORT,
+        reload=True
+    )

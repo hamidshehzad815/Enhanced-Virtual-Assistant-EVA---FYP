@@ -1,0 +1,567 @@
+================================================================
+EVA — ENHANCED VIRTUAL ASSISTANT
+Your Intelligent Academic Co-Pilot
+================================================================
+Final Year Project (FYP) — Complete Project Document
+================================================================
+
+
+================================================================
+1. PROJECT OVERVIEW
+================================================================
+
+EVA is an AI-powered personal assistant built specifically for
+students. It allows students to manage their academic schedule,
+build structured learning plans, and understand their own
+productivity patterns — all through natural language conversation.
+
+Instead of filling forms or clicking through menus, a student
+simply types or speaks to EVA the same way they would talk to
+a person. EVA understands the intent, extracts the required
+information, performs the action, and replies naturally.
+
+Core philosophy:
+  → Conversation first, UI second
+  → EVA asks for what it needs, one thing at a time
+  → Every response is natural, specific, and contextual —
+    never robotic, never generic
+  → AI server handles all intelligence and data operations
+  → Node.js handles auth and notification delivery only
+
+
+================================================================
+2. PROBLEM STATEMENT
+================================================================
+
+Students today face three core problems:
+
+1. Scattered task management
+   Deadlines, exams, assignments, and projects tracked
+   across different apps and notebooks. Things get missed.
+
+2. No structured learning path
+   When a student wants to learn Python or MySQL they waste
+   time figuring out a plan instead of actually learning.
+
+3. No awareness of personal productivity
+   Students do not know when they are most focused. Important
+   tasks get scheduled at random times with poor results.
+
+EVA solves all three in one unified conversational platform.
+
+
+================================================================
+3. TARGET USERS
+================================================================
+
+Primary   : University students (undergraduate / postgraduate)
+Secondary : Any student managing academic workload
+
+
+================================================================
+4. SYSTEM ARCHITECTURE
+================================================================
+
+  ┌─────────────────────────────────────────────────────────┐
+  │                      FRONTEND                           │
+  │         React Native (mobile) / React.js (web)          │
+  └──────────────────────────┬──────────────────────────────┘
+                             │ POST /process
+                             │ { message, session_id,
+                             │   user_id, input_type }
+  ┌──────────────────────────▼──────────────────────────────┐
+  │                  NODE.JS BACKEND                        │
+  │  JWT validation · Voice transcription                   │
+  │  Route to AI server · Dispatch notifications            │
+  │  Non-chat operations only                               │
+  └──────────┬──────────────────────────────────────────────┘
+             │ minimal payload only
+             │ { message, user_id, session_id, timestamp }
+  ┌──────────▼──────────────────────────────────────────────┐
+  │                    AI SERVER                            │
+  │               Python / FastAPI                          │
+  │                                                         │
+  │  SELF-FETCHES at request start (direct MongoDB):        │
+  │    user info · settings · conversation history          │
+  │    integrations · Redis context state                   │
+  │                                                         │
+  │  NLP Pipeline:                                          │
+  │    preprocessing · context manager · 3 ML models        │
+  │    NER · Duckling · entity scoping · handlers           │
+  │                                                         │
+  │  Direct integrations:                                   │
+  │    MongoDB (all chat-related DB operations)             │
+  │    Redis (context manager)                              │
+  │    Gemini API (response generation)                     │
+  │    Google Calendar API (task sync)                      │
+  │    YouTube API (learning resources)                     │
+  │    Duckling (date/time resolution)                      │
+  │                                                         │
+  │  Returns minimal response to Node.js:                   │
+  │    { status, response_text, notifications[] }           │
+  └─────────────────────────────────────────────────────────┘
+
+NODE.JS OWNS:
+  → JWT auth and validation
+  → Voice transcription
+  → FCM push notification dispatch
+  → Email notification dispatch (Nodemailer)
+  → Friend system DB operations
+  → User settings page CRUD
+  → Google OAuth setup (calendar integration)
+  → User profile management
+  → Create new chat sessions
+
+AI SERVER OWNS (everything chat-related):
+  → Full NLP pipeline
+  → Context manager state (Redis)
+  → Tasks — insert / update / delete / query
+  → Learning_Goals — insert / update / delete / query
+  → Roadmap_Topics — insert / update / delete / query
+  → Activity_Logs — insert
+  → Conversation_History — insert (user + EVA messages)
+  → Chat_Sessions — update (last message, preview)
+  → Users — read (name, username for collaborator lookup)
+  → Friends — read (verify friendship for collaboration)
+  → User_Settings — read (defaults, thresholds)
+  → Integrations — read (check calendar active)
+  → Gemini — direct API calls for all responses
+  → Google Calendar — direct API calls after task actions
+  → YouTube — direct API calls for learning resources
+
+
+================================================================
+5. REQUEST FLOW (CHAT)
+================================================================
+
+  1. Frontend sends: message, session_id, jwt_token,
+     input_type to Node.js POST /process
+
+  2. Node.js: validates JWT, transcribes voice if needed,
+     forwards minimal payload to AI server
+
+  3. AI server self-fetches: user info, settings,
+     conversation history, integrations, Redis context
+
+  4. AI server runs full NLP pipeline, performs all
+     DB operations, calls Gemini and external APIs
+
+  5. AI server saves user message and EVA reply to
+     Conversation_History directly
+
+  6. AI server updates Chat_Session directly
+
+  7. AI server returns: status, response_text,
+     notifications array to Node.js
+
+  8. Node.js inserts notifications into DB, dispatches
+     FCM push and email
+
+  9. Node.js returns response_text to frontend
+
+  10. Frontend displays EVA reply
+
+
+================================================================
+6. MODULES
+================================================================
+
+================================================================
+MODULE 1 — SCHEDULING MODULE
+================================================================
+
+Purpose:
+  Complete task management through natural language.
+  All operations performed by AI server directly on MongoDB.
+
+Commands: ADD, DELETE, UPDATE, SHOW
+
+Required fields for every task (EVA asks one by one):
+  task_name, date, time
+
+Optional fields:
+  priority    → defaults from user_settings
+  duration    → defaults from user_settings
+  collaborator → only if user specifies
+
+ADD flow highlights:
+  → AI server self-fetches settings and activity logs
+  → Checks for duplicate before inserting
+  → If time missing and >= 10 logs: suggests productive hour
+  → AI server inserts Task, logs Activity, syncs Calendar
+  → Builds Gemini prompt with full context → natural reply
+
+DELETE flow highlights:
+  → AI server queries Tasks matching user criteria
+  → If multiple match: Gemini lists them, asks which one
+  → Soft delete only (is_deleted = true)
+  → AI server updates Google Calendar directly
+
+UPDATE flow highlights:
+  → Context manager tracks which task is being updated
+  → Status transitions: pending → ongoing → complete
+  → AI server syncs changes to Google Calendar
+
+SHOW flow highlights:
+  → AI server queries Tasks with user's filters
+  → Filter by date, priority, status, subject
+  → Gemini formats results naturally, not as raw lists
+
+Gemini reply examples:
+  Add:    "Physics exam is locked in for Monday at 5PM, Ali.
+           I'll remind you 30 minutes before."
+  Delete: "Done — Chemistry assignment has been removed."
+  Update: "Physics exam priority updated to high, Ali."
+  Show:   "You have 3 tasks on Monday: Physics exam at 5PM,
+           Chemistry lab at 2PM, and Math assignment at 10AM."
+
+
+================================================================
+MODULE 2 — LEARNING MODULE
+================================================================
+
+Purpose:
+  Turn a learning goal into a structured day-by-day roadmap
+  with YouTube resources, synced to Google Calendar.
+  All operations performed by AI server directly.
+
+Supported topics:
+  Programming : Python, JavaScript, TypeScript, Java, C#,
+                C++, Go, Rust, PHP, Kotlin, Swift, Ruby,
+                Dart, C
+  Databases   : Oracle, MySQL, Microsoft SQL Server,
+                PostgreSQL, MongoDB, SQL
+
+Commands: CREATE, SHOW, UPDATE, DELETE
+
+CREATE flow:
+  1. NER extracts: topic, subtopic, duration,
+     start_date, collaborator
+  2. AI server calls Gemini to generate topic breakdown
+  3. AI server calls YouTube API for each topic (direct)
+  4. AI server inserts Learning_Goal into MongoDB
+  5. AI server inserts Roadmap_Topics into MongoDB
+  6. AI server creates Task for each topic in Tasks
+  7. AI server syncs all topics to Google Calendar
+  8. AI server returns collaboration invite payload to
+     Node.js if collaborator specified
+
+Roadmap example — "Learn Python basics in 1 week":
+  Day 1 → Variables and Data Types        (90 min)
+  Day 2 → Control Flow and Loops          (90 min)
+  Day 3 → Functions                       (90 min)
+  Day 4 → Lists, Tuples, Dictionaries     (120 min)
+  Day 5 → File Handling and Exceptions    (90 min)
+  Day 6 → OOP Basics                      (120 min)
+  Day 7 → Mini Project / Revision         (120 min)
+
+Gemini reply example:
+  "Your Python roadmap is ready, Ali! Starting Monday,
+   I've broken it into 7 days covering basics through OOP —
+   it's all in your calendar and I've sent Ali a collaboration
+   invite."
+
+
+================================================================
+MODULE 3 — BEHAVIORAL ANALYTICS MODULE
+================================================================
+
+Purpose:
+  Identify peak productivity hours and days from completion
+  patterns. Used directly inside scheduling flow.
+  All queries by AI server on Activity_Logs directly.
+
+Tracked per task action:
+  action_type (created/started/completed/skipped),
+  day_of_week, hour_of_day, week_number,
+  task_priority, time_taken_minutes, was_on_time,
+  scheduled_hour, scheduled_day
+
+Analytics activation:
+  → Minimum 10 completed logs required
+  → Threshold read from User_Settings by AI server
+
+Used in scheduling:
+  → User adds task, skips time
+  → AI server queries Activity_Logs for best hour
+  → Checks Tasks for conflict at that hour
+  → Suggests time or falls back to asking user
+  → Gemini frames suggestion naturally:
+    "You tend to focus well on Mondays around 6PM.
+     Want me to use that?"
+
+Dashboard:
+  → Productivity heatmap (days x hours)
+  → On-time completion rate
+  → Most/least productive subject
+  → Weekly completion trend
+  → Learning goal progress
+
+
+================================================================
+MODULE 4 — NLP PIPELINE
+================================================================
+
+Runs entirely inside AI server.
+
+PREPROCESSING
+  → convert to lowercase
+  → remove punctuation
+  → fix spelling errors
+  → too-short input check
+  NOTE: NER and Gemini always receive original cased text
+
+CONTEXT MANAGER
+  → Redis state fetched at request start (self-fetch)
+  → free_text pending → skip Model 1, handle directly
+  → yes_no / number pending → run Model 1 first
+  → no pending → pass to Model 1 normally
+
+MODEL 1 — Input Type Classifier
+  Fine-tuned DistilBERT — 5 classes:
+  command | general | out_of_scope |
+  confirmation | multiple_command
+  NOTE: no salutation_command class — commands with
+  greetings classified as command, models handle naturally
+
+MODEL 2 — Intent Classifier
+  Fine-tuned DistilBERT — 9 classes:
+  scheduling_add | scheduling_delete | scheduling_update
+  scheduling_show | learning_create | learning_update
+  learning_delete | learning_show | behavioral
+
+NER — Named Entity Recognition
+  Fine-tuned DistilBERT token classification — BIO tagging
+  One model for all intents, entity scoping filters after
+
+  Entities per intent:
+  scheduling_add    : task_name, date, time, priority,
+                      duration, collaborator
+  scheduling_delete : task_name, date, priority, status
+  scheduling_update : task_name, date, time, priority,
+                      status, duration
+  scheduling_show   : date, priority, status, subject
+  learning_create   : topic, subtopic, duration,
+                      start_date, collaborator
+  learning_update   : topic, subtopic, date
+
+DATE/TIME RESOLUTION
+  Duckling called directly by AI server
+  Converts natural expressions to ISO datetime
+
+RESPONSE GENERATION (Gemini)
+  AI server builds structured context prompt
+  Gemini generates unique natural reply every time
+  No static templates, no random selection
+  System instruction ensures:
+  → User's name used
+  → Task/topic details mentioned specifically
+  → Conversational tone, varied phrasing
+  → Max 2 sentences
+  → Never generic ("Task added successfully" is rejected)
+
+
+================================================================
+MODULE 5 — CONTEXT MANAGER
+================================================================
+
+Managed entirely by AI server. Redis direct access.
+
+Key: "context:{user_id}", TTL: 300 seconds
+Fetched at request start as part of AI server self-fetch
+
+Pending states for add command:
+  1 → task_name missing (free_text, no validation)
+  2 → date missing (free_text, Duckling validated)
+  3 → time missing — no behavioral data (free_text)
+  4 → time missing — suggestion shown (number)
+  5 → duplicate found (yes_no)
+
+Reply routing:
+  free_text → Model 1 skipped, reply accepted directly
+  yes_no    → Model 1 runs first, then keyword match
+  number    → Model 1 runs first, then integer check
+
+Cancel: checked first on every pending input
+TTL expiry: auto-clears after 300s, no action needed
+
+
+================================================================
+MODULE 6 — NOTIFICATION MODULE
+================================================================
+
+Flow:
+  1. AI server includes notification payloads in response
+  2. Node.js inserts into Notifications collection
+  3. Node.js dispatches FCM push
+  4. Node.js sends email if enabled
+
+AI server generates payloads for:
+  → collaboration_invite
+  → behavioral_suggestion
+  → goal_progress
+
+Node.js generates and dispatches independently:
+  → task_reminder (scheduled job)
+  → topic_reminder (scheduled job)
+  → overdue_alert (scheduled job)
+  → friend_request
+  → friend_accepted
+
+Quiet hours: Node.js checks before push dispatch.
+In-app notifications always stored regardless.
+
+
+================================================================
+MODULE 7 — FRIEND AND COLLABORATION MODULE
+================================================================
+
+Friend management: Node.js handles entirely
+  → send request, accept, reject, block
+  → status: pending / accepted / rejected / blocked
+
+Collaboration validation during commands: AI server
+  → queries Users by username (direct)
+  → queries Friends to verify accepted friendship (direct)
+  → if not a friend: Gemini explains naturally, stops
+  → if friend: adds with status "pending"
+  → returns invite payload to Node.js for dispatch
+  → max 2 collaborators per task or learning goal
+
+
+================================================================
+MODULE 8 — SETTINGS MODULE
+================================================================
+
+CRUD: Node.js handles (settings page)
+AI server reads settings at request start (self-fetch)
+
+Settings used by AI server:
+  default_task_priority, default_task_duration,
+  default_reminder_minutes, analytics_min_tasks_threshold,
+  behavioral_analytics_enabled, preferred_learning_time,
+  google_calendar_sync_enabled
+
+
+================================================================
+7. TECH STACK
+================================================================
+
+Frontend       : React Native / React.js
+Backend        : Node.js + Express.js
+AI Server      : Python + FastAPI
+ML Models      : DistilBERT fine-tuned × 3
+LLM            : Google Gemini API (direct from AI server)
+Date/Time      : Duckling (direct from AI server)
+Database       : MongoDB Atlas
+Cache/Context  : Redis (AI server direct access)
+Push           : Firebase Cloud Messaging (Node.js)
+Email          : Nodemailer (Node.js)
+Calendar       : Google Calendar API (AI server direct)
+Video          : YouTube Data API v3 (AI server direct)
+Auth           : JWT + Google OAuth (Node.js)
+
+
+================================================================
+8. DATABASE COLLECTIONS
+================================================================
+
+  Collection            Owned by       AI Server access
+  ──────────────────────────────────────────────────────
+  Users                 Node.js        read only
+  Tasks                 AI Server      full
+  Friends               Node.js        read only
+  Learning_Goals        AI Server      full
+  Roadmap_Topics        AI Server      full
+  Activity_Logs         AI Server      full
+  Notifications         Node.js        write via payload
+  Chat_Sessions         Node.js/AI     AI updates only
+  Conversation_History  AI Server      full
+  User_Settings         Node.js        read only
+  Integrations          Node.js        read only
+
+
+================================================================
+9. ML MODELS SUMMARY
+================================================================
+
+MODEL 1 — Input Type Classifier
+  Architecture : DistilBERT sequence classification
+  Classes      : command | general | out_of_scope |
+                 confirmation | multiple_command
+  Dataset      : ~1000 examples, class weights for balance
+  Max tokens   : 64
+
+MODEL 2 — Intent Classifier
+  Architecture : DistilBERT sequence classification
+  Classes      : scheduling_add | scheduling_delete |
+                 scheduling_update | scheduling_show |
+                 learning_create | learning_update |
+                 learning_delete | learning_show | behavioral
+  Dataset      : ~1800 examples
+  Max tokens   : 64
+
+MODEL 3 — NER
+  Architecture : DistilBERT token classification, BIO tagging
+  Entities     : task_name | date | time | priority |
+                 duration | collaborator | topic |
+                 subtopic | start_date | status | subject
+  Dataset      : ~2000-3000 labelled examples
+  Max tokens   : 64
+  Note         : Single model — entity scoping filters
+                 per intent after extraction
+
+
+================================================================
+10. FYP RESEARCH CONTRIBUTIONS
+================================================================
+
+  1. Domain-specific NLP pipeline
+     Three fine-tuned models in a sequential pipeline
+     for student academic task management — not a generic
+     chatbot. Intent-specific entity scoping.
+
+  2. Hybrid context management
+     Multi-turn conversation with intent-aware state
+     routing. free_text states bypass Model 1, confirmation
+     states route through it. Stateless handler re-entry.
+
+  3. Behavioral analytics in scheduling
+     Activity log analysis per weekday with conflict
+     detection embedded into task creation flow as
+     real-time scheduling recommendation.
+
+  4. Automated learning roadmap generation
+     LLM topic breakdown + YouTube resource curation
+     producing day-by-day learning plan from one command,
+     synced to Google Calendar automatically.
+
+  5. AI server autonomy architecture
+     AI server self-fetches all required data at request
+     start and performs all chat-related DB operations
+     directly. Node.js routes and dispatches only.
+     Clean separation of concerns.
+
+  6. Natural LLM response generation
+     All EVA replies generated by Gemini with full action
+     context — task name, date, time, user name, extras.
+     No static templates. Every reply specific to what
+     just happened.
+
+
+================================================================
+11. LIMITATIONS AND SCOPE BOUNDARIES
+================================================================
+
+  → Multiple commands per input rejected cleanly
+  → Behavioral analytics requires 10+ completed task logs
+  → Learning module supports only 20 defined topics
+  → Max 2 collaborators per task or learning goal
+  → Voice quality depends on device transcription
+  → Google Calendar sync is optional
+  → AI server and Node.js both connect to same MongoDB
+    cluster — proper connection pooling required
+
+================================================================
+END OF DOCUMENT
+================================================================

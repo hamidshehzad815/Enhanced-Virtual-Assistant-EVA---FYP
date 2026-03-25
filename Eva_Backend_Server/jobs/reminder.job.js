@@ -1,0 +1,206 @@
+/**
+ * Reminder Job (Phase 12)
+ * - Runs every minute
+ * - Sends task reminders at due_datetime - reminder_minutes_before
+ * - Sends overdue alerts once when due_datetime passes
+ */
+
+const cron = require("node-cron");
+
+const logger = require("../config/logger");
+const { Task } = require("../models");
+const { insert_and_dispatch } = require("../services/notification.service");
+
+let activeJob = null;
+let isRunning = false;
+
+const DEFAULT_REMINDER_MINUTES = 30;
+
+const toDate = (value) => {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const formatDue = (dueDate) => {
+  const date = toDate(dueDate);
+  if (!date) {
+    return "your scheduled time";
+  }
+  return date.toLocaleString("en-US", {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+};
+
+const buildReminderNotification = (task) => ({
+  user_id: String(task.owner_id),
+  sender_id: null,
+  type: "task_reminder",
+  reference_type: "task",
+  reference_id: String(task._id),
+  title: "Task reminder",
+  message: `Reminder: ${task.title} is coming up at ${formatDue(task.due_datetime)}.`,
+  action_required: false,
+  delivery_channel: ["push", "in_app"],
+  scheduled_at: new Date(),
+});
+
+const buildOverdueNotification = (task) => ({
+  user_id: String(task.owner_id),
+  sender_id: null,
+  type: "overdue_alert",
+  reference_type: "task",
+  reference_id: String(task._id),
+  title: "Task overdue",
+  message: `Overdue: ${task.title} was due at ${formatDue(task.due_datetime)}.`,
+  action_required: true,
+  delivery_channel: ["push", "in_app"],
+  scheduled_at: new Date(),
+});
+
+const sendReminderNotifications = async (now) => {
+  const pendingTasks = await Task.find({
+    status: "pending",
+    is_deleted: false,
+    reminder_sent_at: null,
+  })
+    .select("_id owner_id title due_datetime reminder_minutes_before")
+    .lean();
+
+  if (!pendingTasks.length) {
+    return { checked: 0, sentFor: 0 };
+  }
+
+  // 60s window to avoid missing jobs due to minor scheduler drift.
+  const windowStart = new Date(now.getTime() - 60 * 1000);
+  const windowEnd = new Date(now.getTime() + 60 * 1000);
+
+  const dueForReminder = pendingTasks.filter((task) => {
+    const dueDate = toDate(task.due_datetime);
+    if (!dueDate) {
+      return false;
+    }
+
+    const mins = Number.isFinite(task.reminder_minutes_before)
+      ? task.reminder_minutes_before
+      : DEFAULT_REMINDER_MINUTES;
+    const reminderAt = new Date(dueDate.getTime() - mins * 60 * 1000);
+
+    return reminderAt > windowStart && reminderAt <= windowEnd;
+  });
+
+  if (!dueForReminder.length) {
+    return { checked: pendingTasks.length, sentFor: 0 };
+  }
+
+  const payloads = dueForReminder.map(buildReminderNotification);
+  const summary = await insert_and_dispatch(payloads);
+
+  await Task.updateMany(
+    { _id: { $in: dueForReminder.map((task) => task._id) } },
+    {
+      $set: {
+        reminder_sent_at: now,
+        updated_at: now,
+      },
+    },
+  );
+
+  logger.info("Reminder job: task reminders processed", {
+    checked_tasks: pendingTasks.length,
+    due_for_reminder: dueForReminder.length,
+    notification_requested: summary.requested,
+    notification_inserted: summary.inserted,
+    notification_failed: summary.failed,
+  });
+
+  return { checked: pendingTasks.length, sentFor: dueForReminder.length };
+};
+
+const sendOverdueAlerts = async (now) => {
+  const overdueTasks = await Task.find({
+    status: "pending",
+    is_deleted: false,
+    overdue_notified_at: null,
+    due_datetime: { $lte: now },
+  })
+    .select("_id owner_id title due_datetime")
+    .lean();
+
+  if (!overdueTasks.length) {
+    return { sentFor: 0 };
+  }
+
+  const payloads = overdueTasks.map(buildOverdueNotification);
+  const summary = await insert_and_dispatch(payloads);
+
+  await Task.updateMany(
+    { _id: { $in: overdueTasks.map((task) => task._id) } },
+    {
+      $set: {
+        overdue_notified_at: now,
+        updated_at: now,
+      },
+    },
+  );
+
+  logger.info("Reminder job: overdue alerts processed", {
+    overdue_tasks: overdueTasks.length,
+    notification_requested: summary.requested,
+    notification_inserted: summary.inserted,
+    notification_failed: summary.failed,
+  });
+
+  return { sentFor: overdueTasks.length };
+};
+
+const runReminderCycle = async () => {
+  if (isRunning) {
+    logger.warn("Reminder job skipped because previous cycle is still running");
+    return;
+  }
+
+  isRunning = true;
+
+  try {
+    const now = new Date();
+    await sendReminderNotifications(now);
+    await sendOverdueAlerts(now);
+  } catch (error) {
+    logger.error("Reminder job cycle failed", { error: error.message });
+  } finally {
+    isRunning = false;
+  }
+};
+
+const startReminderJob = () => {
+  if (activeJob) {
+    return activeJob;
+  }
+
+  activeJob = cron.schedule("* * * * *", runReminderCycle, {
+    scheduled: true,
+  });
+
+  logger.info("Reminder job started (every minute)");
+  return activeJob;
+};
+
+const stopReminderJob = () => {
+  if (!activeJob) {
+    return;
+  }
+
+  activeJob.stop();
+  activeJob = null;
+  logger.info("Reminder job stopped");
+};
+
+module.exports = {
+  runReminderCycle,
+  startReminderJob,
+  stopReminderJob,
+};

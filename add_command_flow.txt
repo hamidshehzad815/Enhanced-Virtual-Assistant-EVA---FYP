@@ -1,0 +1,531 @@
+================================================================
+SCHEDULING — ADD COMMAND FLOW (FINAL)
+AI Server handles all DB operations directly
+================================================================
+
+DECISIONS LOCKED
+================================================================
+
+  1. task_name, date, time — ALL THREE required
+     EVA asks for any missing, one by one in order
+  2. is_all_day = False always, hardcoded
+  3. due_datetime always fully populated (both required)
+  4. Behavioral threshold = 10 logs (from user settings)
+  5. Model 1 has 5 classes (no salutation_command)
+  6. AI server self-fetches all required data at request start
+  7. AI server performs ALL DB operations directly
+  8. Node.js dispatches push notifications only
+  9. Gemini called directly from AI server
+  10. All Gemini replies are natural, specific, contextual
+
+
+================================================================
+PIPELINE (inside AI Server)
+================================================================
+
+  REQUEST RECEIVED FROM NODE.JS
+  {
+    message, user_id, session_id,
+    input_type, timestamp
+  }
+  ↓
+  AI SERVER SELF-FETCH (before pipeline runs)
+  → db.users.findOne({ _id: user_id })
+  → db.user_settings.findOne({ user_id })
+  → db.conversation_history.find({ session_id }).limit(10)
+  → db.integrations.find({ user_id, is_active: true })
+  → Redis GET context:{user_id}
+  ↓
+  PREPROCESSING
+  → convert to lowercase
+  → remove punctuation
+  → fix spelling errors
+  → too_short check → Gemini: "Could you be more specific?"
+                    → return to Node.js → stop
+  ↓
+  CONTEXT MANAGER
+  → check fetched Redis state
+  → pending exists? → handle reply → stop or continue
+  → no pending → continue to Model 1
+  ↓
+  MODEL 1 — Input Type Classifier
+  → general          → Gemini generates greeting/help reply
+  → out_of_scope     → Gemini: friendly out of scope reply
+  → confirmation     → Gemini: "not expecting a reply now"
+  → multiple_command → Gemini: "one request at a time"
+  → command          → continue
+  ↓
+  MODEL 2 — Intent Classifier
+  → output: scheduling_add
+  ↓
+  NER — runs on ORIGINAL cased text
+  → extracts only add-relevant entities:
+    {
+      task_name   : "Physics exam",
+      date        : "Monday",
+      time        : "5PM",
+      priority    : "high",
+      duration    : "2 hours",
+      collaborator: "Ahmed"
+    }
+  ↓
+  ENTITY SCOPING
+  → keep : task_name, date, time, duration,
+           priority, collaborator
+  → drop : anything else NER may have extracted
+  ↓
+  HANDLER — handlers/scheduling/add.py
+
+
+================================================================
+STEP 1 — REQUIRED ENTITY CHECK
+================================================================
+
+  required : task_name, date, time
+  optional : priority, duration, collaborator
+
+  checked in this order: task_name → date → time
+  one missing entity asked at a time
+  handler re-entered from STEP 1 after every reply merged
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ task_name missing                                       │
+  │                                                         │
+  │ → AI server writes Redis:                               │
+  │   {                                                     │
+  │     expected_response : "free_text",                    │
+  │     missing_entity    : "task_name",                    │
+  │     pending_action    : {                               │
+  │       intent  : "add",                                  │
+  │       entities: { ...whatever collected so far... }     │
+  │     }                                                   │
+  │   }                                                     │
+  │                                                         │
+  │ → Gemini generates natural question:                    │
+  │ EVA: "What would you like to call this task, Ali?"      │
+  │ STOP — return response to Node.js                       │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ date missing                                            │
+  │                                                         │
+  │ → AI server writes Redis:                               │
+  │   {                                                     │
+  │     expected_response : "free_text",                    │
+  │     missing_entity    : "date",                         │
+  │     pending_action    : {                               │
+  │       intent  : "add",                                  │
+  │       entities: { task_name: "Physics exam" }           │
+  │     }                                                   │
+  │   }                                                     │
+  │                                                         │
+  │ → Gemini generates natural question:                    │
+  │ EVA: "When should I schedule the Physics exam?"         │
+  │ STOP — return response to Node.js                       │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ time missing → handled in STEP 3                        │
+  │ task_name + date both present → continue to STEP 2      │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 2 — DATE RESOLUTION
+================================================================
+
+  → pass entities["date"] to Duckling (AI server calls direct)
+  → Duckling returns ISO datetime + grain
+
+    "Monday"     → 2026-03-23T00:00:00  grain: day
+    "tomorrow"   → 2026-03-17T00:00:00  grain: day
+    "25th March" → 2026-03-25T00:00:00  grain: day
+    "next week"  → 2026-03-23T00:00:00  grain: week
+
+  → store date_part = YYYY-MM-DD
+  → continue to STEP 3
+
+
+================================================================
+STEP 3 — TIME RESOLUTION
+================================================================
+
+  scheduled_by = "manual"  ← default
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ time present                                            │
+  │                                                         │
+  │ → pass to Duckling                                      │
+  │ → merge with date_part                                  │
+  │   due_datetime = "2026-03-23T17:00:00"                  │
+  │ → is_all_day   = False (always)                         │
+  │ → scheduled_by = "manual"                               │
+  │ → continue to STEP 4                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ time absent                                             │
+  │                                                         │
+  │ → AI server queries Activity_Logs directly:             │
+  │   db.activity_logs.countDocuments({                     │
+  │     user_id     : user_id,                              │
+  │     action_type : "task_completed"                      │
+  │   })                                                    │
+  │   threshold from fetched user_settings                  │
+  │   (analytics_min_tasks_threshold, default 10)           │
+  │                                                         │
+  │   total >= threshold?                                   │
+  │                                                         │
+  │   ┌──────────────────────┐   ┌───────────────────────┐  │
+  │   │ YES                  │   │ NO                    │  │
+  │   │                      │   │                       │  │
+  │   │ AI server queries    │   │ AI server writes      │  │
+  │   │ best hour for this   │   │ Redis:                │  │
+  │   │ weekday from logs    │   │ { expected: free_text,│  │
+  │   │                      │   │   missing : time }    │  │
+  │   │ CONFLICT CHECK:      │   │                       │  │
+  │   │ AI server queries    │   │ Gemini generates      │  │
+  │   │ Tasks:               │   │ natural question      │  │
+  │   │ task exists at hour  │   │ EVA: "What time works │  │
+  │   │ on same date?        │   │ best for you, Ali?"   │  │
+  │   │                      │   │ STOP                  │  │
+  │   │ conflict → try next  │   └───────────────────────┘  │
+  │   │ best hour            │                              │
+  │   │ still conflict →     │                              │
+  │   │ fall to NO branch    │                              │
+  │   │                      │                              │
+  │   │ no conflict:         │                              │
+  │   │ AI server writes     │                              │
+  │   │ Redis:               │                              │
+  │   │ { expected: number,  │                              │
+  │   │   suggested: "18:00" │                              │
+  │   │ }                    │                              │
+  │   │                      │                              │
+  │   │ Gemini generates     │                              │
+  │   │ natural suggestion:  │                              │
+  │   │ EVA: "You tend to be │                              │
+  │   │ most focused on      │                              │
+  │   │ Mondays around 6PM.  │                              │
+  │   │ Want me to use that  │                              │
+  │   │ or pick a different  │                              │
+  │   │ time?                │                              │
+  │   │ 1. Use 6PM           │                              │
+  │   │ 2. Enter a time"     │                              │
+  │   │ STOP                 │                              │
+  │   └──────────────────────┘                              │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 4 — DUPLICATE CHECK
+================================================================
+
+  AI server queries Tasks directly:
+  db.tasks.findOne({
+    owner_id    : user_id,
+    title       : { $regex: task_name, $options: "i" },
+    due_datetime: { $gte: start_of_day, $lte: end_of_day },
+    is_deleted  : false
+  })
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ duplicate found                                         │
+  │                                                         │
+  │ → AI server writes Redis:                               │
+  │   { expected_response: "yes_no",                        │
+  │     missing_entity: null,                               │
+  │     pending_action: { intent: "add",                    │
+  │                       entities: { ...all... } } }       │
+  │                                                         │
+  │ → Gemini generates natural duplicate warning:           │
+  │ EVA: "Heads up Ali — Physics exam already exists on     │
+  │       Monday. Want me to add another one anyway?"       │
+  │ STOP — return to Node.js                                │
+  │                                                         │
+  │ user: "yes" → clear Redis → continue STEP 5            │
+  │ user: "no"  → clear Redis                               │
+  │   → Gemini: "No problem, nothing was added."            │
+  │   → STOP                                                │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ no duplicate → continue to STEP 5                       │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 5 — COLLABORATOR
+================================================================
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ collaborator not in entities                            │
+  │ → collaborators = []                                    │
+  │ → continue to STEP 6                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ collaborator present                                    │
+  │                                                         │
+  │ count > 2?                                              │
+  │ → Gemini: "I can only add up to 2 collaborators, Ali."  │
+  │ → stop                                                  │
+  │                                                         │
+  │ for each name:                                          │
+  │   AI server queries Users:                              │
+  │   db.users.findOne({ username: name, is_active: true }) │
+  │                                                         │
+  │   user not found:                                       │
+  │   → Gemini: "I couldn't find [name] in your friends."   │
+  │   → stop                                                │
+  │                                                         │
+  │   AI server queries Friends:                            │
+  │   db.friends.findOne({                                  │
+  │     $or: [                                              │
+  │       {requester_id: user_id, recipient_id: found_id},  │
+  │       {requester_id: found_id, recipient_id: user_id}   │
+  │     ],                                                  │
+  │     status: "accepted"                                  │
+  │   })                                                    │
+  │                                                         │
+  │   not a friend:                                         │
+  │   → Gemini: "[name] is not in your friends list.        │
+  │              Add them as a friend first."               │
+  │   → stop                                                │
+  │                                                         │
+  │   friend found → get user_id, status = "pending"        │
+  │                                                         │
+  │ all found → continue to STEP 6                          │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 6 — DURATION
+================================================================
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ duration present → parse to minutes                     │
+  │   "2 hours"    → 120                                    │
+  │   "30 minutes" → 30                                     │
+  │   "1.5 hours"  → 90                                     │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ duration absent                                         │
+  │ → use fetched user_settings.default_task_duration       │
+  │ → default = 120 minutes                                 │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 7 — PRIORITY
+================================================================
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ priority present → use directly (low / medium / high)   │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ priority absent                                         │
+  │ → use fetched user_settings.default_task_priority       │
+  │ → default = "medium"                                    │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 8 — INSERT TASK (AI Server → MongoDB directly)
+================================================================
+
+  db.tasks.insertOne({
+    owner_id                : user_id,
+    title                   : task_name,
+    due_datetime            : "2026-03-23T17:00:00",
+    is_all_day              : false,
+    duration                : minutes,
+    priority                : "low" / "medium" / "high",
+    status                  : "pending",
+    source                  : "eva",
+    scheduled_by            : "manual" / "behavioral_analytics",
+    reminder_minutes_before : settings.default_reminder_minutes,
+    collaborators           : [{user_id, status: "pending"}] or [],
+    is_deleted              : false,
+    created_at              : now,
+    updated_at              : now
+  })
+  → get inserted task_id
+
+
+================================================================
+STEP 9 — LOG ACTIVITY (AI Server → MongoDB directly)
+================================================================
+
+  db.activity_logs.insertOne({
+    user_id          : user_id,
+    task_id          : task_id,
+    action_type      : "task_created",
+    action_timestamp : now,
+    day_of_week      : due_datetime.weekday(),
+    hour_of_day      : due_datetime.hour,
+    week_number      : due_datetime.isocalendar().week,
+    task_priority    : priority,
+    subject          : task_name,
+    source           : "scheduling_module",
+    scheduled_hour   : due_datetime.hour,
+    scheduled_day    : due_datetime.weekday()
+  })
+
+
+================================================================
+STEP 10 — GOOGLE CALENDAR SYNC (AI Server → Google API)
+================================================================
+
+  → check fetched integrations for google_calendar active
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ integration active                                      │
+  │ → AI server calls Google Calendar API directly          │
+  │ → create calendar event with task details               │
+  │ → on success:                                           │
+  │   db.tasks.updateOne(                                   │
+  │     { _id: task_id },                                   │
+  │     { google_calendar_event_id: event_id }              │
+  │   )                                                     │
+  │ → on failure: log silently, task already saved          │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ integration not active → skip entirely                  │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 11 — GENERATE GEMINI RESPONSE
+================================================================
+
+  AI server builds prompt with full context:
+  {
+    system_instruction:
+      "You are EVA, a friendly and intelligent academic assistant.
+       Generate a short, warm, specific reply based ONLY on what
+       just happened. Use the user's name. Mention the task name,
+       date, time naturally. Be conversational, not robotic.
+       Never use generic phrases like 'Task added successfully'.
+       Max 2 sentences. Vary phrasing each time.",
+
+    action_context: {
+      action           : "task_added",
+      username         : "Ali",
+      task_name        : "Physics exam",
+      date             : "Monday 23rd March",
+      time             : "5PM",
+      priority         : "high",
+      collaborator     : "Ahmed" or null,
+      calendar_synced  : true or false,
+      scheduled_by     : "manual" or "behavioral_analytics"
+    }
+  }
+
+  Gemini returns unique natural reply. Examples:
+
+  Basic task added:
+  "Done Ali! Physics exam is scheduled for Monday at 5PM —
+   I'll remind you 30 minutes before."
+
+  With collaborator:
+  "Physics exam is locked in for Monday at 5PM, Ali.
+   I've sent Ahmed a collaboration invite as well."
+
+  Behavioral suggestion accepted:
+  "Perfect Ali — Physics exam set for Monday at 6PM,
+   your most productive time on Mondays."
+
+  Calendar synced:
+  "Physics exam is on for Monday at 5PM and it's been
+   added to your Google Calendar too, Ali."
+
+
+================================================================
+STEP 12 — SAVE MESSAGES TO CONVERSATION HISTORY
+================================================================
+
+  AI server saves user message:
+  db.conversation_history.insertOne({
+    session_id       : session_id,
+    role             : "user",
+    content          : original_message,
+    input_type       : "text" / "voice",
+    intent           : "scheduling_add",
+    entities         : extracted_entities,
+    status           : "processed",
+    created_at       : now
+  })
+
+  AI server saves EVA reply:
+  db.conversation_history.insertOne({
+    session_id : session_id,
+    role       : "eva",
+    content    : gemini_reply,
+    status     : "processed",
+    created_at : now
+  })
+
+  AI server updates Chat_Session:
+  db.chat_sessions.updateOne(
+    { _id: session_id },
+    {
+      last_message_preview : gemini_reply[:100],
+      last_message_at      : now,
+      updated_at           : now
+    }
+  )
+
+
+================================================================
+STEP 13 — AI SERVER RETURNS MINIMAL RESPONSE TO NODE.JS
+================================================================
+
+  {
+    "status"        : "success",
+    "response_text" : "Done Ali! Physics exam is scheduled...",
+    "notifications" : [
+      {
+        user_id         : collaborator_user_id,
+        sender_id       : owner_user_id,
+        type            : "collaboration_invite",
+        reference_type  : "task",
+        reference_id    : task_id,
+        title           : "Collaboration invite",
+        message         : "Ali added you to Physics exam",
+        action_required : true,
+        delivery_channel: ["push", "in_app"]
+      }
+    ]
+  }
+
+
+================================================================
+STEP 14 — NODE.JS DISPATCHES NOTIFICATIONS
+================================================================
+
+  Node.js receives minimal response.
+  For each item in notifications array:
+  → db.notifications.insertOne({ notification object })
+    (Node.js → MongoDB)
+  → send FCM push to recipient device
+  → send email if recipient has email_notifications enabled
+
+  Node.js returns final response to frontend:
+  {
+    "status"        : "success",
+    "response_text" : "Done Ali! Physics exam is scheduled...",
+    "session_id"    : "sess_..."
+  }
+
+
+================================================================
+REMINDER SCHEDULING
+================================================================
+
+  → Node.js scheduler fires at due_datetime − reminder_minutes
+  → default 30 minutes before (from user settings)
+  → FCM push + in_app notification
+  → EVA: "Your Physics exam starts in 30 minutes, Ali."

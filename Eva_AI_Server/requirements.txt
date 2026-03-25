@@ -1,0 +1,32 @@
+# EVA AI Server Dependencies
+
+# FastAPI and server
+fastapi==0.109.2
+uvicorn[standard]==0.27.1
+
+# MongoDB
+motor==3.3.2
+pymongo==4.6.1
+
+# Redis
+redis==5.0.1
+
+# HTTP client (for Duckling, external APIs)
+httpx==0.26.0
+
+# Environment variables
+python-dotenv==1.0.1
+
+# ML/NLP (for later phases)
+transformers==4.37.2
+torch==2.2.0
+numpy==1.26.4
+
+# Gemini API (for later phases)
+google-generativeai==0.4.0
+
+# Spelling correction (for later phases)
+pyspellchecker==0.8.1
+
+# Utilities
+pydantic==2.6.1

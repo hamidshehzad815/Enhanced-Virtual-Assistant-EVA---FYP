@@ -1,0 +1,676 @@
+================================================================
+EVA — DEVELOPMENT TODO LIST
+Parallel Build: AI Server + Node.js Backend
+================================================================
+
+GROUND RULES
+================================================================
+
+  → Each phase ends with something testable
+  → AI server and Node.js built in parallel per phase
+  → No phase builds on untested previous phase
+  → Keep steps small — one responsibility per step
+  → Test before moving to next phase
+
+
+================================================================
+FOLDER STRUCTURE
+================================================================
+
+eva/
+├── ai_server/
+│   ├── main.py                         # FastAPI entry point
+│   ├── requirements.txt
+│   ├── .env
+│   │
+│   ├── config/
+│   │   ├── __init__.py
+│   │   ├── settings.py                 # env vars, constants
+│   │   └── database.py                 # MongoDB connection
+│   │
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── clf1/                       # input type classifier
+│   │   │   ├── model files (saved)
+│   │   │   └── label_map.json
+│   │   ├── clf2/                       # intent classifier
+│   │   │   ├── model files (saved)
+│   │   │   └── label_map.json
+│   │   └── ner/                        # NER model
+│   │       ├── model files (saved)
+│   │       └── label_map.json
+│   │
+│   ├── pipeline/
+│   │   ├── __init__.py
+│   │   ├── preprocessor.py             # lowercase + too_short
+│   │   ├── classifier1.py              # Model 1 inference
+│   │   ├── classifier2.py              # Model 2 inference
+│   │   ├── ner.py                      # NER inference
+│   │   ├── entity_scoper.py            # filter entities by intent
+│   │   └── date_resolver.py            # Duckling integration
+│   │
+│   ├── context/
+│   │   ├── __init__.py
+│   │   ├── redis_client.py             # Redis connection
+│   │   └── context_manager.py          # pending state logic
+│   │
+│   ├── handlers/
+│   │   ├── __init__.py
+│   │   ├── scheduling/
+│   │   │   ├── __init__.py
+│   │   │   ├── add.py                  # DONE
+│   │   │   ├── delete.py
+│   │   │   ├── update.py
+│   │   │   └── show.py
+│   │   ├── learning/
+│   │   │   ├── __init__.py
+│   │   │   ├── create.py
+│   │   │   ├── update.py
+│   │   │   ├── delete.py
+│   │   │   └── show.py
+│   │   ├── general_handler.py          # DONE
+│   │   └── router.py                   # DONE (add wired)
+│   │
+│   ├── services/
+│   │   ├── __init__.py
+│   │   ├── self_fetch.py               # DONE
+│   │   ├── gemini.py                   # DONE
+│   │   ├── duckling.py                 # DONE
+│   │   ├── youtube.py
+│   │   └── google_calendar.py          # DONE
+│   │
+│   ├── db/
+│   │   ├── __init__.py
+│   │   ├── tasks.py                    # DONE (add ops)
+│   │   ├── learning_goals.py
+│   │   ├── roadmap_topics.py
+│   │   ├── activity_logs.py            # DONE
+│   │   ├── conversation_history.py     # DONE
+│   │   ├── chat_sessions.py            # DONE
+│   │   └── readers.py                  # DONE
+│   │
+│   ├── training/
+│   │   ├── datasets/
+│   │   ├── clf1_generate.py            # DONE
+│   │   ├── clf1_train.py               # DONE
+│   │   ├── clf1_test.py                # DONE
+│   │   ├── clf2_generate.py
+│   │   ├── clf2_train.py
+│   │   ├── clf2_test.py
+│   │   ├── ner_generate.py
+│   │   ├── ner_train.py
+│   │   └── ner_test.py
+│   │
+│   └── utils/
+│       ├── __init__.py
+│       ├── date_utils.py
+│       └── text_utils.py
+│
+├── node_server/
+│   ├── app.js                          # DONE
+│   ├── package.json
+│   ├── .env
+│   │
+│   ├── config/
+│   │   ├── db.js                       # DONE
+│   │   └── redis.js
+│   │
+│   ├── middleware/
+│   │   ├── auth.js                     # DONE
+│   │   └── errorHandler.js             # DONE
+│   │
+│   ├── routes/
+│   │   ├── auth.routes.js              # DONE
+│   │   ├── chat.routes.js              # DONE
+│   │   ├── tasks.routes.js             # DONE
+│   │   ├── learning.routes.js
+│   │   ├── friends.routes.js
+│   │   ├── notifications.routes.js
+│   │   ├── settings.routes.js          # DONE
+│   │   └── profile.routes.js
+│   │
+│   ├── controllers/
+│   │   ├── auth.controller.js          # DONE
+│   │   ├── chat.controller.js          # DONE
+│   │   ├── tasks.controller.js         # DONE
+│   │   ├── learning.controller.js
+│   │   ├── friends.controller.js
+│   │   ├── notifications.controller.js
+│   │   ├── settings.controller.js      # DONE
+│   │   └── profile.controller.js
+│   │
+│   ├── models/
+│   │   ├── User.js                     # DONE
+│   │   ├── Task.js                     # DONE
+│   │   ├── Friend.js
+│   │   ├── LearningGoal.js
+│   │   ├── RoadmapTopic.js
+│   │   ├── ActivityLog.js
+│   │   ├── Notification.js             # DONE
+│   │   ├── ChatSession.js              # DONE
+│   │   ├── ConversationHistory.js      # DONE
+│   │   ├── UserSetting.js              # DONE
+│   │   └── Integration.js              # DONE
+│   │
+│   ├── services/
+│   │   ├── ai.service.js               # DONE
+│   │   ├── notification.service.js     # DONE (FCM placeholder)
+│   │   └── transcription.service.js
+│   │
+│   └── jobs/
+│       └── reminder.job.js             # DONE
+
+
+================================================================
+PHASES 1–12 — COMPLETED
+================================================================
+
+  All phases 1-12 completed per PROJECT_COMPLETION_REPORT.md
+
+  ✓ Phase 1  → Project setup and health check
+  ✓ Phase 2  → Authentication (Node.js)
+  ✓ Phase 3  → AI self-fetch + preprocessing + chat bridge
+  ✓ Phase 4  → Model 1: input type classifier
+  ✓ Phase 5  → Context manager (all state types)
+  ✓ Phase 6  → Model 2: intent classifier + router
+  ✓ Phase 7  → NER + entity scoper + Duckling resolver
+  ✓ Phase 8  → Gemini response generation + fallback
+  ✓ Phase 9  → Scheduling ADD handler (complete)
+  ✓ Phase 10 → Tasks page APIs (Node.js)
+  ✓ Phase 11 → Google Calendar integration
+  ✓ Phase 12 → Reminder scheduling (cron job)
+
+  Known gaps carried forward (do not block delete):
+  - FCM push dispatch is placeholder (no real token delivery)
+  - Node.js backend has no automated test suite yet
+
+
+================================================================
+PHASE 13 — NER ENTITIES + ENTITY SCOPER FOR DELETE
+================================================================
+
+Goal: NER extracts delete-specific entities correctly.
+      Entity scoper knows what to keep for delete intent.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+  [ ] Verify NER model extracts these entities for delete:
+      task_name, date, priority, status
+      → test: "delete physics exam"
+              expected: task_name = "Physics exam"
+      → test: "remove high priority tasks on Monday"
+              expected: priority = "high", date = "Monday"
+      → test: "delete all pending tasks"
+              expected: status = "pending"
+      → test: "delete the exam on Monday"
+              expected: task_name = "exam", date = "Monday"
+
+  [ ] Update pipeline/entity_scoper.py
+      → add "scheduling_delete" scope:
+        keep: task_name, date, priority, status
+        drop: time, duration, collaborator, topic, subtopic
+
+  [ ] Test entity scoper on delete intent:
+      → input with extra entities (e.g. time extracted)
+        confirm time is dropped after scoping
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+  [x] Verify Task model has all required fields for delete:
+      is_deleted (Boolean), deleted_at (Date),
+      google_calendar_event_id (String),
+      collaborators (Array)
+      → already done per report — confirm only
+
+  PHASE 13 TEST:
+  [ ] Send "delete physics exam on Monday" to /process
+  [ ] Confirm NER extracts: task_name + date
+  [ ] Confirm entity scoper keeps only task_name, date
+  [ ] Confirm no other entities leak through
+
+
+================================================================
+PHASE 14 — DB LAYER FOR DELETE
+================================================================
+
+Goal: All DB functions needed by delete handler exist
+      and are tested independently.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+  [ ] Add to db/tasks.py:
+
+      find_tasks_for_delete(user_id, filters) → list
+        → builds query from: task_name (regex, case insensitive),
+          date_range (start_of_day to end_of_day),
+          priority, status
+        → always filters: owner_id = user_id,
+                          is_deleted = false
+        → sort by due_datetime ascending
+        → limit 10 (safety cap)
+        → returns list of task dicts
+
+      soft_delete_task(task_id) → bool
+        → updates: is_deleted=true, deleted_at=now,
+                   updated_at=now
+        → returns True on success, False on failure
+
+      soft_delete_many(task_ids) → int
+        → bulk updateMany on list of ids
+        → returns count of matched documents
+
+      get_task_by_id(task_id, user_id) → dict or None
+        → fetch single task with owner_id check
+        → returns full task document including
+          collaborators, google_calendar_event_id
+
+  [ ] Add to db/activity_logs.py:
+      → confirm insert_log accepts action_type = "task_deleted"
+      → add "task_deleted" to allowed action_type values
+        if not already present
+
+  [ ] Unit test each new DB function:
+      → find_tasks_for_delete with task_name filter
+      → find_tasks_for_delete with priority filter
+      → find_tasks_for_delete with date filter
+      → find_tasks_for_delete with combined filters
+      → find_tasks_for_delete with no matching tasks
+      → soft_delete_task → verify is_deleted = true in DB
+      → soft_delete_many → verify all ids soft deleted
+      → get_task_by_id with valid id + owner
+      → get_task_by_id with wrong owner → returns None
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+  [ ] Nothing new this phase.
+      Existing Task model already has is_deleted field.
+
+  PHASE 14 TEST:
+  [ ] Call find_tasks_for_delete directly in test
+  [ ] Insert 3 tasks, query by priority → get 3 back
+  [ ] Soft delete one → verify is_deleted = true
+  [ ] Query again → deleted task not returned
+  [ ] Bulk delete 2 → verify both is_deleted = true
+
+
+================================================================
+PHASE 15 — CONTEXT MANAGER ADDITIONS FOR DELETE
+================================================================
+
+Goal: Context manager handles all 4 delete-specific states
+      including "all" keyword and bulk confirmation.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+  [ ] Add to context/context_manager.py:
+
+      is_all_keyword(text) → bool
+        → trigger words:
+          "all" / "all of them" / "delete all" /
+          "every one" / "all tasks" / "everything"
+        → returns True if any trigger found
+
+      handle_number_delete(text, context) → result
+        → validates number is between 1 and N
+          (N = len(context.pending_action.task_ids))
+        → if valid number → returns selected task_id
+        → if "all" keyword → returns "all"
+        → if out of range → returns "invalid_range"
+        → if unrecognised → returns "invalid"
+
+      handle_bulk_confirm_state(text) → "yes"|"no"|"invalid"
+        → same yes/no keyword matching as existing
+          handle_yes_no_reply function
+        → separate function for clarity, or reuse existing
+
+  [ ] Update context manager routing to handle:
+      → State 1 (free_text): already works via existing
+        free_text handler — treat reply as task_name,
+        merge into entities, clear Redis, re-enter handler
+        CONFIRM this works for delete, no changes if already ok
+
+      → State 2 (yes_no, single): already works via
+        existing yes_no handler — CONFIRM works for delete
+
+      → State 3 (number): NEW — route to handle_number_delete
+        - valid number → update Redis to yes_no for that task
+        - "all" → update Redis to yes_no with bulk=true
+        - invalid → ask again
+
+      → State 4 (yes_no, bulk): same as State 2 but
+        bulk=true in pending state — existing yes_no handler
+        should work — CONFIRM
+
+  [ ] Write unit tests for new context manager functions:
+      → is_all_keyword("all") → True
+      → is_all_keyword("all of them") → True
+      → is_all_keyword("delete all") → True
+      → is_all_keyword("yes") → False
+      → is_all_keyword("1") → False
+      → handle_number_delete("1", context with 3 tasks)
+        → returns selected task_id
+      → handle_number_delete("4", context with 3 tasks)
+        → returns "invalid_range"
+      → handle_number_delete("all", context)
+        → returns "all"
+      → handle_number_delete("delete all", context)
+        → returns "all"
+      → handle_number_delete("yes", context)
+        → returns "invalid"
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+  [ ] Nothing new this phase.
+
+  PHASE 15 TEST:
+  [ ] Manually set Redis state 3 (number state, 3 tasks)
+  [ ] Send "2" → confirm Redis updated to yes_no for task 2
+  [ ] Send "all" → confirm Redis updated to yes_no bulk=true
+  [ ] Send "5" (out of range) → confirm ask again
+  [ ] Send "cancel" → confirm Redis cleared
+  [ ] Manually set Redis state 4 (bulk yes_no)
+  [ ] Send "yes" → confirm handler proceeds to deletion
+  [ ] Send "no" → confirm Redis cleared, nothing deleted
+
+
+================================================================
+PHASE 16 — DELETE HANDLER: QUERY AND PRESENT RESULTS
+================================================================
+
+Goal: Delete handler runs STEP 1 to STEP 4 correctly.
+      Results presented to user with right pending state.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+  [ ] Create handlers/scheduling/delete.py
+
+  [ ] Implement STEP 1 — entity check
+      → if no entities extracted:
+          set Redis free_text state (State 1)
+          call Gemini for natural question
+          return response → STOP
+
+  [ ] Implement STEP 2 — date resolution
+      → if date present: pass to Duckling
+      → resolve to date range (start/end of day)
+      → if Duckling fails: ask user to re-enter date
+
+  [ ] Implement STEP 3 — query tasks
+      → call find_tasks_for_delete(user_id, filters)
+      → store result list
+
+  [ ] Implement STEP 4 — handle result count
+      → 0 found: Gemini not-found reply → STOP
+      → 1 found: set Redis yes_no (State 2)
+                 Gemini asks confirmation → STOP
+      → 2-5 found: set Redis number (State 3)
+                   build numbered list for Gemini → STOP
+      → 6+ found: Gemini too-broad reply → STOP (no Redis)
+
+  [ ] Wire STEP 1-4 into router.py
+      → remove scheduling_delete placeholder
+      → bind to delete handler
+
+  [ ] Build Gemini prompt helpers for delete:
+      → not_found_prompt(username, filters_used)
+      → single_confirm_prompt(username, task)
+      → multi_list_prompt(username, tasks)
+      → too_broad_prompt(username)
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+  [ ] Nothing new this phase.
+      Chat bridge already forwards all intents.
+
+  PHASE 16 TEST:
+  [ ] Send "delete physics exam" (1 match in DB)
+      → EVA asks confirmation
+      → Redis state 2 set with correct task_id
+
+  [ ] Send "delete high priority tasks" (3 matches)
+      → EVA shows numbered list
+      → Redis state 3 set with 3 task_ids
+
+  [ ] Send "delete xyz" (no match)
+      → EVA: natural not-found reply
+      → No Redis state set
+
+  [ ] Send "delete tasks" (6+ matches)
+      → EVA: too broad reply
+      → No Redis state set
+
+  [ ] Send "delete something" (no entities)
+      → EVA asks which task
+      → Redis state 1 (free_text) set
+
+  [ ] After state 1: reply "physics exam"
+      → treated as task_name
+      → handler re-enters from STEP 1
+      → finds tasks, continues flow
+
+
+================================================================
+PHASE 17 — DELETE HANDLER: PERFORM DELETION + RETURN
+================================================================
+
+Goal: Deletion actually happens after confirmation.
+      Calendar synced, notifications built, reply returned.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+  [ ] Implement STEP 5 — perform deletion
+      → loop through task_ids from Redis pending state
+      → for each task_id:
+          → get_task_by_id(task_id, user_id) → full task
+          → soft_delete_task(task_id)
+          → insert activity log (action_type: "task_deleted")
+          → if task.google_calendar_event_id:
+              call google_calendar.delete_event (non-blocking)
+          → if task.collaborators not empty:
+              for each collab with status "accepted":
+                build notification payload
+
+  [ ] Implement STEP 6 — Gemini response
+      → single deletion reply
+      → bulk deletion reply
+      → use user's name and task name(s)
+
+  [ ] Implement STEP 7 — save messages and return
+      → save user message to Conversation_History
+      → save EVA reply to Conversation_History
+      → update Chat_Session last_message
+      → clear Redis
+      → return { status, response_text, notifications[] }
+
+  [ ] Handle context manager confirmation entry point:
+      → context manager receives "yes" on state 2 or 4
+      → calls delete handler at STEP 5 directly
+        (bypasses STEP 1-4 since task_ids already known)
+      → make sure handler supports this entry point
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+  [ ] Confirm notification.service.js handles
+      type = "task_deleted" correctly
+      → dispatch_push and dispatch_email both receive
+        the notification object from AI server payload
+      → no code change expected — confirm it works
+
+  [ ] Confirm chat.controller.js passes notifications
+      array to notification.service correctly
+      → already done for add — confirm delete works too
+
+  PHASE 17 TEST:
+  [ ] Send "delete physics exam" (1 match)
+  [ ] EVA asks: "Want me to delete it?"
+  [ ] Reply: "yes"
+  [ ] Confirm task is_deleted = true in DB
+  [ ] Confirm activity log inserted
+  [ ] Confirm google calendar event deleted (if connected)
+  [ ] Confirm EVA reply is natural and mentions task name
+
+  [ ] Send "delete high priority tasks" (3 matches)
+  [ ] EVA shows list
+  [ ] Reply: "2"
+  [ ] EVA confirms task 2
+  [ ] Reply: "yes"
+  [ ] Confirm only task 2 soft deleted
+  [ ] Confirm tasks 1 and 3 still in DB
+
+  [ ] Send "delete high priority tasks" (3 matches)
+  [ ] EVA shows list
+  [ ] Reply: "all"
+  [ ] EVA: "Delete all 3? This cannot be undone."
+  [ ] Reply: "yes"
+  [ ] Confirm all 3 soft deleted
+  [ ] Confirm 3 activity logs inserted
+
+
+================================================================
+PHASE 18 — TESTING AND BACKEND TEST SUITE
+================================================================
+
+Goal: Full delete flow tested end to end.
+      Node.js backend gets a test suite started.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+  [ ] Create tests/test_delete_handler.py
+
+      Test cases:
+      [ ] no entity → asked → replied → re-entered → 1 match
+      [ ] 1 match → yes → deleted
+      [ ] 1 match → no → not deleted
+      [ ] 1 match → cancel → not deleted
+      [ ] 2-5 matches → pick number → confirm → deleted
+      [ ] 2-5 matches → pick "all" → confirm → all deleted
+      [ ] 2-5 matches → pick "all" → no → nothing deleted
+      [ ] 2-5 matches → pick out of range → asked again
+      [ ] 6+ matches → too broad → no Redis state set
+      [ ] 0 matches → not found reply
+      [ ] task with google_calendar_event_id → delete_event called
+      [ ] task with collaborator → notification payload generated
+      [ ] cancel mid-flow (after yes_no shown) → nothing deleted
+      [ ] cancel mid-flow (after list shown) → nothing deleted
+      [ ] new command while yes_no pending → blocked
+      [ ] TTL expiry → fresh start on next input
+
+  [ ] Run full AI test suite → confirm all 20+ tests pass
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+  [ ] Create tests/ directory in node_server
+  [ ] Install test dependencies: jest, supertest
+
+  [ ] tests/auth.test.js
+      → POST /api/auth/register → 201 + tokens
+      → POST /api/auth/login → 200 + tokens
+      → GET /api/auth/me with valid token → 200
+      → GET /api/auth/me without token → 401
+
+  [ ] tests/tasks.test.js
+      → GET /api/tasks → returns task list
+      → GET /api/tasks/:id → returns single task
+      → PATCH /api/tasks/:id/status → status updated
+      → DELETE /api/tasks/:id → soft deleted
+
+  [ ] tests/chat.test.js (integration)
+      → POST /api/chat/session → session created
+      → POST /api/chat/process with valid message
+        → response_text returned
+        → response is not empty
+
+  PHASE 18 TEST:
+  [ ] All AI server tests pass (20+ tests)
+  [ ] All Node.js tests pass
+  [ ] Full end-to-end: add task → delete via chat → verify gone
+  [ ] Full end-to-end: add 3 tasks → delete all via chat
+
+
+================================================================
+WHAT COMES AFTER PHASE 18
+================================================================
+
+  Phase 19 → Scheduling UPDATE handler (AI server)
+             + update endpoints review (Node.js)
+
+  Phase 20 → Scheduling SHOW handler (AI server)
+             + advanced task filtering page (Node.js)
+
+  Phase 21 → Behavioral analytics queries
+             + analytics dashboard (Node.js)
+
+  Phase 22 → Learning CREATE handler (AI server)
+             + YouTube API integration
+             + roadmap page (Node.js)
+
+  Phase 23 → Learning UPDATE handler (AI server)
+             + roadmap progress page (Node.js)
+
+  Phase 24 → Learning DELETE and SHOW (AI server)
+
+  Phase 25 → Friend system (Node.js)
+             + collaboration full flow (AI server)
+
+  Phase 26 → Notification centre page (Node.js)
+
+  Phase 27 → FCM real push delivery
+             (replace placeholder in notification.service.js)
+
+  Phase 28 → Settings page (Node.js)
+
+  Phase 29 → Profile page (Node.js)
+
+  Phase 30 → Voice input (Node.js transcription)
+
+  Phase 31 → Google OAuth login
+
+  Phase 32 → End to end testing all flows
+
+  Phase 33 → Performance and load testing
+
+  Phase 34 → Deployment
+
+
+================================================================
+DEPENDENCIES TO INSTALL
+================================================================
+
+  AI Server (pip):
+  fastapi uvicorn motor pymongo redis python-dotenv
+  transformers torch scikit-learn numpy requests
+
+  Node.js (npm):
+  express mongoose dotenv jsonwebtoken bcryptjs
+  axios cors helmet morgan node-cron
+  firebase-admin nodemailer multer
+  jest supertest (for testing)
+
+
+================================================================
+ENVIRONMENT VARIABLES
+================================================================
+
+  AI Server (.env):
+  MONGO_URI=
+  REDIS_URL=
+  GEMINI_API_KEY=
+  DUCKLING_URL=http://localhost:8000
+  YOUTUBE_API_KEY=
+  GOOGLE_CLIENT_ID=
+  GOOGLE_CLIENT_SECRET=
+  PORT=8001
+
+  Node.js (.env):
+  MONGO_URI=
+  JWT_SECRET=
+  JWT_REFRESH_SECRET=
+  JWT_EXPIRES_IN=15m
+  JWT_REFRESH_EXPIRES_IN=7d
+  AI_SERVER_URL=http://localhost:8001
+  FIREBASE_CREDENTIALS=
+  EMAIL_HOST=
+  EMAIL_PORT=
+  EMAIL_USER=
+  EMAIL_PASS=
+  PORT=3000

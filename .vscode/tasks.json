@@ -1,0 +1,48 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Launch Full Stack",
+      "dependsOn": [
+        "1. MongoDB",
+        "2. Duckling",
+        "3. Backend Server",
+        "4. AI Server"
+      ],
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "presentation": {
+        "reveal": "always",
+        "panel": "shared"
+      }
+    },
+    {
+      "label": "1. MongoDB",
+      "type": "shell",
+      "command": "sudo mongod --dbpath=/Users/hamidshehzad/data/db",
+      "presentation": { "group": "servers", "reveal": "always" }
+    },
+    {
+      "label": "2. Duckling",
+      "type": "shell",
+      "command": "docker run -p 8000:8000 rasa/duckling",
+      "presentation": { "group": "servers", "reveal": "always" }
+    },
+    {
+      "label": "3. Backend Server",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": { "cwd": "${workspaceFolder}/Eva_Backend_Server" },
+      "presentation": { "group": "servers", "reveal": "always" }
+    },
+    {
+      "label": "4. AI Server",
+      "type": "shell",
+      "command": "source /Users/hamidshehzad/FYP_FINAL_INSHALLAH/Eva_AI_server/.venv/bin/activate && python -m uvicorn main:app --host 127.0.0.1 --port 8080 --reload",
+      "options": { "cwd": "${workspaceFolder}/Eva_AI_server" },
+      "presentation": { "group": "servers", "reveal": "always" }
+    }
+  ]
+}

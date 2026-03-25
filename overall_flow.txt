@@ -1,0 +1,418 @@
+================================================================
+EVA — OVERALL APPLICATION FLOW
+Frontend to Completion (Final Architecture)
+================================================================
+
+ARCHITECTURE DECISION
+================================================================
+
+  Node.js Backend owns:
+    → JWT authentication and validation
+    → Route incoming requests to correct service
+    → Notification delivery (FCM push, email)
+    → Friend system (requests, accept, reject, block)
+    → User settings CRUD (settings page only)
+    → Google OAuth flow (calendar integration setup)
+    → User profile management
+    → NON-chat operations only
+
+  AI Server (Python/FastAPI) owns:
+    → Full NLP pipeline (all 3 models)
+    → Context manager (Redis — direct access)
+    → Date/time resolution (Duckling — direct)
+    → Fetches ALL required data from DB at start of request:
+        user info, settings, conversation history,
+        friends list, integrations — everything it needs
+    → ALL chat-related DB operations:
+        Tasks, Learning_Goals, Roadmap_Topics,
+        Activity_Logs, Conversation_History,
+        Chat_Sessions, reads User_Settings,
+        reads Users, reads Friends, reads Integrations
+    → Google Calendar sync (direct API call)
+    → Gemini response generation (direct API call)
+    → YouTube API calls (direct)
+
+  KEY RULE:
+    Any request hitting /process (chat route) →
+    ALL DB operations for that request are done
+    by AI server directly. Node.js only routes
+    the request and dispatches push notifications.
+
+  Both connect to:
+    → MongoDB (same cluster, separate connection pools)
+    → Redis (AI server writes/reads context)
+
+
+================================================================
+STEP 1 — FRONTEND SENDS REQUEST
+================================================================
+
+  User types or speaks input in the app.
+
+  If text input:
+  POST /process
+  Headers:
+    Authorization: Bearer <jwt_token>
+  Body:
+  {
+    "message"    : "Add Physics exam on Monday at 5PM",
+    "session_id" : "sess_7f3a9b2c1d4e5f6a",
+    "input_type" : "text"
+  }
+
+  If voice input:
+  POST /process
+  Headers:
+    Authorization: Bearer <jwt_token>
+  Body:
+  {
+    "audio_blob" : <binary>,
+    "session_id" : "sess_7f3a9b2c1d4e5f6a",
+    "input_type" : "voice"
+  }
+
+
+================================================================
+STEP 2 — NODE.JS BACKEND RECEIVES REQUEST
+================================================================
+
+  1. Validate JWT token
+     → invalid or expired → return 401 → stop
+     → valid → extract user_id from token
+
+  2. If input_type = voice:
+     → transcribe audio using speech-to-text service
+     → message = transcribed_text
+     → continue
+
+  3. Forward to AI Server — minimal payload only:
+     {
+       "message"    : "Add Physics exam on Monday at 5PM",
+       "user_id"    : "64f1a2b3c4d5e6f7a8b9c0d1",
+       "session_id" : "sess_7f3a9b2c1d4e5f6a",
+       "input_type" : "text",
+       "timestamp"  : "2026-03-17T14:30:00Z"
+     }
+
+  NOTE: Node.js does NOT fetch conversation history,
+  user settings, or any other data. AI server fetches
+  everything it needs directly from MongoDB.
+
+
+================================================================
+STEP 3 — AI SERVER RECEIVES REQUEST
+================================================================
+
+  AI server receives minimal payload from Node.js.
+  Before running the NLP pipeline, AI server fetches
+  all required data from MongoDB directly:
+
+  3.0 AI SERVER SELF-FETCH (at request start)
+  ─────────────────────────────────────────────────────────
+  → fetch user info:
+    db.users.findOne({ _id: user_id })
+    gets: name, username, timezone, is_active
+
+  → fetch user settings:
+    db.user_settings.findOne({ user_id: user_id })
+    gets: default_priority, default_duration,
+          default_reminder_minutes, behavioral_analytics_enabled,
+          analytics_min_tasks_threshold, preferred_learning_time,
+          google_calendar_sync_enabled, quiet_hours, language
+
+  → fetch conversation history:
+    db.conversation_history.find({ session_id: session_id })
+    .sort({ created_at: -1 }).limit(10)
+    gets: last 10 messages for context
+
+  → fetch active integrations:
+    db.integrations.find({ user_id: user_id, is_active: true })
+    gets: google_calendar token and calendar_id if connected
+
+  → check Redis for pending context:
+    GET context:{user_id}
+    gets: any pending state from previous turn
+
+  Now AI server has everything it needs to proceed.
+
+
+================================================================
+STEP 3.1 — PREPROCESSING
+================================================================
+
+  → convert to lowercase
+  → remove punctuation
+  → fix spelling errors
+  → too_short check → return early if input too short
+  → returns: { original, processed }
+
+  NOTE: NER and Gemini always receive original cased text.
+  Preprocessed text is only used for model classification.
+
+
+================================================================
+STEP 3.2 — CONTEXT MANAGER
+================================================================
+
+  → check fetched Redis state (from step 3.0)
+  → pending exists? → handle reply → stop or continue
+  → no pending → continue to Model 1
+
+
+================================================================
+STEP 3.3 — MODEL 1 — Input Type Classifier
+================================================================
+
+  Input: processed text
+  → command          → continue to Model 2
+  → general          → Gemini generates conversational reply
+  → out_of_scope     → Gemini generates out of scope reply
+  → confirmation     → Gemini: "not expecting a reply right now"
+  → multiple_command → Gemini: "one request at a time"
+
+
+================================================================
+STEP 3.4 — MODEL 2 — Intent Classifier
+================================================================
+
+  Input: processed text (only if Model 1 → command)
+  → scheduling_add | scheduling_delete | scheduling_update
+    scheduling_show | learning_create | learning_update
+    learning_delete | learning_show | behavioral
+
+
+================================================================
+STEP 3.5 — NER — Named Entity Recognition
+================================================================
+
+  Input: ORIGINAL cased text (not processed)
+  → extracts entities relevant to detected intent
+
+  For scheduling_add:
+    task_name, date, time, priority, duration, collaborator
+
+  For all other intents:
+    → entities will be defined when each command
+      flow is discussed individually
+    → entity scoping removes irrelevant entities
+      after extraction based on detected intent
+
+
+================================================================
+STEP 3.6 — DATE/TIME RESOLUTION
+================================================================
+
+  → AI server passes extracted date/time to Duckling directly
+  → Duckling returns ISO datetime + grain
+  → "Monday"     → 2026-03-23T00:00:00  grain: day
+  → "5PM"        → T17:00:00
+  → "next week"  → 2026-03-23T00:00:00  grain: week
+  → "in 2 weeks" → 2026-03-31T00:00:00  grain: week
+
+
+================================================================
+STEP 3.7 — HANDLER
+================================================================
+
+  → intent-specific business logic runs
+  → AI server performs ALL DB operations directly
+  → AI server manages Redis context directly
+  → AI server calls Google Calendar API if needed
+
+
+================================================================
+STEP 3.8 — SAVE USER MESSAGE TO CONVERSATION HISTORY
+================================================================
+
+  AI server saves user message directly:
+  db.conversation_history.insertOne({
+    session_id       : session_id,
+    role             : "user",
+    content          : original message,
+    transcribed_text : voice original or null,
+    input_type       : "text" / "voice",
+    intent           : detected intent,
+    entities         : extracted entities,
+    status           : "processed",
+    created_at       : now
+  })
+
+
+================================================================
+STEP 3.9 — GEMINI RESPONSE GENERATION
+================================================================
+
+  AI server builds prompt using:
+  → action result (what happened)
+  → user's name (from self-fetch)
+  → task/goal details
+  → any extras (collaborator invited, calendar synced)
+  → conversation history (for natural flow)
+
+  System instruction to Gemini:
+  "You are EVA, a friendly and intelligent academic assistant.
+   Generate a short, warm, natural reply based ONLY on the
+   action result and details provided. Use the user's name.
+   Be specific to what just happened — mention the task name,
+   date, time, and any other relevant details naturally.
+   Never give a generic confirmation. Max 2 sentences.
+   Do not ask follow-up questions unless specified.
+   Vary your phrasing — never repeat the same opener twice."
+
+  Examples of natural Gemini replies:
+    task added:
+    "Done Ali! Physics exam is locked in for Monday at 5PM —
+     I have also sent Ahmed a collaboration invite."
+
+    task deleted:
+    "Got it Sara, Chemistry assignment has been removed
+     from your schedule."
+
+    missing entity question:
+    "What date should I set for the Physics exam, Ali?"
+
+    duplicate warning:
+    "Heads up Ali — Physics exam already exists on Monday.
+     Want me to add another one anyway?"
+
+    cancelled:
+    "No problem, I have cancelled that for you."
+
+  AI server calls Gemini API directly with built prompt.
+  Gemini returns unique natural reply.
+
+
+================================================================
+STEP 3.10 — SAVE EVA REPLY TO CONVERSATION HISTORY
+================================================================
+
+  AI server saves EVA reply directly:
+  db.conversation_history.insertOne({
+    session_id : session_id,
+    role       : "eva",
+    content    : gemini_reply,
+    input_type : "text",
+    status     : "processed",
+    created_at : now
+  })
+
+  AI server also updates Chat_Session:
+  db.chat_sessions.updateOne(
+    { _id: session_id },
+    {
+      last_message_preview : gemini_reply[:100],
+      last_message_at      : now,
+      updated_at           : now
+    }
+  )
+
+
+================================================================
+STEP 3.11 — AI SERVER RETURNS TO NODE.JS (MINIMAL)
+================================================================
+
+  {
+    "status"        : "success",
+    "response_text" : "Done Ali! Physics exam is locked...",
+    "notifications" : [
+      {
+        user_id         : collaborator_user_id,
+        sender_id       : owner_user_id,
+        type            : "collaboration_invite",
+        reference_type  : "task",
+        reference_id    : task_id,
+        title           : "Collaboration invite",
+        message         : "Ali added you to Physics exam",
+        action_required : true,
+        delivery_channel: ["push", "in_app"]
+      }
+    ]
+  }
+
+  NOTE: AI server does NOT return full task objects or
+  extra data. Node.js only needs what it must act on.
+  Frontend fetches updated data via its own API calls.
+
+
+================================================================
+STEP 4 — NODE.JS RECEIVES AI SERVER RESPONSE
+================================================================
+
+  1. For each item in notifications array:
+     → insert into Notifications collection (Node.js → MongoDB)
+     → send FCM push to recipient device
+     → send email if recipient has email_notifications enabled
+
+  2. Return final response to frontend:
+     {
+       "status"       : "success",
+       "response_text": "Done Ali! Physics exam is locked...",
+       "session_id"   : "sess_..."
+     }
+
+
+================================================================
+STEP 5 — FRONTEND RECEIVES RESPONSE
+================================================================
+
+  → Display EVA reply in chat
+  → Frontend makes separate API call to fetch updated tasks
+    (Node.js → AI server or direct — depending on route)
+  → Show any in-app notifications
+
+
+================================================================
+COMPLETE REQUEST LIFECYCLE (SUMMARY)
+================================================================
+
+  Frontend
+    → sends: message, session_id, jwt_token, input_type
+    ↓
+  Node.js
+    → validates JWT → extracts user_id
+    → transcribes voice if needed
+    → forwards minimal payload to AI server
+    ↓
+  AI Server
+    → self-fetches: user info, settings, conversation
+      history, integrations — all from MongoDB directly
+    → runs full NLP pipeline
+    → performs ALL chat-related DB operations directly:
+        saves user message, saves EVA reply,
+        updates session, inserts/updates/deletes tasks,
+        logs activity, syncs calendar
+    → calls Gemini directly for response
+    → returns: status, response_text, notifications array
+    ↓
+  Node.js
+    → dispatches notifications (FCM, email)
+    → returns response_text to frontend
+    ↓
+  Frontend
+    → displays EVA reply
+    → fetches updated data as needed
+
+
+================================================================
+WHO OWNS WHICH DB OPERATIONS
+================================================================
+
+  AI Server → MongoDB (direct, all chat-related):
+    Tasks                insert / update / delete / query
+    Learning_Goals       insert / update / delete / query
+    Roadmap_Topics       insert / update / delete / query
+    Activity_Logs        insert
+    Conversation_History insert (user + EVA messages)
+    Chat_Sessions        update (last message, preview)
+    User_Settings        read only
+    Users                read only
+    Friends              read only
+    Integrations         read only
+
+  Node.js → MongoDB (non-chat operations):
+    Users                insert / update (auth, profile)
+    Friends              insert / update (friend system)
+    Notifications        insert / update (from AI payloads)
+    User_Settings        insert / update (settings page)
+    Integrations         insert / update (OAuth setup)
+    Chat_Sessions        insert (create new session)

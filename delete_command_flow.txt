@@ -1,0 +1,353 @@
+================================================================
+SCHEDULING — DELETE COMMAND FLOW (FINAL)
+AI Server handles all DB operations directly
+================================================================
+
+DECISIONS LOCKED
+================================================================
+
+  1. Soft delete only — is_deleted = true, never hard delete
+  2. User must confirm before any deletion happens
+  3. 0 matches   → not found reply → stop
+  4. 1 match     → show task → yes/no confirmation
+  5. 2-5 matches → numbered list → user picks one or "all"
+  6. 6+ matches  → too broad → ask user to narrow down
+  7. No entities → ask user what to delete (free_text)
+  8. Bulk delete requires separate yes/no confirmation
+  9. Google Calendar event deleted if event_id exists
+  10. Collaborators notified if task was collaborative
+  11. Activity log inserted after every deletion
+  12. Gemini generates all replies — natural, specific
+
+
+================================================================
+NER ENTITIES FOR DELETE
+================================================================
+
+  Extracted from original cased text:
+    task_name  → name or partial name of the task
+    date       → specific or relative date
+    priority   → low / medium / high
+    status     → pending / ongoing / complete
+
+  Examples:
+    "delete physics exam"
+      → task_name: "Physics exam"
+
+    "delete my high priority tasks on Monday"
+      → priority: "high", date: "Monday"
+
+    "remove all pending tasks"
+      → status: "pending"
+
+    "delete the exam on Monday"
+      → task_name: "exam", date: "Monday"
+
+
+================================================================
+PIPELINE (inside AI Server)
+================================================================
+
+  REQUEST RECEIVED FROM NODE.JS
+  { message, user_id, session_id, input_type, timestamp }
+  ↓
+  AI SERVER SELF-FETCH
+  → user info, settings, conversation history,
+    integrations, Redis context
+  ↓
+  PREPROCESSING
+  → lowercase only + too_short check
+  ↓
+  CONTEXT MANAGER
+  → check Redis for pending state
+  → pending exists? → handle reply → stop or continue
+  → no pending → continue to Model 1
+  ↓
+  MODEL 1 → command → continue
+  ↓
+  MODEL 2 → scheduling_delete → continue
+  ↓
+  NER → original cased text
+  → extracts: task_name, date, priority, status
+  ↓
+  ENTITY SCOPING
+  → keep : task_name, date, priority, status
+  → drop : anything else
+  ↓
+  HANDLER — handlers/scheduling/delete.py
+
+
+================================================================
+STEP 1 — ENTITY CHECK
+================================================================
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ NO entities extracted                                   │
+  │                                                         │
+  │ Example: "delete a task" / "remove something"           │
+  │                                                         │
+  │ → set Redis:                                            │
+  │   {                                                     │
+  │     expected_response : "free_text",                    │
+  │     pending_action    : {                               │
+  │       intent   : "delete",                              │
+  │       task_ids : [],                                    │
+  │       tasks    : [],                                    │
+  │       bulk     : false,                                 │
+  │       entities : {}                                     │
+  │     }                                                   │
+  │   }                                                     │
+  │                                                         │
+  │ → Gemini:                                               │
+  │ EVA: "Which task would you like to delete, Ali?         │
+  │       You can say the name, date, or priority."         │
+  │ STOP                                                    │
+  │                                                         │
+  │ → context manager handles reply (see context doc)       │
+  │ → reply treated as task_name, merged into entities      │
+  │ → handler re-entered from STEP 1                        │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ entities present → continue to STEP 2                   │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 2 — DATE RESOLUTION
+================================================================
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ date present                                            │
+  │ → pass to Duckling                                      │
+  │ → resolve to ISO date                                   │
+  │ → build range: start_of_day → end_of_day               │
+  │ → continue to STEP 3                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ date absent → no date filter → continue to STEP 3       │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 3 — QUERY TASKS
+================================================================
+
+  AI server queries Tasks directly:
+
+  query = {
+    owner_id   : user_id,
+    is_deleted : false
+  }
+
+  if task_name present:
+    query["title"] = { $regex: task_name, $options: "i" }
+
+  if date present (resolved):
+    query["due_datetime"] = { $gte: start_of_day,
+                               $lte: end_of_day }
+
+  if priority present:
+    query["priority"] = priority
+
+  if status present:
+    query["status"] = status
+
+  results = db.tasks.find(query)
+            .sort({ due_datetime: 1 })
+            .limit(10)
+
+
+================================================================
+STEP 4 — HANDLE QUERY RESULTS
+================================================================
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 0 tasks found                                           │
+  │                                                         │
+  │ → Gemini:                                               │
+  │ EVA: "I couldn't find any tasks matching that, Ali.     │
+  │       Double check the name or date?"                   │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 1 task found                                            │
+  │                                                         │
+  │ → set Redis:                                            │
+  │   {                                                     │
+  │     expected_response : "yes_no",                       │
+  │     pending_action    : {                               │
+  │       intent   : "delete",                              │
+  │       task_ids : [ task_id ],                           │
+  │       tasks    : [{ title, due_datetime, priority }],   │
+  │       bulk     : false,                                 │
+  │       entities : { ...original entities... }            │
+  │     }                                                   │
+  │   }                                                     │
+  │                                                         │
+  │ → Gemini:                                               │
+  │ EVA: "I found Physics exam on Monday at 5PM.            │
+  │       Want me to delete it?"                            │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 2-5 tasks found                                         │
+  │                                                         │
+  │ → set Redis:                                            │
+  │   {                                                     │
+  │     expected_response : "number",                       │
+  │     pending_action    : {                               │
+  │       intent   : "delete",                              │
+  │       task_ids : [ id1, id2, id3 ],                     │
+  │       tasks    : [{ title, due_datetime, priority }...],│
+  │       bulk     : false,                                 │
+  │       entities : { ...original entities... }            │
+  │     }                                                   │
+  │   }                                                     │
+  │                                                         │
+  │ → Gemini:                                               │
+  │ EVA: "I found 3 tasks, Ali. Which one?                  │
+  │       1. Physics exam — Monday 5PM (high)               │
+  │       2. Physics lab — Tuesday 3PM (medium)             │
+  │       3. Physics quiz — Wednesday 2PM (low)             │
+  │       Or say 'all' to delete all of them."              │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 6+ tasks found (too broad)                              │
+  │                                                         │
+  │ → do NOT set Redis pending state                        │
+  │ → Gemini:                                               │
+  │ EVA: "That matches quite a few tasks, Ali.              │
+  │       Can you narrow it down with a name,               │
+  │       date, or priority?"                               │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 5 — PERFORM DELETION
+================================================================
+
+  Reached after user confirms via context manager.
+  task_ids available from Redis pending state.
+
+  For each task_id in task_ids:
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ SOFT DELETE                                             │
+  │                                                         │
+  │ db.tasks.updateOne(                                     │
+  │   { _id: task_id },                                     │
+  │   {                                                     │
+  │     is_deleted : true,                                  │
+  │     deleted_at : now,                                   │
+  │     updated_at : now                                    │
+  │   }                                                     │
+  │ )                                                       │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ ACTIVITY LOG                                            │
+  │                                                         │
+  │ db.activity_logs.insertOne({                            │
+  │   user_id          : user_id,                           │
+  │   task_id          : task_id,                           │
+  │   action_type      : "task_deleted",                    │
+  │   action_timestamp : now,                               │
+  │   day_of_week      : task.due_datetime.weekday(),       │
+  │   hour_of_day      : task.due_datetime.hour,            │
+  │   task_priority    : task.priority,                     │
+  │   subject          : task.title,                        │
+  │   source           : "scheduling_module"                │
+  │ })                                                      │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ GOOGLE CALENDAR SYNC                                    │
+  │                                                         │
+  │ if task.google_calendar_event_id exists:                │
+  │   → call Google Calendar API delete_event directly      │
+  │   → on failure: log silently, do not block              │
+  │ else:                                                   │
+  │   → skip                                                │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ COLLABORATOR NOTIFICATION                               │
+  │                                                         │
+  │ if task.collaborators not empty:                        │
+  │   for each collaborator with status "accepted":         │
+  │     → build notification payload:                       │
+  │       {                                                 │
+  │         user_id         : collaborator.user_id,         │
+  │         sender_id       : user_id,                      │
+  │         type            : "task_deleted",               │
+  │         reference_type  : "task",                       │
+  │         reference_id    : task_id,                      │
+  │         title           : "Shared task removed",        │
+  │         message         : "[name] deleted [task_title]",│
+  │         action_required : false,                        │
+  │         delivery_channel: ["push", "in_app"]            │
+  │       }                                                 │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 6 — GEMINI RESPONSE
+================================================================
+
+  action_context = {
+    action    : "task_deleted",
+    username  : user.name,
+    deleted   : [{ title, due_datetime, priority }...],
+    count     : len(task_ids),
+    bulk      : bulk flag from Redis
+  }
+
+  Single task deleted:
+  "Done Ali — Physics exam has been removed
+   from your schedule."
+
+  Multiple tasks deleted:
+  "All 3 Physics tasks have been cleared, Ali.
+   Your week is looking a lot lighter now."
+
+  Cancelled:
+  "No problem, I left Physics exam as it is."
+
+
+================================================================
+STEP 7 — SAVE MESSAGES AND RETURN
+================================================================
+
+  AI server saves user message → Conversation_History
+  AI server saves EVA reply   → Conversation_History
+  AI server updates Chat_Session (last_message_preview)
+
+  AI server returns to Node.js:
+  {
+    "status"        : "success",
+    "response_text" : "Done Ali — Physics exam removed...",
+    "notifications" : [ ...collaborator payloads if any... ]
+  }
+
+  Node.js dispatches notifications → returns to frontend.
+
+
+================================================================
+REMINDER CLEANUP (automatic)
+================================================================
+
+  Node.js reminder cron queries:
+    due_datetime - reminder_minutes_before = now
+    is_deleted = false
+    status = pending
+
+  Since soft delete sets is_deleted = true, deleted tasks
+  are automatically excluded from the reminder job.
+  No explicit reminder cancellation needed.
