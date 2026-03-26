@@ -26,6 +26,15 @@ _SYSTEM_INSTRUCTION = (
 _ACTION_GUIDANCE: Dict[str, str] = {
     "task_added": "Confirm the task was added with task name/date/time and any useful reminder context.",
     "task_deleted": "Confirm deletion naturally and reassure user politely.",
+    "delete_bulk_completed": "Confirm multiple tasks were deleted and mention count naturally.",
+    "delete_cancel_single": "Confirm deletion was cancelled and that the single task is unchanged.",
+    "delete_cancel_bulk": "Confirm bulk deletion was cancelled and tasks were left unchanged.",
+    "delete_missing_entities": "Ask which task to delete and suggest name, date, or priority.",
+    "delete_invalid_date": "Ask user to re-enter date in a clear way after parse failure.",
+    "delete_not_found": "Explain no matching tasks were found and suggest refining filters.",
+    "delete_single_confirm": "Ask for yes/no confirmation to delete one specific task.",
+    "delete_multi_list": "Introduce that multiple tasks were found and ask user to choose one or all.",
+    "delete_too_broad": "Ask user to narrow delete request because too many tasks matched.",
     "task_updated": "Mention what changed and keep it concise.",
     "tasks_shown": "Summarize visible tasks in a helpful conversational way.",
     "missing_task_name": "Ask for task name naturally.",
@@ -130,9 +139,54 @@ _FALLBACK_RESPONSES: Dict[str, List[str]] = {
         "All set {name}, {task_name} is now on your plan{date_time_suffix}.",
     ],
     "task_deleted": [
-        "Done {name}, I removed that task.",
-        "It is deleted, {name}.",
-        "Removed successfully, {name}.",
+        "Done {name}, I removed {task_name}.",
+        "{task_name} has been deleted, {name}.",
+        "Removed successfully, {name}. {task_name} is off your schedule now.",
+    ],
+    "delete_bulk_completed": [
+        "Done {name}, I deleted {count} tasks: {task_names}.",
+        "All set {name}. I removed {count} tasks ({task_names}).",
+        "Cleared, {name}. {count} tasks were deleted, including {task_names}.",
+    ],
+    "delete_cancel_single": [
+        "No problem {name}, I left {task_name} as it is.",
+        "Alright {name}, I did not delete {task_name}.",
+        "Understood {name}, {task_name} is still there.",
+    ],
+    "delete_cancel_bulk": [
+        "No problem {name}, I left those {count} tasks unchanged.",
+        "Alright {name}, I did not delete any of those tasks.",
+        "Understood {name}, those tasks were kept as they are.",
+    ],
+    "delete_missing_entities": [
+        "Which task should I delete, {name}? You can tell me the name, date, or priority.",
+        "I can do that, {name}. Which task do you want to remove?",
+        "Tell me what to delete, {name}. A task name, date, or priority is enough.",
+    ],
+    "delete_invalid_date": [
+        "I could not understand that date, {name}. Please share it again in another way.",
+        "That date did not parse correctly, {name}. Can you re-enter it?",
+        "Please give me the date again, {name}, so I can match the right task.",
+    ],
+    "delete_not_found": [
+        "I could not find any tasks matching {filters_summary}, {name}. Try refining the name or date.",
+        "No matching tasks found for {filters_summary}, {name}. Want to try a different filter?",
+        "I did not find tasks for {filters_summary}, {name}. Please narrow it down and try again.",
+    ],
+    "delete_single_confirm": [
+        "I found {task_name} on {due_datetime}, {name}. Should I delete it? Reply yes or no.",
+        "{name}, do you want me to delete {task_name} on {due_datetime}? Reply yes or no.",
+        "Ready to delete {task_name} on {due_datetime}, {name}. Confirm with yes or no.",
+    ],
+    "delete_multi_list": [
+        "I found {count} matching tasks, {name}.",
+        "There are {count} tasks matching that request, {name}.",
+        "I found several matches ({count}), {name}.",
+    ],
+    "delete_too_broad": [
+        "That matches too many tasks, {name}. Please narrow it by name, date, or priority.",
+        "I found a lot of tasks for that, {name}. Add a filter like date or task name.",
+        "This delete request is broad, {name}. Can you narrow it down a little?",
     ],
     "task_updated": [
         "Updated, {name}. Your task changes are saved.",
@@ -288,6 +342,14 @@ class GeminiService:
         task_name = str(action_context.get("task_name") or "your task")
         date = str(action_context.get("date") or "")
         time = str(action_context.get("time") or "")
+        due_datetime = str(action_context.get("due_datetime") or "the scheduled time")
+        priority = str(action_context.get("priority") or "")
+        filters_summary = str(action_context.get("filters_summary") or "those filters")
+        task_names = str(action_context.get("task_names") or "those tasks")
+        try:
+            count = int(action_context.get("count") or 0)
+        except (TypeError, ValueError):
+            count = 0
         quiet_hours = str(action_context.get("quiet_hours") or "quiet hours")
         conflicting_task_name = str(
             action_context.get("conflicting_task_name") or "another task"
@@ -310,6 +372,12 @@ class GeminiService:
         return template.format(
             name=name,
             task_name=task_name,
+            due_datetime=due_datetime,
+            priority=priority,
+            filters_summary=filters_summary,
+            task_names=task_names,
+            count=count,
+            date=date,
             date_time_suffix=date_time_suffix,
             quiet_hours=quiet_hours,
             conflicting_task_name=conflicting_task_name,

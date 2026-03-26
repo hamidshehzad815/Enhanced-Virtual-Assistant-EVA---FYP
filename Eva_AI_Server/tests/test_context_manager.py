@@ -47,6 +47,31 @@ class TestContextManager(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(merged["date"], "monday")
         mock_delete.assert_awaited_once()
 
+    async def test_free_text_delete_defaults_to_task_name(self):
+        context = {
+            "pending_action": {
+                "intent": "delete",
+                "entities": {
+                    "priority": "high",
+                },
+            }
+        }
+
+        with patch(
+            "context.context_manager.redis_client.delete_context",
+            new=AsyncMock(return_value=True),
+        ) as mock_delete:
+            merged = await handle_free_text_reply(
+                "507f1f77bcf86cd799439011",
+                context,
+                "Physics Exam",
+            )
+
+        self.assertEqual(merged["task_name"], "Physics Exam")
+        self.assertEqual(merged["priority"], "high")
+        self.assertNotIn("free_text_reply", merged)
+        mock_delete.assert_awaited_once()
+
     def test_yes_no_handling(self):
         self.assertEqual(handle_yes_no_reply("yes"), "yes")
         self.assertEqual(handle_yes_no_reply("go ahead"), "yes")

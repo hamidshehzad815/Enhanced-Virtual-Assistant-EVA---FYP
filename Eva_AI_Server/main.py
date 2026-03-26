@@ -249,9 +249,14 @@ async def process_message(payload: ProcessRequest):
                     message,
                 )
 
-                if pending_intent in {"add", "scheduling_add"}:
+                if pending_intent in {"add", "scheduling_add", "delete", "scheduling_delete"}:
+                    routed_intent = (
+                        "scheduling_add"
+                        if pending_intent in {"add", "scheduling_add"}
+                        else "scheduling_delete"
+                    )
                     routed_result = await route_intent(
-                        "scheduling_add",
+                        routed_intent,
                         entities=merged_entities,
                         context={
                             **route_context_base,
@@ -328,9 +333,17 @@ async def process_message(payload: ProcessRequest):
                     }
 
                 yes_no_value = handle_yes_no_reply(processed["processed"])
-                if pending_intent in {"add", "scheduling_add"} and yes_no_value in {"yes", "no"}:
+                if (
+                    pending_intent in {"add", "scheduling_add", "delete", "scheduling_delete"}
+                    and yes_no_value in {"yes", "no"}
+                ):
+                    routed_intent = (
+                        "scheduling_add"
+                        if pending_intent in {"add", "scheduling_add"}
+                        else "scheduling_delete"
+                    )
                     routed_result = await route_intent(
-                        "scheduling_add",
+                        routed_intent,
                         entities=dict(pending_action.get("entities") or {}),
                         context={
                             **route_context_base,
@@ -353,6 +366,24 @@ async def process_message(payload: ProcessRequest):
                         "notifications": routed_result.get("notifications", []),
                         "response_text": routed_result.get("response_text")
                         or _safe_reply("pending_yes_no_processed", user_name, history),
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                if pending_intent in {"delete", "scheduling_delete"} and yes_no_value == "invalid":
+                    if user_name:
+                        response_text = f"Just yes or no will do, {user_name}."
+                    else:
+                        response_text = "Just yes or no will do."
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "classification": classification,
+                        "expected_response": "yes_no",
+                        "parsed_value": yes_no_value,
+                        "response_text": response_text,
                         "user_name": user_name,
                         "settings": settings_data,
                     }
