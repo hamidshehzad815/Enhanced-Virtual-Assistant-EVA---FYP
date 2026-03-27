@@ -5,6 +5,7 @@ Uses Duckling client to normalize natural-language entity values.
 from typing import Any, Dict
 
 from services.duckling import duckling_client
+from utils.timezone_utils import resolve_timezone_name
 
 
 async def _resolve_single_date(value: Any, timezone: str) -> Any:
@@ -43,28 +44,49 @@ async def resolve_all(entities: Dict[str, Any], timezone: str = "UTC") -> Dict[s
         return {}
 
     resolved = dict(entities)
+    normalized_timezone = resolve_timezone_name(timezone)
 
     if "date" in resolved:
-        resolved["date"] = await _resolve_value_list(resolved["date"], _resolve_single_date, timezone)
+        resolved["date"] = await _resolve_value_list(
+            resolved["date"],
+            _resolve_single_date,
+            normalized_timezone,
+        )
 
     if "new_date" in resolved:
-        resolved["new_date"] = await _resolve_value_list(resolved["new_date"], _resolve_single_date, timezone)
+        resolved["new_date"] = await _resolve_value_list(
+            resolved["new_date"],
+            _resolve_single_date,
+            normalized_timezone,
+        )
 
     if "start_date" in resolved:
-        resolved["start_date"] = await _resolve_value_list(resolved["start_date"], _resolve_single_date, timezone)
+        resolved["start_date"] = await _resolve_value_list(
+            resolved["start_date"],
+            _resolve_single_date,
+            normalized_timezone,
+        )
 
     if "new_start_date" in resolved:
         resolved["new_start_date"] = await _resolve_value_list(
             resolved["new_start_date"],
             _resolve_single_date,
-            timezone,
+            normalized_timezone,
         )
 
     if "time" in resolved:
-        resolved["time"] = await _resolve_value_list(resolved["time"], _resolve_single_time, timezone)
+        resolved["time"] = await _resolve_value_list(
+            resolved["time"],
+            _resolve_single_time,
+            normalized_timezone,
+        )
 
     if "new_time" in resolved:
-        resolved["new_time"] = await _resolve_value_list(resolved["new_time"], _resolve_single_time, timezone)
+        resolved["new_time"] = await _resolve_value_list(
+            resolved["new_time"],
+            _resolve_single_time,
+            normalized_timezone,
+        )
 
     if "duration" in resolved:
         resolved["duration"] = await _resolve_value_list(resolved["duration"], _resolve_single_duration)

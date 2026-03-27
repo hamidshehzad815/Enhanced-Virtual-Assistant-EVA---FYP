@@ -788,7 +788,7 @@ class TestDeleteHandlerPhase18(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertEqual(result["entities"]["raw"]["task_name"], "physics exam")
-        self.assertEqual(result["entities"]["scoped"], {"task_name": "physics exam", "date": "Monday"})
+        self.assertEqual(result["entities"]["scoped"], {"task_name": "physics exam", "date": "monday"})
         self.assertNotIn("time", result["entities"]["scoped"])
         self.assertNotIn("duration", result["entities"]["scoped"])
         self.assertNotIn("collaborator", result["entities"]["scoped"])
@@ -796,6 +796,57 @@ class TestDeleteHandlerPhase18(unittest.IsolatedAsyncioTestCase):
 
         routed_entities = mock_route.await_args.kwargs["entities"]
         self.assertEqual(routed_entities, {"task_name": "physics exam", "date": "2026-03-30"})
+
+    async def test_add_process_repairs_weekday_fragment_day_to_monday(self):
+        route_result = {
+            "status": "pending",
+            "intent": "scheduling_add",
+            "response_text": "Need time",
+            "notifications": [],
+        }
+
+        with patch(
+            "main.self_fetch_all",
+            new=AsyncMock(return_value=_fetched(context=None)),
+        ), patch.object(
+            ai_main.classifier1, "loaded", True
+        ), patch.object(
+            ai_main.classifier1,
+            "predict",
+            return_value={"label": "command"},
+        ), patch.object(
+            ai_main.classifier2, "loaded", True
+        ), patch.object(
+            ai_main.classifier2,
+            "predict",
+            return_value={"label": "add"},
+        ), patch.object(
+            ai_main.ner_extractor, "loaded", True
+        ), patch.object(
+            ai_main.ner_extractor,
+            "extract",
+            return_value={"task_name": "chemistry assignment", "date": "day"},
+        ), patch(
+            "main.resolve_all",
+            new=AsyncMock(
+                side_effect=lambda entities, timezone="UTC": entities,
+            ),
+        ), patch(
+            "main.route_intent",
+            new=AsyncMock(return_value=route_result),
+        ) as mock_route:
+            result = await ai_main.process_message(
+                ai_main.ProcessRequest(
+                    message="add chemistry assignment on monday",
+                    user_id=USER_ID,
+                    session_id=SESSION_ID,
+                    input_type="text",
+                )
+            )
+
+        self.assertEqual(result["entities"]["raw"]["date"], "monday")
+        self.assertEqual(result["entities"]["scoped"]["date"], "monday")
+        self.assertEqual(mock_route.await_args.kwargs["entities"]["date"], "monday")
 
     async def test_phase18_e2e_seeded_single_task_deleted_via_chat(self):
         tasks_store = [
@@ -825,7 +876,7 @@ class TestDeleteHandlerPhase18(unittest.IsolatedAsyncioTestCase):
             pending_state["context"] = None
             return True
 
-        async def fake_find_tasks_for_delete(_user_id, filters):
+        async def fake_find_tasks_for_delete(_user_id, filters, timezone_name="UTC"):
             task_name = str(filters.get("task_name") or "").lower()
             rows = []
             for task in tasks_store:
@@ -1002,7 +1053,7 @@ class TestDeleteHandlerPhase18(unittest.IsolatedAsyncioTestCase):
             pending_state["context"] = None
             return True
 
-        async def fake_find_tasks_for_delete(_user_id, filters):
+        async def fake_find_tasks_for_delete(_user_id, filters, timezone_name="UTC"):
             priority = str(filters.get("priority") or "").lower()
             rows = []
             for task in tasks_store:

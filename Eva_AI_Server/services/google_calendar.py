@@ -2,10 +2,12 @@
 Google Calendar client service for task sync operations.
 Phase 11: non-blocking calendar sync for scheduling add flow.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 import httpx
+
+from utils.timezone_utils import get_zoneinfo, resolve_timezone_name
 
 
 class GoogleCalendarClient:
@@ -32,21 +34,28 @@ class GoogleCalendarClient:
             raise ValueError("task_data.due_datetime must be datetime or ISO string")
 
         duration_minutes = int(task_data.get("duration_minutes", 120))
-        end_dt = due_dt + timedelta(minutes=duration_minutes)
+        timezone_name = resolve_timezone_name(task_data.get("timezone") or "UTC")
+        zone = get_zoneinfo(timezone_name)
+        if due_dt.tzinfo is None:
+            due_dt_utc = due_dt.replace(tzinfo=timezone.utc)
+        else:
+            due_dt_utc = due_dt.astimezone(timezone.utc)
 
-        timezone = task_data.get("timezone") or "UTC"
+        start_local = due_dt_utc.astimezone(zone)
+        end_local = start_local + timedelta(minutes=duration_minutes)
+
         title = task_data.get("title") or "EVA Task"
         description = task_data.get("description")
 
         payload: Dict[str, Any] = {
             "summary": title,
             "start": {
-                "dateTime": due_dt.isoformat(),
-                "timeZone": timezone,
+                "dateTime": start_local.isoformat(),
+                "timeZone": timezone_name,
             },
             "end": {
-                "dateTime": end_dt.isoformat(),
-                "timeZone": timezone,
+                "dateTime": end_local.isoformat(),
+                "timeZone": timezone_name,
             },
         }
 

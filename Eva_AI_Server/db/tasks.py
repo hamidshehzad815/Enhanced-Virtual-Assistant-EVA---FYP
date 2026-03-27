@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 from bson import ObjectId
 
 from config.database import get_db
+from utils.timezone_utils import local_day_bounds_to_utc_naive
 
 
 def _to_object_id(value: Any) -> Any:
@@ -83,14 +84,22 @@ async def update_task(task_id: str, update_data: Dict[str, Any]) -> bool:
     return result.modified_count > 0
 
 
-async def find_duplicate(owner_id: str, title: str, due_date: Union[str, date, datetime]) -> Optional[Dict[str, Any]]:
+async def find_duplicate(
+    owner_id: str,
+    title: str,
+    due_date: Union[str, date, datetime],
+    timezone_name: str = "UTC",
+) -> Optional[Dict[str, Any]]:
     """
     Find a non-deleted task with same title on the same day.
     """
     if not title:
         return None
 
-    day_start, day_end = _day_bounds(due_date)
+    if isinstance(due_date, (str, date)):
+        day_start, day_end = local_day_bounds_to_utc_naive(due_date, timezone_name)
+    else:
+        day_start, day_end = _day_bounds(due_date)
     if not day_start or not day_end:
         return None
 
@@ -200,7 +209,11 @@ async def find_overlapping_task(
     return conflict
 
 
-def _build_delete_query(owner_value: Any, filters: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+def _build_delete_query(
+    owner_value: Any,
+    filters: Optional[Dict[str, Any]] = None,
+    timezone_name: str = "UTC",
+) -> Dict[str, Any]:
     filters = filters or {}
     query: Dict[str, Any] = {
         "owner_id": owner_value,
@@ -224,7 +237,7 @@ def _build_delete_query(owner_value: Any, filters: Optional[Dict[str, Any]] = No
     else:
         due_date = filters.get("date")
         if due_date:
-            day_start, day_end = _day_bounds(due_date)
+            day_start, day_end = local_day_bounds_to_utc_naive(due_date, timezone_name)
             if day_start and day_end:
                 query["due_datetime"] = {"$gte": day_start, "$lte": day_end}
 
@@ -242,6 +255,7 @@ def _build_delete_query(owner_value: Any, filters: Optional[Dict[str, Any]] = No
 async def find_tasks_for_delete(
     user_id: str,
     filters: Optional[Dict[str, Any]] = None,
+    timezone_name: str = "UTC",
 ) -> List[Dict[str, Any]]:
     """
     Return matching non-deleted tasks for delete flow.
@@ -254,7 +268,7 @@ async def find_tasks_for_delete(
         owner_variants.append(user_id)
 
     for owner_value in owner_variants:
-        query = _build_delete_query(owner_value, filters)
+        query = _build_delete_query(owner_value, filters, timezone_name=timezone_name)
         cursor = db.tasks.find(query).sort("due_datetime", 1).limit(10)
         rows = await cursor.to_list(length=10)
         if rows:

@@ -18,6 +18,11 @@ from db.tasks import find_tasks_for_delete, get_task_by_id, soft_delete_task
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
+from utils.timezone_utils import (
+    local_day_bounds_to_utc_naive,
+    resolve_timezone_name,
+    utc_naive_to_local,
+)
 
 
 def _first_value(value: Any) -> Any:
@@ -68,20 +73,12 @@ def _normalize_status(value: Any) -> str:
     return ""
 
 
-def _format_due_display(value: Any) -> str:
-    if isinstance(value, datetime):
-        return value.strftime("%A, %d %b %Y at %I:%M %p").replace(" 0", " ")
-
-    raw = _coerce_text(value)
-    if not raw:
-        return ""
-
-    normalized = raw.replace("Z", "+00:00")
-    try:
-        parsed = datetime.fromisoformat(normalized)
-        return parsed.strftime("%A, %d %b %Y at %I:%M %p").replace(" 0", " ")
-    except ValueError:
+def _format_due_display(value: Any, timezone_name: str) -> str:
+    local_dt = utc_naive_to_local(value, timezone_name)
+    if local_dt is None:
+        raw = _coerce_text(value)
         return raw
+    return local_dt.strftime("%A, %d %b %Y at %I:%M %p").replace(" 0", " ")
 
 
 def _serialize_due_datetime(value: Any) -> str:
@@ -214,13 +211,14 @@ def not_found_prompt(
 def single_confirm_prompt(
     username: Optional[str],
     task: Dict[str, Any],
+    timezone_name: str,
     history: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     return gemini_service.generate_reply(
         {
             "action": "delete_single_confirm",
             "task_name": _coerce_text(task.get("title")) or "that task",
-            "due_datetime": _format_due_display(task.get("due_datetime")),
+            "due_datetime": _format_due_display(task.get("due_datetime"), timezone_name),
             "priority": _coerce_text(task.get("priority")) or "medium",
         },
         username,
@@ -231,6 +229,7 @@ def single_confirm_prompt(
 def multi_list_prompt(
     username: Optional[str],
     tasks: List[Dict[str, Any]],
+    timezone_name: str,
     history: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     intro = gemini_service.generate_reply(
@@ -245,7 +244,7 @@ def multi_list_prompt(
     lines: List[str] = []
     for index, task in enumerate(tasks, start=1):
         title = _coerce_text(task.get("title")) or "Untitled task"
-        due_display = _format_due_display(task.get("due_datetime"))
+        due_display = _format_due_display(task.get("due_datetime"), timezone_name)
         priority = _coerce_text(task.get("priority")).lower() or "medium"
         if due_display:
             lines.append(f"{index}. {title} - {due_display} ({priority})")
@@ -327,6 +326,7 @@ def _delete_success_prompt(
     username: Optional[str],
     deleted_tasks: List[Dict[str, Any]],
     bulk: bool,
+    timezone_name: str,
     history: Optional[List[Dict[str, Any]]] = None,
 ) -> str:
     if len(deleted_tasks) == 1 and not bulk:
@@ -335,7 +335,7 @@ def _delete_success_prompt(
             {
                 "action": "task_deleted",
                 "task_name": _coerce_text(first.get("title")) or "that task",
-                "due_datetime": _format_due_display(first.get("due_datetime")),
+                "due_datetime": _format_due_display(first.get("due_datetime"), timezone_name),
                 "priority": _coerce_text(first.get("priority")) or "medium",
             },
             username,
@@ -413,13 +413,9 @@ async def _resolve_date_filter(
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", candidate):
         return None, None
 
-    try:
-        day = datetime.strptime(candidate, "%Y-%m-%d")
-    except ValueError:
+    day_start, day_end = local_day_bounds_to_utc_naive(candidate, timezone)
+    if not day_start or not day_end:
         return None, None
-
-    day_start = day.replace(hour=0, minute=0, second=0, microsecond=0)
-    day_end = day.replace(hour=23, minute=59, second=59, microsecond=999999)
     return candidate, {"start": day_start, "end": day_end}
 
 
@@ -439,7 +435,7 @@ async def handle_scheduling_delete(
     input_type = str(context.get("input_type") or "text")
 
     user_name = user.get("name")
-    timezone = user.get("timezone") or "UTC"
+    timezone = resolve_timezone_name(user.get("timezone"))
     pending_context = context.get("pending_context") or {}
     pending_action = pending_context.get("pending_action") or {}
     pending_reply_type = context.get("pending_reply_type")
@@ -567,7 +563,13 @@ async def handle_scheduling_delete(
                     "match_count": 0,
                 }
 
-            response_text = _delete_success_prompt(user_name, deleted_tasks, is_bulk, history)
+            response_text = _delete_success_prompt(
+                user_name,
+                deleted_tasks,
+                is_bulk,
+                timezone,
+                history,
+            )
             await _save_turn(
                 session_id,
                 user_message,
@@ -693,7 +695,11 @@ async def handle_scheduling_delete(
         query_filters["status"] = status
 
     # Step 3: query tasks.
-    matches = await find_tasks_for_delete(user_id, query_filters)
+    matches = await find_tasks_for_delete(
+        user_id,
+        query_filters,
+        timezone_name=timezone,
+    )
     match_count = len(matches)
 
     # Step 4: handle result count.
@@ -748,7 +754,7 @@ async def handle_scheduling_delete(
                 expected_response="yes_no",
             ),
         )
-        response_text = single_confirm_prompt(user_name, task_info, history)
+        response_text = single_confirm_prompt(user_name, task_info, timezone, history)
         await _save_turn(
             session_id,
             user_message,
@@ -808,7 +814,7 @@ async def handle_scheduling_delete(
                 expected_response="number",
             ),
         )
-        response_text = multi_list_prompt(user_name, task_list, history)
+        response_text = multi_list_prompt(user_name, task_list, timezone, history)
         await _save_turn(
             session_id,
             user_message,

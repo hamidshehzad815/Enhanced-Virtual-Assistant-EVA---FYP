@@ -18,6 +18,11 @@ from db.tasks import find_duplicate, find_overlapping_task, insert_task, update_
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
+from utils.timezone_utils import (
+    local_datetime_to_utc_naive,
+    resolve_timezone_name,
+    utc_naive_to_local,
+)
 
 
 def _to_object_id(value: Any) -> Any:
@@ -142,8 +147,8 @@ def _coerce_datetime(value: Any) -> Optional[datetime]:
         return None
 
 
-def _format_time_range(start_value: Any, duration_minutes: Any) -> str:
-    start_dt = _coerce_datetime(start_value)
+def _format_time_range(start_value: Any, duration_minutes: Any, timezone_name: str) -> str:
+    start_dt = utc_naive_to_local(start_value, timezone_name)
     if start_dt is None:
         return ""
 
@@ -485,7 +490,7 @@ async def handle_scheduling_add(
     input_type = str(context.get("input_type") or "text")
 
     user_name = user.get("name")
-    timezone = user.get("timezone") or "UTC"
+    timezone = resolve_timezone_name(user.get("timezone"))
 
     pending_context = context.get("pending_context") or {}
     pending_action = pending_context.get("pending_action") or {}
@@ -706,10 +711,13 @@ async def handle_scheduling_add(
                     candidate_time = f"{candidate:02d}:00:00"
                     if _find_quiet_hour_matches(settings, candidate_time):
                         continue
-                    candidate_due_datetime = datetime.strptime(
-                        f"{date_value} {candidate_time}",
-                        "%Y-%m-%d %H:%M:%S",
+                    candidate_due_datetime = local_datetime_to_utc_naive(
+                        date_value,
+                        candidate_time,
+                        timezone,
                     )
+                    if candidate_due_datetime is None:
+                        continue
                     conflict = await find_overlapping_task(
                         user_id,
                         candidate_due_datetime,
@@ -794,7 +802,50 @@ async def handle_scheduling_add(
             },
         }
 
-    due_datetime = datetime.strptime(f"{date_value} {time_value}", "%Y-%m-%d %H:%M:%S")
+    due_datetime = local_datetime_to_utc_naive(date_value, time_value, timezone)
+    if due_datetime is None:
+        pending_entities = {
+            **entities,
+            "task_name": task_name,
+            "date": date_value,
+        }
+        pending_entities.pop("time", None)
+        await redis_client.set_context(
+            user_id,
+            _pending_payload(
+                "add",
+                pending_entities,
+                expected_response="free_text",
+                missing_entity="time",
+            ),
+        )
+        response_text = gemini_service.generate_reply(
+            {
+                "action": "missing_time",
+                "task_name": task_name,
+                "date": _format_date_display(date_value),
+            },
+            user_name,
+            history,
+        )
+        await _save_turn(
+            session_id,
+            user_message,
+            response_text,
+            input_type,
+            "scheduling_add",
+            entities,
+        )
+        return {
+            "status": "pending",
+            "intent": "scheduling_add",
+            "response_text": response_text,
+            "notifications": [],
+            "pending": {
+                "expected_response": "free_text",
+                "missing_entity": "time",
+            },
+        }
 
     quiet_hour_matches = []
     if not allow_quiet_hours_override:
@@ -847,6 +898,7 @@ async def handle_scheduling_add(
         conflicting_time = _format_time_range(
             conflicting_task.get("due_datetime"),
             conflicting_task.get("duration", 120),
+            timezone,
         )
         response_text = gemini_service.generate_reply(
             {
@@ -886,9 +938,14 @@ async def handle_scheduling_add(
         }
 
     # Step 5: duplicate check.
-    duplicate = await find_duplicate(user_id, task_name, date_value)
+    duplicate = await find_duplicate(
+        user_id,
+        task_name,
+        date_value,
+        timezone_name=timezone,
+    )
     if duplicate and not force_duplicate:
-        duplicate_due_datetime = _coerce_datetime(duplicate.get("due_datetime"))
+        duplicate_due_datetime = utc_naive_to_local(duplicate.get("due_datetime"), timezone)
         duplicate_date_display = (
             _format_date_display(duplicate_due_datetime.strftime("%Y-%m-%d"))
             if duplicate_due_datetime

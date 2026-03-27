@@ -8,58 +8,115 @@
 const cron = require("node-cron");
 
 const logger = require("../config/logger");
-const { Task } = require("../models");
+const { Task, User } = require("../models");
 const { insert_and_dispatch } = require("../services/notification.service");
 
 let activeJob = null;
 let isRunning = false;
 
 const DEFAULT_REMINDER_MINUTES = 30;
+const TIMEZONE_ALIASES = {
+  UTC: "UTC",
+  GMT: "UTC",
+  PKT: "Asia/Karachi",
+  IST: "Asia/Kolkata",
+  PST: "America/Los_Angeles",
+  PDT: "America/Los_Angeles",
+  MST: "America/Denver",
+  MDT: "America/Denver",
+  CST: "America/Chicago",
+  CDT: "America/Chicago",
+  EST: "America/New_York",
+  EDT: "America/New_York",
+};
+
+const resolveTimezone = (timezoneValue) => {
+  const normalized = String(timezoneValue || "").trim();
+  if (!normalized) {
+    return "UTC";
+  }
+
+  const aliasKey = normalized.toUpperCase();
+  return TIMEZONE_ALIASES[aliasKey] || normalized;
+};
 
 const toDate = (value) => {
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 };
 
-const formatDue = (dueDate) => {
+const formatDue = (dueDate, timezoneValue = "UTC") => {
   const date = toDate(dueDate);
   if (!date) {
     return "your scheduled time";
   }
-  return date.toLocaleString("en-US", {
+  const timezone = resolveTimezone(timezoneValue);
+  const formatOptions = {
     year: "numeric",
     month: "short",
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
-  });
+    timeZone: timezone,
+  };
+
+  try {
+    return date.toLocaleString("en-US", formatOptions);
+  } catch (_error) {
+    return date.toLocaleString("en-US", {
+      year: "numeric",
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  }
 };
 
-const buildReminderNotification = (task) => ({
+const buildReminderNotification = (task, timezoneValue) => ({
   user_id: String(task.owner_id),
   sender_id: null,
   type: "task_reminder",
   reference_type: "task",
   reference_id: String(task._id),
   title: "Task reminder",
-  message: `Reminder: ${task.title} is coming up at ${formatDue(task.due_datetime)}.`,
+  message: `Reminder: ${task.title} is coming up at ${formatDue(task.due_datetime, timezoneValue)}.`,
   action_required: false,
   delivery_channel: ["push", "in_app"],
   scheduled_at: new Date(),
 });
 
-const buildOverdueNotification = (task) => ({
+const buildOverdueNotification = (task, timezoneValue) => ({
   user_id: String(task.owner_id),
   sender_id: null,
   type: "overdue_alert",
   reference_type: "task",
   reference_id: String(task._id),
   title: "Task overdue",
-  message: `Overdue: ${task.title} was due at ${formatDue(task.due_datetime)}.`,
+  message: `Overdue: ${task.title} was due at ${formatDue(task.due_datetime, timezoneValue)}.`,
   action_required: true,
   delivery_channel: ["push", "in_app"],
   scheduled_at: new Date(),
 });
+
+const loadUserTimezones = async (ownerIds) => {
+  if (!ownerIds.length) {
+    return new Map();
+  }
+
+  const users = await User.find(
+    { _id: { $in: ownerIds } },
+    { _id: 1, timezone: 1 },
+  ).lean();
+
+  const timezoneByUserId = new Map();
+  users.forEach((user) => {
+    const userId = String(user._id);
+    timezoneByUserId.set(userId, resolveTimezone(user.timezone));
+  });
+
+  return timezoneByUserId;
+};
 
 const sendReminderNotifications = async (now) => {
   const pendingTasks = await Task.find({
@@ -96,7 +153,14 @@ const sendReminderNotifications = async (now) => {
     return { checked: pendingTasks.length, sentFor: 0 };
   }
 
-  const payloads = dueForReminder.map(buildReminderNotification);
+  const ownerIds = [...new Set(dueForReminder.map((task) => task.owner_id))];
+  const timezoneByUserId = await loadUserTimezones(ownerIds);
+  const payloads = dueForReminder.map((task) =>
+    buildReminderNotification(
+      task,
+      timezoneByUserId.get(String(task.owner_id)) || "UTC",
+    ),
+  );
   const summary = await insert_and_dispatch(payloads);
 
   await Task.updateMany(
@@ -134,7 +198,14 @@ const sendOverdueAlerts = async (now) => {
     return { sentFor: 0 };
   }
 
-  const payloads = overdueTasks.map(buildOverdueNotification);
+  const ownerIds = [...new Set(overdueTasks.map((task) => task.owner_id))];
+  const timezoneByUserId = await loadUserTimezones(ownerIds);
+  const payloads = overdueTasks.map((task) =>
+    buildOverdueNotification(
+      task,
+      timezoneByUserId.get(String(task.owner_id)) || "UTC",
+    ),
+  );
   const summary = await insert_and_dispatch(payloads);
 
   await Task.updateMany(
