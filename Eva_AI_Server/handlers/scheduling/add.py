@@ -3,7 +3,7 @@ Phase 9 scheduling add handler.
 Implements required-entity prompts, behavioral suggestion, duplicate checks,
 time-overlap protection, and final task creation with history/session updates.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -329,7 +329,7 @@ async def _save_turn(
     intent: str,
     entities: Optional[Dict[str, Any]] = None,
 ) -> None:
-    now = datetime.utcnow()
+    now = datetime.now(dt_timezone.utc).replace(tzinfo=None)
     try:
         await insert_message(
             {
@@ -1007,7 +1007,7 @@ async def handle_scheduling_add(
         }
 
     reminder_minutes = int(settings.get("default_reminder_minutes", 30))
-    now = datetime.utcnow()
+    now = datetime.now(dt_timezone.utc).replace(tzinfo=None)
 
     # Step 7: insert task.
     task_payload = {

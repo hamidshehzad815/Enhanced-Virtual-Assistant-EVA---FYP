@@ -1,7 +1,7 @@
 """
 Task database operations for scheduling handlers.
 """
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 import re
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -72,7 +72,7 @@ async def update_task(task_id: str, update_data: Dict[str, Any]) -> bool:
     """Update task fields and return True when a document was updated."""
     db = get_db()
     payload = dict(update_data)
-    payload.setdefault("updated_at", datetime.utcnow())
+    payload.setdefault("updated_at", datetime.now(timezone.utc).replace(tzinfo=None))
 
     task_object_id = _to_object_id(task_id)
     query = {"_id": task_object_id}
@@ -283,7 +283,7 @@ async def soft_delete_task(task_id: str) -> bool:
     Returns True when a document matched.
     """
     db = get_db()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     payload = {
         "is_deleted": True,
         "deleted_at": now,
@@ -308,7 +308,7 @@ async def soft_delete_many(task_ids: List[str]) -> int:
         return 0
 
     db = get_db()
-    now = datetime.utcnow()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
     payload = {
         "is_deleted": True,
         "deleted_at": now,

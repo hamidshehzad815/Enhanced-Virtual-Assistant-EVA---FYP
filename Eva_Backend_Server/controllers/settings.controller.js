@@ -3,7 +3,7 @@
  * Provides authenticated settings read/update endpoints with quiet-hours support.
  */
 
-const { UserSetting } = require("../models");
+const { User, UserSetting } = require("../models");
 const { BadRequestError } = require("../middleware/errorHandler");
 
 const TIME_PATTERN = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
@@ -81,6 +81,23 @@ const normalizeQuietHours = (blocks) => {
   });
 };
 
+const normalizePushToken = (value, fieldName) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const token = String(value || "").trim();
+  if (!token) {
+    throw new BadRequestError(`${fieldName} cannot be empty`);
+  }
+
+  if (token.length > 4096) {
+    throw new BadRequestError(`${fieldName} is too long`);
+  }
+
+  return token;
+};
+
 const ensureUserSettings = async (userId) => {
   let settings = await UserSetting.findOne({ user_id: userId });
   if (!settings) {
@@ -140,6 +157,11 @@ const updateSettings = async (req, res, next) => {
     );
     const quietHoursEnd = normalizeTime(req.body.quiet_hours_end, "quiet_hours_end");
     const quietHours = normalizeQuietHours(req.body.quiet_hours);
+    const pushToken = normalizePushToken(req.body.push_token, "push_token");
+    const removePushToken = normalizePushToken(
+      req.body.remove_push_token,
+      "remove_push_token",
+    );
 
     if (notificationsEnabled !== undefined) {
       update.notifications_enabled = notificationsEnabled;
@@ -203,12 +225,39 @@ const updateSettings = async (req, res, next) => {
       update.has_quiet_hours = false;
     }
 
-    if (Object.keys(update).length === 0) {
+    const hasPushTokenMutation =
+      pushToken !== undefined || removePushToken !== undefined;
+
+    if (Object.keys(update).length === 0 && !hasPushTokenMutation) {
       throw new BadRequestError("No valid settings fields provided");
     }
 
-    Object.assign(settings, update);
-    await settings.save();
+    if (Object.keys(update).length > 0) {
+      Object.assign(settings, update);
+      await settings.save();
+    }
+
+    if (pushToken !== undefined) {
+      await User.updateOne(
+        { _id: req.userId },
+        {
+          $addToSet: {
+            push_tokens: pushToken,
+          },
+        },
+      );
+    }
+
+    if (removePushToken !== undefined) {
+      await User.updateOne(
+        { _id: req.userId },
+        {
+          $pull: {
+            push_tokens: removePushToken,
+          },
+        },
+      );
+    }
 
     res.json({
       status: "success",

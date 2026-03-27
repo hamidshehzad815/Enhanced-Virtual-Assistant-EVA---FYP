@@ -20,6 +20,9 @@ This project now has a complete and test-verified core for:
 - Reminder cron job (reminders + overdue alerts).
 - Quiet-hours and settings update APIs.
 - Timezone-safe scheduling/display behavior for core add/delete/reminder paths.
+- UTC-safe datetime writes in AI DB/helper paths (no project `datetime.utcnow()` usage).
+- Timezone-aware backend task date filtering (`GET /api/tasks?date=...` now user-local day aware).
+- Real FCM push dispatch path using Firebase Admin SDK (with token cleanup and explicit skip logging).
 
 Current implementation status through phase planning:
 
@@ -40,11 +43,11 @@ I validated status from real code and test execution (not checklist-only assumpt
 Latest test verification (March 27, 2026):
 
 - AI server: `73 passed` (`python3 -m pytest tests`)
-- Backend server: `10 passed` (`npm test`)
+- Backend server: `11 passed` (`npm test`)
 
 Observed warnings:
 
-- AI tests show deprecation warnings for `datetime.utcnow()` usage in some DB helper files.
+- AI test run shows a third-party `python_multipart` pending deprecation warning (not from EVA project code).
 - Backend tests show a non-blocking Node warning about `--localstorage-file` path during Jest run.
 
 ---
@@ -156,7 +159,9 @@ Implemented:
 - Notification persistence with per-channel processing.
 - Email delivery through SMTP when configured + enabled in user settings.
 - In-app record creation always supported.
-- Push dispatch path exists, but currently placeholder (logs + returns not-dispatched reason).
+- Push delivery through Firebase Admin (`sendEachForMulticast`) when Firebase credentials and device tokens are present.
+- Invalid push tokens are pruned from user records when FCM reports token-invalid errors.
+- Non-delivery is explicitly logged with actionable reasons (not configured / no tokens / FCM rejection).
 
 ### 5.4 Reminder Job (Phase 12+)
 
@@ -338,7 +343,7 @@ Coverage includes:
 Current result:
 
 - `3 test suites passed`
-- `10 tests passed`
+- `11 tests passed`
 
 Coverage includes:
 
@@ -359,6 +364,8 @@ Coverage includes:
 - Google integration connect/list + AI create/delete event interaction points.
 - Reminder cron notification system.
 - Settings and quiet-hours configuration path.
+- Backend task list date filtering aligned to user timezone day boundaries.
+- FCM push dispatch implementation in backend notification service (credential/token dependent).
 - Automated tests for both servers.
 
 ### 10.2 Pending / Not Yet Implemented
@@ -368,18 +375,16 @@ Coverage includes:
 - Friend system APIs/routes and deeper collaboration UX.
 - Notification center APIs/UI routes.
 - Profile APIs/UI routes.
-- Real FCM push delivery (currently placeholder in notification service).
-- Some timezone consistency gaps outside core chat flows:
-  - Backend `GET /api/tasks?date=...` uses UTC-day boundaries, not user-timezone day boundaries.
+- CI automation and release hardening (test pipeline, environment validation, production observability).
 
 ---
 
 ## 11) Risk & Technical Debt Snapshot
 
-1. Push notifications are not truly delivered yet.
-2. `datetime.utcnow()` deprecation warnings exist in some AI DB helpers.
-3. Backend task list date filter is UTC-day based and may not align with user-local calendar day.
-4. Update/show/learning handlers are still routed as recognized-but-not-implemented.
+1. Push delivery now exists in code, but still depends on correct runtime setup (Firebase credentials + registered device tokens).
+2. Update/show/learning handlers are still recognized-but-not-implemented.
+3. CI automation for both servers is not yet integrated (regression risk increases with phase expansion).
+4. Secrets hygiene remains critical (service-account and SMTP/JWT secrets must stay out of shared artifacts).
 
 ---
 
@@ -388,22 +393,22 @@ Coverage includes:
 ### Priority 1
 
 - Implement `scheduling_update` and `scheduling_show` handlers in AI.
-- Add timezone-aware date filtering for backend task list endpoint.
+- Add backend/API tests for update/show behavior parity with add/delete style confirmations.
 
 ### Priority 2
 
-- Implement real FCM token storage and dispatch.
-- Expand notification channel policies (user-level + event-level controls).
+- Complete learning handlers (`create/update/delete/show`) and expose matching backend routes.
+- Expand notification channel policies and user-level controls (per event type, quiet-hours interaction).
 
 ### Priority 3
 
-- Implement learning handlers (`create/update/delete/show`) and backend learning routes.
 - Add friends/profile/notification-center APIs if required by current milestone.
+- Add operational diagnostics endpoint or admin health checks for push/email delivery readiness.
 
 ### Priority 4
 
-- Resolve `datetime.utcnow()` deprecation warnings by moving to timezone-aware UTC datetimes.
 - Add CI pipeline for running both test suites automatically per change.
+- Add pre-deploy env validation for required keys (`SMTP_*`, `FIREBASE_*`, AI connection) and fail fast on misconfiguration.
 
 ---
 
@@ -411,4 +416,4 @@ Coverage includes:
 
 The project has moved beyond partial prototype state and now supports a stable, tested conversational scheduling core with add/delete flows and real DB side effects. The architecture split is working, tests are active, and reliability has improved significantly through fallback handling and timezone corrections.
 
-Main remaining work is breadth expansion (update/show/learning/friends/profile) and production hardening of push delivery plus cross-surface timezone consistency.
+Main remaining work is breadth expansion (update/show/learning/friends/profile) and operational hardening (CI, config validation, and production delivery observability).

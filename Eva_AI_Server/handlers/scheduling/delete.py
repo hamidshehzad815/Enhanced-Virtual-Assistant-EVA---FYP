@@ -4,7 +4,7 @@ Implements:
 - Step 1-4: entity check, date resolution, DB query, and result presentation.
 - Step 5-7: confirmed deletion, log/calendar/notifications, save-turn and return.
 """
-from datetime import datetime
+from datetime import datetime, timezone as dt_timezone
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -141,7 +141,7 @@ async def _save_turn(
     if not session_id:
         return
 
-    now = datetime.utcnow()
+    now = datetime.now(dt_timezone.utc).replace(tzinfo=None)
     try:
         await insert_message(
             {

@@ -10,35 +10,15 @@ const cron = require("node-cron");
 const logger = require("../config/logger");
 const { Task, User } = require("../models");
 const { insert_and_dispatch } = require("../services/notification.service");
+const {
+  formatDateInTimezone,
+  resolveTimezone,
+} = require("../utils/timezone");
 
 let activeJob = null;
 let isRunning = false;
 
 const DEFAULT_REMINDER_MINUTES = 30;
-const TIMEZONE_ALIASES = {
-  UTC: "UTC",
-  GMT: "UTC",
-  PKT: "Asia/Karachi",
-  IST: "Asia/Kolkata",
-  PST: "America/Los_Angeles",
-  PDT: "America/Los_Angeles",
-  MST: "America/Denver",
-  MDT: "America/Denver",
-  CST: "America/Chicago",
-  CDT: "America/Chicago",
-  EST: "America/New_York",
-  EDT: "America/New_York",
-};
-
-const resolveTimezone = (timezoneValue) => {
-  const normalized = String(timezoneValue || "").trim();
-  if (!normalized) {
-    return "UTC";
-  }
-
-  const aliasKey = normalized.toUpperCase();
-  return TIMEZONE_ALIASES[aliasKey] || normalized;
-};
 
 const toDate = (value) => {
   const parsed = new Date(value);
@@ -46,31 +26,7 @@ const toDate = (value) => {
 };
 
 const formatDue = (dueDate, timezoneValue = "UTC") => {
-  const date = toDate(dueDate);
-  if (!date) {
-    return "your scheduled time";
-  }
-  const timezone = resolveTimezone(timezoneValue);
-  const formatOptions = {
-    year: "numeric",
-    month: "short",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    timeZone: timezone,
-  };
-
-  try {
-    return date.toLocaleString("en-US", formatOptions);
-  } catch (_error) {
-    return date.toLocaleString("en-US", {
-      year: "numeric",
-      month: "short",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  }
+  return formatDateInTimezone(dueDate, timezoneValue);
 };
 
 const buildReminderNotification = (task, timezoneValue) => ({
@@ -153,7 +109,7 @@ const sendReminderNotifications = async (now) => {
     return { checked: pendingTasks.length, sentFor: 0 };
   }
 
-  const ownerIds = [...new Set(dueForReminder.map((task) => task.owner_id))];
+  const ownerIds = [...new Set(dueForReminder.map((task) => String(task.owner_id)))];
   const timezoneByUserId = await loadUserTimezones(ownerIds);
   const payloads = dueForReminder.map((task) =>
     buildReminderNotification(
@@ -198,7 +154,7 @@ const sendOverdueAlerts = async (now) => {
     return { sentFor: 0 };
   }
 
-  const ownerIds = [...new Set(overdueTasks.map((task) => task.owner_id))];
+  const ownerIds = [...new Set(overdueTasks.map((task) => String(task.owner_id)))];
   const timezoneByUserId = await loadUserTimezones(ownerIds);
   const payloads = overdueTasks.map((task) =>
     buildOverdueNotification(

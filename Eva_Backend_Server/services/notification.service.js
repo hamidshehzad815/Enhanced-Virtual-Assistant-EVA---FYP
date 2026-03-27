@@ -5,6 +5,8 @@
 
 const nodemailer = require("nodemailer");
 const mongoose = require("mongoose");
+const fs = require("fs");
+const path = require("path");
 
 const logger = require("../config/logger");
 const { Notification, User, UserSetting } = require("../models");
@@ -22,6 +24,67 @@ const SMTP_FROM =
   "no-reply@eva.local";
 
 let cachedTransporter = null;
+let cachedFirebaseAdmin = undefined;
+
+const getFirebaseAdmin = () => {
+  if (cachedFirebaseAdmin !== undefined) {
+    return cachedFirebaseAdmin;
+  }
+
+  let admin = null;
+  try {
+    admin = require("firebase-admin");
+  } catch (_error) {
+    cachedFirebaseAdmin = null;
+    return null;
+  }
+
+  const credentialsSource =
+    process.env.FIREBASE_SERVICE_ACCOUNT_JSON ||
+    process.env.FIREBASE_CREDENTIALS ||
+    "";
+  if (!credentialsSource) {
+    cachedFirebaseAdmin = null;
+    return null;
+  }
+
+  let serviceAccount = null;
+  const trimmed = credentialsSource.trim();
+  try {
+    if (trimmed.startsWith("{")) {
+      serviceAccount = JSON.parse(trimmed);
+    } else {
+      const resolvedPath = path.isAbsolute(trimmed)
+        ? trimmed
+        : path.resolve(process.cwd(), trimmed);
+      if (fs.existsSync(resolvedPath)) {
+        const raw = fs.readFileSync(resolvedPath, "utf8");
+        serviceAccount = JSON.parse(raw);
+      }
+    }
+  } catch (_error) {
+    cachedFirebaseAdmin = null;
+    return null;
+  }
+
+  if (!serviceAccount) {
+    cachedFirebaseAdmin = null;
+    return null;
+  }
+
+  try {
+    if (!admin.apps.length) {
+      admin.initializeApp({
+        credential: admin.credential.cert(serviceAccount),
+      });
+    }
+    cachedFirebaseAdmin = admin;
+    return admin;
+  } catch (_error) {
+    cachedFirebaseAdmin = null;
+    return null;
+  }
+};
 
 const toObjectId = (value) => {
   if (!value) {
@@ -108,19 +171,116 @@ const buildNotificationDoc = (payload) => {
   return doc;
 };
 
-const dispatch_push = async (userId, notification) => {
-  // Placeholder dispatch path until FCM tokens are introduced in schema.
-  logger.info("Push dispatch queued", {
-    user_id: String(userId),
-    notification_type: notification.type,
-    notification_id: String(notification._id),
-  });
+const normalizePushTokens = (userDoc) => {
+  if (!Array.isArray(userDoc?.push_tokens)) {
+    return [];
+  }
 
-  return {
-    dispatched: false,
-    channel: "push",
-    reason: "FCM integration not configured yet",
-  };
+  return Array.from(
+    new Set(
+      userDoc.push_tokens
+        .map((token) => String(token || "").trim())
+        .filter((token) => token.length > 0),
+    ),
+  );
+};
+
+const removeInvalidPushTokens = async (userId, tokens) => {
+  if (!tokens.length) {
+    return;
+  }
+
+  await User.updateOne(
+    { _id: userId },
+    {
+      $pull: {
+        push_tokens: { $in: tokens },
+      },
+    },
+  );
+};
+
+const dispatch_push = async (userId, notification, userDoc) => {
+  const admin = getFirebaseAdmin();
+  if (!admin) {
+    logger.warn("Push dispatch skipped: Firebase not configured", {
+      user_id: String(userId),
+      notification_id: String(notification?._id || ""),
+    });
+    return {
+      dispatched: false,
+      channel: "push",
+      reason: "Firebase Admin SDK not configured",
+    };
+  }
+
+  const tokens = normalizePushTokens(userDoc);
+  if (!tokens.length) {
+    logger.warn("Push dispatch skipped: no registered device tokens", {
+      user_id: String(userId),
+      notification_id: String(notification?._id || ""),
+    });
+    return {
+      dispatched: false,
+      channel: "push",
+      reason: "No device push tokens registered",
+    };
+  }
+
+  try {
+    const response = await admin.messaging().sendEachForMulticast({
+      tokens,
+      notification: {
+        title: notification.title,
+        body: notification.message,
+      },
+      data: {
+        notification_id: String(notification._id),
+        type: String(notification.type || ""),
+        reference_type: String(notification.reference_type || ""),
+        reference_id: String(notification.reference_id || ""),
+      },
+    });
+
+    const invalidTokens = [];
+    response.responses.forEach((result, index) => {
+      if (result.success) {
+        return;
+      }
+      const code = String(result.error?.code || "");
+      if (
+        code.includes("registration-token-not-registered")
+        || code.includes("invalid-registration-token")
+      ) {
+        invalidTokens.push(tokens[index]);
+      }
+    });
+
+    await removeInvalidPushTokens(userId, invalidTokens);
+
+    return {
+      dispatched: response.successCount > 0,
+      channel: "push",
+      success_count: response.successCount,
+      failure_count: response.failureCount,
+      reason:
+        response.successCount > 0
+          ? undefined
+          : "FCM rejected all target tokens",
+    };
+  } catch (error) {
+    logger.error("Push dispatch failed", {
+      user_id: String(userId),
+      notification_id: String(notification._id),
+      error: error.message,
+    });
+
+    return {
+      dispatched: false,
+      channel: "push",
+      reason: error.message,
+    };
+  }
 };
 
 const dispatch_email = async (userId, notification, userDoc) => {
@@ -199,7 +359,7 @@ const insert_and_dispatch = async (notifications = []) => {
         user_id: doc.user_id,
       }).lean();
       const userDoc = await User.findById(doc.user_id)
-        .select("email name username")
+        .select("email name username push_tokens")
         .lean();
 
       const channels = saved.delivery_channel || ["in_app"];
@@ -208,7 +368,7 @@ const insert_and_dispatch = async (notifications = []) => {
       if (channels.includes("push")) {
         const pushEnabled = userSettings?.push_notifications_enabled !== false;
         if (pushEnabled) {
-          const result = await dispatch_push(doc.user_id, saved);
+          const result = await dispatch_push(doc.user_id, saved, userDoc);
           channelResults.push(result);
           if (result.dispatched) {
             summary.dispatched_push += 1;

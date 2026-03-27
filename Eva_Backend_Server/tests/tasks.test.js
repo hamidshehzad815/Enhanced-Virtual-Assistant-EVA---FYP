@@ -101,6 +101,37 @@ describe("Tasks API", () => {
     expect(response.body.data.pagination.total).toBe(1);
   });
 
+  test("GET /api/tasks?date uses user timezone day boundaries", async () => {
+    User.findById.mockResolvedValue({
+      _id: USER_ID,
+      is_active: true,
+      timezone: "Asia/Karachi",
+      toPublicProfile: jest.fn(),
+    });
+
+    const tasks = [];
+    const findChain = {
+      sort: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(tasks),
+    };
+
+    Task.find.mockReturnValue(findChain);
+    Task.countDocuments.mockResolvedValue(0);
+
+    const response = await request(app)
+      .get("/api/tasks?date=2026-03-30")
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(response.status).toBe(200);
+    expect(Task.find).toHaveBeenCalledTimes(1);
+
+    const query = Task.find.mock.calls[0][0];
+    expect(query.due_datetime.$gte.toISOString()).toBe("2026-03-29T19:00:00.000Z");
+    expect(query.due_datetime.$lte.toISOString()).toBe("2026-03-30T18:59:59.999Z");
+  });
+
   test("GET /api/tasks/:id -> returns single task", async () => {
     const task = {
       _id: TASK_ID,
