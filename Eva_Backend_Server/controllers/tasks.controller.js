@@ -5,6 +5,7 @@
 
 const mongoose = require("mongoose");
 const { Task } = require("../models");
+const { toLocalDayRangeUtc } = require("../utils/timezone");
 const {
   BadRequestError,
   NotFoundError,
@@ -21,22 +22,16 @@ const parsePositiveInt = (value, fallback) => {
   return parsed;
 };
 
-const parseDateRange = (dateValue) => {
+const parseDateRange = (dateValue, timezoneValue) => {
   if (!dateValue) {
     return null;
   }
 
-  const base = new Date(dateValue);
-  if (Number.isNaN(base.getTime())) {
+  const range = toLocalDayRangeUtc(dateValue, timezoneValue);
+  if (!range) {
     throw new BadRequestError("Invalid date query format");
   }
-
-  const start = new Date(base);
-  start.setUTCHours(0, 0, 0, 0);
-  const end = new Date(base);
-  end.setUTCHours(23, 59, 59, 999);
-
-  return { start, end };
+  return { start: range.start, end: range.end };
 };
 
 /**
@@ -71,7 +66,7 @@ const getTasks = async (req, res, next) => {
     }
 
     if (req.query.date) {
-      const range = parseDateRange(req.query.date);
+      const range = parseDateRange(req.query.date, req.user?.timezone);
       query.due_datetime = {
         $gte: range.start,
         $lte: range.end,

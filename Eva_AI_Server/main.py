@@ -2,6 +2,7 @@
 EVA AI Server - FastAPI Entry Point
 """
 from datetime import datetime
+import re
 from typing import Optional
 
 from contextlib import asynccontextmanager
@@ -36,6 +37,17 @@ from pipeline.preprocessor import is_too_short, preprocess
 from services.self_fetch import self_fetch_all
 from services.duckling import duckling_client
 from services.gemini import gemini_service
+from utils.timezone_utils import resolve_timezone_name, utc_naive_to_local
+
+_WEEKDAYS = (
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+)
 
 
 @asynccontextmanager
@@ -133,6 +145,54 @@ def _safe_reply(
         return gemini_service.generate_reply(payload, user_name, history or [])
     except Exception:
         return "I am still here, but I could not process that clearly. Please try again."
+
+
+def _normalize_weekday_value(value, original_text: str):
+    if not isinstance(value, str):
+        return value
+
+    normalized = value.strip().lower()
+    if not normalized:
+        return value
+    if normalized in _WEEKDAYS:
+        return normalized
+    if not normalized.endswith("day"):
+        return value
+
+    text_lower = (original_text or "").lower()
+    weekday_matches = [
+        weekday
+        for weekday in _WEEKDAYS
+        if re.search(rf"\b{re.escape(weekday)}\b", text_lower)
+    ]
+
+    if len(weekday_matches) == 1:
+        weekday = weekday_matches[0]
+        if normalized == "day" or weekday.endswith(normalized):
+            return weekday
+
+    suffix_matches = [weekday for weekday in _WEEKDAYS if weekday.endswith(normalized)]
+    if len(suffix_matches) == 1:
+        return suffix_matches[0]
+
+    return value
+
+
+def _repair_weekday_date_entity(raw_entities, original_text: str):
+    if not isinstance(raw_entities, dict):
+        return raw_entities
+
+    repaired = dict(raw_entities)
+    date_value = repaired.get("date")
+    if isinstance(date_value, list):
+        repaired["date"] = [
+            _normalize_weekday_value(item, original_text)
+            for item in date_value
+        ]
+    elif date_value is not None:
+        repaired["date"] = _normalize_weekday_value(date_value, original_text)
+
+    return repaired
 
 
 @app.get("/health")
@@ -249,9 +309,14 @@ async def process_message(payload: ProcessRequest):
                     message,
                 )
 
-                if pending_intent in {"add", "scheduling_add"}:
+                if pending_intent in {"add", "scheduling_add", "delete", "scheduling_delete"}:
+                    routed_intent = (
+                        "scheduling_add"
+                        if pending_intent in {"add", "scheduling_add"}
+                        else "scheduling_delete"
+                    )
                     routed_result = await route_intent(
-                        "scheduling_add",
+                        routed_intent,
                         entities=merged_entities,
                         context={
                             **route_context_base,
@@ -328,9 +393,17 @@ async def process_message(payload: ProcessRequest):
                     }
 
                 yes_no_value = handle_yes_no_reply(processed["processed"])
-                if pending_intent in {"add", "scheduling_add"} and yes_no_value in {"yes", "no"}:
+                if (
+                    pending_intent in {"add", "scheduling_add", "delete", "scheduling_delete"}
+                    and yes_no_value in {"yes", "no"}
+                ):
+                    routed_intent = (
+                        "scheduling_add"
+                        if pending_intent in {"add", "scheduling_add"}
+                        else "scheduling_delete"
+                    )
                     routed_result = await route_intent(
-                        "scheduling_add",
+                        routed_intent,
                         entities=dict(pending_action.get("entities") or {}),
                         context={
                             **route_context_base,
@@ -353,6 +426,24 @@ async def process_message(payload: ProcessRequest):
                         "notifications": routed_result.get("notifications", []),
                         "response_text": routed_result.get("response_text")
                         or _safe_reply("pending_yes_no_processed", user_name, history),
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                if pending_intent in {"delete", "scheduling_delete"} and yes_no_value == "invalid":
+                    if user_name:
+                        response_text = f"Just yes or no will do, {user_name}."
+                    else:
+                        response_text = "Just yes or no will do."
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "classification": classification,
+                        "expected_response": "yes_no",
+                        "parsed_value": yes_no_value,
+                        "response_text": response_text,
                         "user_name": user_name,
                         "settings": settings_data,
                     }
@@ -498,17 +589,10 @@ async def process_message(payload: ProcessRequest):
                     task_title = str(selected_task.get("title") or "that task")
                     due_text = ""
                     due_raw = selected_task.get("due_datetime")
-                    parsed_due = None
-                    if isinstance(due_raw, datetime):
-                        parsed_due = due_raw
-                    elif isinstance(due_raw, str):
-                        try:
-                            parsed_due = datetime.fromisoformat(due_raw.replace("Z", "+00:00"))
-                        except ValueError:
-                            parsed_due = None
-
-                    if parsed_due is not None:
-                        due_text = parsed_due.strftime("%A at %I:%M %p").replace(" 0", " ")
+                    user_timezone = resolve_timezone_name((fetched.user or {}).get("timezone"))
+                    local_due = utc_naive_to_local(due_raw, user_timezone)
+                    if local_due is not None:
+                        due_text = local_due.strftime("%A at %I:%M %p").replace(" 0", " ")
 
                     if user_name:
                         if due_text:
@@ -630,8 +714,9 @@ async def process_message(payload: ProcessRequest):
             canonical_intent = normalize_intent(intent_classification["label"])
 
             raw_entities = ner_extractor.extract(message, intent_hint=canonical_intent)
+            raw_entities = _repair_weekday_date_entity(raw_entities, message)
             scoped_entities = scope_entities(raw_entities, canonical_intent)
-            user_timezone = (fetched.user or {}).get("timezone") or "UTC"
+            user_timezone = resolve_timezone_name((fetched.user or {}).get("timezone"))
             resolved_entities = await resolve_all(scoped_entities, timezone=user_timezone)
 
             routed_result = await route_intent(

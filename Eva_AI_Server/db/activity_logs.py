@@ -1,7 +1,7 @@
 """
 Activity log database operations for behavioral scheduling decisions.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from bson import ObjectId
@@ -34,7 +34,10 @@ async def insert_log(log_data: Dict[str, Any]) -> str:
     if action_type and action_type not in _ALLOWED_ACTION_TYPES:
         # Keep inserts non-breaking for forward compatibility while still flagging unknown values.
         print(f"[ActivityLogs] Unknown action_type '{action_type}', inserting anyway.")
-    payload.setdefault("action_timestamp", datetime.utcnow())
+    payload.setdefault(
+        "action_timestamp",
+        datetime.now(timezone.utc).replace(tzinfo=None),
+    )
     result = await db.activity_logs.insert_one(payload)
     return str(result.inserted_id)
 

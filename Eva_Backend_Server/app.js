@@ -149,7 +149,10 @@ process.on("SIGTERM", () => {
   process.exit(0);
 });
 
-// Start the server
-startServer();
+// Start the server only when app.js is run directly.
+if (require.main === module) {
+  startServer();
+}
 
 module.exports = app;
+module.exports.startServer = startServer;

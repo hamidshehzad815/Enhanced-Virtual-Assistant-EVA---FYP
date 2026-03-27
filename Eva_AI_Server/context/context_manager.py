@@ -109,13 +109,17 @@ async def handle_free_text_reply(user_id: str, context: Dict[str, Any], reply: s
     cleaned_reply = (reply or "").strip()
 
     missing_entity: Optional[str] = context.get("missing_entity")
+    pending_intent = str(pending_action.get("intent") or "").lower()
     if missing_entity:
         if _should_assign_directly(missing_entity, cleaned_reply):
             merged_entities[missing_entity] = cleaned_reply
         else:
             merged_entities["free_text_reply"] = cleaned_reply
     else:
-        merged_entities["free_text_reply"] = cleaned_reply
+        if pending_intent in {"delete", "scheduling_delete"}:
+            merged_entities["task_name"] = cleaned_reply
+        else:
+            merged_entities["free_text_reply"] = cleaned_reply
 
     await redis_client.delete_context(user_id)
     return merged_entities

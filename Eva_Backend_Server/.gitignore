@@ -34,4 +34,3 @@ Thumbs.db
 # Test coverage
 coverage/
 .nyc_output/
-firebase-service-account.json

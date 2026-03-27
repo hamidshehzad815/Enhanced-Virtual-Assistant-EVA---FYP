@@ -2,18 +2,26 @@
 Redis client module for context management
 """
 import json
-from typing import Optional
-import redis.asyncio as redis
+from typing import Any, Optional
+
+try:
+    import redis.asyncio as redis
+except Exception:  # pragma: no cover - runtime dependency guard
+    redis = None
 from config.settings import settings
 
 
 class RedisClient:
     """Redis connection manager for context state"""
 
-    client: redis.Redis = None
+    client: Any = None
 
     async def connect(self):
         """Connect to Redis"""
+        if redis is None:
+            print("[Redis] redis-py dependency not installed")
+            return False
+
         try:
             self.client = redis.Redis(
                 host=settings.REDIS_HOST,

@@ -1,75 +1,111 @@
-# EVA Project Completion Report
+# EVA Project Completion Report (Updated)
 
-Date: March 24, 2026  
-Scope analyzed: `Eva_AI_Server` + `Eva_Backend_Server` (source code, routes, models, services, jobs, tests, and project planning docs)
+Date: March 27, 2026  
+Scope analyzed: `Eva_AI_Server` + `Eva_Backend_Server` (current source code, routes, handlers, services, jobs, models, tests, and planning docs)
+
+---
 
 ## 1) Executive Summary
 
-The project has a strong functional foundation and has completed most of the core architecture through task scheduling creation flow.
+This project now has a complete and test-verified core for:
 
-Implemented in production code today:
+- Authentication and protected backend APIs.
+- Chat bridge from Node backend to AI server.
+- AI NLP pipeline (classification + NER + entity scoping + date/time resolution + context manager).
+- Fully implemented `scheduling_add` flow.
+- Fully implemented `scheduling_delete` flow (including multi-match selection, bulk delete, and confirmations).
+- Task page APIs (list/get/update-status/delete).
+- Google Calendar integration (connect/list + AI-side event create/delete behavior).
+- Notification persistence + dispatch orchestration.
+- Reminder cron job (reminders + overdue alerts).
+- Quiet-hours and settings update APIs.
+- Timezone-safe scheduling/display behavior for core add/delete/reminder paths.
+- UTC-safe datetime writes in AI DB/helper paths (no project `datetime.utcnow()` usage).
+- Timezone-aware backend task date filtering (`GET /api/tasks?date=...` now user-local day aware).
+- Real FCM push dispatch path using Firebase Admin SDK (with token cleanup and explicit skip logging).
 
-- End-to-end chat pipeline from Node backend to AI server.
-- Authentication with email verification and JWT access/refresh.
-- AI NLP pipeline with classifier-1, classifier-2, NER, entity scoping, date/time resolution, context manager, and safe fallback handling.
-- Full `scheduling_add` handler with pending clarification flow, quiet hours checks, duplicate confirmation, overlap conflict blocking, optional collaborator validation, activity logging, chat history persistence, and notification payload generation.
-- Task APIs for task-page operations (list/get/update status/delete).
-- Google Calendar integration storage (backend) plus AI-side event creation.
-- Reminder cron job that dispatches reminder/overdue notifications.
-- Settings APIs including quiet-hours fields and notification toggles.
+Current implementation status through phase planning:
 
-Not fully implemented yet:
+- Phases `1–18`: completed and covered by code/tests.
+- Next planned phases (`19+`): update/show handlers, learning flows, friend/profile/notification-center APIs, and production hardening items.
 
-- AI handlers for scheduling delete/update/show and learning intents (currently routed to “intent recognized but not implemented” responses).
-- Push notification delivery (currently placeholder path, no FCM token delivery).
-- Dedicated backend automated test suite (AI test suite exists and passes).
+---
 
-## 2) Method Used For Analysis
+## 2) Verification Method
 
-- Reviewed repository structure and source modules in both servers.
-- Mapped active route registrations and endpoint/controller wiring.
-- Reviewed schemas/models and write/read paths.
-- Reviewed scheduling add flow in detail for real runtime behavior.
-- Reviewed reminder job and notification delivery behavior.
-- Reviewed project planning docs (`todoList.txt`, `EVA_Project_Document.txt`, flow docs).
-- Re-ran AI unit tests to verify current test status.
+I validated status from real code and test execution (not checklist-only assumptions):
 
-AI test run at analysis time:
+1. Reviewed active route registrations and controller bindings in backend.
+2. Reviewed AI intent router and active handlers.
+3. Reviewed models/schemas and critical services (notifications, reminder job, Gemini, self-fetch, DB layer).
+4. Re-ran both test suites.
 
-- `20` tests passed (`OK`) in `Eva_AI_Server/tests`.
+Latest test verification (March 27, 2026):
 
-## 3) Phase Completion Matrix (Based on Current Code)
+- AI server: `73 passed` (`python3 -m pytest tests`)
+- Backend server: `11 passed` (`npm test`)
 
-| Phase | Planned Goal                                                | Current Status               | Evidence                                                                           |
-| ----- | ----------------------------------------------------------- | ---------------------------- | ---------------------------------------------------------------------------------- |
-| 1     | Project setup + health                                      | Completed                    | Both servers expose `/` and `/health`, DB wiring present                           |
-| 2     | Auth (Node)                                                 | Completed                    | Register/login/refresh/logout/me + verification/resend implemented                 |
-| 3     | AI self-fetch + preprocess + chat bridge                    | Completed                    | Node `/api/chat/process` forwards to AI `/process`; AI self-fetch runs             |
-| 4     | Classifier 1 (input type)                                   | Completed                    | `pipeline/classifier1.py` loaded and used in `/process`                            |
-| 5     | Context manager (pending flows)                             | Completed                    | yes/no/number/free-text/cancel logic integrated in `/process`                      |
-| 6     | Intent routing (classifier 2 + router)                      | Partially completed          | Routing exists; only `scheduling_add` has real handler                             |
-| 7     | NER + scoping + date resolver                               | Completed                    | NER + scoper + Duckling resolver integrated for commands                           |
-| 8     | Natural response generation (Gemini + fallback)             | Completed                    | Gemini client with robust static fallback and timeout safety                       |
-| 9     | Scheduling ADD full flow                                    | Completed                    | Full add flow with context prompts, checks, DB writes, notifications               |
-| 10    | Task page APIs                                              | Completed                    | GET list, GET by id, PATCH status, DELETE soft-delete                              |
-| 11    | Google Calendar integration                                 | Completed                    | Backend connect/list integration + AI create event flow                            |
-| 12    | Reminder scheduling                                         | Partially completed          | Cron + reminder/overdue notifications implemented; push delivery still placeholder |
-| 13+   | Delete/update/show handlers, learning module, friends, etc. | Not started / mostly pending | Not present as full implementations in current route/handler wiring                |
+Observed warnings:
 
-## 4) Backend Server Completion (`Eva_Backend_Server`)
+- AI test run shows a third-party `python_multipart` pending deprecation warning (not from EVA project code).
+- Backend tests show a non-blocking Node warning about `--localstorage-file` path during Jest run.
 
-### 4.1 Core Infrastructure
+---
 
-Implemented:
+## 3) Architecture Snapshot (Current)
 
-- Express bootstrap with CORS, Helmet, rate limit, request ID, logging, global error handling.
-- MongoDB connection management with health checks.
-- Daily rotating logs with Winston.
-- Reminder cron job startup on server boot.
+### 3.1 Two-Server Design
 
-### 4.2 API Surface Implemented
+- `Eva_Backend_Server` (Node.js/Express):
+  - Auth, API layer, session ownership checks, bridge to AI server.
+  - Persists and dispatches notifications.
+  - Reminder cron execution.
+- `Eva_AI_Server` (FastAPI/Python):
+  - NLP and intent routing.
+  - Add/Delete conversational handlers.
+  - Redis pending-context state machine.
+  - Task/activity/conversation DB writes.
 
-Health:
+### 3.2 Runtime Flow
+
+1. Client calls backend `/api/chat/process`.
+2. Backend validates session ownership and forwards payload to AI `/process`.
+3. AI server runs self-fetch + pipeline + handler routing.
+4. AI returns `response_text` + `notifications[]`.
+5. Backend inserts/dispatches notifications and returns unified response envelope.
+
+---
+
+## 4) Completion Matrix by Phase (1–18)
+
+| Phase | Status    | Current Code Evidence Summary                                              |
+| ----- | --------- | -------------------------------------------------------------------------- |
+| 1     | Completed | Both servers boot with health endpoints and DB wiring                      |
+| 2     | Completed | Auth APIs (register/login/refresh/logout/me/verify/resend)                 |
+| 3     | Completed | Chat session + `/api/chat/process` AI bridge + self-fetch                  |
+| 4     | Completed | Classifier-1 integrated in AI `/process`                                   |
+| 5     | Completed | Context manager for yes/no, number, free-text, cancel, pending blocking    |
+| 6     | Completed | Classifier-2 + router intent normalization                                 |
+| 7     | Completed | NER + scoped entities + Duckling date/time/duration resolve                |
+| 8     | Completed | Gemini response generation with robust static fallback/repetition handling |
+| 9     | Completed | `scheduling_add` full transactional flow                                   |
+| 10    | Completed | Task page APIs (`GET list`, `GET by id`, `PATCH status`, `DELETE`)         |
+| 11    | Completed | Integrations APIs + AI Google Calendar create-event path                   |
+| 12    | Completed | Cron reminders + overdue alerts + notification insertion                   |
+| 13    | Completed | Delete entities/scoping path validated                                     |
+| 14    | Completed | Delete DB layer (`find`, `soft delete`, `get by id`, log support)          |
+| 15    | Completed | Delete context states (`number`, `all`, `yes/no`, validation)              |
+| 16    | Completed | Delete handler Step 1–4 (query/present/pending-state)                      |
+| 17    | Completed | Delete handler Step 5–7 (execute delete, log, notifications, return)       |
+| 18    | Completed | AI + backend automated tests in place and passing                          |
+
+---
+
+## 5) Backend Server (`Eva_Backend_Server`) – Detailed Status
+
+### 5.1 Active APIs (Registered and Implemented)
+
+Root/Health:
 
 - `GET /`
 - `GET /health`
@@ -79,226 +115,305 @@ Auth:
 - `POST /api/auth/register`
 - `POST /api/auth/login`
 - `POST /api/auth/refresh`
-- `POST /api/auth/logout`
-- `GET /api/auth/me`
+- `POST /api/auth/logout` (protected)
+- `GET /api/auth/me` (protected)
 - `GET /api/auth/verify-email`
 - `POST /api/auth/resend-verification`
 
 Chat:
 
-- `POST /api/chat/session`
-- `POST /api/chat/process`
+- `POST /api/chat/session` (protected)
+- `POST /api/chat/process` (protected)
 
 Tasks:
 
-- `GET /api/tasks`
-- `GET /api/tasks/:id`
-- `PATCH /api/tasks/:id/status`
-- `DELETE /api/tasks/:id`
+- `GET /api/tasks` (protected)
+- `GET /api/tasks/:id` (protected)
+- `PATCH /api/tasks/:id/status` (protected)
+- `DELETE /api/tasks/:id` (protected)
 
 Integrations:
 
-- `POST /api/integrations/google/connect`
-- `GET /api/integrations`
+- `POST /api/integrations/google/connect` (protected)
+- `GET /api/integrations` (protected)
 
 Settings:
 
-- `GET /api/settings`
-- `PATCH /api/settings`
+- `GET /api/settings` (protected)
+- `PATCH /api/settings` (protected)
 
-### 4.3 Model/Schema Coverage Implemented
-
-Implemented models:
+### 5.2 Implemented Models
 
 - `User`
-- `UserSetting` (including quiet-hours list + legacy fields + reminder defaults)
-- `Task` (includes duration, reminder fields, soft delete, calendar event id)
+- `UserSetting`
+- `Task`
 - `Notification`
 - `ChatSession`
 - `ConversationHistory`
 - `Integration`
 
-### 4.4 Notifications & Reminder Delivery
+### 5.3 Notification & Delivery Subsystem
 
 Implemented:
 
-- Notification insert + channel dispatch flow.
-- Email dispatch via SMTP when enabled and configured.
-- Cron reminder job every minute:
-  - Pre-due reminders from `reminder_minutes_before`
-  - Overdue alerts once when due time passes
+- Notification persistence with per-channel processing.
+- Email delivery through SMTP when configured + enabled in user settings.
+- In-app record creation always supported.
+- Push delivery through Firebase Admin (`sendEachForMulticast`) when Firebase credentials and device tokens are present.
+- Invalid push tokens are pruned from user records when FCM reports token-invalid errors.
+- Non-delivery is explicitly logged with actionable reasons (not configured / no tokens / FCM rejection).
 
-Current limitation:
-
-- Push dispatch is placeholder (`dispatch_push` returns not dispatched reason).
-- Reminder job payload channels are push + in-app (no reminder email channel in current job payload).
-
-## 5) AI Server Completion (`Eva_AI_Server`)
-
-### 5.1 Core Runtime
+### 5.4 Reminder Job (Phase 12+)
 
 Implemented:
 
-- FastAPI app with startup health checks for MongoDB, Redis, Duckling, classifiers, and NER.
-- `/process` endpoint with full guarded pipeline and safe error fallback response.
-- `/health` and `/` endpoints.
+- Runs every minute.
+- Sends pre-due reminder notifications based on `reminder_minutes_before`.
+- Sends overdue notifications once when due time passes.
+- Marks tasks as `reminder_sent_at` / `overdue_notified_at`.
 
-### 5.2 Self-Fetch and Context
+Recent completion:
 
-Implemented:
+- Reminder/overdue message due-time text now formats in each user’s timezone (instead of server-local formatting).
 
-- Parallel self-fetch at request start:
-  - user
-  - user settings
-  - conversation history
-  - integrations
-  - redis context
-- Redis context manager:
-  - pending yes/no
-  - pending number (1/2)
-  - pending free-text entity completion
-  - cancel keywords
-  - blocking new command when pending
+---
 
-### 5.3 NLP Pipeline
+## 6) AI Server (`Eva_AI_Server`) – Detailed Status
+
+### 6.1 Core Runtime and Pipeline
 
 Implemented:
 
-- Preprocessing (lowercase + short-input guard).
-- Classifier 1 (input type).
-- Classifier 2 (intent).
-- NER token-classification extractor.
-- Intent-specific entity scoping.
-- Duckling-based date/time/duration resolution.
+- FastAPI app with startup checks (MongoDB, Redis, Duckling, classifier1, classifier2, NER).
+- `/process` orchestrator with guarded logic and safe failure response paths.
+- Self-fetch gathers user, settings, history, integrations, and Redis context in parallel.
+- NLP stages:
+  - preprocess
+  - classifier1
+  - classifier2
+  - NER extraction
+  - entity scoping
+  - date/time/duration resolution via Duckling
 
-### 5.4 Intent Routing
+### 6.2 Intent Routing Status
+
+Implemented handlers:
+
+- `scheduling_add`
+- `scheduling_delete`
+
+Recognized but not yet implemented handlers:
+
+- `scheduling_update`
+- `scheduling_show`
+- `learning_create`
+- `learning_update`
+- `learning_delete`
+- `learning_show`
+- behavioral/helper intent advanced logic beyond generic handling
+
+### 6.3 Context Manager State Machine
+
+Implemented pending states:
+
+- Free text capture for missing entity.
+- Yes/no confirmations.
+- Numeric choices.
+- Cancel interrupts.
+- Delete-specific `"all"` keyword for bulk selection.
+- New command blocking while waiting for required pending response.
+
+### 6.4 Scheduling Add – Current Capability
+
+Fully implemented flow includes:
+
+1. Required entity prompts (`task_name`, `date`, `time`).
+2. Date/time normalization and resolution.
+3. Behavioral suggestion when time missing (based on activity logs threshold + best hour).
+4. Quiet-hours checks and explicit yes/no override flow.
+5. Overlap conflict blocking (duration-aware).
+6. Duplicate task detection and yes/no confirmation.
+7. Collaborator validation.
+8. Task insert + activity log insert.
+9. Optional Google Calendar event creation.
+10. Conversation history/session update.
+11. Notification payload generation (owner + collaborator invite).
+
+### 6.5 Scheduling Delete – Current Capability
+
+Fully implemented flow includes:
+
+1. Filter extraction (`task_name`, `date`, `priority`, `status`).
+2. Date resolution and query preparation.
+3. Search behavior:
+   - 0 match -> natural not-found response
+   - 1 match -> yes/no confirm state
+   - 2–5 match -> numbered list + number/all state
+   - 6+ match -> too broad response
+4. Numbered selection handling:
+   - specific index -> confirm selected task
+   - `"all"` -> bulk confirmation
+5. Confirmed deletion path:
+   - soft delete task(s)
+   - insert `task_deleted` activity logs
+   - optional Google Calendar delete for event id
+   - collaborator notifications for accepted collaborators
+6. Conversation/session updates and Redis cleanup.
+
+### 6.6 Gemini Reliability/Fallback
 
 Implemented:
 
-- Intent normalization aliases (`add`, `delete`, `show`, roadmap labels, etc.).
-- Real handler binding for `scheduling_add`.
-- Safe natural fallback for other intents (`intent_not_implemented`).
+- Action-aware prompt generation.
+- Deterministic diverse static fallback responses for many actions.
+- Timeout handling and fallback safety.
+- Error isolation so user still gets a natural response when Gemini fails.
 
-### 5.5 Scheduling Add Handler (Detailed Completion)
+---
 
-Implemented in full flow:
+## 7) Timezone, Date-Time, and Display Correctness (Current)
 
-- Required entities check in sequence:
-  - `task_name`
-  - `date`
-  - `time`
-- Pending context prompts for missing entities.
-- Behavioral suggestion for missing time using activity logs:
-  - checks threshold
-  - suggests productive hour
-  - supports option `1` use suggested time or `2` enter time
-- Quiet-hours support:
-  - multi-block named quiet hours
-  - legacy quiet-hours start/end compatibility
-  - pending yes/no override flow
-- Conflict prevention:
-  - blocks overlapping tasks by duration window
-  - returns conflict response without scheduling
-- Duplicate prevention:
-  - checks same title on same day
-  - asks yes/no before force add duplicate
-- Collaborator validation:
-  - resolves collaborator names to users
-  - verifies accepted friendship before allow
-  - supports max 2 collaborators
-- Task creation:
-  - inserts task with priority/duration defaults and reminder minutes
-  - inserts activity log
-  - non-blocking Google Calendar event creation when integration active
-  - updates task with `google_calendar_event_id` on success
-- Conversation persistence:
-  - stores user + EVA messages
-  - updates chat session preview/time
-- Notification payload output:
-  - `task_scheduled` for owner
-  - `collaboration_invite` for collaborators
+### 7.1 Storage Strategy
 
-### 5.6 Gemini and Response Robustness
+- Tasks are stored in UTC (`due_datetime`).
+- User-facing times are converted to user timezone before presenting text.
 
-Implemented:
+### 7.2 Implemented Timezone Improvements
 
-- Gemini prompt generation by action context.
-- Large static fallback response bank for varied natural replies.
-- Repetition handling (response variation across repeated actions).
-- Runtime hardening:
-  - request timeout controls
-  - local timeout wrapper
-  - disable Gemini after failure (fallback-only mode)
-  - safe reply path to prevent crash or blank response
+Implemented in AI:
 
-## 6) Cross-Server End-to-End Behavior (Current)
+- Alias normalization helpers (`PKT`, `IST`, and common US aliases).
+- Local-to-UTC conversion at schedule creation.
+- UTC-to-local conversion for user-facing display in:
+  - delete lists
+  - delete single confirm
+  - delete success messages
+  - delete number-selection follow-up confirm
+  - add duplicate conflict display
+  - add overlap conflict time-range display
 
-Implemented path:
+Implemented in backend reminders:
 
-1. Client calls backend `/api/chat/process`.
-2. Backend validates session and forwards minimal payload to AI server.
-3. AI server executes pipeline, DB actions, and returns response + notification payload.
-4. Backend inserts and dispatches notifications.
-5. Backend returns unified response text + metadata to client.
+- Reminder and overdue message formatting now uses per-user timezone.
 
-Observed reliability behavior:
+### 7.3 Behavior Outcome
 
-- AI-side failure paths are mostly guarded to return safe text.
-- If AI call exceeds backend timeout, backend returns `AI server unavailable`.
-- Recent Gemini hardening reduces this timeout risk by forcing faster fallback.
+- If user schedules at local `4:00 PM`, storage is UTC-converted correctly.
+- When listing/deleting/reminding, user sees local-time values instead of raw UTC-time confusion.
 
-## 7) Testing & Quality Status
+---
 
-AI automated tests exist and currently pass:
+## 8) Data and Conversation Persistence Coverage
 
-- `tests/test_context_manager.py`
-- `tests/test_phase7_pipeline.py`
-- `tests/test_task_conflicts.py`
-- `tests/test_quiet_hours.py`
-- `tests/test_gemini_service.py`
+Implemented persistence domains:
 
-Current run result:
+- Tasks (`insert`, `update`, `soft delete`, query helpers).
+- Activity logs (`task_created`, `task_deleted`, behavioral metrics helpers).
+- Conversation history (user and EVA turns).
+- Chat session metadata updates.
+- Redis pending context lifecycle.
+- Notification records and channel dispatch attempt summaries.
 
-- `Ran 20 tests ... OK`
+---
 
-Backend automated tests:
+## 9) Testing Status (Detailed)
 
-- No project test suite found for backend source (outside dependency `node_modules` tests).
+### 9.1 AI Test Suite
 
-## 8) What Is Fully Completed vs Partial
+Current result:
 
-Fully completed (working feature groups):
+- `73 passed` (full `tests/` run)
 
-- Auth + email verification flow (Node backend).
-- Chat session creation + message processing bridge.
-- AI pipeline through `scheduling_add`.
-- Settings management including quiet-hours structure.
-- Task page CRUD subset (list/get/status/update/delete soft delete).
-- Calendar integration connect/list + AI-side event create.
-- Reminder cron infrastructure and overdue/reminder notification generation.
+Coverage includes:
 
-Partially completed:
+- context manager logic
+- phase 7 pipeline behavior
+- quiet hours
+- conflict logic
+- Gemini fallback behavior
+- delete DB layer
+- delete handler end-to-end flows
+- phase 13/16/17 delete milestones
+- timezone conversion helpers
+- delete timezone display
+- Google Calendar payload timezone behavior
 
-- Intent coverage beyond add (route exists, concrete handlers missing).
-- Push channel (dispatch pipeline exists, real FCM delivery not wired).
-- Reminder channel mix (no reminder email by default job payload).
-- Collaborator flow depends on `friends` data/collection but full friend-system APIs are not present in current backend routes.
+### 9.2 Backend Test Suite
 
-Not completed (from roadmap after phase 12):
+Current result:
 
-- AI scheduling delete/update/show handlers.
-- Learning create/update/delete/show handlers and roadmap persistence APIs.
-- Friend APIs, notification-center APIs, profile APIs, learning page routes.
-- Voice transcription flow, Google OAuth login, load/performance testing, deployment packaging.
+- `3 test suites passed`
+- `11 tests passed`
 
-## 9) Recommended Next Priority Order
+Coverage includes:
 
-1. Implement AI `scheduling_delete`, `scheduling_update`, and `scheduling_show` handlers to match routed intents.
-2. Add backend/API tests (auth, chat process, tasks, settings, reminders) with CI automation.
-3. Implement real push delivery (FCM token model + dispatch service).
-4. Add reminder preference toggles (`reminder_enabled`, channel-level controls) in settings + reminder job filtering.
-5. Start learning module handlers and corresponding backend routes for roadmap UI integration.
+- auth endpoints
+- chat endpoints
+- task endpoints
 
-## 10) Final Assessment
+---
 
-The codebase is beyond initial setup and already supports a meaningful production-like scheduling assistant for task creation. The architecture split between Node backend and AI server is correctly established and operational. The largest gap is breadth of implemented intents (add is mature; others are mostly placeholders), plus operational hardening on push delivery and backend test coverage.
+## 10) Completed vs Pending Scope
+
+### 10.1 Completed in Current Build
+
+- Core auth and protected API baseline.
+- Chat session + AI bridge.
+- AI add and delete flows end-to-end.
+- Task page operational APIs.
+- Google integration connect/list + AI create/delete event interaction points.
+- Reminder cron notification system.
+- Settings and quiet-hours configuration path.
+- Backend task list date filtering aligned to user timezone day boundaries.
+- FCM push dispatch implementation in backend notification service (credential/token dependent).
+- Automated tests for both servers.
+
+### 10.2 Pending / Not Yet Implemented
+
+- AI `update` and `show` scheduling handlers.
+- Learning command handlers and related backend APIs/pages.
+- Friend system APIs/routes and deeper collaboration UX.
+- Notification center APIs/UI routes.
+- Profile APIs/UI routes.
+- CI automation and release hardening (test pipeline, environment validation, production observability).
+
+---
+
+## 11) Risk & Technical Debt Snapshot
+
+1. Push delivery now exists in code, but still depends on correct runtime setup (Firebase credentials + registered device tokens).
+2. Update/show/learning handlers are still recognized-but-not-implemented.
+3. CI automation for both servers is not yet integrated (regression risk increases with phase expansion).
+4. Secrets hygiene remains critical (service-account and SMTP/JWT secrets must stay out of shared artifacts).
+
+---
+
+## 12) Recommended Next Execution Plan
+
+### Priority 1
+
+- Implement `scheduling_update` and `scheduling_show` handlers in AI.
+- Add backend/API tests for update/show behavior parity with add/delete style confirmations.
+
+### Priority 2
+
+- Complete learning handlers (`create/update/delete/show`) and expose matching backend routes.
+- Expand notification channel policies and user-level controls (per event type, quiet-hours interaction).
+
+### Priority 3
+
+- Add friends/profile/notification-center APIs if required by current milestone.
+- Add operational diagnostics endpoint or admin health checks for push/email delivery readiness.
+
+### Priority 4
+
+- Add CI pipeline for running both test suites automatically per change.
+- Add pre-deploy env validation for required keys (`SMTP_*`, `FIREBASE_*`, AI connection) and fail fast on misconfiguration.
+
+---
+
+## 13) Final Assessment
+
+The project has moved beyond partial prototype state and now supports a stable, tested conversational scheduling core with add/delete flows and real DB side effects. The architecture split is working, tests are active, and reliability has improved significantly through fallback handling and timezone corrections.
+
+Main remaining work is breadth expansion (update/show/learning/friends/profile) and operational hardening (CI, config validation, and production delivery observability).

@@ -195,6 +195,52 @@ class TestDeleteDbLayer(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["_id"], str(self.task1_id))
 
+    async def test_find_tasks_for_delete_with_task_name_filter(self):
+        fake_tasks = FakeTasksCollection(self.docs)
+        fake_db = FakeDB(tasks_collection=fake_tasks)
+
+        with patch("db.tasks.get_db", return_value=fake_db):
+            rows = await find_tasks_for_delete(
+                str(self.owner_id),
+                {
+                    "task_name": "exam",
+                },
+            )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["title"], "Physics exam")
+
+    async def test_find_tasks_for_delete_with_priority_filter(self):
+        fake_tasks = FakeTasksCollection(self.docs)
+        fake_db = FakeDB(tasks_collection=fake_tasks)
+
+        with patch("db.tasks.get_db", return_value=fake_db):
+            rows = await find_tasks_for_delete(
+                str(self.owner_id),
+                {
+                    "priority": "medium",
+                },
+            )
+
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["_id"], str(self.task2_id))
+        self.assertEqual(rows[0]["priority"], "medium")
+
+    async def test_find_tasks_for_delete_with_date_filter(self):
+        fake_tasks = FakeTasksCollection(self.docs)
+        fake_db = FakeDB(tasks_collection=fake_tasks)
+
+        with patch("db.tasks.get_db", return_value=fake_db):
+            rows = await find_tasks_for_delete(
+                str(self.owner_id),
+                {
+                    "date": "2026-04-01",
+                },
+            )
+
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(all(row["owner_id"] == str(self.owner_id) for row in rows))
+
     async def test_find_tasks_for_delete_returns_empty_when_no_match(self):
         fake_tasks = FakeTasksCollection(self.docs)
         fake_db = FakeDB(tasks_collection=fake_tasks)
@@ -272,4 +318,3 @@ class TestDeleteDbLayer(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
