@@ -1,3 +1,6 @@
 */testModels
 */models
 *.env
+.venv
+.pytest_cache
+.vscode
