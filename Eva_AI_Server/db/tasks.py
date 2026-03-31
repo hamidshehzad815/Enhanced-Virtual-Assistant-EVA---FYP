@@ -252,6 +252,55 @@ def _build_delete_query(
     return query
 
 
+def _build_show_query(
+    owner_value: Any,
+    filters: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    filters = filters or {}
+    query: Dict[str, Any] = {
+        "owner_id": owner_value,
+        "is_deleted": {"$ne": True},
+    }
+
+    now_utc = filters.get("now_utc")
+    overdue_only = bool(filters.get("overdue_only"))
+    date_range = filters.get("date_range")
+
+    if overdue_only and isinstance(now_utc, datetime):
+        query["due_datetime"] = {"$lt": now_utc}
+    elif isinstance(date_range, dict):
+        start_value = date_range.get("start_utc", date_range.get("start"))
+        end_value = date_range.get("end_utc", date_range.get("end"))
+        if isinstance(start_value, datetime) and isinstance(end_value, datetime):
+            query["due_datetime"] = {"$gte": start_value, "$lte": end_value}
+    elif isinstance(now_utc, datetime):
+        query["due_datetime"] = {"$gte": now_utc}
+
+    task_name = str(filters.get("task_name") or "").strip()
+    if task_name:
+        query["title"] = {
+            "$regex": re.escape(task_name),
+            "$options": "i",
+        }
+
+    priority = str(filters.get("priority") or "").strip().lower()
+    if priority in {"low", "medium", "high"}:
+        query["priority"] = priority
+
+    status = str(filters.get("status") or "").strip().lower()
+    if status == "completed":
+        status = "complete"
+    if status in {"pending", "ongoing", "complete"}:
+        query["status"] = status
+        # For show completed tasks, do not force an upcoming-only window.
+        if status == "complete" and isinstance(filters.get("date_range"), dict):
+            pass
+        elif status == "complete":
+            query.pop("due_datetime", None)
+
+    return query
+
+
 async def find_tasks_for_delete(
     user_id: str,
     filters: Optional[Dict[str, Any]] = None,
@@ -275,6 +324,36 @@ async def find_tasks_for_delete(
             return [_normalize_doc(row) for row in rows]
 
     return []
+
+
+async def find_tasks_for_show(
+    user_id: str,
+    filters: Optional[Dict[str, Any]] = None,
+) -> Tuple[List[Dict[str, Any]], int]:
+    """
+    Return up to 10 matching tasks and the total match count for show flow.
+    Filters supported: task_name, date_range, priority, status, now_utc.
+    """
+    db = get_db()
+    owner_object_id = _to_object_id(user_id)
+    owner_variants = [owner_object_id]
+    if owner_object_id != user_id:
+        owner_variants.append(user_id)
+
+    status = str((filters or {}).get("status") or "").strip().lower()
+    if status == "completed":
+        status = "complete"
+    sort_direction = -1 if status == "complete" else 1
+
+    for owner_value in owner_variants:
+        query = _build_show_query(owner_value, filters)
+        cursor = db.tasks.find(query).sort("due_datetime", sort_direction).limit(10)
+        rows = await cursor.to_list(length=10)
+        total_count = int(await db.tasks.count_documents(query))
+        if rows or total_count > 0:
+            return [_normalize_doc(row) for row in rows], total_count
+
+    return [], 0
 
 
 async def soft_delete_task(task_id: str) -> bool:

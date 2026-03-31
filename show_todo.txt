@@ -36,8 +36,8 @@ Goal: NER extracts show-specific entities correctly.
 
   AI Server
   ─────────────────────────────────────────────────────────
-  [ ] Verify NER model extracts these entities for show:
-      date, priority, status, taskname
+  [x] Verify NER model extracts these entities for show:
+      date, priority, status, task_name
       → test: "show my tasks for Monday"
               expected: date = "Monday"
       → test: "show high priority tasks"
@@ -45,34 +45,34 @@ Goal: NER extracts show-specific entities correctly.
       → test: "show pending tasks for this week"
               expected: status = "pending", date = "this week"
       → test: "show my physics tasks"
-              expected: taskname = "physics"
+              expected: task_name = "physics"
       → test: "show all tasks"
               expected: no entities extracted
       → test: "show completed tasks"
               expected: status = "complete"
 
-  [ ] Update pipeline/entity_scoper.py
+  [x] Update pipeline/entity_scoper.py
       → add "scheduling_show" scope:
         keep: date, priority, status, task_name
         drop: others, time, duration, collaborator,
               topic, subtopic
 
-  [ ] Test entity scoper on show intent:
+  [x] Test entity scoper on show intent:
       → input containing duration and date
         confirm duration is dropped, date kept
 
   Node.js
   ─────────────────────────────────────────────────────────
-  [ ] Nothing new this phase.
+  [x] Nothing new this phase.
 
   PHASE 19 TEST:
-  [ ] "show tasks for Monday" → date only extracted
-  [ ] "show high priority tasks" → priority only
-  [ ] "show pending tasks this week" → status + date
-  [ ] "show physics tasks" → taskname only
-  [ ] "show all tasks" → no entities
-  [ ] "show completed tasks" → status only
-  [ ] Confirm task_name never appears in show scope
+  [x] "show tasks for Monday" → date only extracted
+  [x] "show high priority tasks" → priority only
+  [x] "show pending tasks this week" → status + date
+  [x] "show physics tasks" → task_name only
+  [x] "show all tasks" → no entities
+  [x] "show completed tasks" → status only
+  [x] Confirm only date/priority/status/task_name appear in show scope
 
 
 ================================================================
@@ -84,7 +84,7 @@ Goal: All DB query functions needed by show handler
 
   AI Server
   ─────────────────────────────────────────────────────────
-  [ ] Add to db/tasks.py:
+  [x] Add to db/tasks.py:
 
       find_tasks_for_show(user_id, filters) → (list, int)
         → builds query from:
@@ -92,7 +92,7 @@ Goal: All DB query functions needed by show handler
             else due_datetime >= now_utc
             priority if present
             status if present
-            subject regex on title if present
+            task_name regex on title if present
             always: owner_id = user_id, is_deleted = false
         → if status = "complete":
             remove upcoming filter (past tasks included)
@@ -107,7 +107,7 @@ Goal: All DB query functions needed by show handler
       find_tasks_for_delete — different sort, different
       limit behaviour, no owner-check needed (already in query)
 
-  [ ] Add to utils/date_utils.py:
+  [x] Add to utils/date_utils.py:
 
       build_date_range(duckling_result, user_timezone)
         → accepts Duckling output (value + grain)
@@ -125,13 +125,13 @@ Goal: All DB query functions needed by show handler
         → returns tasks with added field: local_datetime_str
           formatted as "Monday 5:00 PM" for Gemini use
 
-  [ ] Unit test each new DB function:
+  [x] Unit test each new DB function:
       → find_tasks_for_show with date filter
       → find_tasks_for_show with priority filter
       → find_tasks_for_show with status = pending
       → find_tasks_for_show with status = complete
         (confirm past tasks returned, no upcoming filter)
-      → find_tasks_for_show with subject filter
+      → find_tasks_for_show with task_name filter
       → find_tasks_for_show with no filter
         (confirm only upcoming returned)
       → find_tasks_for_show with combined filters
@@ -145,22 +145,22 @@ Goal: All DB query functions needed by show handler
 
   Node.js
   ─────────────────────────────────────────────────────────
-  [ ] Verify GET /api/tasks uses user-timezone day boundaries
+  [x] Verify GET /api/tasks uses user-timezone day boundaries
       (already fixed per completion report — confirm only)
       → GET /api/tasks?date=2026-03-23 returns tasks
         using user's local day start/end, not UTC midnight
 
   PHASE 20 TEST:
-  [ ] Insert 3 tasks on Monday at different times
-  [ ] Call find_tasks_for_show with Monday date filter
+  [x] Insert 3 tasks on Monday at different times
+  [x] Call find_tasks_for_show with Monday date filter
       → all 3 returned, sorted by time ascending
-  [ ] Insert 1 completed task in the past
-  [ ] Call find_tasks_for_show with status=complete
+  [x] Insert 1 completed task in the past
+  [x] Call find_tasks_for_show with status=complete
       → past task returned
-  [ ] Insert 12 upcoming tasks
-  [ ] Call find_tasks_for_show with no filter
+  [x] Insert 12 upcoming tasks
+  [x] Call find_tasks_for_show with no filter
       → 10 returned, total_count = 12
-  [ ] convert_tasks_to_local: UTC 12:00 → PKT 17:00 correct
+  [x] convert_tasks_to_local: UTC 12:00 → PKT 17:00 correct
 
 
 ================================================================
@@ -172,19 +172,19 @@ Goal: Show handler runs STEP 1 to STEP 4.
 
   AI Server
   ─────────────────────────────────────────────────────────
-  [ ] Create handlers/scheduling/show.py
+  [x] Create handlers/scheduling/show.py
 
-  [ ] Implement STEP 1 — resolve date filter
+  [x] Implement STEP 1 — resolve date filter
       → if date present: call Duckling → build_date_range
       → if Duckling fails on date: treat as no date filter
         (do not ask user — just proceed with no date)
       → if date absent: set upcoming filter (>= now_utc)
 
-  [ ] Implement STEP 2 — query tasks
+  [x] Implement STEP 2 — query tasks
       → call find_tasks_for_show(user_id, filters)
       → receive (results, total_count)
 
-  [ ] Implement STEP 3 — handle result count
+  [x] Implement STEP 3 — handle result count
       → 0 results:
           determine which filter was used
           call Gemini with context-aware not-found prompt
@@ -195,7 +195,7 @@ Goal: Show handler runs STEP 1 to STEP 4.
       → total_count > 10:
           pass first 10 to STEP 4 with has_more=True
 
-  [ ] Implement STEP 4 — Gemini format and return
+  [x] Implement STEP 4 — Gemini format and return
       → build action_context with tasks, filters, has_more
       → call Gemini → natural reply
       → save user message to Conversation_History
@@ -203,57 +203,57 @@ Goal: Show handler runs STEP 1 to STEP 4.
       → update Chat_Session
       → return { status, response_text, notifications: [] }
 
-  [ ] Build Gemini prompt helpers for show:
+  [x] Build Gemini prompt helpers for show:
       → not_found_prompt(username, filter_used)
           → different reply based on which filter was empty
       → results_prompt(username, tasks, filter_used,
                        total_count, has_more)
           → handles single task, multi-day grouping, has_more
 
-  [ ] Handle special cases:
+  [x] Handle special cases:
       → status = "complete": adjust sort to descending
       → no entities: query upcoming, no filter label
       → multiple filters combined: all applied together
 
-  [ ] Wire show handler into router.py
+  [x] Wire show handler into router.py
       → remove scheduling_show placeholder
       → bind to show handler
 
   Node.js
   ─────────────────────────────────────────────────────────
-  [ ] Nothing new this phase.
+  [x] Nothing new this phase.
       Chat bridge already handles show the same way.
 
   PHASE 21 TEST:
-  [ ] "show my tasks for Monday" (3 tasks in DB)
+  [x] "show my tasks for Monday" (3 tasks in DB)
       → returns 3 tasks sorted by time
       → reply uses user name, groups by day
       → times shown in local timezone
 
-  [ ] "show high priority tasks" (2 tasks in DB)
+  [x] "show high priority tasks" (2 tasks in DB)
       → returns 2 high priority tasks
       → reply natural and specific
 
-  [ ] "show pending tasks for this week" (5 tasks)
+  [x] "show pending tasks for this week" (5 tasks)
       → returns 5 tasks across multiple days
       → reply groups by day naturally
 
-  [ ] "show my physics tasks" (1 task)
+  [x] "show my physics tasks" (1 task)
       → single task reply — different tone, not list format
 
-  [ ] "show all tasks" (12 tasks)
+  [x] "show all tasks" (12 tasks)
       → returns 10, reply mentions 12 total
       → suggests refining with filter
 
-  [ ] "show tasks for Tuesday" (0 tasks)
+  [x] "show tasks for Tuesday" (0 tasks)
       → not-found reply mentions Tuesday
       → no Redis state set
 
-  [ ] "show completed tasks" (3 past tasks)
+  [x] "show completed tasks" (3 past tasks)
       → past tasks returned
       → sorted by most recently completed
 
-  [ ] "show overdue tasks" (pending + past due_datetime)
+  [x] "show overdue tasks" (pending + past due_datetime)
       → overdue tasks returned
       → Gemini labels them as overdue
 
@@ -266,38 +266,38 @@ Goal: Full show flow tested. Test suite expanded.
 
   AI Server
   ─────────────────────────────────────────────────────────
-  [ ] Create tests/test_show_handler.py
+  [x] Create tests/test_show_handler.py
 
       Test cases:
-      [ ] date filter → correct tasks returned
-      [ ] priority filter → correct tasks returned
-      [ ] status = pending → only pending returned
-      [ ] status = complete → past tasks included
-      [ ] subject filter → regex match on title
-      [ ] combined filter (date + priority) → both applied
-      [ ] no filter → only upcoming returned
-      [ ] 0 results → context-aware not-found reply
-      [ ] 1 result → singular natural reply
-      [ ] 10 results → full list returned
-      [ ] 12 results → 10 returned, total_count = 12 mentioned
-      [ ] timezone conversion → UTC stored, local displayed
-      [ ] week grain → Monday-Sunday boundaries correct
-      [ ] month grain → 1st to last day correct
-      [ ] show while another command pending → blocked
-      [ ] show never writes to Redis
+      [x] date filter → correct tasks returned
+      [x] priority filter → correct tasks returned
+      [x] status = pending → only pending returned
+      [x] status = complete → past tasks included
+      [x] task_name filter → regex match on title
+      [x] combined filter (date + priority) → both applied
+      [x] no filter → only upcoming returned
+      [x] 0 results → context-aware not-found reply
+      [x] 1 result → singular natural reply
+      [x] 10 results → full list returned
+      [x] 12 results → 10 returned, total_count = 12 mentioned
+      [x] timezone conversion → UTC stored, local displayed
+      [x] week grain → Monday-Sunday boundaries correct
+      [x] month grain → 1st to last day correct
+      [x] show while another command pending → blocked
+      [x] show never writes to Redis
 
-  [ ] Run full AI test suite → confirm 73+ tests pass
+  [x] Run full AI test suite → confirm 73+ tests pass
 
   Node.js
   ─────────────────────────────────────────────────────────
-  [ ] Add show-related test to tests/tasks.test.js:
+  [x] Add show-related test to tests/tasks.test.js:
       → GET /api/tasks?priority=high → returns high only
       → GET /api/tasks?status=pending → returns pending only
       → GET /api/tasks?date=2026-03-23 → correct day range
       → GET /api/tasks with no params → returns upcoming
       → All use user-timezone day boundaries
 
-  [ ] Run full backend test suite → confirm 10+ tests pass
+  [x] Run full backend test suite → confirm 10+ tests pass
 
   PHASE 22 END-TO-END TESTS:
   [ ] Add 5 tasks across 3 days

@@ -37,6 +37,8 @@ _ACTION_GUIDANCE: Dict[str, str] = {
     "delete_too_broad": "Ask user to narrow delete request because too many tasks matched.",
     "task_updated": "Mention what changed and keep it concise.",
     "tasks_shown": "Summarize visible tasks in a helpful conversational way.",
+    "show_results": "Introduce shown tasks naturally and keep the tone concise and helpful.",
+    "show_not_found": "Explain that no tasks matched the requested show filters.",
     "missing_task_name": "Ask for task name naturally.",
     "missing_date": "Ask for date naturally.",
     "missing_time": "Ask for time naturally.",
@@ -197,6 +199,16 @@ _FALLBACK_RESPONSES: Dict[str, List[str]] = {
         "Here is what I found, {name}.",
         "These are your matching tasks, {name}.",
         "I pulled your requested tasks, {name}.",
+    ],
+    "show_results": [
+        "Here is your schedule snapshot, {name}.",
+        "I found these matching tasks for you, {name}.",
+        "This is what is coming up based on your filters, {name}.",
+    ],
+    "show_not_found": [
+        "I could not find any tasks for {filters_summary}, {name}.",
+        "No tasks matched {filters_summary}, {name}.",
+        "Nothing is scheduled for {filters_summary}, {name}.",
     ],
     "empty_input": [
         "I did not catch any message, {name}. Please type what you want me to do.",

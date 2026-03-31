@@ -71,7 +71,7 @@ describe("Tasks API", () => {
     });
   });
 
-  test("GET /api/tasks -> returns task list", async () => {
+  test("GET /api/tasks -> returns upcoming task list", async () => {
     const tasks = [
       {
         _id: TASK_ID,
@@ -99,6 +99,63 @@ describe("Tasks API", () => {
     expect(response.body.status).toBe("success");
     expect(response.body.data.tasks).toEqual(tasks);
     expect(response.body.data.pagination.total).toBe(1);
+    expect(Task.find).toHaveBeenCalledTimes(1);
+    const query = Task.find.mock.calls[0][0];
+    expect(query.owner_id).toBe(USER_ID);
+    expect(query.is_deleted).toBe(false);
+    expect(query.due_datetime).toBeDefined();
+    expect(query.due_datetime.$gte).toBeInstanceOf(Date);
+    expect(query.due_datetime.$lte).toBeUndefined();
+  });
+
+  test("GET /api/tasks?priority=high -> returns high priority upcoming tasks only", async () => {
+    const tasks = [];
+    const findChain = {
+      sort: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(tasks),
+    };
+
+    Task.find.mockReturnValue(findChain);
+    Task.countDocuments.mockResolvedValue(0);
+
+    const response = await request(app)
+      .get("/api/tasks?priority=high")
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(response.status).toBe(200);
+    expect(Task.find).toHaveBeenCalledTimes(1);
+    const query = Task.find.mock.calls[0][0];
+    expect(query.priority).toBe("high");
+    expect(query.due_datetime).toBeDefined();
+    expect(query.due_datetime.$gte).toBeInstanceOf(Date);
+    expect(query.due_datetime.$lte).toBeUndefined();
+  });
+
+  test("GET /api/tasks?status=pending -> returns pending upcoming tasks only", async () => {
+    const tasks = [];
+    const findChain = {
+      sort: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(tasks),
+    };
+
+    Task.find.mockReturnValue(findChain);
+    Task.countDocuments.mockResolvedValue(0);
+
+    const response = await request(app)
+      .get("/api/tasks?status=pending")
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(response.status).toBe(200);
+    expect(Task.find).toHaveBeenCalledTimes(1);
+    const query = Task.find.mock.calls[0][0];
+    expect(query.status).toBe("pending");
+    expect(query.due_datetime).toBeDefined();
+    expect(query.due_datetime.$gte).toBeInstanceOf(Date);
+    expect(query.due_datetime.$lte).toBeUndefined();
   });
 
   test("GET /api/tasks?date uses user timezone day boundaries", async () => {
