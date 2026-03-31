@@ -32,6 +32,41 @@ class TestPhase7Pipeline(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("topic", scoped)
         self.assertNotIn("new_task_name", scoped)
 
+    def test_scope_entities_for_scheduling_show_keeps_task_filters(self):
+        raw_entities = {
+            "task_name": "physics exam",
+            "date": "monday",
+            "priority": "high",
+            "status": "pending",
+            "duration": "2 hours",
+            "collaborator": "hamid",
+            "topic": "physics",
+            "subtopic": "waves",
+        }
+
+        scoped = scope_entities(raw_entities, "scheduling_show")
+
+        self.assertEqual(scoped, {
+            "task_name": "physics exam",
+            "date": "monday",
+            "priority": "high",
+            "status": "pending",
+        })
+
+    def test_scope_entities_for_scheduling_show_maps_subject_to_task_name(self):
+        raw_entities = {
+            "subject": "chemistry quiz",
+            "date": "today",
+            "time": "5pm",
+        }
+
+        scoped = scope_entities(raw_entities, "scheduling_show")
+
+        self.assertEqual(scoped.get("task_name"), "chemistry quiz")
+        self.assertEqual(scoped.get("date"), "today")
+        self.assertNotIn("subject", scoped)
+        self.assertNotIn("time", scoped)
+
     async def test_resolve_all_calls_duckling(self):
         entities = {
             "date": "Monday",

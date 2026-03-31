@@ -1,0 +1,528 @@
+================================================================
+PHASES 23–28 — SCHEDULING UPDATE COMMAND
+Parallel Build: AI Server + Node.js Backend
+================================================================
+
+WHAT IS ALREADY DONE
+================================================================
+
+  AI Server:
+  ✓ Self-fetch, preprocessing, Model 1, Model 2
+  ✓ NER model running
+  ✓ Entity scoper (needs update scope added)
+  ✓ Duckling resolver (date/time working)
+  ✓ Context manager (free_text, number, yes_no all working)
+  ✓ db/tasks.py (find, soft_delete, get_by_id exist)
+  ✓ db/activity_logs.py (insert_log exists)
+  ✓ Timezone conversion helpers
+  ✓ Gemini service with fallback
+  ✓ Conversation history save
+  ✓ Router (scheduling_update routed to placeholder)
+  ✓ Google Calendar: create_event and delete_event exist
+
+  Node.js:
+  ✓ Chat bridge working
+  ✓ PATCH /api/tasks/:id/status exists
+  ✓ Task model with all updatable fields
+
+
+================================================================
+PHASE 23 — NER ENTITIES + ENTITY SCOPER FOR UPDATE
+================================================================
+
+Goal: NER extracts update-specific entities correctly.
+      Scoper knows what to keep for update intent.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Define update NER entity set:
+
+      Identifier entities (find which task):
+        task_name, date, priority, status
+
+      Update field entities (what to change):
+        new_title, new_date, new_time,
+        new_priority, new_status, new_duration
+
+  [ ] Verify or retrain NER to extract these entities:
+
+      Test inputs:
+      → "change physics exam priority to high"
+         expected: task_name="physics exam",
+                   new_priority="high"
+
+      → "reschedule chemistry lab to next Friday at 2PM"
+         expected: task_name="chemistry lab",
+                   new_date="next Friday", new_time="2PM"
+
+      → "mark my biology assignment as complete"
+         expected: task_name="biology assignment",
+                   new_status="complete"
+
+      → "move physics exam on Monday to Tuesday"
+         expected: task_name="physics exam", date="Monday",
+                   new_date="Tuesday"
+
+      → "change the time of my exam on Tuesday to 5PM"
+         expected: date="Tuesday", new_time="5PM"
+
+      → "update physics exam duration to 3 hours"
+         expected: task_name="physics exam",
+                   new_duration="3 hours"
+
+      → "rename physics exam to physics final"
+         expected: task_name="physics exam",
+                   new_title="physics final"
+
+  [ ] Update pipeline/entity_scoper.py
+      → add "scheduling_update" scope:
+        keep all: task_name, date, priority, status,
+                  new_title, new_date, new_time,
+                  new_priority, new_status, new_duration
+        drop: collaborator, topic, subtopic, subject,
+              duration (identifier), time (identifier)
+
+      NOTE: duration/time without "new_" prefix are dropped
+      as identifiers for update intent — too ambiguous.
+      Only new_date / new_time / new_duration are kept.
+
+  [ ] Test entity scoper on update intent:
+      → confirm identifier entities kept
+      → confirm update field entities kept
+      → confirm irrelevant entities dropped
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+  [ ] Nothing new this phase.
+
+  PHASE 23 TEST:
+  [ ] Send each test input above → verify correct extraction
+  [ ] Confirm scoper does not leak irrelevant entities
+
+
+================================================================
+PHASE 24 — DB LAYER FOR UPDATE
+================================================================
+
+Goal: All DB functions needed by update handler exist
+      and are tested independently.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Add to db/tasks.py:
+
+      find_tasks_for_update(user_id, filters) → list
+        → same logic as find_tasks_for_delete
+        → builds query from: task_name regex, date_range,
+          priority, status (as identifiers only)
+        → always: owner_id=user_id, is_deleted=false
+        → sort by due_datetime ascending
+        → limit 10
+        → returns list of task dicts
+
+        NOTE: can likely reuse or alias find_tasks_for_delete
+        → check if they are identical, reuse if so
+
+      update_task(task_id, update_data) → bool
+        → accepts dict of fields to update
+        → always sets updated_at = now
+        → if new_status = "complete": also sets completed_at
+        → returns True on success
+
+      check_update_overlap(user_id, task_id,
+                           new_datetime, duration) → bool
+        → checks if new_datetime creates an overlap
+          with any OTHER task (excluding the task being updated)
+        → same logic as add overlap check but excludes self
+        → returns True if conflict exists
+
+  [ ] Add to db/activity_logs.py:
+      → confirm insert_log accepts action_type = "task_updated"
+      → add "task_updated" to allowed values if missing
+
+  [ ] Add to services/google_calendar.py:
+      update_event(token, calendar_id, event_id, task_data)
+        → updates summary, start, end, reminders
+        → already may exist from Phase 11 — confirm or add
+
+  [ ] Unit test each new DB function:
+      → find_tasks_for_update: same test cases as delete
+      → update_task with new_priority → verify in DB
+      → update_task with new_date → verify due_datetime updated
+      → update_task with new_status = "complete"
+        → verify completed_at set
+      → update_task with multiple fields → all applied
+      → check_update_overlap: task at 5PM + new task at 6PM
+        with 120 min duration → conflict True
+      → check_update_overlap: task moved to time with no
+        other tasks → conflict False
+      → check_update_overlap: does not flag the task itself
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+  [ ] Verify PATCH /api/tasks/:id/status still works correctly
+      (used by UI, not chat — should be fine, confirm only)
+
+  PHASE 24 TEST:
+  [ ] Insert task → call update_task with new_priority
+      → verify priority changed in DB
+  [ ] Insert task → call update_task with new_status=complete
+      → verify status and completed_at in DB
+  [ ] Insert 2 overlapping tasks → call check_update_overlap
+      → returns True
+  [ ] Insert isolated task → call check_update_overlap
+      → returns False
+
+
+================================================================
+PHASE 25 — CONTEXT MANAGER FOR UPDATE
+================================================================
+
+Goal: Context manager handles all 4 update-specific states
+      including the two-phase (identify then confirm) flow.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Add stage-aware routing to context_manager.py:
+
+      When pending intent = "update", route by stage:
+
+      stage = "identify" + expected = "free_text":
+        → treat reply as task_name identifier
+        → merge as task_name into entities
+        → clear Redis
+        → re-enter handler from STEP 1 (identify)
+
+      stage = "identify" + expected = "number":
+        → run Model 1 first
+        → confirm or continue as per standard number flow
+        → on valid number:
+            → select task
+            → if update fields already in entities:
+                update Redis to yes_no stage="confirm"
+                Gemini asks for confirmation
+            → if no update fields:
+                update Redis to free_text stage="what_to_update"
+                Gemini asks what to change
+
+      stage = "what_to_update" + expected = "free_text":
+        → SKIP Model 1
+        → pass reply through NER
+        → extract update fields from reply
+        → if fields found:
+            merge into entities
+            clear Redis
+            re-enter handler at STEP 5 (validate fields)
+        → if NER finds nothing:
+            Redis stays (TTL resets)
+            Gemini: "I didn't catch that. Try saying
+                     'priority to high' or 'move to Tuesday'."
+            STOP
+
+      stage = "confirm" + expected = "yes_no":
+        → run Model 1 first
+        → standard yes/no flow
+        → yes → clear Redis → STEP 8 (perform update)
+        → no  → clear Redis → cancellation reply
+
+  [ ] Write unit tests for update context manager:
+      → free_text state 1: reply treated as task_name
+      → number state 2: valid number selects task
+      → number state 2: update fields present → goes to confirm
+      → number state 2: no update fields → goes to what_to_update
+      → free_text state 3: NER extracts update fields
+      → free_text state 3: NER finds nothing → ask again
+      → yes_no state 4: yes → update proceeds
+      → yes_no state 4: no → cancel
+      → cancel in any state → Redis cleared
+      → new command in yes_no state → blocked
+      → TTL expiry → fresh start
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+  [ ] Nothing new this phase.
+
+  PHASE 25 TEST:
+  [ ] Manually set State 1 in Redis
+      → reply "physics exam" → confirm re-enters handler
+
+  [ ] Manually set State 2 in Redis (3 tasks)
+      → reply "2" → confirm task selected
+      → if update fields in entities → moves to confirm
+      → if no update fields → moves to what_to_update
+
+  [ ] Manually set State 3 in Redis
+      → reply "priority to high"
+      → NER extracts new_priority
+      → handler re-enters at STEP 5
+
+  [ ] Manually set State 4 in Redis
+      → reply "yes" → update proceeds
+      → reply "no" → Redis cleared, nothing updated
+
+
+================================================================
+PHASE 26 — UPDATE HANDLER: IDENTIFY + WHAT TO UPDATE
+================================================================
+
+Goal: Handler runs STEP 1-5. Task identified, update field
+      known or asked. No actual DB write yet.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Create handlers/scheduling/update.py
+
+  [ ] Implement STEP 1 — identifier entity check
+      → if no identifier entities:
+          set Redis free_text state (State 1, stage=identify)
+          Gemini: "Which task would you like to update?"
+          STOP
+
+  [ ] Implement STEP 2 — date resolution for identifier
+      → if date in identifier entities:
+          pass to Duckling → build date_range
+
+  [ ] Implement STEP 3 — query tasks
+      → call find_tasks_for_update(user_id, filters)
+
+  [ ] Implement STEP 4 — handle result count
+      → 0 found: Gemini not-found reply → STOP
+      → 1 found: store task_id → move to STEP 5
+      → 2-5 found: set Redis number state (State 2)
+                   Gemini numbered list → STOP
+      → 6+ found: Gemini too-broad reply → STOP
+
+  [ ] Implement STEP 5 — check update fields
+      → if no update fields extracted:
+          set Redis free_text state (State 3,
+            stage=what_to_update)
+          Gemini: "What would you like to change
+                   about [task name]?"
+          STOP
+      → if update fields present:
+          continue to STEP 6
+
+  [ ] Wire STEP 1-5 into router.py
+      → remove scheduling_update placeholder
+      → bind to update handler
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+  [ ] Nothing new this phase.
+
+  PHASE 26 TEST:
+  [ ] "update physics exam" (no update field)
+      → task identified (1 match)
+      → EVA asks what to change
+      → Redis State 3 set correctly
+
+  [ ] "change priority of physics exam" (no new value)
+      → task identified
+      → no valid update field extracted (no new value)
+      → EVA asks what to change
+
+  [ ] "reschedule physics exam to Tuesday"
+      → task identified (1 match)
+      → new_date extracted
+      → moves to STEP 6 directly (no asking)
+
+  [ ] "update tasks" (6+ matches)
+      → too broad reply
+
+  [ ] "update calculus exam" (0 matches)
+      → not-found reply
+
+
+================================================================
+PHASE 27 — UPDATE HANDLER: VALIDATE + CONFIRM + EXECUTE
+================================================================
+
+Goal: STEP 6-12 implemented. Fields validated, confirmed,
+      and task actually updated in DB.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Implement STEP 6 — validate update fields
+      → new_date: pass to Duckling → resolve to UTC
+          Duckling fails → ask user for clearer date
+      → new_time: pass to Duckling → merge with date
+      → new_priority: validate low/medium/high
+      → new_status: validate pending/ongoing/complete
+          check transition rule (complete → no backwards)
+          if already complete → Gemini tells user, STOP
+      → new_duration: parse to minutes
+      → new_title: accept as-is
+
+      → if new_date or new_time:
+          call check_update_overlap(user_id, task_id,
+                                    new_datetime, duration)
+          if conflict:
+            Gemini: "That time overlaps with another task, Ali.
+                     Want to schedule at a different time?"
+            set Redis free_text state asking for new time
+            STOP
+
+  [ ] Implement STEP 7 — build confirmation and set Redis
+      → build human-readable change summary for Gemini
+      → set Redis yes_no state (State 4, stage=confirm)
+        with updates dict
+      → Gemini generates natural confirmation question
+      → STOP
+
+  [ ] Implement STEP 8 — perform update (after yes)
+      → call update_task(task_id, update_data)
+
+  [ ] Implement STEP 9 — activity log
+      → insert_log with action_type = "task_updated"
+
+  [ ] Implement STEP 10 — Google Calendar sync
+      → if task.google_calendar_event_id:
+          if date/time/title/duration changed:
+            call update_event (non-blocking)
+
+  [ ] Implement STEP 11 — Gemini final response
+      → build action_context with changes
+      → natural reply confirming what changed
+
+  [ ] Implement STEP 12 — save messages and return
+      → save user + EVA messages
+      → update Chat_Session
+      → return { status, response_text, notifications: [] }
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+  [ ] No new routes needed.
+      PATCH /api/tasks/:id is for UI, not chat.
+      Chat update goes through /api/chat/process.
+
+  [ ] Confirm notification.service handles empty
+      notifications array gracefully (it should already)
+
+  PHASE 27 TEST:
+  [ ] "change physics exam priority to high"
+      → EVA: "Change Physics exam priority to high. Confirm?"
+      → "yes"
+      → priority = "high" in DB
+      → activity log inserted
+      → EVA: natural confirmation reply
+
+  [ ] "reschedule chemistry lab to next Friday at 2PM"
+      → EVA confirms new date/time
+      → "yes"
+      → due_datetime updated in DB (UTC-correct)
+      → Google Calendar event updated if connected
+
+  [ ] "mark biology assignment as complete"
+      → EVA confirms status change
+      → "yes"
+      → status = "complete", completed_at set in DB
+
+  [ ] "change physics exam to 6PM" (overlap with existing task)
+      → EVA warns about overlap
+      → flow pauses, asks for different time
+
+  [ ] "update physics exam" (no field)
+      → task found
+      → EVA asks what to change
+      → "priority to high"
+      → EVA confirms
+      → "yes" → updated
+
+  [ ] cancel mid-flow (after confirm shown)
+      → nothing changed in DB
+
+  [ ] "change priority of completed task to high"
+      → status already complete
+      → EVA: natural reply saying what happened
+
+
+================================================================
+PHASE 28 — TESTING
+================================================================
+
+Goal: Full update flow test suite. Backend tests expanded.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Create tests/test_update_handler.py
+
+      Test cases:
+      [ ] no identifier → asked → replied → re-entered
+      [ ] 1 match, update field in input → confirm → updated
+      [ ] 1 match, no update field → asked → replied → confirm
+      [ ] 2-5 matches → pick number → update field clear
+          → confirm → updated
+      [ ] 2-5 matches → pick number → no update field
+          → asked → replied → confirm → updated
+      [ ] 6+ matches → too broad reply
+      [ ] 0 matches → not found reply
+      [ ] priority updated → verified in DB
+      [ ] date/time rescheduled → UTC-correct in DB
+      [ ] status = complete → completed_at set
+      [ ] status backwards (complete → pending) → blocked
+      [ ] duration updated → correct in DB
+      [ ] new_title updated → title changed in DB
+      [ ] overlap conflict on new datetime → warned, paused
+      [ ] cancel in identify stage → nothing changed
+      [ ] cancel in confirm stage → nothing changed
+      [ ] new command while confirm pending → blocked
+      [ ] calendar update called when date/time changes
+      [ ] activity log inserted on update
+
+  [ ] Run full AI test suite → confirm 106+ tests pass
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] Add update-related test to tests/tasks.test.js:
+      → PATCH /api/tasks/:id/status → verify status updated
+        (UI path, not chat — already exists, confirm passing)
+      → ensure soft-deleted task not returned in GET /api/tasks
+
+  [ ] Run full backend test suite → confirm 13+ tests pass
+
+  PHASE 28 END-TO-END TESTS:
+  [ ] Add task via chat
+  [ ] Update its priority via chat → verify in DB
+  [ ] Update its date via chat → verify due_datetime changed
+  [ ] Show task via chat → new values displayed
+  [ ] Mark task as complete via chat
+  [ ] Show completed tasks → task appears
+
+
+================================================================
+WHAT COMES AFTER PHASE 28
+================================================================
+
+  Phase 29 → Behavioral analytics handler (AI server)
+             + analytics dashboard APIs (Node.js)
+
+  Phase 30 → Learning CREATE handler (AI server)
+             + YouTube API
+             + roadmap page APIs (Node.js)
+
+  Phase 31 → Learning UPDATE, DELETE, SHOW (AI server)
+             + roadmap progress APIs (Node.js)
+
+  Phase 32 → Friend system (Node.js)
+             + Friend APIs
+
+  Phase 33 → Notification centre (Node.js)
+
+  Phase 34 → Profile page (Node.js)
+
+  Phase 35 → Voice input (Node.js transcription)
+
+  Phase 36 → Google OAuth login
+
+  Phase 37 → End-to-end testing all flows
+
+  Phase 38 → Performance testing + CI pipeline
+
+  Phase 39 → Deployment

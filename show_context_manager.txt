@@ -1,0 +1,107 @@
+================================================================
+CONTEXT MANAGER — SHOW COMMAND
+================================================================
+
+CORE DECISION
+================================================================
+
+  Show command sets NO pending states in Redis.
+
+  Reason:
+  Show is read-only and non-destructive. There is nothing
+  to confirm, nothing to correct, and nothing to collect
+  one piece at a time. If the user gives vague input like
+  "show tasks", EVA just returns upcoming tasks with no
+  filter — a reasonable default. If nothing matches, EVA
+  says so naturally and stops. No back-and-forth needed.
+
+  Compare with add (3 required entities to collect) and
+  delete (confirmation before destructive action). Show
+  has neither of those requirements.
+
+
+================================================================
+HOW CONTEXT MANAGER INTERACTS WITH SHOW
+================================================================
+
+  When show intent is detected, context manager does
+  exactly two things:
+
+  1. If a DIFFERENT command's pending state exists in Redis
+     (e.g. user was mid-way through an add command):
+     → block show just like any other new command
+     → Redis stays (TTL resets)
+     → Gemini: "I'm still waiting for your reply, Ali.
+                Say cancel if you want to start fresh."
+     → STOP
+
+  2. If NO pending state exists:
+     → pass through to Model 1 → Model 2 → show handler
+     → show handler runs, returns results, done
+
+  That is it. Show itself never writes to Redis.
+
+
+================================================================
+WHY NO PENDING STATES FOR SHOW
+================================================================
+
+  The only scenario where you might think a pending state
+  is needed for show:
+
+  "User says 'show tasks' and there are 100 results —
+   shouldn't EVA ask 'which date?' before querying?"
+
+  No. Here is why:
+  → EVA applies a safe default (upcoming tasks, limit 10)
+  → EVA tells the user how many total exist
+  → EVA suggests using a filter in the reply naturally
+  → User then sends a refined command like
+    "show tasks for Monday" as a fresh new input
+
+  This is cleaner than a pending state because:
+  → No Redis management needed
+  → No state expiry edge cases
+  → User always gets an immediate useful response
+  → Refinement is just another show command — no special flow
+
+
+================================================================
+FULL CONTEXT MANAGER DECISION FOR SHOW
+================================================================
+
+  Input arrives
+       ↓
+  PREPROCESSING
+       ↓
+  Redis check (from self-fetch)
+       │
+       ├── pending state EXISTS (from a different command)
+       │   → check cancel keyword first
+       │   ├── cancel → clear Redis → reply → STOP
+       │   └── not cancel
+       │       → run Model 1
+       │       → command detected → block
+       │         Gemini: "Still waiting for your reply.
+       │                  Say cancel to start fresh."
+       │       → STOP
+       │
+       └── NO pending state
+             → pass to Model 1 normally
+             → Model 2 → scheduling_show
+             → show handler runs
+             → results returned
+             → NO Redis write at any point
+
+
+================================================================
+SUMMARY
+================================================================
+
+  Show command:
+    Sets pending state?    → NO
+    Needs confirmation?    → NO
+    Can be blocked?        → YES (if another command pending)
+    Redis reads?           → YES (self-fetch, to check existing)
+    Redis writes?          → NO
+    Context states count   → 0
