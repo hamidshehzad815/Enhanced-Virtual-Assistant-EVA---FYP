@@ -22,7 +22,7 @@ _INTENT_ENTITY_SCOPE: Dict[str, Set[str]] = {
         "new_duration",
         "new_start_date",
     },
-    "scheduling_show": {"date", "priority", "status", "subject", "task_name"},
+    "scheduling_show": {"date", "priority", "status", "task_name"},
     "learning_create": {"topic", "subtopic", "duration", "start_date", "collaborator"},
     "learning_update": {
         "topic",
@@ -76,6 +76,10 @@ def scope_entities(entities: Dict[str, Any], intent: str) -> Dict[str, Any]:
 
     for raw_key, value in entities.items():
         key = _normalize_key(raw_key)
+        if intent == "scheduling_show" and key == "subject":
+            # Backward-compatible normalization: show now uses task_name as
+            # canonical title-keyword filter.
+            key = "task_name"
         if allowed and key not in allowed:
             continue
         scoped[key] = value

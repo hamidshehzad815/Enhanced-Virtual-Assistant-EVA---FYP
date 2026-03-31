@@ -43,6 +43,7 @@ const getTasks = async (req, res, next) => {
     const page = parsePositiveInt(req.query.page, 1);
     const limit = Math.min(parsePositiveInt(req.query.limit, 20), 100);
     const skip = (page - 1) * limit;
+    let normalizedStatus = null;
 
     const query = {
       owner_id: req.userId,
@@ -50,11 +51,11 @@ const getTasks = async (req, res, next) => {
     };
 
     if (req.query.status) {
-      const status = String(req.query.status).toLowerCase();
-      if (!STATUS_VALUES.has(status)) {
+      normalizedStatus = String(req.query.status).toLowerCase();
+      if (!STATUS_VALUES.has(normalizedStatus)) {
         throw new BadRequestError("Invalid status filter");
       }
-      query.status = status;
+      query.status = normalizedStatus;
     }
 
     if (req.query.priority) {
@@ -70,6 +71,10 @@ const getTasks = async (req, res, next) => {
       query.due_datetime = {
         $gte: range.start,
         $lte: range.end,
+      };
+    } else if (normalizedStatus !== "complete") {
+      query.due_datetime = {
+        $gte: new Date(),
       };
     }
 

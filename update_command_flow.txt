@@ -1,0 +1,470 @@
+================================================================
+SCHEDULING — UPDATE COMMAND FLOW (FINAL)
+AI Server handles all DB operations directly
+================================================================
+
+DECISIONS LOCKED
+================================================================
+
+  1. Update requires TWO phases:
+       Phase A — identify which task to update
+       Phase B — identify what to change and confirm
+  2. User must confirm before any update happens
+  3. Task identification follows same match logic as delete:
+       0 match   → not found reply → stop
+       1 match   → proceed to Phase B directly
+       2-5 match → numbered list → user picks one
+       6+ match  → too broad → ask to narrow down
+  4. What to update extracted from original input by NER
+     → if update field clear in original input → skip asking
+     → if update field NOT clear → ask user what to change
+  5. Multiple fields can be updated in one command
+     e.g. "move physics exam to Tuesday at 3PM"
+     → both date AND time updated together
+  6. Status transitions: pending → ongoing → complete only
+     (no backwards transitions — complete cannot go to pending)
+  7. Google Calendar updated if event_id exists (non-blocking)
+  8. Activity log inserted after every update
+  9. Gemini generates all replies — natural, specific
+  10. No hard delete — update never removes tasks
+
+
+================================================================
+NER ENTITIES FOR UPDATE
+================================================================
+
+  Identification entities (which task):
+    task_name  → name or partial name to find the task
+    date       → current date of the task (to narrow search)
+    priority   → current priority (to narrow search)
+    status     → current status (to narrow search)
+
+  Update field entities (what to change):
+    new_title    → new name for the task
+    new_date     → new date to reschedule to
+    new_time     → new time to reschedule to
+    new_priority → new priority value
+    new_status   → new status value
+    new_duration → new duration in minutes
+
+  NOTE: NER must distinguish between current value
+  (used to identify) and new value (what to change to).
+  The word "to" is usually the signal:
+    "change physics exam priority to high"
+      → task_name: physics exam
+      → new_priority: high
+    "reschedule physics exam to Tuesday at 3PM"
+      → task_name: physics exam
+      → new_date: Tuesday, new_time: 3PM
+    "update my exam on Monday to 6PM"
+      → date: Monday (identifier)
+      → new_time: 6PM
+    "mark physics exam as complete"
+      → task_name: physics exam
+      → new_status: complete
+
+  Examples of full extractions:
+    "Change physics exam priority to high"
+      → task_name: "physics exam", new_priority: "high"
+
+    "Reschedule chemistry lab to next Friday at 2PM"
+      → task_name: "chemistry lab"
+      → new_date: "next Friday", new_time: "2PM"
+
+    "Mark my biology assignment as complete"
+      → task_name: "biology assignment"
+      → new_status: "complete"
+
+    "Move physics exam on Monday to Tuesday"
+      → task_name: "physics exam", date: "Monday"
+      → new_date: "Tuesday"
+
+    "Change the time of my exam on Tuesday to 5PM"
+      → date: "Tuesday"
+      → new_time: "5PM"
+
+    "Update physics exam duration to 3 hours"
+      → task_name: "physics exam"
+      → new_duration: "3 hours"
+
+
+================================================================
+PIPELINE (inside AI Server)
+================================================================
+
+  REQUEST RECEIVED FROM NODE.JS
+  { message, user_id, session_id, input_type, timestamp }
+  ↓
+  AI SERVER SELF-FETCH
+  → user info (name, timezone), settings,
+    conversation history, integrations, Redis context
+  ↓
+  PREPROCESSING
+  → lowercase only + too_short check
+  ↓
+  CONTEXT MANAGER
+  → check Redis for pending state
+  → pending exists? → handle reply → stop or continue
+  → no pending → continue to Model 1
+  ↓
+  MODEL 1 → command → continue
+  ↓
+  MODEL 2 → scheduling_update → continue
+  ↓
+  NER → original cased text
+  → extracts: task_name, date, priority, status
+              (identifiers)
+              new_title, new_date, new_time,
+              new_priority, new_status, new_duration
+              (update fields)
+  ↓
+  ENTITY SCOPING
+  → keep : all update entities listed above
+  → drop : anything else
+  ↓
+  HANDLER — handlers/scheduling/update.py
+
+
+================================================================
+PHASE A — IDENTIFY TASK
+================================================================
+
+STEP 1 — ENTITY CHECK
+─────────────────────────────────────────────────────────────
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ NO identifier entities                                  │
+  │ (no task_name, date, priority, or status to search by)  │
+  │                                                         │
+  │ Example: "update a task" / "change something"           │
+  │                                                         │
+  │ → set Redis:                                            │
+  │   {                                                     │
+  │     expected_response : "free_text",                    │
+  │     pending_action    : {                               │
+  │       intent    : "update",                             │
+  │       stage     : "identify",                           │
+  │       entities  : { ...any update fields found... }     │
+  │     }                                                   │
+  │   }                                                     │
+  │                                                         │
+  │ → Gemini:                                               │
+  │ EVA: "Which task would you like to update, Ali?"        │
+  │ STOP                                                    │
+  │                                                         │
+  │ → reply treated as task_name identifier                 │
+  │ → handler re-enters from STEP 1                         │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ identifier entities present → continue to STEP 2        │
+  └─────────────────────────────────────────────────────────┘
+
+
+STEP 2 — DATE RESOLUTION FOR IDENTIFIER
+─────────────────────────────────────────────────────────────
+
+  if date present in identifier entities:
+    → pass to Duckling → resolve to date range (start/end UTC)
+  else:
+    → no date filter on search
+
+  NOTE: new_date is NOT resolved here.
+  new_date is resolved separately in STEP 6 (after task found)
+
+
+STEP 3 — QUERY TASKS (same logic as delete)
+─────────────────────────────────────────────────────────────
+
+  query = {
+    owner_id   : user_id,
+    is_deleted : false
+  }
+
+  if task_name present:
+    query["title"] = { $regex: task_name, $options: "i" }
+
+  if date resolved:
+    query["due_datetime"] = { $gte: start_utc, $lte: end_utc }
+
+  if priority present (as identifier):
+    query["priority"] = priority
+
+  if status present (as identifier):
+    query["status"] = status
+
+  results = db.tasks.find(query).sort({ due_datetime: 1 })
+
+
+STEP 4 — HANDLE QUERY RESULTS
+─────────────────────────────────────────────────────────────
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 0 tasks found                                           │
+  │ → Gemini: natural not-found reply                       │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 1 task found                                            │
+  │ → task identified                                       │
+  │ → store task_id in pending state                        │
+  │ → move directly to PHASE B (STEP 5)                     │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 2-5 tasks found                                         │
+  │                                                         │
+  │ → set Redis:                                            │
+  │   {                                                     │
+  │     expected_response : "number",                       │
+  │     pending_action    : {                               │
+  │       intent   : "update",                              │
+  │       stage    : "identify",                            │
+  │       task_ids : [ id1, id2, id3 ],                     │
+  │       tasks    : [{ title, due_datetime, priority }...],│
+  │       entities : { ...all extracted entities... }       │
+  │     }                                                   │
+  │   }                                                     │
+  │                                                         │
+  │ → Gemini shows numbered list:                           │
+  │ EVA: "I found 3 tasks. Which one did you mean?          │
+  │       1. Physics exam — Monday 5PM (high)               │
+  │       2. Physics lab — Tuesday 3PM (medium)             │
+  │       3. Physics quiz — Wednesday 2PM (low)"            │
+  │ STOP                                                    │
+  │                                                         │
+  │ → user picks number → task identified                   │
+  │ → move to PHASE B (STEP 5)                              │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 6+ tasks found                                          │
+  │ → Gemini: too broad reply, ask to narrow down           │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+PHASE B — WHAT TO UPDATE + CONFIRM
+================================================================
+
+STEP 5 — CHECK UPDATE FIELDS
+─────────────────────────────────────────────────────────────
+
+  At this point:
+  → task is identified (task_id known)
+  → update fields may or may not be present
+    from original input
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ NO update fields extracted                              │
+  │                                                         │
+  │ Example: user said "update physics exam"                │
+  │ with no new value specified                             │
+  │                                                         │
+  │ → set Redis:                                            │
+  │   {                                                     │
+  │     expected_response : "free_text",                    │
+  │     pending_action    : {                               │
+  │       intent   : "update",                              │
+  │       stage    : "what_to_update",                      │
+  │       task_id  : identified_task_id,                    │
+  │       task     : { title, due_datetime, priority },     │
+  │       entities : {}                                     │
+  │     }                                                   │
+  │   }                                                     │
+  │                                                         │
+  │ → Gemini:                                               │
+  │ EVA: "What would you like to change about              │
+  │       Physics exam, Ali? You can update the date,       │
+  │       time, priority, status, or name."                 │
+  │ STOP                                                    │
+  │                                                         │
+  │ → reply passed through NER to extract update field      │
+  │ → merged into pending entities                          │
+  │ → handler continues to STEP 6                           │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ update fields present → continue to STEP 6              │
+  └─────────────────────────────────────────────────────────┘
+
+
+STEP 6 — VALIDATE UPDATE FIELDS
+─────────────────────────────────────────────────────────────
+
+  For each update field present:
+
+  new_date present:
+    → pass to Duckling → resolve to ISO date (UTC)
+    → Duckling fails → ask user for clearer date
+
+  new_time present:
+    → pass to Duckling → resolve to ISO time
+    → merge with new_date (or existing task date if only time)
+    → Duckling fails → ask user for clearer time
+
+  new_priority present:
+    → must be: low / medium / high
+    → invalid value → ask again
+
+  new_status present:
+    → must be: pending / ongoing / complete
+    → check transition rules:
+        complete → cannot go backwards
+        if task already complete → EVA: "This task is already
+        marked complete, Ali. Want to change anything else?"
+    → invalid → ask again
+
+  new_duration present:
+    → parse to minutes (e.g. "3 hours" → 180)
+
+  new_title present:
+    → take as-is, no validation needed
+
+  → conflict check if date/time changing:
+    does the new datetime overlap with another task
+    (same duration window)?
+    → yes → tell user about conflict, ask if they still want
+    → no → continue
+
+  → continue to STEP 7
+
+
+STEP 7 — CONFIRMATION
+─────────────────────────────────────────────────────────────
+
+  → set Redis:
+    {
+      expected_response : "yes_no",
+      pending_action    : {
+        intent     : "update",
+        stage      : "confirm",
+        task_id    : task_id,
+        task       : { current task details },
+        updates    : { fields and new values to apply }
+      }
+    }
+
+  → Gemini builds natural confirmation message
+    showing what will change:
+
+  Single field:
+  "Got it Ali — change Physics exam priority to high.
+   Confirm?"
+
+  Multiple fields:
+  "So Physics exam moves to Tuesday at 3PM, Ali.
+   Shall I go ahead?"
+
+  Status:
+  "Marking Physics exam as complete, Ali. Confirm?"
+
+  STOP
+
+
+STEP 8 — PERFORM UPDATE (after yes confirmed)
+─────────────────────────────────────────────────────────────
+
+  AI server builds update payload from confirmed fields:
+
+  update_data = {}
+
+  if new_title:
+    update_data["title"] = new_title
+
+  if new_date or new_time:
+    → recalculate due_datetime (UTC)
+    update_data["due_datetime"] = new_due_datetime
+
+  if new_priority:
+    update_data["priority"] = new_priority
+
+  if new_status:
+    update_data["status"] = new_status
+    if new_status == "complete":
+      update_data["completed_at"] = now
+
+  if new_duration:
+    update_data["duration"] = new_duration_minutes
+
+  update_data["updated_at"] = now
+
+  db.tasks.updateOne(
+    { _id: task_id },
+    { $set: update_data }
+  )
+
+
+STEP 9 — ACTIVITY LOG
+─────────────────────────────────────────────────────────────
+
+  db.activity_logs.insertOne({
+    user_id          : user_id,
+    task_id          : task_id,
+    action_type      : "task_updated",
+    action_timestamp : now,
+    day_of_week      : updated_task.due_datetime.weekday(),
+    hour_of_day      : updated_task.due_datetime.hour,
+    task_priority    : updated_task.priority,
+    subject          : updated_task.title,
+    source           : "scheduling_module"
+  })
+
+
+STEP 10 — GOOGLE CALENDAR SYNC
+─────────────────────────────────────────────────────────────
+
+  if task.google_calendar_event_id exists:
+    if date/time/title/duration changed:
+      → call Google Calendar API update_event (non-blocking)
+      → on failure: log silently, do not block
+  else:
+    → skip
+
+
+STEP 11 — GEMINI RESPONSE
+─────────────────────────────────────────────────────────────
+
+  action_context = {
+    action   : "task_updated",
+    username : user.name,
+    task     : { updated task details in local timezone },
+    changes  : { what changed and new values }
+  }
+
+  Single field changed:
+  "Done Ali — Physics exam priority is now set to high."
+
+  Date/time rescheduled:
+  "Physics exam has been moved to Tuesday at 3PM, Ali."
+
+  Status updated:
+  "Physics exam marked as complete, Ali. Well done!"
+
+  Multiple fields:
+  "Physics exam rescheduled to Tuesday at 3PM and
+   priority updated to high, Ali."
+
+  Cancelled:
+  "No problem, Physics exam stays as it is."
+
+
+STEP 12 — SAVE MESSAGES AND RETURN
+─────────────────────────────────────────────────────────────
+
+  AI server saves user message → Conversation_History
+  AI server saves EVA reply   → Conversation_History
+  AI server updates Chat_Session
+
+  AI server returns to Node.js:
+  {
+    "status"        : "success",
+    "response_text" : "Done Ali — Physics exam...",
+    "notifications" : []
+  }
+
+  Node.js returns response to frontend.
+  No notifications generated for update
+  (unless collaborators need to be informed — future scope)
