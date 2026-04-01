@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from handlers.scheduling.add import handle_scheduling_add
 from handlers.scheduling.delete import handle_scheduling_delete
 from handlers.scheduling.show import handle_scheduling_show
+from handlers.scheduling.update import handle_scheduling_update
 from services.gemini import gemini_service
 
 
@@ -54,10 +55,12 @@ async def route_intent(
     if canonical_intent == "scheduling_show":
         return await handle_scheduling_show(entities=entities, context=context)
 
+    if canonical_intent == "scheduling_update":
+        return await handle_scheduling_update(entities=entities, context=context)
+
     response_map = {
         "scheduling_add": "scheduling_add",
         "scheduling_delete": "scheduling_delete",
-        "scheduling_update": "scheduling_update",
         "scheduling_show": "scheduling_show",
         "learning_create": "learning_create",
         "learning_update": "learning_update",

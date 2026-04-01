@@ -73,6 +73,12 @@ async def update_task(task_id: str, update_data: Dict[str, Any]) -> bool:
     db = get_db()
     payload = dict(update_data)
     payload.setdefault("updated_at", datetime.now(timezone.utc).replace(tzinfo=None))
+    normalized_status = str(payload.get("status") or "").strip().lower()
+    if normalized_status == "completed":
+        normalized_status = "complete"
+        payload["status"] = "complete"
+    if normalized_status == "complete":
+        payload.setdefault("completed_at", datetime.now(timezone.utc).replace(tzinfo=None))
 
     task_object_id = _to_object_id(task_id)
     query = {"_id": task_object_id}
@@ -81,7 +87,7 @@ async def update_task(task_id: str, update_data: Dict[str, Any]) -> bool:
     if result.matched_count == 0 and task_object_id != task_id:
         result = await db.tasks.update_one({"_id": task_id}, {"$set": payload})
 
-    return result.modified_count > 0
+    return result.matched_count > 0
 
 
 async def find_duplicate(
@@ -326,6 +332,23 @@ async def find_tasks_for_delete(
     return []
 
 
+async def find_tasks_for_update(
+    user_id: str,
+    filters: Optional[Dict[str, Any]] = None,
+    timezone_name: str = "UTC",
+) -> List[Dict[str, Any]]:
+    """
+    Return matching non-deleted tasks for update flow.
+    Filters are identifier-only: task_name, date/date_range, priority, status.
+    """
+    # Update identification logic is intentionally aligned with delete matching.
+    return await find_tasks_for_delete(
+        user_id=user_id,
+        filters=filters,
+        timezone_name=timezone_name,
+    )
+
+
 async def find_tasks_for_show(
     user_id: str,
     filters: Optional[Dict[str, Any]] = None,
@@ -354,6 +377,66 @@ async def find_tasks_for_show(
             return [_normalize_doc(row) for row in rows], total_count
 
     return [], 0
+
+
+async def check_update_overlap(
+    user_id: str,
+    task_id: str,
+    new_datetime: datetime,
+    duration: Any,
+) -> bool:
+    """
+    Return True when the updated task window overlaps another non-deleted task.
+    The currently updated task is excluded from overlap checks.
+    """
+    if not isinstance(new_datetime, datetime):
+        return False
+
+    db = get_db()
+    owner_object_id = _to_object_id(user_id)
+    owner_variants = [owner_object_id]
+    if owner_object_id != user_id:
+        owner_variants.append(user_id)
+
+    task_object_id = _to_object_id(task_id)
+    task_variants: List[Any] = [task_object_id]
+    if task_object_id != task_id:
+        task_variants.append(task_id)
+    excluded_ids = {str(value) for value in task_variants}
+
+    requested_duration = max(1, int(duration or 0))
+    new_start = new_datetime
+    new_end = new_start + timedelta(minutes=requested_duration)
+    search_start = new_start - timedelta(days=1)
+
+    base_query: Dict[str, Any] = {
+        "due_datetime": {"$gte": search_start, "$lt": new_end},
+        "is_deleted": {"$ne": True},
+    }
+
+    for owner_value in owner_variants:
+        query = {
+            **base_query,
+            "owner_id": owner_value,
+        }
+        cursor = db.tasks.find(query).sort("due_datetime", 1)
+        rows = await cursor.to_list(length=100)
+
+        for row in rows:
+            if str(row.get("_id")) in excluded_ids:
+                continue
+            existing_start = row.get("due_datetime")
+            if not isinstance(existing_start, datetime):
+                continue
+            if task_windows_overlap(
+                existing_start,
+                row.get("duration", 120),
+                new_start,
+                requested_duration,
+            ):
+                return True
+
+    return False
 
 
 async def soft_delete_task(task_id: str) -> bool:

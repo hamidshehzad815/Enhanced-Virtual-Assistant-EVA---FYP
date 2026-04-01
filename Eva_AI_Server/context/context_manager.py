@@ -62,6 +62,15 @@ _ALL_KEYWORDS = {
     "everything",
 }
 
+_UPDATE_FIELD_KEYS = {
+    "new_title",
+    "new_date",
+    "new_time",
+    "new_priority",
+    "new_status",
+    "new_duration",
+}
+
 
 def _normalize_text(text: str) -> str:
     return " ".join((text or "").lower().strip().split())
@@ -110,6 +119,7 @@ async def handle_free_text_reply(user_id: str, context: Dict[str, Any], reply: s
 
     missing_entity: Optional[str] = context.get("missing_entity")
     pending_intent = str(pending_action.get("intent") or "").lower()
+    pending_stage = str(pending_action.get("stage") or "").lower()
     if missing_entity:
         if _should_assign_directly(missing_entity, cleaned_reply):
             merged_entities[missing_entity] = cleaned_reply
@@ -117,6 +127,8 @@ async def handle_free_text_reply(user_id: str, context: Dict[str, Any], reply: s
             merged_entities["free_text_reply"] = cleaned_reply
     else:
         if pending_intent in {"delete", "scheduling_delete"}:
+            merged_entities["task_name"] = cleaned_reply
+        elif pending_intent in {"update", "scheduling_update"} and pending_stage == "identify":
             merged_entities["task_name"] = cleaned_reply
         else:
             merged_entities["free_text_reply"] = cleaned_reply
@@ -186,6 +198,40 @@ def handle_number_delete(text: str, context: Dict[str, Any]) -> Any:
         return "invalid_range"
 
     return task_ids[selected_index - 1]
+
+
+def handle_number_update(text: str, context: Dict[str, Any]) -> Any:
+    """
+    Parse update-list choice from pending context.
+    Returns selected task_id, "invalid_range", or "invalid".
+    """
+    normalized = _normalize_text(text)
+    pending_action = context.get("pending_action") or {}
+    task_ids = list(pending_action.get("task_ids") or [])
+    total = len(task_ids)
+    if total == 0:
+        return "invalid"
+
+    match = re.search(r"\b(\d+)\b", normalized)
+    if not match:
+        return "invalid"
+
+    selected_index = int(match.group(1))
+    if selected_index < 1 or selected_index > total:
+        return "invalid_range"
+
+    return task_ids[selected_index - 1]
+
+
+def extract_update_fields(entities: Dict[str, Any]) -> Dict[str, Any]:
+    """Return only update-field entities from a candidate entity dict."""
+    payload = dict(entities or {})
+    return {key: value for key, value in payload.items() if key in _UPDATE_FIELD_KEYS}
+
+
+def has_update_fields(entities: Dict[str, Any]) -> bool:
+    """True when any update-field entity is present."""
+    return bool(extract_update_fields(entities))
 
 
 def should_block_new_command(model1_label: str) -> bool:
