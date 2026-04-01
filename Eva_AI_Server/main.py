@@ -20,10 +20,13 @@ from handlers.general_handler import (
 )
 from handlers.router import normalize_intent, route_intent
 from context.context_manager import (
+    extract_update_fields,
     handle_free_text_reply,
     handle_number_delete,
+    handle_number_update,
     handle_number_reply,
     handle_yes_no_reply,
+    has_update_fields,
     is_cancel,
     should_block_new_command,
 )
@@ -289,6 +292,7 @@ async def process_message(payload: ProcessRequest):
             pending_action = pending_context.get("pending_action") or {}
             pending_intent = pending_action.get("intent")
             expected_response = pending_context.get("expected_response")
+            pending_stage = str(pending_action.get("stage") or "").lower()
 
             if is_cancel(processed["processed"]):
                 await redis_client.delete_context(payload.user_id)
@@ -303,17 +307,105 @@ async def process_message(payload: ProcessRequest):
                 }
 
             if expected_response == "free_text":
+                if pending_intent in {"update", "scheduling_update"} and pending_stage == "what_to_update":
+                    if not ner_extractor.loaded:
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "response_text": _safe_reply("model_unavailable", user_name, history),
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    raw_update_entities = ner_extractor.extract(
+                        message,
+                        intent_hint="scheduling_update",
+                    )
+                    scoped_update_entities = scope_entities(raw_update_entities, "scheduling_update")
+                    user_timezone = resolve_timezone_name((fetched.user or {}).get("timezone"))
+                    resolved_update_entities = await resolve_all(
+                        scoped_update_entities,
+                        timezone=user_timezone,
+                    )
+                    update_fields = extract_update_fields(resolved_update_entities)
+
+                    if not update_fields:
+                        await redis_client.set_context(payload.user_id, pending_context)
+                        if user_name:
+                            response_text = (
+                                f"I didn't catch what to update, {user_name}. "
+                                "Try something like 'priority to high' or 'move to Tuesday'."
+                            )
+                        else:
+                            response_text = (
+                                "I didn't catch what to update. "
+                                "Try something like 'priority to high' or 'move to Tuesday'."
+                            )
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "expected_response": "free_text",
+                            "stage": "what_to_update",
+                            "extracted_update_fields": {},
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    merged_entities = dict(pending_action.get("entities") or {})
+                    merged_entities.update(update_fields)
+                    pending_task_id = str(pending_action.get("task_id") or "").strip()
+                    if pending_task_id:
+                        merged_entities["task_id"] = pending_task_id
+                    await redis_client.delete_context(payload.user_id)
+                    routed_result = await route_intent(
+                        "scheduling_update",
+                        entities=merged_entities,
+                        context={
+                            **route_context_base,
+                            "pending_context": pending_context,
+                            "pending_reply_type": "free_text",
+                            "pending_reply_value": update_fields,
+                        },
+                    )
+
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "expected_response": "free_text",
+                        "stage": "what_to_update",
+                        "merged_entities": merged_entities,
+                        "extracted_update_fields": update_fields,
+                        "route": routed_result,
+                        "handler_status": routed_result.get("status"),
+                        "notifications": routed_result.get("notifications", []),
+                        "response_text": routed_result.get("response_text")
+                        or _safe_reply("pending_free_text_captured", user_name, history),
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
                 merged_entities = await handle_free_text_reply(
                     payload.user_id,
                     pending_context,
                     message,
                 )
 
-                if pending_intent in {"add", "scheduling_add", "delete", "scheduling_delete"}:
+                if pending_intent in {"add", "scheduling_add", "delete", "scheduling_delete", "update", "scheduling_update"}:
                     routed_intent = (
                         "scheduling_add"
                         if pending_intent in {"add", "scheduling_add"}
-                        else "scheduling_delete"
+                        else (
+                            "scheduling_delete"
+                            if pending_intent in {"delete", "scheduling_delete"}
+                            else "scheduling_update"
+                        )
                     )
                     routed_result = await route_intent(
                         routed_intent,
@@ -430,6 +522,79 @@ async def process_message(payload: ProcessRequest):
                         "settings": settings_data,
                     }
 
+                if pending_intent in {"update", "scheduling_update"}:
+                    if yes_no_value == "invalid":
+                        if user_name:
+                            response_text = f"Just yes or no will do, {user_name}."
+                        else:
+                            response_text = "Just yes or no will do."
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "yes_no",
+                            "parsed_value": yes_no_value,
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    if yes_no_value == "yes":
+                        await redis_client.delete_context(payload.user_id)
+                        routed_entities = dict(pending_action.get("entities") or {})
+                        pending_task_id = str(pending_action.get("task_id") or "").strip()
+                        if pending_task_id:
+                            routed_entities["task_id"] = pending_task_id
+                        routed_result = await route_intent(
+                            "scheduling_update",
+                            entities=routed_entities,
+                            context={
+                                **route_context_base,
+                                "pending_context": pending_context,
+                                "pending_reply_type": "yes_no",
+                                "pending_reply_value": yes_no_value,
+                            },
+                        )
+
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "yes_no",
+                            "parsed_value": yes_no_value,
+                            "route": routed_result,
+                            "handler_status": routed_result.get("status"),
+                            "notifications": routed_result.get("notifications", []),
+                            "response_text": routed_result.get("response_text")
+                            or _safe_reply("pending_yes_no_processed", user_name, history),
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    await redis_client.delete_context(payload.user_id)
+                    task_title = str((pending_action.get("task") or {}).get("title") or "that task")
+                    if user_name:
+                        response_text = f"No problem, {user_name}. I kept {task_title} unchanged."
+                    else:
+                        response_text = f"No problem. I kept {task_title} unchanged."
+
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "classification": classification,
+                        "expected_response": "yes_no",
+                        "parsed_value": yes_no_value,
+                        "response_text": response_text,
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
                 if pending_intent in {"delete", "scheduling_delete"} and yes_no_value == "invalid":
                     if user_name:
                         response_text = f"Just yes or no will do, {user_name}."
@@ -474,6 +639,11 @@ async def process_message(payload: ProcessRequest):
                             )
                         else:
                             response_text = "Please pick a number from the list or say 'all'."
+                    if pending_intent in {"update", "scheduling_update"}:
+                        if user_name:
+                            response_text = f"Please pick a number from the list, {user_name}."
+                        else:
+                            response_text = "Please pick a number from the list."
                     return {
                         "status": "ok",
                         "too_short": False,
@@ -616,6 +786,130 @@ async def process_message(payload: ProcessRequest):
                         "expected_response": "number",
                         "next_expected_response": "yes_no",
                         "parsed_value": delete_choice,
+                        "response_text": response_text,
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                if pending_intent in {"update", "scheduling_update"}:
+                    update_choice = handle_number_update(processed["processed"], pending_context)
+                    pending_task_ids = list(pending_action.get("task_ids") or [])
+                    pending_tasks = list(pending_action.get("tasks") or [])
+
+                    if update_choice == "invalid_range":
+                        total = len(pending_task_ids)
+                        response_text = (
+                            f"That number is not on the list. Pick between 1 and {total}."
+                        )
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "number",
+                            "parsed_value": "invalid_range",
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    if update_choice == "invalid":
+                        if user_name:
+                            response_text = f"Pick a number from the list, {user_name}."
+                        else:
+                            response_text = "Pick a number from the list."
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "number",
+                            "parsed_value": "invalid",
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    selected_index = None
+                    for index, task_id in enumerate(pending_task_ids):
+                        if str(task_id) == str(update_choice):
+                            selected_index = index
+                            break
+
+                    selected_task = {}
+                    if (
+                        selected_index is not None
+                        and selected_index < len(pending_tasks)
+                        and isinstance(pending_tasks[selected_index], dict)
+                    ):
+                        selected_task = dict(pending_tasks[selected_index])
+
+                    updated_context = dict(pending_context)
+                    updated_pending_action = dict(pending_action)
+                    updated_pending_action["task_id"] = update_choice
+                    if selected_task:
+                        updated_pending_action["task"] = selected_task
+                    updated_pending_action.pop("task_ids", None)
+                    updated_pending_action.pop("tasks", None)
+
+                    stage = "confirm" if has_update_fields(updated_pending_action.get("entities") or {}) else "what_to_update"
+                    updated_pending_action["stage"] = stage
+                    updated_context["pending_action"] = updated_pending_action
+                    if stage == "confirm":
+                        updated_context["expected_response"] = "yes_no"
+                    else:
+                        updated_context["expected_response"] = "free_text"
+                    await redis_client.set_context(payload.user_id, updated_context)
+
+                    task_title = str(selected_task.get("title") or "that task")
+                    due_text = ""
+                    due_raw = selected_task.get("due_datetime")
+                    user_timezone = resolve_timezone_name((fetched.user or {}).get("timezone"))
+                    local_due = utc_naive_to_local(due_raw, user_timezone)
+                    if local_due is not None:
+                        due_text = local_due.strftime("%A at %I:%M %p").replace(" 0", " ")
+
+                    if stage == "confirm":
+                        if user_name:
+                            if due_text:
+                                response_text = (
+                                    f"I got it, {user_name}. Update {task_title} on {due_text}? "
+                                    "Reply yes or no."
+                                )
+                            else:
+                                response_text = (
+                                    f"I got it, {user_name}. Update {task_title}? Reply yes or no."
+                                )
+                        else:
+                            if due_text:
+                                response_text = (
+                                    f"I got it. Update {task_title} on {due_text}? Reply yes or no."
+                                )
+                            else:
+                                response_text = f"I got it. Update {task_title}? Reply yes or no."
+                    else:
+                        if user_name:
+                            response_text = (
+                                f"What would you like to change about {task_title}, {user_name}? "
+                                "You can update date, time, priority, status, duration, or title."
+                            )
+                        else:
+                            response_text = (
+                                f"What would you like to change about {task_title}? "
+                                "You can update date, time, priority, status, duration, or title."
+                            )
+
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "classification": classification,
+                        "expected_response": "number",
+                        "next_expected_response": updated_context["expected_response"],
+                        "parsed_value": update_choice,
                         "response_text": response_text,
                         "user_name": user_name,
                         "settings": settings_data,

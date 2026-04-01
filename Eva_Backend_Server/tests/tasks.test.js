@@ -158,6 +158,43 @@ describe("Tasks API", () => {
     expect(query.due_datetime.$lte).toBeUndefined();
   });
 
+  test("GET /api/tasks excludes soft-deleted tasks from query", async () => {
+    const tasks = [
+      {
+        _id: TASK_ID,
+        title: "Physics quiz",
+        status: "pending",
+        priority: "medium",
+        is_deleted: false,
+      },
+    ];
+
+    const findChain = {
+      sort: jest.fn().mockReturnThis(),
+      skip: jest.fn().mockReturnThis(),
+      limit: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(tasks),
+    };
+
+    Task.find.mockReturnValue(findChain);
+    Task.countDocuments.mockResolvedValue(tasks.length);
+
+    const response = await request(app)
+      .get("/api/tasks")
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe("success");
+    expect(response.body.data.tasks).toEqual(tasks);
+    expect(Task.find).toHaveBeenCalledTimes(1);
+    expect(Task.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        owner_id: USER_ID,
+        is_deleted: false,
+      }),
+    );
+  });
+
   test("GET /api/tasks?date uses user timezone day boundaries", async () => {
     User.findById.mockResolvedValue({
       _id: USER_ID,

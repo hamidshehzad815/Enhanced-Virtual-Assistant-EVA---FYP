@@ -10,17 +10,14 @@ _INTENT_ENTITY_SCOPE: Dict[str, Set[str]] = {
     "scheduling_update": {
         "task_name",
         "date",
-        "time",
         "priority",
         "status",
-        "duration",
-        "new_task_name",
+        "new_title",
         "new_date",
         "new_time",
         "new_priority",
         "new_status",
         "new_duration",
-        "new_start_date",
     },
     "scheduling_show": {"date", "priority", "status", "task_name"},
     "learning_create": {"topic", "subtopic", "duration", "start_date", "collaborator"},
@@ -39,9 +36,14 @@ _INTENT_ENTITY_SCOPE: Dict[str, Set[str]] = {
 }
 
 _ENTITY_ALIASES: Dict[str, str] = {
-    "new_taskname": "new_task_name",
+    # Update-intent title aliases:
+    # NER model commonly emits `new_taskname`; we normalize all variants to
+    # canonical `new_title` for downstream handler consistency.
+    "new_taskname": "new_title",
+    "new_task_name": "new_title",
+    "new_title": "new_title",
     "new_scheduled_date": "new_date",
-    "new_start_date": "new_start_date",
+    "new_start_date": "new_date",
     "new_time": "new_time",
     "new_priority": "new_priority",
     "new_status": "new_status",

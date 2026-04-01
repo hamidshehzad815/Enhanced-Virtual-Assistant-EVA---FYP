@@ -10,6 +10,7 @@ from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 from config.settings import settings
 from pipeline.delete_entity_fallback import extract_delete_entities_fallback
+from pipeline.update_entity_fallback import extract_update_entities_fallback
 
 
 class NERExtractor:
@@ -152,6 +153,13 @@ class NERExtractor:
 
         if intent_hint == "scheduling_delete":
             fallback_entities = extract_delete_entities_fallback(text)
+            for key, value in fallback_entities.items():
+                current_value = entities.get(key)
+                if current_value in (None, "", [], {}):
+                    entities[key] = value
+
+        if intent_hint == "scheduling_update":
+            fallback_entities = extract_update_entities_fallback(text)
             for key, value in fallback_entities.items():
                 current_value = entities.get(key)
                 if current_value in (None, "", [], {}):
