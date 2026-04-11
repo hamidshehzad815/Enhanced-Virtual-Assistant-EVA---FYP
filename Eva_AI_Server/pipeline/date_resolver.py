@@ -44,6 +44,17 @@ async def resolve_all(entities: Dict[str, Any], timezone: str = "UTC") -> Dict[s
         return {}
 
     resolved = dict(entities)
+
+    # Update-intent compatibility normalization:
+    # keep canonical key `new_title` even if model emits `new_taskname`/`new_task_name`.
+    if "new_title" not in resolved:
+        if "new_taskname" in resolved:
+            resolved["new_title"] = resolved["new_taskname"]
+        elif "new_task_name" in resolved:
+            resolved["new_title"] = resolved["new_task_name"]
+    resolved.pop("new_taskname", None)
+    resolved.pop("new_task_name", None)
+
     normalized_timezone = resolve_timezone_name(timezone)
 
     if "date" in resolved:
