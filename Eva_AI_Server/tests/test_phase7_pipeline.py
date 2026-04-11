@@ -67,6 +67,59 @@ class TestPhase7Pipeline(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("subject", scoped)
         self.assertNotIn("time", scoped)
 
+    def test_scope_entities_for_scheduling_update_keeps_identifier_and_new_fields(self):
+        raw_entities = {
+            "task_name": "physics exam",
+            "date": "monday",
+            "priority": "high",
+            "status": "pending",
+            "new_title": "physics final",
+            "new_date": "tuesday",
+            "new_time": "5pm",
+            "new_priority": "medium",
+            "new_status": "ongoing",
+            "new_duration": "3 hours",
+            "time": "2pm",  # should drop for update scoping
+            "duration": "2 hours",  # should drop for update scoping
+            "subject": "physics",  # should drop for update scoping
+            "collaborator": "hamid",  # should drop for update scoping
+        }
+
+        scoped = scope_entities(raw_entities, "scheduling_update")
+
+        self.assertEqual(scoped, {
+            "task_name": "physics exam",
+            "date": "monday",
+            "priority": "high",
+            "status": "pending",
+            "new_title": "physics final",
+            "new_date": "tuesday",
+            "new_time": "5pm",
+            "new_priority": "medium",
+            "new_status": "ongoing",
+            "new_duration": "3 hours",
+        })
+
+    def test_scope_entities_for_scheduling_update_maps_new_taskname_aliases_to_new_title(self):
+        raw_entities = {
+            "task_name": "physics exam",
+            "new_taskname": "physics final",
+            "new_task_name": "physics final v2",
+            "new_scheduled_date": "next friday",
+            "new_start_date": "next monday",
+            "time": "4pm",
+            "duration": "2 hours",
+        }
+
+        scoped = scope_entities(raw_entities, "scheduling_update")
+
+        self.assertEqual(scoped.get("task_name"), "physics exam")
+        # last alias value wins, which is acceptable for normalized dict behavior.
+        self.assertEqual(scoped.get("new_title"), "physics final v2")
+        self.assertEqual(scoped.get("new_date"), "next monday")
+        self.assertNotIn("time", scoped)
+        self.assertNotIn("duration", scoped)
+
     async def test_resolve_all_calls_duckling(self):
         entities = {
             "date": "Monday",
@@ -92,6 +145,19 @@ class TestPhase7Pipeline(unittest.IsolatedAsyncioTestCase):
         mock_date.assert_awaited()
         mock_time.assert_awaited()
         mock_duration.assert_awaited()
+
+    async def test_resolve_all_normalizes_new_taskname_to_new_title(self):
+        resolved = await resolve_all(
+            {
+                "task_name": "physics exam",
+                "new_taskname": "physics final",
+            },
+            timezone="UTC",
+        )
+
+        self.assertEqual(resolved.get("task_name"), "physics exam")
+        self.assertEqual(resolved.get("new_title"), "physics final")
+        self.assertNotIn("new_taskname", resolved)
 
 
 if __name__ == "__main__":

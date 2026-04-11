@@ -35,6 +35,24 @@ _ACTION_GUIDANCE: Dict[str, str] = {
     "delete_single_confirm": "Ask for yes/no confirmation to delete one specific task.",
     "delete_multi_list": "Introduce that multiple tasks were found and ask user to choose one or all.",
     "delete_too_broad": "Ask user to narrow delete request because too many tasks matched.",
+    "update_missing_identifier": "Ask user which task they want to update.",
+    "update_invalid_identifier_date": "Ask user to re-enter the identifier date in a clearer format.",
+    "update_invalid_new_date": "Ask user for a clearer new date value for update.",
+    "update_invalid_new_time": "Ask user for a clearer new time value for update.",
+    "update_invalid_priority": "Ask user to use one of low, medium, high.",
+    "update_invalid_status": "Ask user to use one of pending, ongoing, complete.",
+    "update_invalid_duration": "Ask user for a valid duration in minutes or hours.",
+    "update_not_found": "Explain no matching tasks were found for update filters.",
+    "update_multi_list": "Introduce update task matches and ask the user to pick a number.",
+    "update_too_broad": "Ask user to narrow update request because too many tasks matched.",
+    "update_overlap_conflict": "Explain that requested update time overlaps another task and ask for a different time.",
+    "update_status_locked": "Explain complete task status cannot be moved backward.",
+    "update_already_complete": "Explain task is already complete and no status change is needed.",
+    "update_ask_fields": "Ask what should be changed on the identified task.",
+    "update_confirm": "Ask user to confirm the summarized updates with yes or no.",
+    "update_no_changes": "Explain that there are no effective changes and ask what to change.",
+    "update_apply_failed": "Explain update could not be applied due to an internal issue and ask to retry.",
+    "update_ready_for_validation": "Acknowledge that task and requested changes were captured and validation will continue.",
     "task_updated": "Mention what changed and keep it concise.",
     "tasks_shown": "Summarize visible tasks in a helpful conversational way.",
     "show_results": "Introduce shown tasks naturally and keep the tone concise and helpful.",
@@ -190,10 +208,100 @@ _FALLBACK_RESPONSES: Dict[str, List[str]] = {
         "I found a lot of tasks for that, {name}. Add a filter like date or task name.",
         "This delete request is broad, {name}. Can you narrow it down a little?",
     ],
+    "update_missing_identifier": [
+        "Which task would you like to update, {name}?",
+        "Tell me the task you want to update, {name}.",
+        "I can do that, {name}. Which task should I update?",
+    ],
+    "update_invalid_identifier_date": [
+        "I could not understand that date for matching, {name}. Please share it again.",
+        "That date did not parse correctly, {name}. Can you re-enter it?",
+        "Please give me the date again, {name}, so I can find the right task.",
+    ],
+    "update_invalid_new_date": [
+        "I could not parse that new date, {name}. Please share it more clearly.",
+        "That new date did not parse correctly, {name}. Can you rephrase it?",
+        "Please provide the new date again, {name}, so I can apply the update.",
+    ],
+    "update_invalid_new_time": [
+        "I could not parse that new time, {name}. Please share it more clearly.",
+        "That new time did not parse correctly, {name}. Can you rephrase it?",
+        "Please provide the new time again, {name}, so I can apply the update.",
+    ],
+    "update_invalid_priority": [
+        "Please choose priority as low, medium, or high, {name}.",
+        "That priority is not valid, {name}. Use low, medium, or high.",
+        "I need a valid priority value, {name}: low, medium, or high.",
+    ],
+    "update_invalid_status": [
+        "Please choose status as pending, ongoing, or complete, {name}.",
+        "That status is not valid, {name}. Use pending, ongoing, or complete.",
+        "I need a valid status value, {name}: pending, ongoing, or complete.",
+    ],
+    "update_invalid_duration": [
+        "Please share duration in a clear form like 45 minutes or 2 hours, {name}.",
+        "That duration did not parse well, {name}. Try 30 minutes or 1 hour.",
+        "I need a valid duration value, {name}.",
+    ],
+    "update_not_found": [
+        "I could not find any tasks matching {filters_summary}, {name}.",
+        "No tasks matched {filters_summary} for an update, {name}.",
+        "I did not find a task for {filters_summary}, {name}. Try refining it.",
+    ],
+    "update_multi_list": [
+        "I found {count} matching tasks to update, {name}.",
+        "There are {count} tasks matching your update request, {name}.",
+        "I found several update matches ({count}), {name}.",
+    ],
+    "update_too_broad": [
+        "That update request is too broad, {name}. Please narrow it by name, date, priority, or status.",
+        "I found too many tasks for that update, {name}. Add a tighter filter.",
+        "This matches many tasks, {name}. Please narrow it down a bit.",
+    ],
+    "update_overlap_conflict": [
+        "That new time overlaps another task, {name}. Want to choose a different time?",
+        "I found a schedule conflict for that update, {name}. Please share another time.",
+        "That change collides with another task, {name}. Give me a different time and I will continue.",
+    ],
+    "update_status_locked": [
+        "I cannot move status backward for a completed task, {name}.",
+        "That task is already complete, so I cannot change it back to pending or ongoing, {name}.",
+        "Completed task status cannot be reverted in this flow, {name}.",
+    ],
+    "update_already_complete": [
+        "{task_name} is already complete, {name}.",
+        "That task is already marked complete, {name}.",
+        "No status update needed, {name}. {task_name} is already complete.",
+    ],
+    "update_ask_fields": [
+        "What would you like to change about {task_name}, {name}?",
+        "I found {task_name}, {name}. What should I update on it?",
+        "Got it, {name}. What changes should I make to {task_name}?",
+    ],
+    "update_confirm": [
+        "Please confirm, {name}: update {task_name} to {changes_summary}? Reply yes or no.",
+        "I am ready to apply this update, {name}: {changes_summary}. Confirm with yes or no.",
+        "Should I proceed with these changes to {task_name}, {name}: {changes_summary}? Reply yes or no.",
+    ],
+    "update_no_changes": [
+        "I am not seeing a new effective change for {task_name}, {name}. What should I update?",
+        "That seems unchanged for {task_name}, {name}. Tell me what to change.",
+        "I did not detect an actual change to apply, {name}. What should I update on {task_name}?",
+    ],
+    "update_apply_failed": [
+        "I could not apply that update right now, {name}. Please try again.",
+        "Something blocked that update on my side, {name}. Try once more.",
+        "I hit an issue while applying the update, {name}. Please retry.",
+    ],
+    "update_ready_for_validation": [
+        "I found {task_name} and captured your requested changes, {name}. I will validate them next.",
+        "Great, {name}. I matched {task_name} and captured the updates. Next I will validate the changes.",
+        "Understood, {name}. {task_name} is identified and your change request is captured for validation.",
+    ],
     "task_updated": [
-        "Updated, {name}. Your task changes are saved.",
-        "Done {name}, I applied the update.",
-        "All set {name}, that task is updated now.",
+        "Updated, {name}. I applied: {changes_summary}.",
+        "Done {name}, your task is updated: {changes_summary}.",
+        "All set {name}, I made these changes: {changes_summary}.",
     ],
     "tasks_shown": [
         "Here is what I found, {name}.",
@@ -372,6 +480,7 @@ class GeminiService:
         existing_date = str(action_context.get("existing_date") or date or "that date")
         existing_time = str(action_context.get("existing_time") or time or "that time")
         intent_name = str(action_context.get("intent_name") or "this command")
+        changes_summary = str(action_context.get("changes_summary") or "the requested updates")
 
         date_time_suffix = ""
         if date and time:
@@ -397,6 +506,7 @@ class GeminiService:
             existing_date=existing_date,
             existing_time=existing_time,
             intent_name=intent_name,
+            changes_summary=changes_summary,
         ).strip()
 
     def generate_reply(

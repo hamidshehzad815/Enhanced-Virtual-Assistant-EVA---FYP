@@ -5,10 +5,13 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from context.context_manager import (
+    extract_update_fields,
     handle_free_text_reply,
     handle_number_delete,
+    handle_number_update,
     handle_number_reply,
     handle_yes_no_reply,
+    has_update_fields,
     is_all_keyword,
     is_cancel,
     should_block_new_command,
@@ -72,6 +75,32 @@ class TestContextManager(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("free_text_reply", merged)
         mock_delete.assert_awaited_once()
 
+    async def test_free_text_update_identify_defaults_to_task_name(self):
+        context = {
+            "pending_action": {
+                "intent": "update",
+                "stage": "identify",
+                "entities": {
+                    "new_priority": "high",
+                },
+            }
+        }
+
+        with patch(
+            "context.context_manager.redis_client.delete_context",
+            new=AsyncMock(return_value=True),
+        ) as mock_delete:
+            merged = await handle_free_text_reply(
+                "507f1f77bcf86cd799439011",
+                context,
+                "Physics Exam",
+            )
+
+        self.assertEqual(merged["task_name"], "Physics Exam")
+        self.assertEqual(merged["new_priority"], "high")
+        self.assertNotIn("free_text_reply", merged)
+        mock_delete.assert_awaited_once()
+
     def test_yes_no_handling(self):
         self.assertEqual(handle_yes_no_reply("yes"), "yes")
         self.assertEqual(handle_yes_no_reply("go ahead"), "yes")
@@ -105,6 +134,32 @@ class TestContextManager(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(handle_number_delete("delete all", context), "all")
         self.assertEqual(handle_number_delete("4", context), "invalid_range")
         self.assertEqual(handle_number_delete("yes", context), "invalid")
+
+    def test_update_number_selection(self):
+        context = {
+            "pending_action": {
+                "intent": "update",
+                "task_ids": ["id1", "id2", "id3"],
+            }
+        }
+
+        self.assertEqual(handle_number_update("1", context), "id1")
+        self.assertEqual(handle_number_update("2", context), "id2")
+        self.assertEqual(handle_number_update("4", context), "invalid_range")
+        self.assertEqual(handle_number_update("yes", context), "invalid")
+
+    def test_update_field_helpers(self):
+        entities = {
+            "task_name": "physics exam",
+            "date": "monday",
+            "new_priority": "high",
+            "new_date": "tuesday",
+        }
+
+        update_fields = extract_update_fields(entities)
+        self.assertEqual(update_fields, {"new_priority": "high", "new_date": "tuesday"})
+        self.assertTrue(has_update_fields(entities))
+        self.assertFalse(has_update_fields({"task_name": "physics exam"}))
 
     def test_new_command_blocking(self):
         self.assertTrue(should_block_new_command("command"))

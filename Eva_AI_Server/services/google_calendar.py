@@ -33,7 +33,7 @@ class GoogleCalendarClient:
         else:
             raise ValueError("task_data.due_datetime must be datetime or ISO string")
 
-        duration_minutes = int(task_data.get("duration_minutes", 120))
+        duration_minutes = int(task_data.get("duration_minutes", task_data.get("duration", 120)))
         timezone_name = resolve_timezone_name(task_data.get("timezone") or "UTC")
         zone = get_zoneinfo(timezone_name)
         if due_dt.tzinfo is None:
@@ -61,6 +61,23 @@ class GoogleCalendarClient:
 
         if description:
             payload["description"] = description
+
+        reminder_minutes_raw = task_data.get("reminder_minutes_before")
+        if reminder_minutes_raw is not None:
+            try:
+                reminder_minutes = max(0, int(reminder_minutes_raw))
+                payload["reminders"] = {
+                    "useDefault": False,
+                    "overrides": [
+                        {
+                            "method": "popup",
+                            "minutes": reminder_minutes,
+                        }
+                    ],
+                }
+            except (TypeError, ValueError):
+                # Ignore malformed reminder value and keep default behavior.
+                pass
 
         return payload
 
@@ -102,19 +119,23 @@ class GoogleCalendarClient:
         token: str,
         calendar_id: str,
         event_id: str,
-        data: Dict[str, Any],
+        task_data: Dict[str, Any],
     ) -> bool:
         """Update existing event by id."""
         if not token or not calendar_id or not event_id:
             return False
 
         try:
+            payload = dict(task_data or {})
+            if any(key in payload for key in ("due_datetime", "title", "duration", "duration_minutes")):
+                payload = self._build_event_payload(payload)
+
             url = f"{self.base_url}/calendars/{calendar_id}/events/{event_id}"
             async with httpx.AsyncClient(timeout=10.0) as client:
                 response = await client.patch(
                     url,
                     headers=self._build_headers(token),
-                    json=data,
+                    json=payload,
                 )
             return response.status_code in {200, 204}
         except Exception as error:

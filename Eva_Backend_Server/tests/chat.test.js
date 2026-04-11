@@ -139,4 +139,45 @@ describe("Chat API", () => {
     expect(response.body.response_text.length).toBeGreaterThan(0);
     expect(response.body.intent).toBe("scheduling_add");
   });
+
+  test("POST /api/chat/process handles scheduling_update via same chat route", async () => {
+    ChatSession.findOne.mockResolvedValue({
+      _id: SESSION_ID,
+      user_id: USER_ID,
+      is_deleted: false,
+    });
+
+    callAIServer.mockResolvedValue({
+      status: "ok",
+      response_text: "Please confirm the update.",
+      handler_status: "pending",
+      route: {
+        intent: "scheduling_update",
+      },
+      // Explicitly no notifications from AI side.
+    });
+
+    insert_and_dispatch.mockResolvedValue({
+      requested: 0,
+      inserted: 0,
+      dispatched_push: 0,
+      dispatched_email: 0,
+      failed: 0,
+      results: [],
+    });
+
+    const response = await request(app)
+      .post("/api/chat/process")
+      .set("Authorization", `Bearer ${makeToken()}`)
+      .send({
+        message: "change physics exam priority to high",
+        session_id: SESSION_ID,
+        input_type: "text",
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe("success");
+    expect(response.body.intent).toBe("scheduling_update");
+    expect(insert_and_dispatch).toHaveBeenCalledWith([]);
+  });
 });
