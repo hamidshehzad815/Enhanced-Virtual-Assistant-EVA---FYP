@@ -120,6 +120,56 @@ class TestPhase7Pipeline(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("time", scoped)
         self.assertNotIn("duration", scoped)
 
+    def test_scope_entities_for_behavioral_keeps_day_only(self):
+        raw_entities = {
+            "day": "monday",
+            "task_name": "physics exam",
+            "date": "2026-04-13",
+            "priority": "high",
+            "status": "pending",
+            "time": "5pm",
+        }
+
+        with patch(
+            "pipeline.entity_scoper.settings.BEHAVIORAL_DATE_AS_DAY_FALLBACK",
+            False,
+        ):
+            scoped = scope_entities(raw_entities, "behavioral")
+
+        self.assertEqual(scoped, {"day": "monday"})
+
+    def test_scope_entities_for_behavioral_maps_weekday_date_to_day_when_switch_enabled(self):
+        raw_entities = {
+            "date": "next monday",
+            "time": "5pm",
+            "priority": "high",
+        }
+
+        with patch(
+            "pipeline.entity_scoper.settings.BEHAVIORAL_DATE_AS_DAY_FALLBACK",
+            True,
+        ):
+            scoped = scope_entities(raw_entities, "behavioral")
+
+        self.assertEqual(scoped.get("day"), "monday")
+        self.assertNotIn("date", scoped)
+        self.assertNotIn("time", scoped)
+        self.assertNotIn("priority", scoped)
+
+    def test_scope_entities_for_behavioral_drops_non_weekday_date(self):
+        raw_entities = {
+            "date": "2026-04-13",
+            "task_name": "physics exam",
+        }
+
+        with patch(
+            "pipeline.entity_scoper.settings.BEHAVIORAL_DATE_AS_DAY_FALLBACK",
+            True,
+        ):
+            scoped = scope_entities(raw_entities, "behavioral")
+
+        self.assertEqual(scoped, {})
+
     async def test_resolve_all_calls_duckling(self):
         entities = {
             "date": "Monday",

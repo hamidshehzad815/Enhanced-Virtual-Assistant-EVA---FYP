@@ -8,9 +8,52 @@ from typing import Any, Dict, List, Optional
 
 from utils.timezone_utils import get_zoneinfo, utc_naive_to_local
 
+_WEEKDAY_TO_NUMBER = {
+    "monday": 0,
+    "tuesday": 1,
+    "wednesday": 2,
+    "thursday": 3,
+    "friday": 4,
+    "saturday": 5,
+    "sunday": 6,
+}
+
 
 def _strip_leading_hour_zero(value: str) -> str:
     return re.sub(r"^0(\d:)", r"\1", value)
+
+
+def weekday_name_to_number(day_name: Any) -> Optional[int]:
+    """
+    Convert weekday name to index: Monday=0 ... Sunday=6.
+    Returns None for invalid input.
+    """
+    if not isinstance(day_name, str):
+        return None
+    normalized = day_name.strip().lower()
+    if not normalized:
+        return None
+    return _WEEKDAY_TO_NUMBER.get(normalized)
+
+
+def hour_to_12h_format(hour: Any) -> Optional[str]:
+    """
+    Convert 24h hour integer to 12h label (e.g. 18 -> '6PM').
+    Returns None for invalid input.
+    """
+    try:
+        hour_int = int(hour)
+    except (TypeError, ValueError):
+        return None
+
+    if hour_int < 0 or hour_int > 23:
+        return None
+
+    period = "AM" if hour_int < 12 else "PM"
+    hour_12 = hour_int % 12
+    if hour_12 == 0:
+        hour_12 = 12
+    return f"{hour_12}{period}"
 
 
 def _parse_duckling_value(value: Any) -> Optional[datetime]:

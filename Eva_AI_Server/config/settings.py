@@ -48,6 +48,13 @@ class Settings:
 
     # Model Settings
     CONFIDENCE_THRESHOLD: float = float(os.getenv("CONFIDENCE_THRESHOLD", "0.7"))
+    # Temporary compatibility switch:
+    # some NER versions emit weekday as `date` for behavioral intent.
+    # When enabled, behavioral scope remaps weekday-like `date` -> `day`.
+    BEHAVIORAL_DATE_AS_DAY_FALLBACK: bool = _as_bool(
+        os.getenv("BEHAVIORAL_DATE_AS_DAY_FALLBACK"),
+        True,
+    )
 
     # Model Paths
     CLF1_MODEL_DIR: Path = BASE_DIR / os.getenv("CLF1_MODEL_DIR", "models/clf1")

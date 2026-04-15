@@ -379,6 +379,43 @@ async def find_tasks_for_show(
     return [], 0
 
 
+async def get_tasks_for_day(user_id: str, day_of_week: int) -> List[Dict[str, Any]]:
+    """
+    Return non-deleted tasks for a weekday number.
+    day_of_week: Monday=0 ... Sunday=6
+    """
+    if not isinstance(day_of_week, int) or day_of_week < 0 or day_of_week > 6:
+        return []
+
+    db = get_db()
+    owner_object_id = _to_object_id(user_id)
+    owner_variants = [owner_object_id]
+    if owner_object_id != user_id:
+        owner_variants.append(user_id)
+
+    for owner_value in owner_variants:
+        query = {
+            "owner_id": owner_value,
+            "is_deleted": {"$ne": True},
+            "due_datetime": {"$type": "date"},
+            "$expr": {
+                "$eq": [
+                    {"$subtract": [{"$isoDayOfWeek": "$due_datetime"}, 1]},
+                    int(day_of_week),
+                ]
+            },
+        }
+        rows = await (
+            db.tasks.find(query, {"due_datetime": 1, "duration": 1})
+            .sort("due_datetime", 1)
+            .to_list(length=200)
+        )
+        if rows:
+            return [_normalize_doc(row) for row in rows]
+
+    return []
+
+
 async def check_update_overlap(
     user_id: str,
     task_id: str,
