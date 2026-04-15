@@ -180,4 +180,46 @@ describe("Chat API", () => {
     expect(response.body.intent).toBe("scheduling_update");
     expect(insert_and_dispatch).toHaveBeenCalledWith([]);
   });
+
+  test("POST /api/chat/process handles behavioral intent via same chat route", async () => {
+    ChatSession.findOne.mockResolvedValue({
+      _id: SESSION_ID,
+      user_id: USER_ID,
+      is_deleted: false,
+    });
+
+    callAIServer.mockResolvedValue({
+      status: "ok",
+      response_text: "Your peak hours are 6PM and 10AM.",
+      handler_status: "success",
+      route: {
+        intent: "behavioral",
+      },
+      notifications: [],
+    });
+
+    insert_and_dispatch.mockResolvedValue({
+      requested: 0,
+      inserted: 0,
+      dispatched_push: 0,
+      dispatched_email: 0,
+      failed: 0,
+      results: [],
+    });
+
+    const response = await request(app)
+      .post("/api/chat/process")
+      .set("Authorization", `Bearer ${makeToken()}`)
+      .send({
+        message: "when am i most productive",
+        session_id: SESSION_ID,
+        input_type: "text",
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe("success");
+    expect(response.body.intent).toBe("behavioral");
+    expect(response.body.ai_status).toBe("success");
+    expect(insert_and_dispatch).toHaveBeenCalledWith([]);
+  });
 });

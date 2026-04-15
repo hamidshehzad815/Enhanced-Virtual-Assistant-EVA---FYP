@@ -4,6 +4,7 @@ Routes Model 2 intents to handler stubs.
 """
 from typing import Any, Dict, Optional
 
+from handlers.behavioral.behavioral import handle_behavioral
 from handlers.scheduling.add import handle_scheduling_add
 from handlers.scheduling.delete import handle_scheduling_delete
 from handlers.scheduling.show import handle_scheduling_show
@@ -57,6 +58,9 @@ async def route_intent(
 
     if canonical_intent == "scheduling_update":
         return await handle_scheduling_update(entities=entities, context=context)
+
+    if canonical_intent == "behavioral":
+        return await handle_behavioral(entities=entities, context=context)
 
     response_map = {
         "scheduling_add": "scheduling_add",

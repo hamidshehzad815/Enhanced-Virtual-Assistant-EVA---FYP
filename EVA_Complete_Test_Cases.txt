@@ -1,0 +1,904 @@
+================================================================
+EVA — COMPLETE MANUAL TESTING GUIDE
+All 5 Commands: Add, Delete, Show, Update, Behavioral
+================================================================
+
+HOW TO USE THIS FILE
+================================================================
+
+  Send each input via the chat interface.
+  Verify the expected outcome in both the chat reply
+  and MongoDB directly.
+  Mark each test PASS / FAIL / N/A.
+
+  PASS  → everything matches expected
+  FAIL  → something does not match — note what failed
+  N/A   → precondition not available (e.g. no Calendar connected)
+
+  Prerequisites:
+  → Both servers running (AI server + Node.js)
+  → Test user registered, logged in, JWT token active
+  → Active chat session created
+  → MongoDB accessible to inspect DB state
+  → User timezone set (e.g. PKT UTC+5)
+  → Google Calendar integration: connect if available
+  → Minimum 15 completed tasks in Activity_Logs
+    for behavioral tests (insert manually if needed)
+
+
+================================================================
+SECTION 1 — ADD COMMAND
+================================================================
+
+────────────────────────────────────────────────────────────────
+A1 — All entities in one input
+────────────────────────────────────────────────────────────────
+Input    : "Add Physics exam on Monday at 5PM"
+Expected :
+  → title = "Physics exam", due_datetime = Monday 17:00 UTC
+  → priority = user default, duration = user default
+  → status = "pending", is_deleted = false
+  → activity log: action_type = "task_created"
+  → EVA reply: natural, uses name, mentions task + time
+  → Reply NOT generic
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+A2 — All entities including priority and duration
+────────────────────────────────────────────────────────────────
+Input    : "Add Chemistry lab on Tuesday at 3PM with high priority for 2 hours"
+Expected :
+  → priority = "high", duration = 120 min in DB
+  → EVA mentions high priority naturally
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+A3 — task_name missing, EVA asks then task added
+────────────────────────────────────────────────────────────────
+Input    : "Add a task on Wednesday at 6PM"
+Expected : EVA asks for task name, Redis pending state set
+Reply    : "Biology assignment"
+Expected : task inserted with title = "Biology assignment"
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+A4 — date missing, EVA asks then task added
+────────────────────────────────────────────────────────────────
+Input    : "Add Math quiz at 4PM"
+Expected : EVA asks for date, mentions task name in question
+Reply    : "Next Friday"
+Expected : date resolved via Duckling, task inserted
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+A5 — time missing, EVA asks then task added
+────────────────────────────────────────────────────────────────
+Input    : "Add Biology lab on Thursday"
+Expected : EVA asks for time (or behavioral suggestion)
+Reply    : "2PM"
+Expected : task inserted with time 14:00
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+A6 — all three missing, collected one by one
+────────────────────────────────────────────────────────────────
+Input    : "Add a task"
+Expected : EVA asks for task name
+Reply 1  : "Statistics exam"
+Expected : EVA asks for date
+Reply 2  : "Thursday"
+Expected : EVA asks for time
+Reply 3  : "10AM"
+Expected : task inserted with all three correct
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+A7 — duplicate found, user confirms yes
+────────────────────────────────────────────────────────────────
+Precond  : "Physics exam" already exists on Monday
+Input    : "Add Physics exam on Monday at 5PM"
+Expected : EVA detects duplicate, asks to confirm
+Reply    : "yes"
+Expected : second Physics exam inserted (two tasks same name)
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+A8 — duplicate found, user says no
+────────────────────────────────────────────────────────────────
+Precond  : "Physics exam" already exists on Monday
+Input    : "Add Physics exam on Monday at 5PM"
+Expected : EVA asks to confirm
+Reply    : "no"
+Expected : no task inserted, Redis cleared
+Result   : PASS / FAIL -> pass
+
+────────────────────────────────────────────────────────────────
+A9 — cancel mid-flow
+────────────────────────────────────────────────────────────────
+Input    : "Add a task on Monday at 6PM"
+Expected : EVA asks for task name
+Reply    : "cancel"
+Expected : Redis cleared, natural cancellation reply
+           no task inserted
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+A10 — new command blocked while add pending
+────────────────────────────────────────────────────────────────
+Input    : "Add a task on Monday at 6PM"
+Expected : EVA asks for task name
+Reply    : "Show my tasks for tomorrow"
+Expected : EVA blocks the new command, Redis stays active
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+A11 — quiet hours conflict
+────────────────────────────────────────────────────────────────
+Precond  : Quiet hours set (e.g. 22:00 to 07:00)
+Input    : "Add Physics exam on Monday at 11PM"
+Expected : EVA warns about quiet hours, asks to confirm
+Reply    : "yes"
+Expected : task inserted at 11PM despite quiet hours
+Result   : PASS / FAIL -> Pending Testing
+
+────────────────────────────────────────────────────────────────
+A12 — overlap conflict blocks task
+────────────────────────────────────────────────────────────────
+Precond  : Task exists on Monday 5PM with 120 min duration
+Input    : "Add Chemistry exam on Monday at 6PM"
+Expected : EVA detects overlap (6PM falls inside 5PM-7PM)
+           EVA informs user of conflict, does not add task
+Result   : PASS / FAIL -> Pending Testing
+
+────────────────────────────────────────────────────────────────
+A13 — salutation prefix handled correctly
+────────────────────────────────────────────────────────────────
+Input    : "Hey EVA, add Physics exam on Monday at 5PM"
+Expected : classified as command (not general)
+           task inserted correctly
+           EVA reply natural
+Result   : PASS / FAIL -> Fail ( it now saying something cool in response of salutation)
+
+────────────────────────────────────────────────────────────────
+A14 — timezone correctness
+────────────────────────────────────────────────────────────────
+Precond  : User timezone = PKT (UTC+5)
+Input    : "Add Physics exam on Monday at 5PM"
+Expected : due_datetime stored as Monday 12:00:00 UTC in DB
+           EVA reply shows 5PM (local), not UTC time
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+A15 — long task name extracted correctly
+────────────────────────────────────────────────────────────────
+Input    : "Add Islamiyat research paper presentation on Friday at 3PM"
+Expected : title = "Islamiyat research paper presentation"
+           full name captured, not truncated
+           date = Friday, time = 3PM
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+A16 — collaborator added
+────────────────────────────────────────────────────────────────
+Precond  : Ahmed is in friends list (accepted)
+Input    : "Add Physics exam on Monday at 5PM with Ahmed"
+Expected : task inserted with collaborators = [Ahmed, status:pending]
+           notification payload returned to Node.js
+           notification inserted in DB
+Result   : PASS / FAIL Fail (NER issue don't worry about this i will fix NER i think it would work perfect with Good Ner)
+
+────────────────────────────────────────────────────────────────
+A17 — collaborator not a friend
+────────────────────────────────────────────────────────────────
+Input    : "Add Physics exam on Monday at 5PM with Stranger"
+Expected : EVA: natural reply saying Stranger is not in friends
+           no task inserted
+Result   : PASS / FAIL -> same as previous test case
+
+
+================================================================
+SECTION 2 — DELETE COMMAND
+================================================================
+
+────────────────────────────────────────────────────────────────
+D1 — single match, user confirms yes
+────────────────────────────────────────────────────────────────
+Precond  : "Physics exam" exists on Monday
+Input    : "Delete physics exam"
+Expected : EVA finds 1 match, asks confirmation, mentions time
+Reply    : "yes"
+Expected : is_deleted = true in DB
+           activity log: action_type = "task_deleted"
+           EVA: natural deletion confirmation with task name
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+D2 — single match, user says no
+────────────────────────────────────────────────────────────────
+Input    : "Delete physics exam"
+Expected : EVA asks confirmation
+Reply    : "no"
+Expected : task NOT deleted, is_deleted still false
+           Redis cleared, natural cancellation reply
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+D3 — zero matches
+────────────────────────────────────────────────────────────────
+Input    : "Delete calculus exam"
+Expected : EVA: natural not-found reply mentioning "calculus"
+           no Redis state set, no DB changes
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+D4 — multiple matches, pick specific number
+────────────────────────────────────────────────────────────────
+Precond  : 3 tasks with "physics" in title
+Input    : "Delete my physics tasks"
+Expected : EVA shows numbered list of 3 with "all" option
+Reply    : "2"
+Expected : EVA confirms task 2 specifically
+Reply    : "yes"
+Expected : only task 2 soft deleted, tasks 1 and 3 untouched
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+D5 — multiple matches, user picks "all"
+────────────────────────────────────────────────────────────────
+Precond  : 3 high priority tasks
+Input    : "Delete high priority tasks"
+Expected : EVA shows numbered list with "all" option
+Reply    : "all"
+Expected : EVA asks bulk confirmation
+Reply    : "yes"
+Expected : all 3 soft deleted, 3 activity logs inserted
+Result   : PASS / FAIL -> Pass
+ 
+────────────────────────────────────────────────────────────────
+D6 — bulk delete, user says no
+────────────────────────────────────────────────────────────────
+Precond  : 3 high priority tasks
+Input    : "Delete high priority tasks"
+Reply    : "all"
+Expected : EVA asks bulk confirmation
+Reply    : "no"
+Expected : nothing deleted, Redis cleared
+Result   : PASS / FAIL -> Fail(Ner Not work correctly i will fix NER then it will work ok)
+
+────────────────────────────────────────────────────────────────
+D7 — too broad (6+ matches)
+────────────────────────────────────────────────────────────────
+Precond  : 8 tasks in DB
+Input    : "Delete all my tasks"
+Expected : EVA: too broad reply, no Redis state set
+           nothing deleted
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+D8 — no entity given, EVA asks
+────────────────────────────────────────────────────────────────
+Input    : "Delete a task"
+Expected : EVA asks which task
+Reply    : "Chemistry lab"
+Expected : treated as task_name, delete flow continues
+Result   : PASS / FAIL -> Fail -> CLF1 Issue i will look at the CLF and it will work ok when CLF improved
+
+────────────────────────────────────────────────────────────────
+D9 — delete by date
+────────────────────────────────────────────────────────────────
+Precond  : 2 tasks on Tuesday
+Input    : "Delete my tasks on Tuesday"
+Expected : EVA shows 2 tasks, numbered list
+Reply    : "1"
+Expected : EVA confirms task 1
+Reply    : "yes"
+Expected : only task 1 deleted
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+D10 — cancel mid-flow after list shown
+────────────────────────────────────────────────────────────────
+Precond  : 3 physics tasks
+Input    : "Delete physics tasks"
+Expected : EVA shows numbered list
+Reply    : "cancel"
+Expected : Redis cleared, nothing deleted
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+D11 — out of range number
+────────────────────────────────────────────────────────────────
+Precond  : 3 tasks in list
+Input    : "Delete physics tasks"
+Expected : EVA shows list of 3
+Reply    : "5"
+Expected : EVA says 5 is not on the list, Redis stays active
+Reply    : "2"
+Expected : flow continues with task 2
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+D12 — Google Calendar event deleted
+────────────────────────────────────────────────────────────────
+Precond  : Calendar connected, task has google_calendar_event_id
+Input    : "Delete physics exam"
+Reply    : "yes"
+Expected : task soft deleted in DB
+           Google Calendar event deleted (verify in Calendar)
+           EVA reply does not mention Calendar
+Result   : PASS / FAIL / N/A -> N/A
+
+────────────────────────────────────────────────────────────────
+D13 — collaborative task deletion notification
+────────────────────────────────────────────────────────────────
+Precond  : task has accepted collaborator (Ahmed)
+Input    : "Delete physics exam"
+Reply    : "yes"
+Expected : task soft deleted
+           notification inserted in DB for Ahmed
+           notification dispatched
+Result   : PASS / FAIL -> Pending
+
+
+================================================================
+SECTION 3 — SHOW COMMAND
+================================================================
+
+────────────────────────────────────────────────────────────────
+S1 — show by specific day
+────────────────────────────────────────────────────────────────
+Precond  : 2 tasks on Monday
+Input    : "Show my tasks for Monday"
+Expected : both tasks returned, sorted by time ascending
+           times shown in user's local timezone
+           EVA reply groups by day, uses user name
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+S2 — show by priority
+────────────────────────────────────────────────────────────────
+Precond  : mix of high/medium/low tasks
+Input    : "Show high priority tasks"
+Expected : only high priority tasks returned
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+S3 — show pending tasks
+────────────────────────────────────────────────────────────────
+Input    : "Show my pending tasks"
+Expected : only status=pending tasks returned
+           completed/ongoing not in reply
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+S4 — show completed tasks (past tasks included)
+────────────────────────────────────────────────────────────────
+Precond  : 2 tasks marked complete (in the past)
+Input    : "Show completed tasks"
+Expected : past completed tasks returned
+           upcoming filter NOT applied
+           sorted by most recently completed first
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+S5 — show tasks for this week
+────────────────────────────────────────────────────────────────
+Precond  : tasks spread across this week
+Input    : "Show my tasks for this week"
+Expected : all tasks within Mon-Sun of current week returned
+           grouped by day in reply
+           last week / next week tasks NOT included
+Result   : PASS / FAIL -> Fail
+issue : {
+  req : "message": "show my tasks for this week",
+  res : "response_text": "I could not find any tasks for date Monday, 13 Apr 2026, Hamid shehzad."
+  issue : it only check the monday if i say next week it only check monday of next week
+}
+────────────────────────────────────────────────────────────────
+S6 — show with task name filter
+────────────────────────────────────────────────────────────────
+Precond  : Physics exam, Chemistry lab, Math quiz in DB
+Input    : "Show my physics tasks"
+Expected : only Physics exam returned
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+S7 — show all tasks (no filter)
+────────────────────────────────────────────────────────────────
+Input    : "What are my tasks"
+Expected : all upcoming tasks (due_datetime >= now)
+           sorted ascending, past tasks NOT included
+Result   : PASS / FAIL -> Fail (CLF issue it will work if CLF work good don't worry about this)
+
+────────────────────────────────────────────────────────────────
+S8 — show with zero results
+────────────────────────────────────────────────────────────────
+Precond  : no tasks on next Sunday
+Input    : "Show my tasks for next Sunday"
+Expected : EVA natural not-found reply mentioning Sunday
+           no Redis state set, no follow-up question
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+S9 — show with more than 10 results
+────────────────────────────────────────────────────────────────
+Precond  : 13 upcoming tasks in DB
+Input    : "Show all tasks"
+Expected : 10 tasks returned
+           EVA mentions total count (13)
+           suggests using a filter to narrow down
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+S10 — combined filters
+────────────────────────────────────────────────────────────────
+Precond  : mix of tasks this week at various priorities
+Input    : "Show high priority tasks for this week"
+Expected : only high priority tasks within this week
+           both filters applied simultaneously
+Result   : PASS / FAIL -> Fail (same issue as S5)
+
+────────────────────────────────────────────────────────────────
+S11 — timezone boundary correctness
+────────────────────────────────────────────────────────────────
+Precond  : User timezone PKT (UTC+5)
+           task at 11:30PM local tonight (appears as
+           tomorrow UTC midnight)
+Input    : "Show my tasks for today"
+Expected : task IS returned (local boundary used, not UTC)
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+S12 — show blocked while another command pending
+────────────────────────────────────────────────────────────────
+Input    : "Add a task on Monday at 6PM"
+Expected : EVA asks for task name (pending state set)
+Reply    : "Show my tasks for today"
+Expected : show command is blocked
+           EVA reminds user it is waiting for a reply
+Result   : PASS / FAIL -> Pass
+
+
+================================================================
+SECTION 4 — UPDATE COMMAND
+================================================================
+
+────────────────────────────────────────────────────────────────
+U1 — update priority, single step
+────────────────────────────────────────────────────────────────
+Precond  : "Physics exam" exists
+Input    : "Change physics exam priority to high"
+Expected : EVA finds 1 match, asks confirmation
+           EVA shows what will change
+Reply    : "yes"
+Expected : priority = "high" in DB
+           activity log: action_type = "task_updated"
+           EVA: natural reply mentioning priority change
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+U2 — reschedule date and time
+────────────────────────────────────────────────────────────────
+Precond  : "Chemistry lab" exists
+Input    : "Reschedule chemistry lab to next Friday at 2PM"
+Expected : EVA confirms new date and time
+Reply    : "yes"
+Expected : due_datetime updated in DB (UTC-correct)
+           Google Calendar event updated if connected
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+U3 — mark as complete
+────────────────────────────────────────────────────────────────
+Precond  : "Biology assignment" exists, status = pending
+Input    : "Mark biology assignment as complete"
+Expected : EVA confirms status change
+Reply    : "yes"
+Expected : status = "complete", completed_at set in DB
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+U4 — update task, no update field given
+────────────────────────────────────────────────────────────────
+Precond  : "Physics exam" exists
+Input    : "Update physics exam"
+Expected : task found, EVA asks what to change
+Reply    : "priority to high"
+Expected : EVA confirms priority change
+Reply    : "yes"
+Expected : priority updated in DB
+Result   : PASS / FAIL -> Pass(but a little bit issue it expect reply as priority to high,status to completed if use say status then it should ask what updation u want to make in status property)
+
+────────────────────────────────────────────────────────────────
+U5 — no identifier given, EVA asks
+────────────────────────────────────────────────────────────────
+Input    : "Update a task"
+Expected : EVA asks which task to update
+Reply    : "Physics exam"
+Expected : task found, EVA asks what to change
+Reply    : "change date to Monday"
+Expected : EVA confirms date change
+Reply    : "yes"
+Expected : due_datetime updated
+Result   : PASS / FAIL -> Fail(CLF1 issue i will fix that and test again)
+
+────────────────────────────────────────────────────────────────
+U6 — multiple matches, pick specific task
+────────────────────────────────────────────────────────────────
+Precond  : 3 tasks with "physics" in title
+Input    : "Change physics task priority to high"
+Expected : EVA shows numbered list of 3
+Reply    : "2"
+Expected : EVA asks what to change about task 2
+           OR if priority already in input — confirms it
+Result   : PASS / FAIL -> Fail -> not working ok after list number confirmation after list number it ask for 
+yes_no when i enter yes it tell i don't know what to speak when i tell "priority/priority to high" it give response
+i am not waiting for any response
+
+────────────────────────────────────────────────────────────────
+U7 — overlap conflict on new datetime
+────────────────────────────────────────────────────────────────
+Precond  : Task at 5PM Monday with 120 min duration
+Input    : "Move physics exam to Monday at 6PM"
+Expected : EVA warns about overlap with existing task
+           asks for different time
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+U8 — cancel mid-flow after confirmation shown
+────────────────────────────────────────────────────────────────
+Input    : "Change physics exam priority to high"
+Expected : EVA asks confirmation
+Reply    : "cancel"
+Expected : Redis cleared, nothing changed in DB
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+U9 — status backwards transition blocked
+────────────────────────────────────────────────────────────────
+Precond  : "Physics exam" status = "complete"
+Input    : "Change physics exam status to pending"
+Expected : EVA informs user task is already complete
+           no update applied OR EVA handles gracefully
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+U10 — rename task
+────────────────────────────────────────────────────────────────
+Precond  : "Physics exam" exists
+Input    : "Rename physics exam to physics final exam"
+Expected : EVA confirms title change
+Reply    : "yes"
+Expected : title = "physics final exam" in DB
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+U11 — update duration
+────────────────────────────────────────────────────────────────
+Input    : "Change physics exam duration to 3 hours"
+Expected : EVA confirms duration change
+Reply    : "yes"
+Expected : duration = 180 min in DB
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+U12 — multi-field update (date + priority)
+────────────────────────────────────────────────────────────────
+Input    : "Move physics exam to Tuesday with high priority"
+Expected : EVA confirms both changes (date + priority)
+Reply    : "yes"
+Expected : both due_datetime and priority updated in DB
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+U13 — old date + new date (explicit from/to)
+────────────────────────────────────────────────────────────────
+Precond  : "Physics exam" on Monday
+Input    : "Move physics exam from Monday to Wednesday"
+Expected : EVA confirms move to Wednesday
+Reply    : "yes"
+Expected : due_datetime moved to Wednesday in DB
+Result   : PASS / FAIL -> Pass
+
+────────────────────────────────────────────────────────────────
+U14 — Google Calendar updated after reschedule
+────────────────────────────────────────────────────────────────
+Precond  : Calendar connected, task has calendar event
+Input    : "Reschedule chemistry lab to next Friday at 2PM"
+Reply    : "yes"
+Expected : Google Calendar event updated (verify in Calendar)
+           google_calendar_event_id unchanged in DB
+Result   : PASS / FAIL / N/A -> N/A
+
+────────────────────────────────────────────────────────────────
+U15 — natural status shortcut
+────────────────────────────────────────────────────────────────
+Input    : "I finished physics exam"
+Expected : EVA recognises as status update → complete
+           confirms change
+Reply    : "yes"
+Expected : status = "complete", completed_at set
+Result   : PASS / FAIL -> Need to work on NER
+
+
+================================================================
+SECTION 5 — BEHAVIORAL COMMAND
+================================================================
+
+────────────────────────────────────────────────────────────────
+B1 — below threshold (not enough data)
+────────────────────────────────────────────────────────────────
+Precond  : fewer than 10 completed tasks in Activity_Logs
+Input    : "When am I most productive"
+Expected : EVA natural reply explaining not enough data yet
+           no analytics query runs
+Result   : PASS / FAIL -> Fail(it only look in past tasks? becuasei mark some task as complete in future but it show currently 0)
+
+────────────────────────────────────────────────────────────────
+B2 — productive hours general
+────────────────────────────────────────────────────────────────
+Precond  : 15+ completed tasks across different hours
+Input    : "When am I most productive"
+Expected : EVA returns top productive hours in 12h format
+           uses user name
+           hours mentioned as e.g. "6PM" not "18:00"
+           natural conversational tone
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+B3 — productive hours for specific day
+────────────────────────────────────────────────────────────────
+Precond  : completed tasks across multiple days including Tuesday
+Input    : "What are my best hours on Tuesday"
+Expected : EVA returns hours specific to Tuesday completions
+           other days not mixed in
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+B4 — productive days
+────────────────────────────────────────────────────────────────
+Input    : "Which days am I most focused"
+Expected : EVA returns day ranking
+           mentions top 2-3 days naturally
+           not a raw list of all 7 days
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+B5 — best time for specific day
+────────────────────────────────────────────────────────────────
+Input    : "Find the best time for me on Monday"
+Expected : EVA returns best available hour on Monday
+           conflict check run (no existing task at that hour)
+           reply mentions specific time in 12h format
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+B6 — best time, day missing (pending state)
+────────────────────────────────────────────────────────────────
+Input    : "Find the best time for me"
+Expected : EVA asks which day
+           Redis free_text pending state set
+Reply    : "Friday"
+Expected : EVA runs best_time_for_day for Friday
+           returns best hour for Friday
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+B7 — best time, invalid day reply
+────────────────────────────────────────────────────────────────
+Input    : "Find the best time for me"
+Expected : EVA asks which day
+Reply    : "5PM"
+Expected : EVA says it didn't catch that
+           Redis stays active, asks again for a weekday
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+B8 — cancel while best_time pending
+────────────────────────────────────────────────────────────────
+Input    : "Find the best time for me"
+Expected : EVA asks which day
+Reply    : "cancel"
+Expected : Redis cleared, natural cancellation reply
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+B9 — completion rate
+────────────────────────────────────────────────────────────────
+Precond  : mix of on-time and late completions in logs
+Input    : "Show my completion rate"
+Expected : EVA returns on-time percentage
+           total completed count mentioned
+           weekly trend mentioned naturally
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+B10 — full productivity report
+────────────────────────────────────────────────────────────────
+Input    : "Show my productivity report"
+Expected : EVA combines all analytics
+           mentions peak hours, best days, completion rate
+           concise summary, not a data dump
+           uses user name
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+B11 — no data for specific day filter
+────────────────────────────────────────────────────────────────
+Precond  : no completed tasks logged on Wednesday specifically
+Input    : "What are my best hours on Wednesday"
+Expected : EVA natural reply saying no Wednesday data yet
+           suggests completing some tasks on Wednesday first
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+B12 — best time conflict check
+────────────────────────────────────────────────────────────────
+Precond  : user most productive at 6PM on Mondays
+           but already has a task at 6PM Monday
+Input    : "Find the best time on Monday"
+Expected : EVA suggests next best hour (not 6PM)
+           or confirms 6PM is free if task was deleted
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+B13 — behavioral sub-intent variety check
+────────────────────────────────────────────────────────────────
+Test each phrasing separately:
+Input    : "When do I work best"
+Expected : productive_hours sub-intent
+
+Input    : "What are my best days of the week"
+Expected : productive_days sub-intent
+
+Input    : "When should I schedule on Thursday"
+Expected : best_time_for_day sub-intent
+
+Input    : "How many tasks do I finish on time"
+Expected : completion_rate sub-intent
+
+Input    : "Give me a productivity overview"
+Expected : productivity_report sub-intent
+Result   : PASS / FAIL (mark each separately)
+
+
+================================================================
+SECTION 6 — CROSS-COMMAND AND PIPELINE TESTS
+================================================================
+
+────────────────────────────────────────────────────────────────
+X1 — add then show then delete chain
+────────────────────────────────────────────────────────────────
+Input    : "Add Biology quiz on Wednesday at 3PM"
+Expected : task added
+Input    : "Show my tasks for Wednesday"
+Expected : Biology quiz appears in results
+Input    : "Delete biology quiz"
+Reply    : "yes"
+Expected : task soft deleted
+Input    : "Show my tasks for Wednesday"
+Expected : Biology quiz NOT in results
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+X2 — add then update then show
+────────────────────────────────────────────────────────────────
+Input    : "Add Physics exam on Monday at 5PM"
+Expected : task added
+Input    : "Change physics exam priority to high"
+Reply    : "yes"
+Expected : priority updated
+Input    : "Show high priority tasks"
+Expected : Physics exam appears in results with high priority
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+X3 — general input handled correctly
+────────────────────────────────────────────────────────────────
+Input    : "Hi"
+Expected : natural greeting reply, not an error
+Input    : "What can you do"
+Expected : natural app help reply
+Input    : "Thanks"
+Expected : natural acknowledgement reply
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+X4 — out of scope handled
+────────────────────────────────────────────────────────────────
+Input    : "What is the weather today"
+Expected : EVA politely says out of scope
+Input    : "Write me a Python function"
+Expected : EVA politely says out of scope
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+X5 — multiple commands rejected
+────────────────────────────────────────────────────────────────
+Input    : "Add physics exam on Monday and delete chemistry lab"
+Expected : EVA: one request at a time message
+           no task added, no task deleted
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+X6 — too short input
+────────────────────────────────────────────────────────────────
+Input    : "Add"
+Expected : EVA: could you be more specific
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+X7 — TTL expiry simulation
+────────────────────────────────────────────────────────────────
+Input    : "Add a task on Monday at 6PM"
+Expected : EVA asks for task name, Redis pending set
+Action   : wait 300+ seconds or manually expire Redis key
+Input    : "Show my tasks for Monday"
+Expected : show command processes normally (no blocking)
+           Redis key is gone
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+X8 — Gemini fallback (response still natural)
+────────────────────────────────────────────────────────────────
+Action   : temporarily disable or slow Gemini API
+Input    : "Add Physics exam on Monday at 5PM"
+Expected : task still inserted in DB correctly
+           EVA still returns a natural reply (static fallback)
+           no crash, no blank response
+Result   : PASS / FAIL / N/A
+
+────────────────────────────────────────────────────────────────
+X9 — behavioral after scheduling (activity logs feed correctly)
+────────────────────────────────────────────────────────────────
+Precond  : add and complete 10+ tasks on various days/hours
+Input    : "When am I most productive"
+Expected : results reflect actual completion patterns
+           hours shown match actual log data
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+X10 — conversation history saved correctly
+────────────────────────────────────────────────────────────────
+Action   : send 3 different commands
+Expected : check Conversation_History collection in MongoDB
+           each user message + EVA reply saved as separate docs
+           session_id consistent across all messages
+           intent field populated correctly
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+X11 — reminder fires correctly after add
+────────────────────────────────────────────────────────────────
+Input    : "Add Physics exam on [today's date] at [5 min from now]"
+Expected : task added
+Action   : wait for reminder job to fire
+Expected : reminder notification inserted in DB
+           notification dispatched (push or email)
+Result   : PASS / FAIL
+
+────────────────────────────────────────────────────────────────
+X12 — all replies use user name
+────────────────────────────────────────────────────────────────
+Action   : run 5 different commands across all 5 intents
+Expected : every single EVA reply uses the user's actual name
+           no generic replies without name
+Result   : PASS / FAIL
+
+
+================================================================
+TESTING CHECKLIST SUMMARY
+================================================================
+
+  Section 1 — ADD     (17 tests)   : __ / 17 PASS
+  Section 2 — DELETE  (13 tests)   : __ / 13 PASS
+  Section 3 — SHOW    (12 tests)   : __ / 12 PASS
+  Section 4 — UPDATE  (15 tests)   : __ / 15 PASS
+  Section 5 — BEHAVIORAL (13 tests): __ / 13 PASS
+  Section 6 — CROSS   (12 tests)   : __ / 12 PASS
+
+  TOTAL: __ / 82 PASS
+
+  Target: 75+ PASS before moving to learning module.
+  Any FAIL in Section 1 or Section 4 — fix before proceeding.
+  N/A tests do not count as failures.

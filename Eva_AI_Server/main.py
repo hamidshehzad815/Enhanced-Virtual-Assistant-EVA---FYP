@@ -198,6 +198,17 @@ def _repair_weekday_date_entity(raw_entities, original_text: str):
     return repaired
 
 
+def _extract_weekday_from_text(text: str) -> Optional[str]:
+    normalized = (text or "").strip().lower()
+    if not normalized:
+        return None
+
+    for weekday in _WEEKDAYS:
+        if re.search(rf"\b{re.escape(weekday)}\b", normalized):
+            return weekday
+    return None
+
+
 @app.get("/health")
 async def health_check():
     """
@@ -382,6 +393,61 @@ async def process_message(payload: ProcessRequest):
                         "stage": "what_to_update",
                         "merged_entities": merged_entities,
                         "extracted_update_fields": update_fields,
+                        "route": routed_result,
+                        "handler_status": routed_result.get("status"),
+                        "notifications": routed_result.get("notifications", []),
+                        "response_text": routed_result.get("response_text")
+                        or _safe_reply("pending_free_text_captured", user_name, history),
+                        "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                if pending_intent in {"behavioral"}:
+                    weekday_value = _extract_weekday_from_text(message)
+                    if not weekday_value:
+                        await redis_client.set_context(payload.user_id, pending_context)
+                        if user_name:
+                            response_text = (
+                                f"I didn't catch the day, {user_name}. "
+                                "Please tell me a weekday like Monday or Friday."
+                            )
+                        else:
+                            response_text = (
+                                "I didn't catch the day. "
+                                "Please tell me a weekday like Monday or Friday."
+                            )
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "expected_response": "free_text",
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    await redis_client.delete_context(payload.user_id)
+                    merged_entities = dict(pending_action.get("entities") or {})
+                    merged_entities["day"] = weekday_value
+                    routed_result = await route_intent(
+                        "behavioral",
+                        entities=merged_entities,
+                        context={
+                            **route_context_base,
+                            "pending_context": pending_context,
+                            "pending_reply_type": "free_text",
+                            "pending_reply_value": weekday_value,
+                        },
+                    )
+
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "expected_response": "free_text",
+                        "merged_entities": merged_entities,
                         "route": routed_result,
                         "handler_status": routed_result.get("status"),
                         "notifications": routed_result.get("notifications", []),
