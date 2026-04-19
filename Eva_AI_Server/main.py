@@ -26,7 +26,6 @@ from context.context_manager import (
     handle_number_update,
     handle_number_reply,
     handle_yes_no_reply,
-    has_update_fields,
     is_cancel,
     should_block_new_command,
 )
@@ -50,6 +49,25 @@ _WEEKDAYS = (
     "friday",
     "saturday",
     "sunday",
+)
+
+_COMMAND_VERBS = {
+    "add",
+    "schedule",
+    "set",
+    "create",
+    "delete",
+    "remove",
+    "update",
+    "change",
+    "move",
+    "show",
+    "list",
+}
+
+_SALUTATION_PATTERN = re.compile(
+    r"^\s*(?:(?:hey|hi|hello|salam|assalamualaikum|aoa|yo|ok|okay)\b[\s,!:.-]*)*(?:eva\b[\s,!:.-]*)*",
+    flags=re.IGNORECASE,
 )
 
 
@@ -209,6 +227,99 @@ def _extract_weekday_from_text(text: str) -> Optional[str]:
     return None
 
 
+def _looks_like_command_text(text: str) -> bool:
+    normalized = (text or "").strip().lower()
+    if not normalized:
+        return False
+    first_token = normalized.split()[0]
+    return first_token in _COMMAND_VERBS
+
+
+def _nlu_text_for_classification(message: str) -> str:
+    """
+    Recover command intent for salutation-prefixed commands such as:
+      "hey eva, add physics exam ..."
+    while keeping pure greetings/general text unchanged.
+    """
+    original = (message or "").strip()
+    if not original:
+        return original
+
+    candidate = _SALUTATION_PATTERN.sub("", original).strip()
+    if candidate and _looks_like_command_text(candidate):
+        return candidate
+    return original
+
+
+def _first_entity_value(value):
+    if isinstance(value, list):
+        return value[0] if value else None
+    return value
+
+
+def _normalize_priority_update(value) -> str:
+    normalized = str(_first_entity_value(value) or "").strip().lower()
+    return normalized if normalized in {"low", "medium", "high"} else ""
+
+
+def _normalize_status_update(value) -> str:
+    normalized = str(_first_entity_value(value) or "").strip().lower()
+    if normalized == "completed":
+        normalized = "complete"
+    return normalized if normalized in {"pending", "ongoing", "complete"} else ""
+
+
+def _parse_duration_update(value):
+    raw = str(_first_entity_value(value) or "").strip().lower()
+    if not raw:
+        return None
+    if raw.isdigit():
+        return max(5, int(raw))
+
+    match = re.search(r"(\d+(?:\.\d+)?)", raw)
+    if not match:
+        return None
+    amount = float(match.group(1))
+    if "hour" in raw or "hr" in raw:
+        return max(5, int(amount * 60))
+    if "min" in raw:
+        return max(5, int(amount))
+    return max(5, int(amount))
+
+
+def _build_pending_update_payload(entities: dict):
+    """
+    Build a minimal, safe update payload for pending update confirmations.
+    Supports deterministic fields only (title, priority, status, duration).
+    Date/time updates are left to the full handler flow.
+    """
+    payload = {}
+    parts = []
+    entity_map = dict(entities or {})
+
+    new_title = str(_first_entity_value(entity_map.get("new_title")) or "").strip()
+    if new_title:
+        payload["title"] = new_title
+        parts.append(f'title to "{new_title}"')
+
+    new_priority = _normalize_priority_update(entity_map.get("new_priority"))
+    if new_priority:
+        payload["priority"] = new_priority
+        parts.append(f"priority to {new_priority}")
+
+    new_status = _normalize_status_update(entity_map.get("new_status"))
+    if new_status:
+        payload["status"] = new_status
+        parts.append(f"status to {new_status}")
+
+    new_duration = _parse_duration_update(entity_map.get("new_duration"))
+    if new_duration is not None:
+        payload["duration"] = int(new_duration)
+        parts.append(f"duration to {int(new_duration)} minutes")
+
+    return payload, ", ".join(parts)
+
+
 @app.get("/health")
 async def health_check():
     """
@@ -285,6 +396,8 @@ async def process_message(payload: ProcessRequest):
         settings_data = fetched.settings
         user_name = fetched.user.get("name") if fetched.user else None
         processed = preprocess(message)
+        nlu_message = _nlu_text_for_classification(message)
+        nlu_processed = preprocess(nlu_message)["processed"]
 
         route_context_base = {
             "user_id": payload.user_id,
@@ -522,7 +635,7 @@ async def process_message(payload: ProcessRequest):
                     "settings": settings_data,
                 }
 
-            classification = classifier1.predict(processed["processed"])
+            classification = classifier1.predict(nlu_processed)
             label = classification["label"]
 
             if should_block_new_command(label):
@@ -920,12 +1033,24 @@ async def process_message(payload: ProcessRequest):
                     updated_pending_action.pop("task_ids", None)
                     updated_pending_action.pop("tasks", None)
 
-                    stage = "confirm" if has_update_fields(updated_pending_action.get("entities") or {}) else "what_to_update"
+                    selected_entities = dict(updated_pending_action.get("entities") or {})
+                    selected_entities["task_id"] = update_choice
+                    if selected_task and not str(selected_entities.get("task_name") or "").strip():
+                        selected_entities["task_name"] = str(selected_task.get("title") or "").strip()
+
+                    candidate_updates, candidate_change_summary = _build_pending_update_payload(selected_entities)
+                    stage = "confirm" if candidate_updates else "what_to_update"
+                    updated_pending_action["entities"] = selected_entities
                     updated_pending_action["stage"] = stage
                     updated_context["pending_action"] = updated_pending_action
                     if stage == "confirm":
+                        updated_pending_action["updates"] = candidate_updates
+                        if candidate_change_summary:
+                            updated_pending_action["change_summary"] = candidate_change_summary
                         updated_context["expected_response"] = "yes_no"
                     else:
+                        updated_pending_action.pop("updates", None)
+                        updated_pending_action.pop("change_summary", None)
                         updated_context["expected_response"] = "free_text"
                     await redis_client.set_context(payload.user_id, updated_context)
 
@@ -939,22 +1064,11 @@ async def process_message(payload: ProcessRequest):
 
                     if stage == "confirm":
                         if user_name:
-                            if due_text:
-                                response_text = (
-                                    f"I got it, {user_name}. Update {task_title} on {due_text}? "
-                                    "Reply yes or no."
-                                )
-                            else:
-                                response_text = (
-                                    f"I got it, {user_name}. Update {task_title}? Reply yes or no."
-                                )
+                            response_text = (
+                                f"I got it, {user_name}. Update {task_title}? Reply yes or no."
+                            )
                         else:
-                            if due_text:
-                                response_text = (
-                                    f"I got it. Update {task_title} on {due_text}? Reply yes or no."
-                                )
-                            else:
-                                response_text = f"I got it. Update {task_title}? Reply yes or no."
+                            response_text = f"I got it. Update {task_title}? Reply yes or no."
                     else:
                         if user_name:
                             response_text = (
@@ -1054,7 +1168,7 @@ async def process_message(payload: ProcessRequest):
                 "settings": settings_data,
             }
 
-        classification = classifier1.predict(processed["processed"])
+        classification = classifier1.predict(nlu_processed)
         label = classification["label"]
 
         if label == "command":
@@ -1070,11 +1184,11 @@ async def process_message(payload: ProcessRequest):
                     "settings": settings_data,
                 }
 
-            intent_classification = classifier2.predict(processed["processed"])
+            intent_classification = classifier2.predict(nlu_processed)
             canonical_intent = normalize_intent(intent_classification["label"])
 
-            raw_entities = ner_extractor.extract(message, intent_hint=canonical_intent)
-            raw_entities = _repair_weekday_date_entity(raw_entities, message)
+            raw_entities = ner_extractor.extract(nlu_message, intent_hint=canonical_intent)
+            raw_entities = _repair_weekday_date_entity(raw_entities, nlu_message)
             scoped_entities = scope_entities(raw_entities, canonical_intent)
             user_timezone = resolve_timezone_name((fetched.user or {}).get("timezone"))
             resolved_entities = await resolve_all(scoped_entities, timezone=user_timezone)

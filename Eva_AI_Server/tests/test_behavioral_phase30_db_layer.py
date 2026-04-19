@@ -47,6 +47,8 @@ class FakeActivityLogsCollection:
     def _match_condition(actual, expected):
         if isinstance(expected, dict):
             for op, value in expected.items():
+                if actual is None and op in {"$gte", "$lte"}:
+                    return False
                 if op == "$gte" and actual < value:
                     return False
                 if op == "$lte" and actual > value:
@@ -193,13 +195,13 @@ class TestBehavioralPhase30DbLayer(unittest.IsolatedAsyncioTestCase):
         self.other_owner_id = ObjectId()
 
         self.activity_docs = [
-            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "hour_of_day": 18, "day_of_week": 1, "was_on_time": True, "week_number": 12, "time_taken_minutes": 60},
-            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "hour_of_day": 18, "day_of_week": 1, "was_on_time": True, "week_number": 12, "time_taken_minutes": 90},
-            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "hour_of_day": 10, "day_of_week": 1, "was_on_time": False, "week_number": 13, "time_taken_minutes": 120},
-            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "hour_of_day": 15, "day_of_week": 0, "was_on_time": True, "week_number": 14, "time_taken_minutes": 75},
-            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "hour_of_day": 15, "day_of_week": 0, "was_on_time": False, "week_number": 15, "time_taken_minutes": 105},
-            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_created", "hour_of_day": 15, "day_of_week": 0, "was_on_time": True, "week_number": 15, "time_taken_minutes": 30},
-            {"_id": ObjectId(), "user_id": self.other_owner_id, "action_type": "task_completed", "hour_of_day": 22, "day_of_week": 4, "was_on_time": True, "week_number": 15, "time_taken_minutes": 50},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "hour_of_day": 18, "day_of_week": 1, "scheduled_hour": 10, "scheduled_day": 0, "was_on_time": True, "week_number": 12, "time_taken_minutes": 60},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "hour_of_day": 18, "day_of_week": 1, "scheduled_hour": 10, "scheduled_day": 0, "was_on_time": True, "week_number": 12, "time_taken_minutes": 90},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "hour_of_day": 10, "day_of_week": 1, "scheduled_hour": 14, "scheduled_day": 0, "was_on_time": False, "week_number": 13, "time_taken_minutes": 120},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "hour_of_day": 15, "day_of_week": 0, "scheduled_hour": 16, "scheduled_day": 2, "was_on_time": True, "week_number": 14, "time_taken_minutes": 75},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "hour_of_day": 15, "day_of_week": 0, "scheduled_hour": 16, "scheduled_day": 2, "was_on_time": False, "week_number": 15, "time_taken_minutes": 105},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_created", "hour_of_day": 15, "day_of_week": 0, "scheduled_hour": 15, "scheduled_day": 0, "was_on_time": True, "week_number": 15, "time_taken_minutes": 30},
+            {"_id": ObjectId(), "user_id": self.other_owner_id, "action_type": "task_completed", "hour_of_day": 22, "day_of_week": 4, "scheduled_hour": 22, "scheduled_day": 4, "was_on_time": True, "week_number": 15, "time_taken_minutes": 50},
         ]
 
         self.task_docs = [
@@ -221,22 +223,22 @@ class TestBehavioralPhase30DbLayer(unittest.IsolatedAsyncioTestCase):
         with patch("db.activity_logs.get_db", return_value=fake_db):
             rows = await get_hours_distribution(str(self.owner_id))
 
-        self.assertEqual(rows[0]["hour"], 15)
+        self.assertEqual(rows[0]["hour"], 10)
         self.assertEqual(rows[0]["count"], 2)
-        self.assertEqual(rows[1]["hour"], 18)
+        self.assertEqual(rows[1]["hour"], 16)
         self.assertEqual(rows[1]["count"], 2)
-        self.assertEqual(rows[2]["hour"], 10)
+        self.assertEqual(rows[2]["hour"], 14)
         self.assertEqual(rows[2]["count"], 1)
 
     async def test_get_hours_distribution_with_day_filter(self):
         fake_db = FakeDB(activity_logs_collection=FakeActivityLogsCollection(self.activity_docs))
         with patch("db.activity_logs.get_db", return_value=fake_db):
-            rows = await get_hours_distribution(str(self.owner_id), day_of_week=1)
+            rows = await get_hours_distribution(str(self.owner_id), day_of_week=0)
 
         self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[0]["hour"], 18)
+        self.assertEqual(rows[0]["hour"], 10)
         self.assertEqual(rows[0]["count"], 2)
-        self.assertEqual(rows[1]["hour"], 10)
+        self.assertEqual(rows[1]["hour"], 14)
         self.assertEqual(rows[1]["count"], 1)
 
     async def test_get_days_distribution_returns_all_days_ranked(self):
@@ -245,12 +247,32 @@ class TestBehavioralPhase30DbLayer(unittest.IsolatedAsyncioTestCase):
             rows = await get_days_distribution(str(self.owner_id))
 
         self.assertEqual(len(rows), 7)
-        self.assertEqual(rows[0]["day_name"], "Tuesday")
+        self.assertEqual(rows[0]["day_name"], "Monday")
         self.assertEqual(rows[0]["count"], 3)
-        self.assertEqual(rows[1]["day_name"], "Monday")
+        self.assertEqual(rows[1]["day_name"], "Wednesday")
         self.assertEqual(rows[1]["count"], 2)
         # Ranking is count desc.
         self.assertGreaterEqual(rows[0]["count"], rows[1]["count"])
+
+    async def test_get_hours_distribution_ignores_missing_scheduled_hour(self):
+        docs_with_missing = list(self.activity_docs) + [
+            {
+                "_id": ObjectId(),
+                "user_id": self.owner_id,
+                "action_type": "task_completed",
+                "hour_of_day": 22,
+                "day_of_week": 4,
+                "was_on_time": True,
+                "week_number": 16,
+                "time_taken_minutes": 30,
+            }
+        ]
+        fake_db = FakeDB(activity_logs_collection=FakeActivityLogsCollection(docs_with_missing))
+        with patch("db.activity_logs.get_db", return_value=fake_db):
+            rows = await get_hours_distribution(str(self.owner_id))
+
+        self.assertEqual(sum(int(row["count"]) for row in rows), 5)
+        self.assertNotIn(22, [int(row["hour"]) for row in rows])
 
     async def test_get_completion_rate_returns_summary_and_trend(self):
         fake_db = FakeDB(activity_logs_collection=FakeActivityLogsCollection(self.activity_docs))

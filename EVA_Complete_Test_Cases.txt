@@ -632,7 +632,7 @@ Precond  : fewer than 10 completed tasks in Activity_Logs
 Input    : "When am I most productive"
 Expected : EVA natural reply explaining not enough data yet
            no analytics query runs
-Result   : PASS / FAIL -> Fail(it only look in past tasks? becuasei mark some task as complete in future but it show currently 0)
+Result   : PASS / FAIL -> Pass
 
 ────────────────────────────────────────────────────────────────
 B2 — productive hours general
@@ -643,7 +643,7 @@ Expected : EVA returns top productive hours in 12h format
            uses user name
            hours mentioned as e.g. "6PM" not "18:00"
            natural conversational tone
-Result   : PASS / FAIL
+Result   : PASS / FAIL -> Pass
 
 ────────────────────────────────────────────────────────────────
 B3 — productive hours for specific day
@@ -652,7 +652,7 @@ Precond  : completed tasks across multiple days including Tuesday
 Input    : "What are my best hours on Tuesday"
 Expected : EVA returns hours specific to Tuesday completions
            other days not mixed in
-Result   : PASS / FAIL
+Result   : PASS / FAIL -> Pass
 
 ────────────────────────────────────────────────────────────────
 B4 — productive days
@@ -661,7 +661,7 @@ Input    : "Which days am I most focused"
 Expected : EVA returns day ranking
            mentions top 2-3 days naturally
            not a raw list of all 7 days
-Result   : PASS / FAIL
+Result   : PASS / FAIL -> Pass
 
 ────────────────────────────────────────────────────────────────
 B5 — best time for specific day
@@ -670,7 +670,7 @@ Input    : "Find the best time for me on Monday"
 Expected : EVA returns best available hour on Monday
            conflict check run (no existing task at that hour)
            reply mentions specific time in 12h format
-Result   : PASS / FAIL
+Result   : PASS / FAIL -> Pass
 
 ────────────────────────────────────────────────────────────────
 B6 — best time, day missing (pending state)
@@ -681,7 +681,7 @@ Expected : EVA asks which day
 Reply    : "Friday"
 Expected : EVA runs best_time_for_day for Friday
            returns best hour for Friday
-Result   : PASS / FAIL
+Result   : PASS / FAIL -> Fail (clf1 issue will be ok i hink after making it strong)
 
 ────────────────────────────────────────────────────────────────
 B7 — best time, invalid day reply
@@ -691,7 +691,7 @@ Expected : EVA asks which day
 Reply    : "5PM"
 Expected : EVA says it didn't catch that
            Redis stays active, asks again for a weekday
-Result   : PASS / FAIL
+Result   : PASS / FAIL -> Fail(Clf issue)
 
 ────────────────────────────────────────────────────────────────
 B8 — cancel while best_time pending
@@ -700,7 +700,7 @@ Input    : "Find the best time for me"
 Expected : EVA asks which day
 Reply    : "cancel"
 Expected : Redis cleared, natural cancellation reply
-Result   : PASS / FAIL
+Result   : PASS / FAIL -> Pass
 
 ────────────────────────────────────────────────────────────────
 B9 — completion rate
@@ -710,7 +710,7 @@ Input    : "Show my completion rate"
 Expected : EVA returns on-time percentage
            total completed count mentioned
            weekly trend mentioned naturally
-Result   : PASS / FAIL
+Result   : PASS / FAIL -> Fail(cfl2 issue -> will be ok after fix)
 
 ────────────────────────────────────────────────────────────────
 B10 — full productivity report
@@ -720,7 +720,7 @@ Expected : EVA combines all analytics
            mentions peak hours, best days, completion rate
            concise summary, not a data dump
            uses user name
-Result   : PASS / FAIL
+Result   : PASS / FAIL -> Fail(clf issue)
 
 ────────────────────────────────────────────────────────────────
 B11 — no data for specific day filter
