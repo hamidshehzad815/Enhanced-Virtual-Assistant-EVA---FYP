@@ -41,6 +41,9 @@ jest.mock("../models", () => ({
   Notification: {
     create: jest.fn(),
   },
+  ActivityLog: {
+    create: jest.fn(),
+  },
   Task: {
     find: jest.fn(),
     countDocuments: jest.fn(),
@@ -51,7 +54,7 @@ jest.mock("../models", () => ({
 }));
 
 const app = require("../app");
-const { User, Task } = require("../models");
+const { User, Task, ActivityLog } = require("../models");
 
 const USER_ID = "507f1f77bcf86cd799439011";
 const TASK_ID = "507f1f77bcf86cd799439012";
@@ -247,14 +250,34 @@ describe("Tasks API", () => {
   });
 
   test("PATCH /api/tasks/:id/status -> status updated", async () => {
+    const existingTask = {
+      _id: TASK_ID,
+      title: "Physics quiz",
+      status: "pending",
+      priority: "medium",
+      owner_id: USER_ID,
+      created_at: new Date("2026-03-01T10:00:00.000Z"),
+      due_datetime: new Date("2026-03-02T10:00:00.000Z"),
+    };
     const updatedTask = {
       _id: TASK_ID,
       title: "Physics quiz",
       status: "complete",
+      priority: "medium",
+      owner_id: USER_ID,
+      created_at: new Date("2026-03-01T10:00:00.000Z"),
+      due_datetime: new Date("2026-03-02T10:00:00.000Z"),
+      completed_at: new Date("2026-03-02T09:00:00.000Z"),
     };
 
+    Task.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(existingTask),
+    });
     Task.findOneAndUpdate.mockReturnValue({
       lean: jest.fn().mockResolvedValue(updatedTask),
+    });
+    ActivityLog.create.mockResolvedValue({
+      _id: "507f1f77bcf86cd799439099",
     });
 
     const response = await request(app)
@@ -266,6 +289,14 @@ describe("Tasks API", () => {
     expect(response.body.status).toBe("success");
     expect(response.body.message).toBe("Task status updated");
     expect(response.body.data.task.status).toBe("complete");
+    expect(ActivityLog.create).toHaveBeenCalledTimes(1);
+    expect(ActivityLog.create.mock.calls[0][0]).toEqual(
+      expect.objectContaining({
+        user_id: USER_ID,
+        task_id: TASK_ID,
+        action_type: "task_completed",
+      }),
+    );
   });
 
   test("DELETE /api/tasks/:id -> soft deleted", async () => {

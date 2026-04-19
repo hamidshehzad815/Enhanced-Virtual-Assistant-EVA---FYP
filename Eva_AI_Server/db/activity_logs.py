@@ -62,7 +62,13 @@ async def count_completed(user_id: str) -> int:
 
 async def get_best_hour(user_id: str, weekday: int) -> Optional[int]:
     """
-    Return the most frequent completion hour for a weekday, or None.
+    Return the most frequent scheduled hour for a weekday, or None.
+
+    Uses scheduled fields from completion logs:
+      - scheduled_day
+      - scheduled_hour
+
+    Rows without scheduled fields are intentionally ignored.
     """
     db = get_db()
     owner_object_id = _to_object_id(user_id)
@@ -73,13 +79,13 @@ async def get_best_hour(user_id: str, weekday: int) -> Optional[int]:
                 "$match": {
                     "user_id": owner_value,
                     "action_type": "task_completed",
-                    "day_of_week": int(weekday),
-                    "hour_of_day": {"$gte": 0, "$lte": 23},
+                    "scheduled_day": int(weekday),
+                    "scheduled_hour": {"$gte": 0, "$lte": 23},
                 }
             },
             {
                 "$group": {
-                    "_id": "$hour_of_day",
+                    "_id": "$scheduled_hour",
                     "count": {"$sum": 1},
                 }
             },
@@ -106,10 +112,12 @@ async def get_hours_distribution(
     day_of_week: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Aggregate completion logs by hour_of_day.
+    Aggregate completion logs by scheduled_hour.
     Returns rows sorted by count desc:
       [{ hour, count, on_time_rate }, ...]
     where on_time_rate is in [0, 1].
+
+    Rows with missing scheduled_hour are ignored.
     """
     db = get_db()
     owner_object_id = _to_object_id(user_id)
@@ -119,10 +127,10 @@ async def get_hours_distribution(
 
     base_match: Dict[str, Any] = {
         "action_type": "task_completed",
-        "hour_of_day": {"$gte": 0, "$lte": 23},
+        "scheduled_hour": {"$gte": 0, "$lte": 23},
     }
     if isinstance(day_of_week, int) and 0 <= day_of_week <= 6:
-        base_match["day_of_week"] = int(day_of_week)
+        base_match["scheduled_day"] = int(day_of_week)
 
     for owner_value in owner_variants:
         match_query = {
@@ -133,7 +141,7 @@ async def get_hours_distribution(
             {"$match": match_query},
             {
                 "$group": {
-                    "_id": "$hour_of_day",
+                    "_id": "$scheduled_hour",
                     "count": {"$sum": 1},
                     "on_time_count": {
                         "$sum": {
@@ -167,10 +175,12 @@ async def get_hours_distribution(
 
 async def get_days_distribution(user_id: str) -> List[Dict[str, Any]]:
     """
-    Aggregate completion logs by day_of_week.
+    Aggregate completion logs by scheduled_day.
     Returns all 7 days sorted by count desc:
       [{ day_name, day_num, count, on_time_rate }, ...]
     where on_time_rate is in [0, 1].
+
+    Rows with missing scheduled_day are ignored.
     """
     db = get_db()
     owner_object_id = _to_object_id(user_id)
@@ -191,7 +201,7 @@ async def get_days_distribution(user_id: str) -> List[Dict[str, Any]]:
     pipeline_template = [
         {
             "$group": {
-                "_id": "$day_of_week",
+                "_id": "$scheduled_day",
                 "count": {"$sum": 1},
                 "on_time_count": {
                     "$sum": {
@@ -208,7 +218,7 @@ async def get_days_distribution(user_id: str) -> List[Dict[str, Any]]:
                 "$match": {
                     "user_id": owner_value,
                     "action_type": "task_completed",
-                    "day_of_week": {"$gte": 0, "$lte": 6},
+                    "scheduled_day": {"$gte": 0, "$lte": 6},
                 }
             },
             *pipeline_template,

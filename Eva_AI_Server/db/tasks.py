@@ -370,8 +370,8 @@ async def find_tasks_for_show(
 
     for owner_value in owner_variants:
         query = _build_show_query(owner_value, filters)
-        cursor = db.tasks.find(query).sort("due_datetime", sort_direction).limit(10)
-        rows = await cursor.to_list(length=10)
+        cursor = db.tasks.find(query).sort("due_datetime", sort_direction).limit(20)
+        rows = await cursor.to_list(length=20)
         total_count = int(await db.tasks.count_documents(query))
         if rows or total_count > 0:
             return [_normalize_doc(row) for row in rows], total_count

@@ -4,7 +4,7 @@
  */
 
 const mongoose = require("mongoose");
-const { Task } = require("../models");
+const { Task, ActivityLog } = require("../models");
 const { toLocalDayRangeUtc } = require("../utils/timezone");
 const {
   BadRequestError,
@@ -13,6 +13,64 @@ const {
 
 const STATUS_VALUES = new Set(["pending", "ongoing", "complete"]);
 const PRIORITY_VALUES = new Set(["low", "medium", "high"]);
+
+const toDateOrNull = (value) => {
+  if (!value) {
+    return null;
+  }
+  const parsed = value instanceof Date ? value : new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+};
+
+const getIsoWeekNumber = (inputDate) => {
+  const date = new Date(Date.UTC(
+    inputDate.getUTCFullYear(),
+    inputDate.getUTCMonth(),
+    inputDate.getUTCDate(),
+  ));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+};
+
+const buildCompletedLogPayload = (task) => {
+  const completedAt = toDateOrNull(task.completed_at) || new Date();
+  const dueAt = toDateOrNull(task.due_datetime);
+  const createdAt = toDateOrNull(task.created_at);
+
+  let wasOnTime = null;
+  if (dueAt) {
+    wasOnTime = completedAt.getTime() <= dueAt.getTime();
+  }
+
+  let timeTakenMinutes = null;
+  if (createdAt) {
+    const minutes = Math.floor(
+      (completedAt.getTime() - createdAt.getTime()) / (1000 * 60),
+    );
+    timeTakenMinutes = Math.max(0, minutes);
+  }
+
+  return {
+    user_id: task.owner_id,
+    task_id: task._id,
+    action_type: "task_completed",
+    action_timestamp: completedAt,
+    day_of_week: completedAt.getUTCDay() === 0 ? 6 : completedAt.getUTCDay() - 1,
+    hour_of_day: completedAt.getUTCHours(),
+    week_number: getIsoWeekNumber(completedAt),
+    task_priority: task.priority || null,
+    subject: task.title || null,
+    source: "tasks_page",
+    time_taken_minutes: timeTakenMinutes,
+    was_on_time: wasOnTime,
+    scheduled_hour: dueAt ? dueAt.getUTCHours() : null,
+    scheduled_day: dueAt
+      ? (dueAt.getUTCDay() === 0 ? 6 : dueAt.getUTCDay() - 1)
+      : null,
+  };
+};
 
 const parsePositiveInt = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
@@ -163,6 +221,16 @@ const updateTaskStatus = async (req, res, next) => {
       );
     }
 
+    const existingTask = await Task.findOne({
+      _id: id,
+      owner_id: req.userId,
+      is_deleted: false,
+    }).lean();
+
+    if (!existingTask) {
+      throw new NotFoundError("Task not found");
+    }
+
     const update = {
       status: normalizedStatus,
       updated_at: new Date(),
@@ -175,17 +243,28 @@ const updateTaskStatus = async (req, res, next) => {
     }
 
     const task = await Task.findOneAndUpdate(
-      {
-        _id: id,
-        owner_id: req.userId,
-        is_deleted: false,
-      },
+      { _id: id, owner_id: req.userId, is_deleted: false },
       { $set: update },
       { new: true },
     ).lean();
 
     if (!task) {
       throw new NotFoundError("Task not found");
+    }
+
+    if (
+      normalizedStatus === "complete"
+      && String(existingTask.status || "").toLowerCase() !== "complete"
+    ) {
+      try {
+        await ActivityLog.create(
+          buildCompletedLogPayload(task),
+        );
+      } catch (error) {
+        console.warn(
+          `[TasksController] Failed to insert task_completed log for task ${task._id}: ${error.message}`,
+        );
+      }
     }
 
     res.json({
