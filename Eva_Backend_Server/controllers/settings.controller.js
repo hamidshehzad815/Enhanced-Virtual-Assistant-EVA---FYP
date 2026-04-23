@@ -168,16 +168,10 @@ const updateSettings = async (req, res, next) => {
       req.body.email_notifications_enabled,
       "email_notifications_enabled",
     );
-    const hasQuietHours = parseBoolean(req.body.has_quiet_hours, "has_quiet_hours");
     const quietHoursEnabled = parseBoolean(
       req.body.quiet_hours_enabled,
       "quiet_hours_enabled",
     );
-    const quietHoursStart = normalizeTime(
-      req.body.quiet_hours_start,
-      "quiet_hours_start",
-    );
-    const quietHoursEnd = normalizeTime(req.body.quiet_hours_end, "quiet_hours_end");
     const quietHours = normalizeQuietHours(req.body.quiet_hours);
     const pushToken = normalizePushToken(req.body.push_token, "push_token");
     const removePushToken = normalizePushToken(
@@ -231,54 +225,16 @@ const updateSettings = async (req, res, next) => {
       update.email_notifications_enabled = emailNotificationsEnabled;
     }
 
-    if (hasQuietHours !== undefined) {
-      update.has_quiet_hours = hasQuietHours;
-    }
-
     if (quietHoursEnabled !== undefined) {
       update.quiet_hours_enabled = quietHoursEnabled;
     }
 
-    if (quietHoursStart !== undefined) {
-      update.quiet_hours_start = quietHoursStart;
-    }
-
-    if (quietHoursEnd !== undefined) {
-      update.quiet_hours_end = quietHoursEnd;
-    }
-
     if (quietHours !== undefined) {
       update.quiet_hours = quietHours;
-
-      if (quietHours.length > 0) {
-        update.has_quiet_hours =
-          hasQuietHours !== undefined ? hasQuietHours : true;
-        update.quiet_hours_enabled =
-          quietHoursEnabled !== undefined ? quietHoursEnabled : true;
-        update.quiet_hours_start =
-          quietHoursStart !== undefined ? quietHoursStart : quietHours[0].start;
-        update.quiet_hours_end =
-          quietHoursEnd !== undefined ? quietHoursEnd : quietHours[0].end;
-      } else {
-        update.has_quiet_hours =
-          hasQuietHours !== undefined ? hasQuietHours : false;
-        update.quiet_hours_enabled =
-          quietHoursEnabled !== undefined ? quietHoursEnabled : false;
+      // If user clears all quiet-hour blocks, disable quiet-hours unless explicitly set.
+      if (quietHours.length === 0 && quietHoursEnabled === undefined) {
+        update.quiet_hours_enabled = false;
       }
-    }
-
-    if (
-      update.has_quiet_hours === false &&
-      update.quiet_hours_enabled === undefined
-    ) {
-      update.quiet_hours_enabled = false;
-    }
-
-    if (
-      update.quiet_hours_enabled === false &&
-      update.has_quiet_hours === undefined
-    ) {
-      update.has_quiet_hours = false;
     }
 
     if (theme !== undefined) {
