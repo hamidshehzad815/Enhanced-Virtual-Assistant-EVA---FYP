@@ -14,6 +14,8 @@ const taskRoutes = require("./tasks.routes");
 const integrationRoutes = require("./integrations.routes");
 const settingsRoutes = require("./settings.routes");
 const analyticsRoutes = require("./analytics.routes");
+const friendsRoutes = require("./friends.routes");
+const profileRoutes = require("./profile.routes");
 
 // Register routes
 router.use("/", healthRoutes);
@@ -23,11 +25,11 @@ router.use("/api/tasks", taskRoutes);
 router.use("/api/integrations", integrationRoutes);
 router.use("/api/settings", settingsRoutes);
 router.use("/api/analytics", analyticsRoutes);
+router.use("/api/friends", friendsRoutes);
+router.use("/api/profile", profileRoutes);
 
 // Future routes will be added here:
-// router.use('/api/friends', friendRoutes);
 // router.use('/api/notifications', notificationRoutes);
-// router.use('/api/profile', profileRoutes);
 // router.use('/api/learning', learningRoutes);
 
 module.exports = router;
