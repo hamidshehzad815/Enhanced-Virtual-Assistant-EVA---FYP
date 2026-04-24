@@ -1,0 +1,173 @@
+/**
+ * Profile Controller
+ * Authenticated user profile read/update endpoints.
+ */
+
+const { User } = require("../models");
+const { BadRequestError, ConflictError } = require("../middleware/errorHandler");
+
+const ALLOWED_UPDATES = new Set([
+  "name",
+  "username",
+  "profile_picture",
+  "bio",
+  "university",
+  "department",
+  "semester",
+  "timezone",
+]);
+
+const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
+
+const normalizeOptionalString = (value) => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null) {
+    return null;
+  }
+  return String(value).trim();
+};
+
+const parseSemester = (value) => {
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null || value === "") {
+    return null;
+  }
+
+  const parsed = typeof value === "number"
+    ? value
+    : Number.parseInt(String(value).trim(), 10);
+
+  if (!Number.isInteger(parsed)) {
+    throw new BadRequestError("semester must be an integer");
+  }
+
+  return parsed;
+};
+
+/**
+ * GET /api/profile
+ * Return authenticated user's public profile.
+ */
+const getProfile = async (req, res, next) => {
+  try {
+    res.json({
+      status: "success",
+      data: {
+        user: req.user.toPublicProfile(),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * PATCH /api/profile
+ * Update authenticated user's profile fields.
+ */
+const updateProfile = async (req, res, next) => {
+  try {
+    const update = {};
+
+    const incomingKeys = Object.keys(req.body || {});
+    const invalidKeys = incomingKeys.filter((key) => !ALLOWED_UPDATES.has(key));
+    if (invalidKeys.length > 0) {
+      throw new BadRequestError(
+        `Invalid profile fields: ${invalidKeys.join(", ")}`,
+      );
+    }
+
+    if (hasOwn(req.body, "name")) {
+      const name = normalizeOptionalString(req.body.name);
+      if (!name) {
+        throw new BadRequestError("name is required");
+      }
+      update.name = name;
+    }
+
+    if (hasOwn(req.body, "username")) {
+      const username = normalizeOptionalString(req.body.username);
+      if (!username) {
+        throw new BadRequestError("username is required");
+      }
+      update.username = username.toLowerCase();
+    }
+
+    if (hasOwn(req.body, "profile_picture")) {
+      const profilePicture = normalizeOptionalString(req.body.profile_picture);
+      update.profile_picture = profilePicture || null;
+    }
+
+    if (hasOwn(req.body, "bio")) {
+      const bio = normalizeOptionalString(req.body.bio);
+      update.bio = bio || null;
+    }
+
+    if (hasOwn(req.body, "university")) {
+      const university = normalizeOptionalString(req.body.university);
+      update.university = university || null;
+    }
+
+    if (hasOwn(req.body, "department")) {
+      const department = normalizeOptionalString(req.body.department);
+      update.department = department || null;
+    }
+
+    if (hasOwn(req.body, "semester")) {
+      update.semester = parseSemester(req.body.semester);
+    }
+
+    if (hasOwn(req.body, "timezone")) {
+      const timezone = normalizeOptionalString(req.body.timezone);
+      if (!timezone) {
+        throw new BadRequestError("timezone is required");
+      }
+      update.timezone = timezone;
+    }
+
+    if (Object.keys(update).length === 0) {
+      throw new BadRequestError("No valid profile fields provided");
+    }
+
+    if (
+      update.username
+      && update.username !== String(req.user.username || "").toLowerCase()
+    ) {
+      const existing = await User.findOne({
+        username: update.username,
+        _id: { $ne: req.userId },
+      }).lean();
+      if (existing) {
+        throw new ConflictError("Username already taken");
+      }
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.userId,
+      { $set: update },
+      {
+        new: true,
+        runValidators: true,
+      },
+    );
+
+    res.json({
+      status: "success",
+      message: "Profile updated",
+      data: {
+        user: updatedUser.toPublicProfile(),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = {
+  getProfile,
+  updateProfile,
+};

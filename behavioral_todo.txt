@@ -1,0 +1,455 @@
+================================================================
+PHASES 29–33 — BEHAVIORAL COMMAND
+Parallel Build: AI Server + Node.js Backend
+================================================================
+
+WHAT IS ALREADY DONE
+================================================================
+
+  AI Server:
+  ✓ Self-fetch (user, settings, history, Redis context)
+  ✓ Preprocessing (lowercase + too_short)
+  ✓ Model 1 and Model 2 running
+  ✓ NER model updated (day entity for behavioral)
+  ✓ Entity scoper (needs behavioral scope added)
+  ✓ Context manager (free_text state already works)
+  ✓ db/activity_logs.py (insert_log, count_completed exist)
+  ✓ Timezone conversion helpers
+  ✓ Gemini service with fallback
+  ✓ Conversation history save
+  ✓ Router (behavioral routed to placeholder)
+
+  Node.js:
+  ✓ Chat bridge running
+  ✓ Settings model with analytics_min_tasks_threshold
+  ✓ Task model (needed for conflict check in best_time)
+
+
+================================================================
+PHASE 29 — NER + ENTITY SCOPER FOR BEHAVIORAL
+================================================================
+
+Goal: NER extracts day entity correctly for behavioral.
+      Entity scoper configured for behavioral intent.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [x] Verify NER model extracts day entity for behavioral:
+      → "when am I most productive on Monday"
+        expected: day = "Monday"
+      → "find the best time on Friday"
+        expected: day = "Friday"
+      → "what are my best hours on Wednesday"
+        expected: day = "Wednesday"
+      → "show my productivity report"
+        expected: no entities
+      → "which days am I most focused"
+        expected: no entities
+      → "show my completion rate"
+        expected: no entities
+      → implemented with compatibility switch:
+        BEHAVIORAL_DATE_AS_DAY_FALLBACK=true
+        maps weekday-like date → day for behavioral intent
+
+  [x] Update pipeline/entity_scoper.py
+      → add "behavioral" scope:
+        keep : day
+        drop : task_name, date, time, priority,
+               status, duration, person, new_date,
+               new_time, new_priority, new_status,
+               new_duration, new_title
+
+  [x] Test entity scoper on behavioral intent:
+      → input with extra entities (e.g. date)
+        confirm only day is kept if present
+      → automated tests added in test_phase7_pipeline.py
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+  [x] Nothing new this phase.
+
+  PHASE 29 TEST:
+  [ ] "when am I most productive on Tuesday"
+      → day = "Tuesday" extracted and scoped
+  [ ] "show my productivity report"
+      → no entities (empty dict)
+  [ ] "find best time for Monday"
+      → day = "Monday"
+  [ ] "what are my peak hours"
+      → no entities (productive_hours, no day filter)
+
+
+================================================================
+PHASE 30 — ANALYTICS DB LAYER
+================================================================
+
+Goal: All aggregation queries needed by behavioral handler
+      exist and are independently tested.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [x] Add to db/activity_logs.py:
+
+      count_completed(user_id) → int
+        → already exists — confirm it works
+        → db.activity_logs.countDocuments({
+            user_id: user_id,
+            action_type: "task_completed"
+          })
+
+      get_hours_distribution(user_id, day_of_week=None) → list
+        → aggregates completions by hour_of_day
+        → optional filter by day_of_week (0=Monday, 6=Sunday)
+        → also computes on_time_rate per hour
+        → returns list sorted by count descending:
+          [{ hour: 18, count: 12, on_time_rate: 0.91 }, ...]
+
+      get_days_distribution(user_id) → list
+        → aggregates completions by day_of_week
+        → computes on_time_rate per day
+        → returns all 7 days sorted by count descending:
+          [{ day_name: "Tuesday", day_num: 1,
+             count: 18, on_time_rate: 0.89 }, ...]
+
+      get_completion_rate(user_id) → dict
+        → total completed, on_time count, late count,
+          on_time_rate percentage
+        → also returns weekly trend (last 4 weeks):
+          [{ week: 15, count: 7 }, ...]
+        → returns:
+          {
+            total_completed : 42,
+            on_time         : 33,
+            late            : 9,
+            on_time_rate    : 78.5,
+            weekly_trend    : [...]
+          }
+
+      get_avg_time_taken(user_id) → float or None
+        → average time_taken_minutes across all completed logs
+        → returns None if no logs with time_taken set
+
+  [x] Add to db/tasks.py:
+
+      get_tasks_for_day(user_id, day_of_week) → list
+        → returns tasks scheduled on that weekday
+        → used for conflict check in best_time_for_day
+        → query: owner_id=user_id, is_deleted=false,
+                 day_of_week(due_datetime) = day_of_week
+        → returns list of { due_datetime, duration }
+
+  [x] Add to utils/date_utils.py:
+
+      weekday_name_to_number(day_name) → int
+        → "monday" → 0
+        → "tuesday" → 1
+        → "wednesday" → 2
+        → "thursday" → 3
+        → "friday" → 4
+        → "saturday" → 5
+        → "sunday" → 6
+        → case insensitive
+        → returns None for invalid input
+
+      hour_to_12h_format(hour) → str
+        → 18 → "6PM"
+        → 10 → "10AM"
+        → 0  → "12AM"
+        → 12 → "12PM"
+
+  [x] Unit test each new function:
+      → count_completed: insert 5 completed logs → returns 5
+      → get_hours_distribution: logs at hours 18,18,10,18
+        → hour 18 has count=3, hour 10 has count=1
+      → get_hours_distribution with day filter:
+        → only logs on that weekday counted
+      → get_days_distribution: logs on Mon, Tue, Tue
+        → Tuesday count=2, Monday count=1
+      → get_completion_rate: 3 on_time, 2 late
+        → on_time_rate = 60.0
+      → get_avg_time_taken: logs with 60, 90, 120 mins
+        → returns 90.0
+      → get_tasks_for_day: 2 tasks on Monday → returns 2
+      → weekday_name_to_number: all 7 days correct
+      → weekday_name_to_number: "MONDAY" → 0 (case insensitive)
+      → weekday_name_to_number: "xyz" → None
+      → hour_to_12h_format: all edge cases (0, 12, 18, 23)
+      → automated in tests/test_behavioral_phase30_db_layer.py
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [x] Create GET /api/analytics/productivity (protected)
+      → fetches from Activity_Logs via Node.js
+      → returns same shape as get_completion_rate + days
+      → used by frontend dashboard page (not chat)
+      → query params: optional date range
+
+  [x] Create GET /api/analytics/hours (protected)
+      → fetches hours distribution from Activity_Logs
+      → optional query param: day=monday
+
+  PHASE 30 TEST:
+  [ ] Insert 15 completed activity logs across different
+      hours and days
+  [ ] Call get_hours_distribution → correct top hours
+  [ ] Call get_days_distribution → correct day ranking
+  [ ] Call get_completion_rate → correct percentages
+  [ ] Call get_avg_time_taken → correct average
+  [x] Call GET /api/analytics/productivity → correct JSON
+  [x] Call GET /api/analytics/hours?day=monday → filtered
+
+
+================================================================
+PHASE 31 — BEHAVIORAL HANDLER IMPLEMENTATION
+================================================================
+
+Goal: Behavioral handler runs STEP 1-6.
+      All 5 sub-intents working and returning natural replies.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [x] Create handlers/behavioral/behavioral.py
+
+  [x] Create handlers/behavioral/__init__.py
+
+  [x] Implement STEP 1 — threshold check
+      → call count_completed(user_id)
+      → compare with user_settings.analytics_min_tasks_threshold
+      → below threshold → Gemini not-enough-data reply → STOP
+
+  [x] Implement STEP 2 — sub-intent detection
+      → keyword matching on original message (lowercased)
+      → detect: best_time_for_day, completion_rate,
+                productivity_report, productive_days,
+                productive_hours (default)
+      → if best_time_for_day and no day entity:
+          set Redis free_text state
+          Gemini: "Which day would you like the
+                   best time for, Ali?"
+          STOP
+
+  [x] Implement STEP 3 — run analytics query
+      → call correct DB function based on sub_intent
+      → productive_hours: get_hours_distribution
+          (with day filter if day entity present)
+      → productive_days: get_days_distribution
+      → best_time_for_day: get_hours_distribution(day)
+          + get_tasks_for_day(day) for conflict check
+      → completion_rate: get_completion_rate
+      → productivity_report: all 4 queries combined
+
+  [x] Implement STEP 4 — handle empty results
+      → if query returns no data for that filter:
+          Gemini generates specific no-data reply
+          mentioning the filter used
+          STOP
+
+  [x] Implement STEP 5 — Gemini format
+      → convert hours using hour_to_12h_format
+      → build action_context per sub_intent
+      → call Gemini → natural reply
+
+      Build Gemini prompt helpers:
+      → productive_hours_prompt(username, top_hours,
+                                day_filter)
+      → productive_days_prompt(username, days)
+      → best_time_prompt(username, day, best_hour,
+                         conflict_free)
+      → completion_rate_prompt(username, rate_data)
+      → productivity_report_prompt(username, full_data)
+      → not_enough_data_prompt(username, threshold)
+      → no_data_for_filter_prompt(username, filter_used)
+
+  [x] Implement STEP 6 — save messages and return
+      → save user message to Conversation_History
+      → save EVA reply to Conversation_History
+      → update Chat_Session
+      → return { status, response_text, notifications: [] }
+
+  [x] Wire behavioral handler into router.py
+      → remove behavioral placeholder
+      → bind to behavioral handler
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+  [x] Nothing new this phase.
+      Chat bridge already handles behavioral.
+
+  PHASE 31 TEST:
+  [ ] "when am I most productive"
+      → threshold met → productive_hours query runs
+      → Gemini formats top hours naturally
+      → user name used, hours in 12h format
+
+  [ ] "what are my best hours on Monday"
+      → productive_hours with day filter
+      → only Monday logs counted
+
+  [ ] "which days am I most focused"
+      → productive_days query
+      → all 7 days shown, ranked
+
+  [ ] "find the best time for me on Tuesday"
+      → best_time_for_day → Tuesday
+      → conflict check run
+      → natural reply with suggested time
+
+  [ ] "find the best time for me" (no day)
+      → pending state set
+      → EVA asks which day
+      → reply "Friday"
+      → handler re-enters with day=Friday
+
+  [ ] "show my completion rate"
+      → completion_rate query
+      → percentage, on_time count, weekly trend
+
+  [ ] "show my productivity report"
+      → all 4 queries combined
+      → full summary formatted naturally
+
+  [ ] Under threshold (< 10 completed logs)
+      → not-enough-data reply, no query runs
+
+  [ ] No data for specific day filter
+      → no-data reply mentioning the day
+
+
+================================================================
+PHASE 32 — ANALYTICS DASHBOARD (Node.js)
+================================================================
+
+Goal: Frontend dashboard can fetch analytics via Node.js APIs.
+      These are separate from chat — UI-driven data fetching.
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [x] GET /api/analytics/productivity (protected)
+      → query Activity_Logs for:
+          total_completed, on_time_rate, weekly_trend
+      → query params: start_date, end_date (optional)
+      → return JSON for dashboard charts
+
+  [x] GET /api/analytics/hours (protected)
+      → hours distribution from Activity_Logs
+      → query param: day=monday (optional)
+      → return: [{ hour, count, on_time_rate }]
+
+  [x] GET /api/analytics/days (protected)
+      → days distribution from Activity_Logs
+      → return: [{ day_name, count, on_time_rate }]
+
+  [x] GET /api/analytics/completion-trend (protected)
+      → weekly completion counts for last N weeks
+      → query param: weeks=4 (default)
+      → return: [{ week, count, on_time }]
+
+  [x] Test all analytics routes:
+      → insert 20 completed logs across days/hours
+      → GET /api/analytics/productivity → correct totals
+      → GET /api/analytics/hours → correct distribution
+      → GET /api/analytics/days → correct ranking
+      → GET /api/analytics/completion-trend → correct weeks
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+  [x] Nothing new this phase.
+      Analytics DB queries already written in Phase 30.
+
+  PHASE 32 TEST:
+  [x] All 4 analytics API endpoints return correct data
+  [x] Protected (401 without token)
+  [x] Empty data case handled (returns zeros, not error)
+  [x] Date range filter works correctly
+
+
+================================================================
+PHASE 33 — TESTING
+================================================================
+
+Goal: Full behavioral flow test suite.
+      Backend analytics API tests added.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [x] Create tests/test_behavioral_handler.py
+
+      Test cases:
+      [x] below threshold → not-enough-data reply
+      [x] productive_hours: general → top hours returned
+      [x] productive_hours: with day filter → filtered
+      [x] productive_hours: no logs for that day → no-data
+      [x] productive_days: all days ranked correctly
+      [x] productive_days: some days have no logs
+      [x] best_time_for_day: day present → best hour found
+      [x] best_time_for_day: day missing → pending state set
+      [x] best_time_for_day: day reply → handler re-enters
+      [x] best_time_for_day: conflict check → overlapping task
+          excluded from suggestion
+      [x] completion_rate: correct percentages
+      [x] completion_rate: weekly trend correct
+      [x] productivity_report: all 4 queries combined
+      [x] cancel while best_time pending → Redis cleared
+      [x] invalid day reply → ask again
+      [x] sub-intent detection: all 5 detected correctly
+      [x] hour_to_12h_format: all edge cases
+      [x] weekday_name_to_number: all 7 days + invalid
+
+  [x] Run full AI test suite → confirm 106+ tests pass
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [x] Add to tests/analytics.test.js:
+      → GET /api/analytics/productivity → 200 + correct data
+      → GET /api/analytics/hours → 200 + correct data
+      → GET /api/analytics/days → 200 + correct data
+      → GET /api/analytics/completion-trend → 200
+      → all routes protected → 401 without token
+      → empty data returns zeros not error
+
+  [x] Run full backend test suite → confirm 13+ tests pass
+
+  PHASE 33 END-TO-END TESTS:
+  [ ] Insert 15+ completed activity logs manually
+  [ ] "when am I most productive" → correct hours in reply
+  [ ] "what are my best hours on Tuesday" → filtered reply
+  [ ] "which days am I most focused" → ranked days reply
+  [ ] "find best time on Wednesday" → time suggestion
+  [ ] "show my completion rate" → percentage in reply
+  [ ] "show my productivity report" → full summary
+  [ ] All replies use user name, 12h format, natural tone
+
+
+================================================================
+WHAT COMES AFTER PHASE 33
+================================================================
+
+  Phase 34 → Learning CREATE handler (AI server)
+             + YouTube API integration
+             + roadmap page APIs (Node.js)
+
+  Phase 35 → Learning UPDATE, DELETE, SHOW (AI server)
+             + roadmap progress APIs (Node.js)
+
+  Phase 36 → Friend system APIs (Node.js)
+
+  Phase 37 → Notification centre page (Node.js)
+
+  Phase 38 → Profile page (Node.js)
+
+  Phase 39 → Voice input (Node.js transcription)
+
+  Phase 40 → Google OAuth login
+
+  Phase 41 → End-to-end testing all flows
+
+  Phase 42 → Performance testing + CI pipeline
+
+  Phase 43 → Deployment

@@ -2,7 +2,7 @@
 Phase 21 scheduling show handler.
 Implements read-only task listing with optional date/priority/status/task_name filters.
 """
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, time, timedelta, timezone as dt_timezone
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -12,7 +12,8 @@ from db.tasks import find_tasks_for_show
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from utils.date_utils import build_date_range, convert_tasks_to_local
-from utils.timezone_utils import resolve_timezone_name
+from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
+from utils.timezone_utils import get_zoneinfo, resolve_timezone_name
 
 
 _TASK_NAME_GENERIC_WORDS = {
@@ -28,6 +29,12 @@ _TASK_NAME_GENERIC_WORDS = {
     "plans",
 }
 
+_WEEK_SCOPE_PATTERN = re.compile(r"\b(this|next|last|previous)\s+week\b", flags=re.IGNORECASE)
+_WEEKDAY_PATTERN = re.compile(
+    r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+    flags=re.IGNORECASE,
+)
+
 
 def _first_value(value: Any) -> Any:
     if isinstance(value, list):
@@ -42,19 +49,11 @@ def _coerce_text(value: Any) -> str:
 
 
 def _normalize_priority(value: Any) -> str:
-    priority = _coerce_text(value).lower()
-    if priority in {"low", "medium", "high"}:
-        return priority
-    return ""
+    return canonicalize_priority(value)
 
 
 def _normalize_status(value: Any) -> str:
-    status = _coerce_text(value).lower()
-    if status == "completed":
-        return "complete"
-    if status in {"pending", "ongoing", "complete"}:
-        return status
-    return ""
+    return canonicalize_status(value)
 
 
 def _filters_summary(filters_used: Dict[str, Any], overdue_only: bool) -> str:
@@ -169,6 +168,62 @@ def _build_relaxed_task_name_candidates(task_name: str) -> List[str]:
         seen.add(token)
 
     return candidates
+
+
+def _has_explicit_weekday(text: str) -> bool:
+    return bool(_WEEKDAY_PATTERN.search(_coerce_text(text).lower()))
+
+
+def _detect_week_scope(text: str) -> str:
+    match = _WEEK_SCOPE_PATTERN.search(_coerce_text(text).lower())
+    if not match:
+        return ""
+    value = _coerce_text(match.group(1)).lower()
+    if value == "previous":
+        return "last"
+    return value
+
+
+def _build_week_scope_range(
+    week_scope: str,
+    timezone_name: str,
+    now_utc: datetime,
+) -> Optional[Dict[str, Any]]:
+    normalized_scope = _coerce_text(week_scope).lower()
+    if normalized_scope not in {"this", "next", "last"}:
+        return None
+
+    zone = get_zoneinfo(timezone_name)
+    now_aware = now_utc.replace(tzinfo=dt_timezone.utc).astimezone(zone)
+    anchor_date = now_aware.date()
+    if normalized_scope == "next":
+        anchor_date = anchor_date + timedelta(days=7)
+    elif normalized_scope == "last":
+        anchor_date = anchor_date - timedelta(days=7)
+
+    week_start = anchor_date - timedelta(days=anchor_date.weekday())
+    week_end = week_start + timedelta(days=6)
+
+    local_start = datetime.combine(week_start, time.min, tzinfo=zone)
+    local_end = datetime.combine(week_end, time.max, tzinfo=zone)
+
+    start_utc = local_start.astimezone(dt_timezone.utc).replace(tzinfo=None)
+    end_utc = local_end.astimezone(dt_timezone.utc).replace(tzinfo=None)
+
+    label_prefix = {
+        "this": "This week",
+        "next": "Next week",
+        "last": "Last week",
+    }[normalized_scope]
+    display_label = (
+        f"{label_prefix} ({week_start.strftime('%d %b %Y').replace(' 0', ' ')})"
+    )
+
+    return {
+        "start_utc": start_utc,
+        "end_utc": end_utc,
+        "display_label": display_label,
+    }
 
 
 def _approximate_match_prefix(
@@ -396,7 +451,30 @@ async def handle_scheduling_show(
     filters_used: Dict[str, Any] = {}
     query_filters: Dict[str, Any] = {"now_utc": now_utc}
 
-    if date_raw:
+    # Handle explicit week windows directly from user text so phrases like
+    # "this week"/"next week" do not collapse to a single weekday.
+    week_scope = _detect_week_scope(message_lower)
+    date_raw_normalized = _coerce_text(date_raw).lower()
+    date_entity_is_explicit_week_phrase = date_raw_normalized in {
+        "this week",
+        "next week",
+        "last week",
+        "previous week",
+    }
+    if (
+        week_scope
+        and not _has_explicit_weekday(message_lower)
+        and not date_entity_is_explicit_week_phrase
+    ):
+        week_range = _build_week_scope_range(week_scope, timezone_name, now_utc)
+        if week_range:
+            query_filters["date_range"] = {
+                "start_utc": week_range["start_utc"],
+                "end_utc": week_range["end_utc"],
+            }
+            filters_used["date"] = _coerce_text(week_range["display_label"])
+
+    if date_raw and "date_range" not in query_filters:
         date_range = await _resolve_date_filter(date_raw, timezone_name)
         if date_range:
             query_filters["date_range"] = {

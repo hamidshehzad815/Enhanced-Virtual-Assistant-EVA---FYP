@@ -57,7 +57,8 @@ class NERExtractor:
             }
 
             self.loaded = True
-            print(f"[NER] Loaded from {candidate} (tokenizer={tokenizer_mode})")
+            # print(f"[NER] Loaded from {candidate} (tokenizer={tokenizer_mode})")
+            print(f"[NER] Loaded")
             return True
 
         print("[NER] Load failed for all candidates.")

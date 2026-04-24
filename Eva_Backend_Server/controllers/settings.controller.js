@@ -98,6 +98,28 @@ const normalizePushToken = (value, fieldName) => {
   return token;
 };
 
+const normalizeString = (value) => {
+  if (value === undefined) {
+    return undefined;
+  }
+  return String(value || "").trim();
+};
+
+const normalizeInteger = (value, fieldName) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const parsed =
+    typeof value === "number" ? value : Number.parseInt(String(value).trim(), 10);
+
+  if (!Number.isInteger(parsed)) {
+    throw new BadRequestError(`${fieldName} must be an integer`);
+  }
+
+  return parsed;
+};
+
 const ensureUserSettings = async (userId) => {
   let settings = await UserSetting.findOne({ user_id: userId });
   if (!settings) {
@@ -146,22 +168,50 @@ const updateSettings = async (req, res, next) => {
       req.body.email_notifications_enabled,
       "email_notifications_enabled",
     );
-    const hasQuietHours = parseBoolean(req.body.has_quiet_hours, "has_quiet_hours");
     const quietHoursEnabled = parseBoolean(
       req.body.quiet_hours_enabled,
       "quiet_hours_enabled",
     );
-    const quietHoursStart = normalizeTime(
-      req.body.quiet_hours_start,
-      "quiet_hours_start",
-    );
-    const quietHoursEnd = normalizeTime(req.body.quiet_hours_end, "quiet_hours_end");
     const quietHours = normalizeQuietHours(req.body.quiet_hours);
     const pushToken = normalizePushToken(req.body.push_token, "push_token");
     const removePushToken = normalizePushToken(
       req.body.remove_push_token,
       "remove_push_token",
     );
+    const theme = normalizeString(req.body.theme);
+    const language = normalizeString(req.body.language);
+    const defaultReminderMinutes = normalizeInteger(
+      req.body.default_reminder_minutes,
+      "default_reminder_minutes",
+    );
+    const defaultTopicReminderMinutes = normalizeInteger(
+      req.body.default_topic_reminder_minutes,
+      "default_topic_reminder_minutes",
+    );
+    const defaultTaskPriority = normalizeString(req.body.default_task_priority);
+    const defaultTaskDuration = normalizeInteger(
+      req.body.default_task_duration,
+      "default_task_duration",
+    );
+    const behavioralAnalyticsEnabled = parseBoolean(
+      req.body.behavioral_analytics_enabled,
+      "behavioral_analytics_enabled",
+    );
+    const analyticsMinTasksThreshold = normalizeInteger(
+      req.body.analytics_min_tasks_threshold,
+      "analytics_min_tasks_threshold",
+    );
+    const preferredLearningDuration = normalizeInteger(
+      req.body.preferred_learning_duration,
+      "preferred_learning_duration",
+    );
+    const preferredLearningTime = normalizeString(req.body.preferred_learning_time);
+    const googleCalendarSyncEnabled = parseBoolean(
+      req.body.google_calendar_sync_enabled,
+      "google_calendar_sync_enabled",
+    );
+    const allowFriendRequests = normalizeString(req.body.allow_friend_requests);
+    const showLastActive = parseBoolean(req.body.show_last_active, "show_last_active");
 
     if (notificationsEnabled !== undefined) {
       update.notifications_enabled = notificationsEnabled;
@@ -175,54 +225,68 @@ const updateSettings = async (req, res, next) => {
       update.email_notifications_enabled = emailNotificationsEnabled;
     }
 
-    if (hasQuietHours !== undefined) {
-      update.has_quiet_hours = hasQuietHours;
-    }
-
     if (quietHoursEnabled !== undefined) {
       update.quiet_hours_enabled = quietHoursEnabled;
     }
 
-    if (quietHoursStart !== undefined) {
-      update.quiet_hours_start = quietHoursStart;
-    }
-
-    if (quietHoursEnd !== undefined) {
-      update.quiet_hours_end = quietHoursEnd;
-    }
-
     if (quietHours !== undefined) {
       update.quiet_hours = quietHours;
-
-      if (quietHours.length > 0) {
-        update.has_quiet_hours =
-          hasQuietHours !== undefined ? hasQuietHours : true;
-        update.quiet_hours_enabled =
-          quietHoursEnabled !== undefined ? quietHoursEnabled : true;
-        update.quiet_hours_start =
-          quietHoursStart !== undefined ? quietHoursStart : quietHours[0].start;
-        update.quiet_hours_end =
-          quietHoursEnd !== undefined ? quietHoursEnd : quietHours[0].end;
-      } else {
-        update.has_quiet_hours =
-          hasQuietHours !== undefined ? hasQuietHours : false;
-        update.quiet_hours_enabled =
-          quietHoursEnabled !== undefined ? quietHoursEnabled : false;
+      // If user clears all quiet-hour blocks, disable quiet-hours unless explicitly set.
+      if (quietHours.length === 0 && quietHoursEnabled === undefined) {
+        update.quiet_hours_enabled = false;
       }
     }
 
-    if (
-      update.has_quiet_hours === false &&
-      update.quiet_hours_enabled === undefined
-    ) {
-      update.quiet_hours_enabled = false;
+    if (theme !== undefined) {
+      update.theme = theme;
     }
 
-    if (
-      update.quiet_hours_enabled === false &&
-      update.has_quiet_hours === undefined
-    ) {
-      update.has_quiet_hours = false;
+    if (language !== undefined) {
+      update.language = language;
+    }
+
+    if (defaultReminderMinutes !== undefined) {
+      update.default_reminder_minutes = defaultReminderMinutes;
+    }
+
+    if (defaultTopicReminderMinutes !== undefined) {
+      update.default_topic_reminder_minutes = defaultTopicReminderMinutes;
+    }
+
+    if (defaultTaskPriority !== undefined) {
+      update.default_task_priority = defaultTaskPriority;
+    }
+
+    if (defaultTaskDuration !== undefined) {
+      update.default_task_duration = defaultTaskDuration;
+    }
+
+    if (behavioralAnalyticsEnabled !== undefined) {
+      update.behavioral_analytics_enabled = behavioralAnalyticsEnabled;
+    }
+
+    if (analyticsMinTasksThreshold !== undefined) {
+      update.analytics_min_tasks_threshold = analyticsMinTasksThreshold;
+    }
+
+    if (preferredLearningDuration !== undefined) {
+      update.preferred_learning_duration = preferredLearningDuration;
+    }
+
+    if (preferredLearningTime !== undefined) {
+      update.preferred_learning_time = preferredLearningTime;
+    }
+
+    if (googleCalendarSyncEnabled !== undefined) {
+      update.google_calendar_sync_enabled = googleCalendarSyncEnabled;
+    }
+
+    if (allowFriendRequests !== undefined) {
+      update.allow_friend_requests = allowFriendRequests;
+    }
+
+    if (showLastActive !== undefined) {
+      update.show_last_active = showLastActive;
     }
 
     const hasPushTokenMutation =

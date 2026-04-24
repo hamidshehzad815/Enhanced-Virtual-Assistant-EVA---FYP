@@ -77,7 +77,8 @@ class Classifier2:
             self.model.eval()
             self.id2label = self._load_id2label()
             self.loaded = True
-            print(f"[Model2] Loaded from {self.model_dir}")
+            # print(f"[Model2] Loaded from {self.model_dir}")
+            print(f"[Model2] Loaded")
             return True
         except Exception as e:
             print(f"[Model2] Load failed: {e}")

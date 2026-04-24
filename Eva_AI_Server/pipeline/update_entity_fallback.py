@@ -5,6 +5,14 @@ Used to improve update intent robustness when model extraction misses fields.
 import re
 from typing import Dict, Optional
 
+from utils.task_value_normalizer import (
+    PRIORITY_USER_VALUES,
+    STATUS_USER_VALUES,
+    build_value_regex,
+    canonicalize_priority,
+    canonicalize_status,
+)
+
 
 _DATE_TOKEN_BODY = (
     r"(?:\d{4}-\d{2}-\d{2}|today|tomorrow|yesterday|tonight|"
@@ -14,8 +22,11 @@ _DATE_TOKEN_BODY = (
 )
 _TIME_TOKEN_BODY = r"(?:[01]?\d(?::[0-5]\d)?\s*(?:am|pm))"
 
-_PRIORITY_PATTERN = re.compile(r"\b(low|medium|high)\b", flags=re.IGNORECASE)
-_STATUS_PATTERN = re.compile(r"\b(pending|ongoing|complete|completed)\b", flags=re.IGNORECASE)
+_PRIORITY_VALUE_TOKEN = build_value_regex(PRIORITY_USER_VALUES)
+_STATUS_VALUE_TOKEN = build_value_regex(STATUS_USER_VALUES)
+
+_PRIORITY_PATTERN = re.compile(rf"\b({_PRIORITY_VALUE_TOKEN})\b", flags=re.IGNORECASE)
+_STATUS_PATTERN = re.compile(rf"\b({_STATUS_VALUE_TOKEN})\b", flags=re.IGNORECASE)
 _DATE_PATTERN = re.compile(rf"\b({_DATE_TOKEN_BODY})\b", flags=re.IGNORECASE)
 _TIME_PATTERN = re.compile(rf"\b({_TIME_TOKEN_BODY})\b", flags=re.IGNORECASE)
 
@@ -35,10 +46,7 @@ def _compact(value: str) -> str:
 
 
 def _normalize_status(value: str) -> str:
-    status = _compact(value).lower()
-    if status == "completed":
-        return "complete"
-    return status
+    return canonicalize_status(value)
 
 
 def _clean_task_name(value: str) -> Optional[str]:
@@ -133,7 +141,7 @@ def extract_update_entities_fallback(text: str) -> Dict[str, str]:
 
     # mark <task> as <status>
     mark_match = re.search(
-        r"\bmark\s+(.+?)\s+as\s+(pending|ongoing|complete|completed)\b",
+        rf"\bmark\s+(.+?)\s+as\s+({_STATUS_VALUE_TOKEN})\b",
         raw_text,
         flags=re.IGNORECASE,
     )
@@ -141,12 +149,14 @@ def extract_update_entities_fallback(text: str) -> Dict[str, str]:
         task_name = _clean_task_name(mark_match.group(1))
         if task_name:
             entities["task_name"] = task_name
-        entities["new_status"] = _normalize_status(mark_match.group(2))
-        return entities
+        normalized_status = _normalize_status(mark_match.group(2))
+        if normalized_status:
+            entities["new_status"] = normalized_status
+            return entities
 
     # change/update <task> priority to <priority>
     priority_match = re.search(
-        r"\b(?:change|update)\s+(.+?)\s+priority\s+(?:to|as)\s+(low|medium|high)\b",
+        rf"\b(?:change|update)\s+(.+?)\s+priority\s+(?:to|as)\s+({_PRIORITY_VALUE_TOKEN})\b",
         raw_text,
         flags=re.IGNORECASE,
     )
@@ -154,8 +164,10 @@ def extract_update_entities_fallback(text: str) -> Dict[str, str]:
         task_name = _clean_task_name(priority_match.group(1))
         if task_name:
             entities["task_name"] = task_name
-        entities["new_priority"] = priority_match.group(2).lower()
-        return entities
+        normalized_priority = canonicalize_priority(priority_match.group(2))
+        if normalized_priority:
+            entities["new_priority"] = normalized_priority
+            return entities
 
     # change/update <task> duration to <duration>
     duration_match = re.search(
@@ -241,11 +253,15 @@ def extract_update_entities_fallback(text: str) -> Dict[str, str]:
 
     status_match = _STATUS_PATTERN.search(raw_text)
     if status_match and re.search(r"\b(?:to|as)\b", raw_text, flags=re.IGNORECASE):
-        entities.setdefault("new_status", _normalize_status(status_match.group(1)))
+        normalized_status = _normalize_status(status_match.group(1))
+        if normalized_status:
+            entities.setdefault("new_status", normalized_status)
 
     priority_match_generic = _PRIORITY_PATTERN.search(raw_text)
     if priority_match_generic and "priority" in raw_text.lower():
-        entities.setdefault("new_priority", priority_match_generic.group(1).lower())
+        normalized_priority = canonicalize_priority(priority_match_generic.group(1))
+        if normalized_priority:
+            entities.setdefault("new_priority", normalized_priority)
 
     duration_generic = _find_first(
         re.compile(
@@ -258,4 +274,3 @@ def extract_update_entities_fallback(text: str) -> Dict[str, str]:
         entities.setdefault("new_duration", duration_generic)
 
     return entities
-

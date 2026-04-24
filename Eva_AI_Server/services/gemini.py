@@ -57,6 +57,14 @@ _ACTION_GUIDANCE: Dict[str, str] = {
     "tasks_shown": "Summarize visible tasks in a helpful conversational way.",
     "show_results": "Introduce shown tasks naturally and keep the tone concise and helpful.",
     "show_not_found": "Explain that no tasks matched the requested show filters.",
+    "behavioral_ask_day": "Ask which weekday the user wants analytics for.",
+    "behavioral_not_enough_data": "Explain that more completed tasks are needed before meaningful analytics can be generated.",
+    "behavioral_no_data_for_filter": "Explain that no analytics data exists for the requested filter and suggest trying another filter.",
+    "behavioral_productive_hours": "Summarize the user's top productive hours naturally with completion and on-time insights.",
+    "behavioral_productive_days": "Summarize the user's strongest weekdays naturally with counts and on-time insights.",
+    "behavioral_best_time": "Suggest a best hour for the requested day and mention whether that slot appears conflict-free.",
+    "behavioral_completion_rate": "Summarize completion totals, on-time rate, and weekly trend naturally.",
+    "behavioral_productivity_report": "Provide a concise productivity snapshot including best hours, best days, completion rate, trend, and average time taken.",
     "missing_task_name": "Ask for task name naturally.",
     "missing_date": "Ask for date naturally.",
     "missing_time": "Ask for time naturally.",
@@ -318,6 +326,46 @@ _FALLBACK_RESPONSES: Dict[str, List[str]] = {
         "No tasks matched {filters_summary}, {name}.",
         "Nothing is scheduled for {filters_summary}, {name}.",
     ],
+    "behavioral_ask_day": [
+        "Which day would you like me to find the best time for, {name}?",
+        "Tell me the weekday you want, {name}, like Monday or Friday.",
+        "I can do that, {name}. Which day should I analyze?",
+    ],
+    "behavioral_not_enough_data": [
+        "I need a little more history first, {name}. You have {total_completed} completed tasks, and I need at least {threshold} to give reliable insights.",
+        "I am almost there, {name}. I currently see {total_completed} completed tasks; once you reach {threshold}, I can map your patterns better.",
+        "I do not have enough completion history yet, {name}. I need at least {threshold} completed tasks (currently {total_completed}).",
+    ],
+    "behavioral_no_data_for_filter": [
+        "I could not find enough data for {filter_used}, {name}. Try another day or a broader request.",
+        "There is no matching productivity history for {filter_used} yet, {name}.",
+        "I do not have analytics data for {filter_used} right now, {name}.",
+    ],
+    "behavioral_productive_hours": [
+        "Your strongest hours are {top_hours_text}, {name}.",
+        "Based on your history, {name}, your best time windows are {top_hours_text}.",
+        "I found your peak hours, {name}: {top_hours_text}.",
+    ],
+    "behavioral_productive_days": [
+        "Your strongest days are {top_days_text}, {name}.",
+        "Based on your completions, {name}, these days stand out: {top_days_text}.",
+        "Here are your best weekdays, {name}: {top_days_text}.",
+    ],
+    "behavioral_best_time": [
+        "For {day_filter}, your best slot is {best_hour_text}, {name}. {conflict_note}",
+        "I recommend {best_hour_text} on {day_filter}, {name}. {conflict_note}",
+        "Your top time on {day_filter} is {best_hour_text}, {name}. {conflict_note}",
+    ],
+    "behavioral_completion_rate": [
+        "You have completed {total_completed} tasks, {name}, with an on-time rate of {on_time_rate}%. Weekly trend: {weekly_trend_text}.",
+        "So far, {name}, you completed {total_completed} tasks, with {on_time} on time and {late} late. Trend: {weekly_trend_text}.",
+        "Your completion snapshot, {name}: {total_completed} done, {on_time_rate}% on time. Weekly trend: {weekly_trend_text}.",
+    ],
+    "behavioral_productivity_report": [
+        "Here is your productivity snapshot, {name}: peak hours {top_hours_text}; best days {top_days_text}; on-time rate {on_time_rate}% across {total_completed} completed tasks; average completion time {avg_time_taken_text}. Trend: {weekly_trend_text}.",
+        "Summary for you, {name}: top hours {top_hours_text}, top days {top_days_text}, on-time rate {on_time_rate}% ({total_completed} tasks), average time {avg_time_taken_text}, trend {weekly_trend_text}.",
+        "Productivity report, {name}: best hours {top_hours_text}, best days {top_days_text}, on-time {on_time_rate}% from {total_completed} completions, average {avg_time_taken_text}, weekly trend {weekly_trend_text}.",
+    ],
     "empty_input": [
         "I did not catch any message, {name}. Please type what you want me to do.",
         "Your message looks empty, {name}. Send me a task or question and I will help.",
@@ -481,6 +529,38 @@ class GeminiService:
         existing_time = str(action_context.get("existing_time") or time or "that time")
         intent_name = str(action_context.get("intent_name") or "this command")
         changes_summary = str(action_context.get("changes_summary") or "the requested updates")
+        day_filter = str(action_context.get("day_filter") or "that day")
+        filter_used = str(action_context.get("filter_used") or "that filter")
+        top_hours_text = str(action_context.get("top_hours_text") or "no peak-hour data yet")
+        top_days_text = str(action_context.get("top_days_text") or "no weekday ranking yet")
+        best_hour_text = str(action_context.get("best_hour_text") or "that hour")
+        weekly_trend_text = str(action_context.get("weekly_trend_text") or "no weekly trend yet")
+        avg_time_taken_text = str(action_context.get("avg_time_taken_text") or "N/A")
+        try:
+            total_completed = int(action_context.get("total_completed") or 0)
+        except (TypeError, ValueError):
+            total_completed = 0
+        try:
+            on_time = int(action_context.get("on_time") or 0)
+        except (TypeError, ValueError):
+            on_time = 0
+        try:
+            late = int(action_context.get("late") or 0)
+        except (TypeError, ValueError):
+            late = 0
+        try:
+            threshold = int(action_context.get("threshold") or 10)
+        except (TypeError, ValueError):
+            threshold = 10
+        try:
+            on_time_rate = float(action_context.get("on_time_rate") or 0.0)
+        except (TypeError, ValueError):
+            on_time_rate = 0.0
+        conflict_note = (
+            "That hour currently looks free."
+            if bool(action_context.get("conflict_free"))
+            else "That hour overlaps your existing schedule, but it is still your strongest historical slot."
+        )
 
         date_time_suffix = ""
         if date and time:
@@ -507,6 +587,19 @@ class GeminiService:
             existing_time=existing_time,
             intent_name=intent_name,
             changes_summary=changes_summary,
+            day_filter=day_filter,
+            filter_used=filter_used,
+            top_hours_text=top_hours_text,
+            top_days_text=top_days_text,
+            best_hour_text=best_hour_text,
+            weekly_trend_text=weekly_trend_text,
+            avg_time_taken_text=avg_time_taken_text,
+            total_completed=total_completed,
+            on_time=on_time,
+            late=late,
+            threshold=threshold,
+            on_time_rate=on_time_rate,
+            conflict_note=conflict_note,
         ).strip()
 
     def generate_reply(
