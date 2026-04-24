@@ -9,6 +9,7 @@ from handlers.scheduling.add import handle_scheduling_add
 from handlers.scheduling.delete import handle_scheduling_delete
 from handlers.scheduling.show import handle_scheduling_show
 from handlers.scheduling.update import handle_scheduling_update
+from config.settings import settings
 from services.gemini import gemini_service
 
 
@@ -60,6 +61,32 @@ async def route_intent(
         return await handle_scheduling_update(entities=entities, context=context)
 
     if canonical_intent == "behavioral":
+        # -----------------------------------------------------------
+        # Behavioral analytics admin feature switch.
+        # Controlled by BEHAVIORAL_ENABLED in .env
+        # When false → all behavioral commands return out-of-scope
+        #              for every user, system-wide.
+        # -----------------------------------------------------------
+        if not settings.BEHAVIORAL_ENABLED:
+            user = context.get("user") or {}
+            user_name = user.get("name")
+            history = context.get("history") or []
+            response_text = gemini_service.generate_reply(
+                {
+                    "action": "out_of_scope",
+                    "user_message": context.get("message", ""),
+                },
+                user_name,
+                history,
+            )
+            return {
+                "routed": False,
+                "intent": "behavioral",
+                "status": "disabled",
+                "response_text": response_text,
+                "notifications": [],
+            }
+
         return await handle_behavioral(entities=entities, context=context)
 
     response_map = {

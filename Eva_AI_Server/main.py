@@ -39,6 +39,7 @@ from pipeline.preprocessor import is_too_short, preprocess
 from services.self_fetch import self_fetch_all
 from services.duckling import duckling_client
 from services.gemini import gemini_service
+from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
 from utils.timezone_utils import resolve_timezone_name, utc_naive_to_local
 
 _WEEKDAYS = (
@@ -258,15 +259,11 @@ def _first_entity_value(value):
 
 
 def _normalize_priority_update(value) -> str:
-    normalized = str(_first_entity_value(value) or "").strip().lower()
-    return normalized if normalized in {"low", "medium", "high"} else ""
+    return canonicalize_priority(_first_entity_value(value))
 
 
 def _normalize_status_update(value) -> str:
-    normalized = str(_first_entity_value(value) or "").strip().lower()
-    if normalized == "completed":
-        normalized = "complete"
-    return normalized if normalized in {"pending", "ongoing", "complete"} else ""
+    return canonicalize_status(_first_entity_value(value))
 
 
 def _parse_duration_update(value):

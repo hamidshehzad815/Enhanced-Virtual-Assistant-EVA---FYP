@@ -58,6 +58,11 @@ _ENTITY_ALIASES: Dict[str, str] = {
     "priority": "priority",
     "duration": "duration",
     "collaborator": "collaborator",
+    # NER compatibility: some model versions emit `person` for collaborator
+    # mentions (e.g., "with Ahmed"). Normalize to canonical collaborator key.
+    "person": "collaborator",
+    "person_name": "collaborator",
+    "people": "collaborator",
     "status": "status",
     "topic": "topic",
     "subtopic": "subtopic",

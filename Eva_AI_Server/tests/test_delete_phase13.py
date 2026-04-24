@@ -25,6 +25,16 @@ class TestDeletePhase13(unittest.TestCase):
         self.assertEqual(entities.get("status"), "pending")
         self.assertNotIn("task_name", entities)
 
+    def test_delete_fallback_maps_priority_alias_to_canonical(self):
+        entities = extract_delete_entities_fallback("delete all urgent priority tasks")
+        self.assertEqual(entities.get("priority"), "high")
+        self.assertNotIn("task_name", entities)
+
+    def test_delete_fallback_maps_status_alias_to_canonical(self):
+        entities = extract_delete_entities_fallback("delete all done tasks")
+        self.assertEqual(entities.get("status"), "complete")
+        self.assertNotIn("task_name", entities)
+
     def test_delete_fallback_extracts_partial_task_name_and_date(self):
         entities = extract_delete_entities_fallback("delete the exam on Monday")
         self.assertEqual((entities.get("date") or "").lower(), "monday")
@@ -52,4 +62,3 @@ class TestDeletePhase13(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
