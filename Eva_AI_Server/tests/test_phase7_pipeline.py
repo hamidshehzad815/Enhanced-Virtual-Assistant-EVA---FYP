@@ -32,6 +32,22 @@ class TestPhase7Pipeline(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("topic", scoped)
         self.assertNotIn("new_task_name", scoped)
 
+    def test_scope_entities_for_scheduling_add_maps_person_to_collaborator(self):
+        raw_entities = {
+            "task_name": "Physics exam",
+            "date": "Monday",
+            "time": "5PM",
+            "person": "Ahmed",
+        }
+
+        scoped = scope_entities(raw_entities, "scheduling_add")
+
+        self.assertEqual(scoped.get("task_name"), "Physics exam")
+        self.assertEqual(scoped.get("date"), "Monday")
+        self.assertEqual(scoped.get("time"), "5PM")
+        self.assertEqual(scoped.get("collaborator"), "Ahmed")
+        self.assertNotIn("person", scoped)
+
     def test_scope_entities_for_scheduling_show_keeps_task_filters(self):
         raw_entities = {
             "task_name": "physics exam",

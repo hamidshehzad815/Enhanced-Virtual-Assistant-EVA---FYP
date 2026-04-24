@@ -139,7 +139,7 @@ Input    : "Add Physics exam on Monday at 11PM"
 Expected : EVA warns about quiet hours, asks to confirm
 Reply    : "yes"
 Expected : task inserted at 11PM despite quiet hours
-Result   : PASS / FAIL -> Pending Testing
+Result   : PASS / FAIL -> pass
 
 ────────────────────────────────────────────────────────────────
 A12 — overlap conflict blocks task
@@ -148,7 +148,7 @@ Precond  : Task exists on Monday 5PM with 120 min duration
 Input    : "Add Chemistry exam on Monday at 6PM"
 Expected : EVA detects overlap (6PM falls inside 5PM-7PM)
            EVA informs user of conflict, does not add task
-Result   : PASS / FAIL -> Pending Testing
+Result   : PASS / FAIL -> pass
 
 ────────────────────────────────────────────────────────────────
 A13 — salutation prefix handled correctly
@@ -185,7 +185,7 @@ Input    : "Add Physics exam on Monday at 5PM with Ahmed"
 Expected : task inserted with collaborators = [Ahmed, status:pending]
            notification payload returned to Node.js
            notification inserted in DB
-Result   : PASS / FAIL Fail (NER issue don't worry about this i will fix NER i think it would work perfect with Good Ner)
+Result   : PASS / FAIL pass
 
 ────────────────────────────────────────────────────────────────
 A17 — collaborator not a friend
@@ -193,7 +193,7 @@ A17 — collaborator not a friend
 Input    : "Add Physics exam on Monday at 5PM with Stranger"
 Expected : EVA: natural reply saying Stranger is not in friends
            no task inserted
-Result   : PASS / FAIL -> same as previous test case
+Result   : PASS / FAIL -> pass
 
 
 ================================================================
@@ -263,7 +263,7 @@ Reply    : "all"
 Expected : EVA asks bulk confirmation
 Reply    : "no"
 Expected : nothing deleted, Redis cleared
-Result   : PASS / FAIL -> Fail(Ner Not work correctly i will fix NER then it will work ok)
+Result   : PASS / FAIL -> pass
 
 ────────────────────────────────────────────────────────────────
 D7 — too broad (6+ matches)
@@ -281,7 +281,7 @@ Input    : "Delete a task"
 Expected : EVA asks which task
 Reply    : "Chemistry lab"
 Expected : treated as task_name, delete flow continues
-Result   : PASS / FAIL -> Fail -> CLF1 Issue i will look at the CLF and it will work ok when CLF improved
+Result   : PASS / FAIL -> Fpass
 
 ────────────────────────────────────────────────────────────────
 D9 — delete by date
@@ -388,12 +388,7 @@ Input    : "Show my tasks for this week"
 Expected : all tasks within Mon-Sun of current week returned
            grouped by day in reply
            last week / next week tasks NOT included
-Result   : PASS / FAIL -> Fail
-issue : {
-  req : "message": "show my tasks for this week",
-  res : "response_text": "I could not find any tasks for date Monday, 13 Apr 2026, Hamid shehzad."
-  issue : it only check the monday if i say next week it only check monday of next week
-}
+Result   : PASS / FAIL -> pass
 ────────────────────────────────────────────────────────────────
 S6 — show with task name filter
 ────────────────────────────────────────────────────────────────
@@ -408,7 +403,7 @@ S7 — show all tasks (no filter)
 Input    : "What are my tasks"
 Expected : all upcoming tasks (due_datetime >= now)
            sorted ascending, past tasks NOT included
-Result   : PASS / FAIL -> Fail (CLF issue it will work if CLF work good don't worry about this)
+Result   : PASS / FAIL -> pass
 
 ────────────────────────────────────────────────────────────────
 S8 — show with zero results
@@ -436,7 +431,7 @@ Precond  : mix of tasks this week at various priorities
 Input    : "Show high priority tasks for this week"
 Expected : only high priority tasks within this week
            both filters applied simultaneously
-Result   : PASS / FAIL -> Fail (same issue as S5)
+Result   : PASS / FAIL -> pass
 
 ────────────────────────────────────────────────────────────────
 S11 — timezone boundary correctness
@@ -520,7 +515,7 @@ Reply    : "change date to Monday"
 Expected : EVA confirms date change
 Reply    : "yes"
 Expected : due_datetime updated
-Result   : PASS / FAIL -> Fail(CLF1 issue i will fix that and test again)
+Result   : PASS / FAIL -> pending
 
 ────────────────────────────────────────────────────────────────
 U6 — multiple matches, pick specific task
@@ -618,7 +613,7 @@ Expected : EVA recognises as status update → complete
            confirms change
 Reply    : "yes"
 Expected : status = "complete", completed_at set
-Result   : PASS / FAIL -> Need to work on NER
+Result   : PASS / FAIL -> pass
 
 
 ================================================================

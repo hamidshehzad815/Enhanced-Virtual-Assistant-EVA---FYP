@@ -12,6 +12,7 @@ from db.tasks import find_tasks_for_show
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from utils.date_utils import build_date_range, convert_tasks_to_local
+from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
 from utils.timezone_utils import get_zoneinfo, resolve_timezone_name
 
 
@@ -48,19 +49,11 @@ def _coerce_text(value: Any) -> str:
 
 
 def _normalize_priority(value: Any) -> str:
-    priority = _coerce_text(value).lower()
-    if priority in {"low", "medium", "high"}:
-        return priority
-    return ""
+    return canonicalize_priority(value)
 
 
 def _normalize_status(value: Any) -> str:
-    status = _coerce_text(value).lower()
-    if status == "completed":
-        return "complete"
-    if status in {"pending", "ongoing", "complete"}:
-        return status
-    return ""
+    return canonicalize_status(value)
 
 
 def _filters_summary(filters_used: Dict[str, Any], overdue_only: bool) -> str:

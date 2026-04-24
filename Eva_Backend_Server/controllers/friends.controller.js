@@ -29,14 +29,24 @@ const sanitizeUser = (userDoc) => {
   };
 };
 
+const idString = (value) => {
+  if (!value) {
+    return "";
+  }
+  if (typeof value === "object" && value._id) {
+    return String(value._id);
+  }
+  return String(value);
+};
+
 const isParticipant = (friendship, userId) =>
-  String(friendship.requester_id) === String(userId)
-  || String(friendship.recipient_id) === String(userId);
+  idString(friendship.requester_id) === String(userId)
+  || idString(friendship.recipient_id) === String(userId);
 
 const mapRelationship = (friendship, currentUserId) => {
   const requester = sanitizeUser(friendship.requester_id);
   const recipient = sanitizeUser(friendship.recipient_id);
-  const isRequester = String(requester?._id) === String(currentUserId);
+  const isRequester = idString(requester?._id) === String(currentUserId);
 
   return {
     _id: friendship._id,
@@ -51,6 +61,8 @@ const mapRelationship = (friendship, currentUserId) => {
     friend: isRequester ? recipient : requester,
   };
 };
+
+const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 const loadRelationship = async (id) => {
   if (!mongoose.Types.ObjectId.isValid(id)) {
@@ -67,6 +79,35 @@ const loadRelationship = async (id) => {
   }
 
   return friendship;
+};
+
+const loadTargetUserById = async (userId) => {
+  if (!mongoose.Types.ObjectId.isValid(userId)) {
+    throw new BadRequestError("Invalid user id");
+  }
+
+  const targetUser = await User.findById(userId)
+    .select("name username email profile_picture is_active")
+    .lean();
+
+  if (!targetUser || !targetUser.is_active) {
+    throw new NotFoundError("Target user not found");
+  }
+
+  return targetUser;
+};
+
+const buildBlockedCounterpartyIdSet = (relationships, currentUserId) => {
+  const blockedIds = new Set();
+  for (const relationship of relationships) {
+    const requesterId = idString(relationship.requester_id);
+    const recipientId = idString(relationship.recipient_id);
+    const otherId = requesterId === String(currentUserId) ? recipientId : requesterId;
+    if (otherId) {
+      blockedIds.add(otherId);
+    }
+  }
+  return blockedIds;
 };
 
 /**
@@ -248,6 +289,128 @@ const listFriendRequests = async (req, res, next) => {
 };
 
 /**
+ * GET /api/friends/blocked
+ * List users blocked by the authenticated user.
+ */
+const listBlockedUsers = async (req, res, next) => {
+  try {
+    const relationships = await Friend.find({
+      status: "blocked",
+      blocked_by: req.userId,
+      $or: [
+        { requester_id: req.userId },
+        { recipient_id: req.userId },
+      ],
+    })
+      .sort({ updated_at: -1 })
+      .populate("requester_id", "name username email profile_picture")
+      .populate("recipient_id", "name username email profile_picture")
+      .lean();
+
+    const blocked = relationships.map((relationship) => {
+      const mapped = mapRelationship(relationship, req.userId);
+      return {
+        friendship_id: mapped._id,
+        blocked_at: mapped.responded_at || mapped.updated_at,
+        user: mapped.friend,
+      };
+    });
+
+    res.json({
+      status: "success",
+      data: {
+        blocked,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/friends/search
+ * Search users for friend requests. Blocked users are hidden.
+ */
+const searchUsers = async (req, res, next) => {
+  try {
+    const q = String(req.query.q || "").trim();
+    const limitRaw = Number.parseInt(String(req.query.limit || "10"), 10);
+    const limit = Number.isInteger(limitRaw) ? Math.max(1, Math.min(limitRaw, 50)) : 10;
+
+    if (!q || q.length < 2) {
+      throw new BadRequestError("q must be at least 2 characters");
+    }
+
+    const blockedRelationships = await Friend.find({
+      status: "blocked",
+      $or: [
+        { requester_id: req.userId },
+        { recipient_id: req.userId },
+      ],
+    })
+      .select("requester_id recipient_id")
+      .lean();
+
+    const blockedIds = buildBlockedCounterpartyIdSet(blockedRelationships, req.userId);
+    const escaped = escapeRegExp(q);
+    const searchRegex = new RegExp(escaped, "i");
+
+    const users = await User.find({
+      _id: { $ne: req.userId },
+      is_active: true,
+      username: searchRegex,
+    })
+      .select("name username email profile_picture")
+      .sort({ username: 1 })
+      .limit(limit * 3)
+      .lean();
+
+    const visibleUsers = users
+      .filter((user) => !blockedIds.has(String(user._id)))
+      .slice(0, limit);
+
+    const candidateIds = visibleUsers.map((user) => user._id);
+    let relationshipMap = new Map();
+
+    if (candidateIds.length > 0) {
+      const relationships = await Friend.find({
+        $or: [
+          { requester_id: req.userId, recipient_id: { $in: candidateIds } },
+          { recipient_id: req.userId, requester_id: { $in: candidateIds } },
+        ],
+      })
+        .select("requester_id recipient_id status")
+        .lean();
+
+      relationshipMap = new Map(
+        relationships.map((relationship) => {
+          const requesterId = idString(relationship.requester_id);
+          const recipientId = idString(relationship.recipient_id);
+          const otherId = requesterId === String(req.userId) ? recipientId : requesterId;
+          return [otherId, relationship.status];
+        }),
+      );
+    }
+
+    res.json({
+      status: "success",
+      data: {
+        users: visibleUsers.map((user) => ({
+          _id: user._id,
+          name: user.name,
+          username: user.username,
+          email: user.email,
+          profile_picture: user.profile_picture || null,
+          relationship_status: relationshipMap.get(String(user._id)) || "none",
+        })),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * PATCH /api/friends/:id/respond
  * Accept or reject an incoming request.
  */
@@ -297,24 +460,96 @@ const respondToFriendRequest = async (req, res, next) => {
 };
 
 /**
- * POST /api/friends/:id/block
- * Block the other user in this relationship.
+ * POST /api/friends/block/:userId
+ * Block a user by user id.
  */
 const blockFriend = async (req, res, next) => {
   try {
-    const friendship = await loadRelationship(req.params.id);
+    const targetUser = await loadTargetUserById(req.params.userId);
+    if (String(targetUser._id) === String(req.userId)) {
+      throw new BadRequestError("You cannot block yourself");
+    }
+
+    const pairKey = Friend.buildPairKey(req.userId, targetUser._id);
+    const existing = await Friend.findOne({ pair_key: pairKey });
+
+    let relationshipId;
+    if (!existing) {
+      const created = await Friend.create({
+        requester_id: req.userId,
+        recipient_id: targetUser._id,
+        status: "blocked",
+        blocked_by: req.userId,
+        responded_at: new Date(),
+      });
+      relationshipId = created._id;
+    } else {
+      await Friend.updateOne(
+        { _id: existing._id },
+        {
+          $set: {
+            status: "blocked",
+            blocked_by: req.userId,
+            responded_at: new Date(),
+          },
+        },
+      );
+      relationshipId = existing._id;
+    }
+
+    const updated = await Friend.findById(relationshipId)
+      .populate("requester_id", "name username email profile_picture")
+      .populate("recipient_id", "name username email profile_picture")
+      .lean();
+
+    res.json({
+      status: "success",
+      message: "User blocked",
+      data: {
+        friendship: mapRelationship(updated, req.userId),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/friends/unblock/:userId
+ * Unblock a user by user id.
+ */
+const unblockFriend = async (req, res, next) => {
+  try {
+    const targetUser = await loadTargetUserById(req.params.userId);
+    const pairKey = Friend.buildPairKey(req.userId, targetUser._id);
+    const friendship = await Friend.findOne({ pair_key: pairKey })
+      .populate("requester_id", "name username email profile_picture")
+      .populate("recipient_id", "name username email profile_picture")
+      .lean();
+
+    if (!friendship) {
+      throw new NotFoundError("Relationship not found");
+    }
 
     if (!isParticipant(friendship, req.userId)) {
-      throw new ForbiddenError("You are not allowed to block this relationship");
+      throw new ForbiddenError("You are not allowed to unblock this relationship");
+    }
+
+    if (friendship.status !== "blocked") {
+      throw new ConflictError("Only blocked relationships can be unblocked");
+    }
+
+    if (idString(friendship.blocked_by) !== String(req.userId)) {
+      throw new ForbiddenError("Only the user who blocked can unblock");
     }
 
     const updated = await Friend.findByIdAndUpdate(
       friendship._id,
       {
         $set: {
-          status: "blocked",
-          blocked_by: req.userId,
+          status: "rejected",
           responded_at: new Date(),
+          blocked_by: null,
         },
       },
       { new: true },
@@ -369,7 +604,10 @@ module.exports = {
   sendFriendRequest,
   listFriends,
   listFriendRequests,
+  listBlockedUsers,
+  searchUsers,
   respondToFriendRequest,
   blockFriend,
+  unblockFriend,
   unfriend,
 };

@@ -7,14 +7,30 @@ from dotenv import load_dotenv
 
 # Load .env file from Eva_AI_Server directory
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")
+# Use override=True so local .env values are not shadowed by stale exported
+# shell variables during development/testing runs.
+load_dotenv(BASE_DIR / ".env", override=True)
 
 
 def _as_bool(raw_value, default=False):
     """Parse common truthy/falsey environment strings safely."""
     if raw_value is None:
         return default
-    return str(raw_value).strip().lower() in {"1", "true", "yes", "on"}
+
+    normalized = str(raw_value).strip()
+    if (
+        len(normalized) >= 2
+        and normalized[0] == normalized[-1]
+        and normalized[0] in {'"', "'"}
+    ):
+        normalized = normalized[1:-1].strip()
+    normalized = normalized.lower()
+
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    return default
 
 
 class Settings:
@@ -48,6 +64,10 @@ class Settings:
 
     # Model Settings
     CONFIDENCE_THRESHOLD: float = float(os.getenv("CONFIDENCE_THRESHOLD", "0.7"))
+    # Global admin switch: set to false/0 to disable behavioral commands
+    # for all users system-wide (e.g. during maintenance or rollback).
+    BEHAVIORAL_ENABLED: bool = _as_bool(os.getenv("BEHAVIORAL_ENABLED"), True)
+
     # Temporary compatibility switch:
     # some NER versions emit weekday as `date` for behavioral intent.
     # When enabled, behavioral scope remaps weekday-like `date` -> `day`.

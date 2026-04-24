@@ -14,6 +14,60 @@ const {
 const STATUS_VALUES = new Set(["pending", "ongoing", "complete"]);
 const PRIORITY_VALUES = new Set(["low", "medium", "high"]);
 
+const PRIORITY_ALIASES = new Map([
+  ["high", "high"],
+  ["urgent", "high"],
+  ["critical", "high"],
+  ["immediate", "high"],
+  ["asap", "high"],
+  ["important", "high"],
+  ["medium", "medium"],
+  ["normal", "medium"],
+  ["standard", "medium"],
+  ["moderate", "medium"],
+  ["average", "medium"],
+  ["regular", "medium"],
+  ["low", "low"],
+  ["minor", "low"],
+  ["trivial", "low"],
+  ["backburner", "low"],
+  ["back burner", "low"],
+  ["background", "low"],
+  ["optional", "low"],
+]);
+
+const STATUS_ALIASES = new Map([
+  ["pending", "pending"],
+  ["ongoing", "ongoing"],
+  ["in progress", "ongoing"],
+  ["inprogress", "ongoing"],
+  ["active", "ongoing"],
+  ["complete", "complete"],
+  ["completed", "complete"],
+  ["done", "complete"],
+  ["finished", "complete"],
+  ["resolved", "complete"],
+  ["closed", "complete"],
+  ["delivered", "complete"],
+  ["fulfilled", "complete"],
+]);
+
+const normalizeEnumInput = (value) => String(value || "")
+  .toLowerCase()
+  .replace(/[_-]+/g, " ")
+  .replace(/\s+/g, " ")
+  .trim();
+
+const normalizePriorityValue = (value) => {
+  const normalized = normalizeEnumInput(value);
+  return PRIORITY_ALIASES.get(normalized) || "";
+};
+
+const normalizeStatusValue = (value) => {
+  const normalized = normalizeEnumInput(value);
+  return STATUS_ALIASES.get(normalized) || "";
+};
+
 const toDateOrNull = (value) => {
   if (!value) {
     return null;
@@ -109,7 +163,7 @@ const getTasks = async (req, res, next) => {
     };
 
     if (req.query.status) {
-      normalizedStatus = String(req.query.status).toLowerCase();
+      normalizedStatus = normalizeStatusValue(req.query.status);
       if (!STATUS_VALUES.has(normalizedStatus)) {
         throw new BadRequestError("Invalid status filter");
       }
@@ -117,7 +171,7 @@ const getTasks = async (req, res, next) => {
     }
 
     if (req.query.priority) {
-      const priority = String(req.query.priority).toLowerCase();
+      const priority = normalizePriorityValue(req.query.priority);
       if (!PRIORITY_VALUES.has(priority)) {
         throw new BadRequestError("Invalid priority filter");
       }
@@ -214,7 +268,7 @@ const updateTaskStatus = async (req, res, next) => {
       throw new BadRequestError("Invalid task id");
     }
 
-    const normalizedStatus = String(status || "").toLowerCase();
+    const normalizedStatus = normalizeStatusValue(status);
     if (!STATUS_VALUES.has(normalizedStatus)) {
       throw new BadRequestError(
         "status must be one of pending, ongoing, complete",

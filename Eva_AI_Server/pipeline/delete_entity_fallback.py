@@ -5,10 +5,21 @@ Used to improve delete intent robustness when model extraction misses fields.
 import re
 from typing import Dict, Optional
 
+from utils.task_value_normalizer import (
+    PRIORITY_USER_VALUES,
+    STATUS_USER_VALUES,
+    build_value_regex,
+    canonicalize_priority,
+    canonicalize_status,
+)
+
 
 _DELETE_VERB_PATTERN = re.compile(r"\b(delete|remove)\b", flags=re.IGNORECASE)
-_PRIORITY_PATTERN = re.compile(r"\b(low|medium|high)\s+priority\b", flags=re.IGNORECASE)
-_STATUS_PATTERN = re.compile(r"\b(pending|ongoing|complete|completed)\b", flags=re.IGNORECASE)
+_PRIORITY_VALUE_TOKEN = build_value_regex(PRIORITY_USER_VALUES)
+_STATUS_VALUE_TOKEN = build_value_regex(STATUS_USER_VALUES)
+
+_PRIORITY_PATTERN = re.compile(rf"\b({_PRIORITY_VALUE_TOKEN})\s+priority\b", flags=re.IGNORECASE)
+_STATUS_PATTERN = re.compile(rf"\b({_STATUS_VALUE_TOKEN})\b", flags=re.IGNORECASE)
 _RELATIVE_DATE_PATTERN = re.compile(
     r"\b(today|tomorrow|yesterday|tonight)\b",
     flags=re.IGNORECASE,
@@ -38,10 +49,7 @@ _TASK_NAME_INVALID = {"something", "anything", "it", "this", "that"}
 
 
 def _normalize_status(raw_status: str) -> str:
-    status = raw_status.strip().lower()
-    if status == "completed":
-        return "complete"
-    return status
+    return canonicalize_status(raw_status)
 
 
 def _extract_date(text: str) -> Optional[str]:
@@ -106,11 +114,15 @@ def extract_delete_entities_fallback(text: str) -> Dict[str, str]:
 
     priority_match = _PRIORITY_PATTERN.search(text)
     if priority_match:
-        entities["priority"] = priority_match.group(1).lower()
+        normalized_priority = canonicalize_priority(priority_match.group(1))
+        if normalized_priority:
+            entities["priority"] = normalized_priority
 
     status_match = _STATUS_PATTERN.search(text)
     if status_match:
-        entities["status"] = _normalize_status(status_match.group(1))
+        normalized_status = _normalize_status(status_match.group(1))
+        if normalized_status:
+            entities["status"] = normalized_status
 
     date_value = _extract_date(text)
     if date_value:
@@ -121,4 +133,3 @@ def extract_delete_entities_fallback(text: str) -> Dict[str, str]:
         entities["task_name"] = task_name
 
     return entities
-
