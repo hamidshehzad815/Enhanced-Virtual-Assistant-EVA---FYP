@@ -335,10 +335,41 @@ const blockFriend = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /api/friends/:id
+ * Unfriend by removing an accepted relationship.
+ */
+const unfriend = async (req, res, next) => {
+  try {
+    const friendship = await loadRelationship(req.params.id);
+
+    if (!isParticipant(friendship, req.userId)) {
+      throw new ForbiddenError("You are not allowed to unfriend this relationship");
+    }
+
+    if (friendship.status !== "accepted") {
+      throw new ConflictError("Only accepted friendships can be unfriended");
+    }
+
+    await Friend.deleteOne({ _id: friendship._id });
+
+    res.json({
+      status: "success",
+      message: "Friend removed",
+      data: {
+        friendship_id: friendship._id,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   sendFriendRequest,
   listFriends,
   listFriendRequests,
   respondToFriendRequest,
   blockFriend,
+  unfriend,
 };
