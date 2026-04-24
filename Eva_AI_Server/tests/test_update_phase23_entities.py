@@ -12,6 +12,11 @@ class TestUpdatePhase23Entities(unittest.TestCase):
         self.assertEqual(entities.get("task_name"), "physics exam")
         self.assertEqual(entities.get("new_priority"), "high")
 
+    def test_change_priority_to_urgent_maps_to_high(self):
+        entities = extract_update_entities_fallback("change physics exam priority to urgent")
+        self.assertEqual(entities.get("task_name"), "physics exam")
+        self.assertEqual(entities.get("new_priority"), "high")
+
     def test_reschedule_to_next_friday_at_2pm(self):
         entities = extract_update_entities_fallback(
             "reschedule chemistry lab to next Friday at 2PM"
@@ -23,6 +28,13 @@ class TestUpdatePhase23Entities(unittest.TestCase):
     def test_mark_as_complete(self):
         entities = extract_update_entities_fallback(
             "mark my biology assignment as complete"
+        )
+        self.assertEqual(entities.get("task_name"), "biology assignment")
+        self.assertEqual(entities.get("new_status"), "complete")
+
+    def test_mark_as_done_maps_to_complete(self):
+        entities = extract_update_entities_fallback(
+            "mark my biology assignment as done"
         )
         self.assertEqual(entities.get("task_name"), "biology assignment")
         self.assertEqual(entities.get("new_status"), "complete")
@@ -60,4 +72,3 @@ class TestUpdatePhase23Entities(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

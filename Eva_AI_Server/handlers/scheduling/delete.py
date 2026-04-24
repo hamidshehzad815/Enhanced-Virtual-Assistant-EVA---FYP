@@ -18,6 +18,7 @@ from db.tasks import find_tasks_for_delete, get_task_by_id, soft_delete_task
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
+from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
 from utils.timezone_utils import (
     local_day_bounds_to_utc_naive,
     resolve_timezone_name,
@@ -58,19 +59,11 @@ def _to_date_text(value: Any) -> str:
 
 
 def _normalize_priority(value: Any) -> str:
-    priority = _coerce_text(value).lower()
-    if priority in {"low", "medium", "high"}:
-        return priority
-    return ""
+    return canonicalize_priority(value)
 
 
 def _normalize_status(value: Any) -> str:
-    status = _coerce_text(value).lower()
-    if status == "completed":
-        return "complete"
-    if status in {"pending", "ongoing", "complete"}:
-        return status
-    return ""
+    return canonicalize_status(value)
 
 
 def _format_due_display(value: Any, timezone_name: str) -> str:

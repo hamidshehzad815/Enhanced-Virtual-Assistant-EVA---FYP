@@ -18,6 +18,7 @@ from db.tasks import find_duplicate, find_overlapping_task, insert_task, update_
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
+from utils.task_value_normalizer import canonicalize_priority
 from utils.timezone_utils import (
     local_datetime_to_utc_naive,
     resolve_timezone_name,
@@ -111,10 +112,11 @@ def _to_time_text(value: Any) -> str:
 
 
 def _normalize_priority(value: Any, default_priority: str = "medium") -> str:
-    raw = _coerce_text(_first_value(value)).lower()
-    if raw in {"low", "medium", "high"}:
-        return raw
-    return default_priority
+    normalized = canonicalize_priority(_first_value(value))
+    if normalized:
+        return normalized
+    fallback = canonicalize_priority(default_priority)
+    return fallback or "medium"
 
 
 def _format_time_display(time_str: str) -> str:
@@ -414,7 +416,16 @@ async def _find_and_validate_collaborators(owner_id: str, collaborator_names: Li
         )
 
         if not user_doc:
-            return [], f"I could not find {name} in your friends list."
+            return [], (
+                f'I could not find a user with username "{username_candidate}". '
+                "Please check the username and try again."
+            )
+
+        username_label = (
+            _coerce_text(user_doc.get("username"))
+            or username_candidate
+            or _coerce_text(name).lower().replace(" ", "")
+        )
 
         friend_values = _owner_variants(str(user_doc["_id"]))
         friendship = await db.friends.find_one(
@@ -435,8 +446,10 @@ async def _find_and_validate_collaborators(owner_id: str, collaborator_names: Li
         )
 
         if not friendship:
-            display_name = user_doc.get("name") or name
-            return [], f"{display_name} is not in your friends list. Add them as a friend first."
+            return [], (
+                f'A person with the username "{username_label}" '
+                "is not in your friends list. Add them as a friend first."
+            )
 
         validated.append(
             {
@@ -844,6 +857,82 @@ async def handle_scheduling_add(
             "pending": {
                 "expected_response": "free_text",
                 "missing_entity": "time",
+            },
+        }
+
+    # Step 3.5: never allow scheduling in the past.
+    now_utc = datetime.now(dt_timezone.utc).replace(tzinfo=None)
+    if due_datetime <= now_utc:
+        pending_entities = {
+            **entities,
+            "task_name": task_name,
+            "date": date_value,
+            "time": time_value,
+        }
+
+        local_due = utc_naive_to_local(due_datetime, timezone)
+        local_now = utc_naive_to_local(now_utc, timezone)
+        ask_for_time_only = bool(
+            local_due
+            and local_now
+            and local_due.date() == local_now.date()
+        )
+
+        if ask_for_time_only:
+            pending_entities.pop("time", None)
+            missing_entity = "time"
+            if user_name:
+                response_text = (
+                    f"That time has already passed today, {user_name}. "
+                    f"What future time should I use for {task_name} on "
+                    f"{_format_date_display(date_value)}?"
+                )
+            else:
+                response_text = (
+                    f"That time has already passed today. What future time should I use "
+                    f"for {task_name} on {_format_date_display(date_value)}?"
+                )
+        else:
+            pending_entities.pop("date", None)
+            missing_entity = "date"
+            if user_name:
+                response_text = (
+                    f"I cannot schedule {task_name} in the past, {user_name}. "
+                    "Please share a future date."
+                )
+            else:
+                response_text = (
+                    f"I cannot schedule {task_name} in the past. "
+                    "Please share a future date."
+                )
+
+        await redis_client.set_context(
+            user_id,
+            _pending_payload(
+                "add",
+                pending_entities,
+                expected_response="free_text",
+                missing_entity=missing_entity,
+                pending_reason="past_datetime",
+            ),
+        )
+        await _save_turn(
+            session_id,
+            user_message,
+            response_text,
+            input_type,
+            "scheduling_add",
+            entities,
+        )
+        return {
+            "status": "pending",
+            "intent": "scheduling_add",
+            "response_text": response_text,
+            "notifications": [],
+            "pending": {
+                "expected_response": "free_text",
+                "missing_entity": missing_entity,
+                "reason": "past_datetime",
             },
         }
 

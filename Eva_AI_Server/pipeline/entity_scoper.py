@@ -2,7 +2,10 @@
 Entity scoping for Phase 7.
 Filters and normalizes extracted entities according to detected intent.
 """
+import re
 from typing import Any, Dict, Set
+
+from config.settings import settings
 
 _INTENT_ENTITY_SCOPE: Dict[str, Set[str]] = {
     "scheduling_add": {"task_name", "date", "time", "priority", "duration", "collaborator"},
@@ -32,7 +35,7 @@ _INTENT_ENTITY_SCOPE: Dict[str, Set[str]] = {
     },
     "learning_delete": {"topic", "subtopic", "date", "start_date"},
     "learning_show": {"topic", "subtopic", "date", "status", "start_date"},
-    "behavioral": {"date", "time", "priority", "status", "subject"},
+    "behavioral": {"day"},
 }
 
 _ENTITY_ALIASES: Dict[str, str] = {
@@ -48,12 +51,18 @@ _ENTITY_ALIASES: Dict[str, str] = {
     "new_priority": "new_priority",
     "new_status": "new_status",
     "new_duration": "new_duration",
+    "day": "day",
     "task_name": "task_name",
     "date": "date",
     "time": "time",
     "priority": "priority",
     "duration": "duration",
     "collaborator": "collaborator",
+    # NER compatibility: some model versions emit `person` for collaborator
+    # mentions (e.g., "with Ahmed"). Normalize to canonical collaborator key.
+    "person": "collaborator",
+    "person_name": "collaborator",
+    "people": "collaborator",
     "status": "status",
     "topic": "topic",
     "subtopic": "subtopic",
@@ -61,9 +70,47 @@ _ENTITY_ALIASES: Dict[str, str] = {
     "next_topic": "next_topic",
 }
 
+_WEEKDAYS = {
+    "monday",
+    "tuesday",
+    "wednesday",
+    "thursday",
+    "friday",
+    "saturday",
+    "sunday",
+}
+
 
 def _normalize_key(key: str) -> str:
     return _ENTITY_ALIASES.get(key, key)
+
+
+def _extract_weekday(value: Any) -> Any:
+    if isinstance(value, list):
+        weekdays = []
+        for item in value:
+            extracted = _extract_weekday(item)
+            if extracted:
+                weekdays.append(extracted)
+        if not weekdays:
+            return None
+        return weekdays[0] if len(weekdays) == 1 else weekdays
+
+    if not isinstance(value, str):
+        return None
+
+    normalized = value.strip().lower()
+    if not normalized:
+        return None
+
+    if normalized in _WEEKDAYS:
+        return normalized
+
+    for weekday in _WEEKDAYS:
+        if re.search(rf"\b{re.escape(weekday)}\b", normalized):
+            return weekday
+
+    return None
 
 
 def scope_entities(entities: Dict[str, Any], intent: str) -> Dict[str, Any]:
@@ -82,6 +129,20 @@ def scope_entities(entities: Dict[str, Any], intent: str) -> Dict[str, Any]:
             # Backward-compatible normalization: show now uses task_name as
             # canonical title-keyword filter.
             key = "task_name"
+
+        if (
+            intent == "behavioral"
+            and settings.BEHAVIORAL_DATE_AS_DAY_FALLBACK
+            and key == "date"
+        ):
+            weekday = _extract_weekday(value)
+            if weekday:
+                key = "day"
+                value = weekday
+
+        if intent == "behavioral" and key == "day":
+            value = _extract_weekday(value) or value
+
         if allowed and key not in allowed:
             continue
         scoped[key] = value

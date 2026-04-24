@@ -27,6 +27,7 @@ from db.tasks import (
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
+from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
 from utils.timezone_utils import (
     local_datetime_to_utc_naive,
     local_day_bounds_to_utc_naive,
@@ -104,19 +105,11 @@ def _to_time_text(value: Any) -> str:
 
 
 def _normalize_priority(value: Any) -> str:
-    priority = _coerce_text(value).lower()
-    if priority in {"low", "medium", "high"}:
-        return priority
-    return ""
+    return canonicalize_priority(value)
 
 
 def _normalize_status(value: Any) -> str:
-    status = _coerce_text(value).lower()
-    if status == "completed":
-        return "complete"
-    if status in {"pending", "ongoing", "complete"}:
-        return status
-    return ""
+    return canonicalize_status(value)
 
 
 def _serialize_due_datetime(value: Any) -> str:
@@ -785,20 +778,52 @@ async def _execute_confirmed_update(
         updated_task.update(update_data)
 
     final_due = _coerce_datetime(updated_task.get("due_datetime"))
+    if isinstance(final_due, datetime) and final_due.tzinfo is not None:
+        final_due = final_due.astimezone(dt_timezone.utc).replace(tzinfo=None)
+
     final_priority = _normalize_priority(updated_task.get("priority")) or "medium"
     final_title = _coerce_text(updated_task.get("title")) or "Untitled task"
+    final_status = _normalize_status(updated_task.get("status")) or "pending"
+    previous_status = _normalize_status(current_task.get("status")) or "pending"
+    transitioned_to_complete = previous_status != "complete" and final_status == "complete"
 
     log_payload: Dict[str, Any] = {
         "user_id": _to_object_id(user_id),
         "task_id": _to_object_id(task_id),
-        "action_type": "task_updated",
         "task_priority": final_priority,
         "subject": final_title,
         "source": "scheduling_module",
     }
-    if final_due is not None:
+
+    if transitioned_to_complete:
+        completed_at = _coerce_datetime(updated_task.get("completed_at")) or datetime.now(dt_timezone.utc).replace(tzinfo=None)
+        if isinstance(completed_at, datetime) and completed_at.tzinfo is not None:
+            completed_at = completed_at.astimezone(dt_timezone.utc).replace(tzinfo=None)
+
+        created_at = _coerce_datetime(updated_task.get("created_at") or current_task.get("created_at"))
+        if isinstance(created_at, datetime) and created_at.tzinfo is not None:
+            created_at = created_at.astimezone(dt_timezone.utc).replace(tzinfo=None)
+
         log_payload.update(
             {
+                "action_type": "task_completed",
+                "action_timestamp": completed_at,
+                "day_of_week": completed_at.weekday(),
+                "hour_of_day": completed_at.hour,
+                "week_number": completed_at.isocalendar().week,
+                "scheduled_hour": final_due.hour if isinstance(final_due, datetime) else None,
+                "scheduled_day": final_due.weekday() if isinstance(final_due, datetime) else None,
+            }
+        )
+        if isinstance(final_due, datetime):
+            log_payload["was_on_time"] = completed_at <= final_due
+        if isinstance(created_at, datetime):
+            elapsed_minutes = int((completed_at - created_at).total_seconds() // 60)
+            log_payload["time_taken_minutes"] = max(0, elapsed_minutes)
+    elif final_due is not None:
+        log_payload.update(
+            {
+                "action_type": "task_updated",
                 "day_of_week": final_due.weekday(),
                 "hour_of_day": final_due.hour,
                 "week_number": final_due.isocalendar().week,
@@ -806,6 +831,8 @@ async def _execute_confirmed_update(
                 "scheduled_day": final_due.weekday(),
             }
         )
+    else:
+        log_payload["action_type"] = "task_updated"
     try:
         await insert_log(log_payload)
     except Exception as error:
