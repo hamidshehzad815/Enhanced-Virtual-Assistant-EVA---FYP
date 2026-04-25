@@ -72,18 +72,20 @@ describe("Auth API", () => {
   });
 
   test("POST /api/auth/register -> 201 and user data", async () => {
-    const publicProfile = {
+    const authUser = {
       _id: USER_ID,
       name: "Hamid",
       username: "hamid",
       email: "hamid@example.com",
+      is_verified: false,
     };
 
     const createdUser = {
       _id: USER_ID,
       email: "hamid@example.com",
       name: "Hamid",
-      toPublicProfile: jest.fn().mockReturnValue(publicProfile),
+      username: "hamid",
+      is_verified: false,
     };
 
     User.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
@@ -103,7 +105,7 @@ describe("Auth API", () => {
 
     expect(response.status).toBe(201);
     expect(response.body.status).toBe("success");
-    expect(response.body.data.user).toEqual(publicProfile);
+    expect(response.body.data.user).toEqual(authUser);
     expect(UserSetting.createDefaultSettings).toHaveBeenCalledWith(USER_ID);
     expect(sendVerificationEmail).toHaveBeenCalledTimes(1);
   });
@@ -118,12 +120,8 @@ describe("Auth API", () => {
       comparePassword: jest.fn().mockResolvedValue(true),
       setRefreshToken: jest.fn().mockResolvedValue(),
       updateLastLogin: jest.fn().mockResolvedValue(),
-      toPublicProfile: jest.fn().mockReturnValue({
-        _id: USER_ID,
-        name: "Hamid",
-        username: "hamid",
-        email: "hamid@example.com",
-      }),
+      name: "Hamid",
+      username: "hamid",
     };
 
     const select = jest.fn().mockResolvedValue(loginUser);
@@ -147,18 +145,20 @@ describe("Auth API", () => {
     const authUser = {
       _id: USER_ID,
       is_active: true,
-      toPublicProfile: jest.fn().mockReturnValue({
-        _id: USER_ID,
-        name: "Hamid",
-        username: "hamid",
-        email: "hamid@example.com",
-      }),
+      name: "Hamid",
+      username: "hamid",
+      email: "hamid@example.com",
+      is_verified: true,
     };
 
     User.findById.mockResolvedValue(authUser);
-    UserSetting.findOne.mockResolvedValue({
-      theme: "light",
-      notifications_enabled: true,
+    UserSetting.findOne.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({
+          theme: "light",
+          notifications_enabled: true,
+        }),
+      }),
     });
 
     const token = jwt.sign(
