@@ -14,6 +14,14 @@ const {
 const logger = require("../config/logger");
 const { sendVerificationEmail } = require("../services/email.service");
 
+const serializeAuthUser = (user) => ({
+  _id: user._id,
+  name: user.name,
+  username: user.username,
+  email: user.email,
+  is_verified: Boolean(user.is_verified),
+});
+
 /**
  * Generate JWT access token
  * @param {string} userId - User ID
@@ -110,16 +118,10 @@ const register = async (req, res, next) => {
         ? "Registration successful. Please check your email to verify your account."
         : "Registration successful. Please verify your email to login.",
       data: {
-        user: user.toPublicProfile(),
+        user: serializeAuthUser(user),
         email_sent: emailSent,
       },
     };
-
-    // Include verification token in development mode for testing (backup if email fails)
-    if (process.env.NODE_ENV === "development") {
-      response.data.verification_token = token;
-      response.data.verify_url = `/api/auth/verify-email?token=${token}`;
-    }
 
     res.status(201).json(response);
   } catch (error) {
@@ -186,12 +188,10 @@ const login = async (req, res, next) => {
       status: "success",
       message: "Login successful",
       data: {
-        user: user.toPublicProfile(),
+        user: serializeAuthUser(user),
         tokens: {
           access_token: accessToken,
           refresh_token: refreshToken,
-          token_type: "Bearer",
-          expires_in: process.env.JWT_ACCESS_EXPIRES || "15m",
         },
       },
     });
@@ -266,8 +266,6 @@ const refresh = async (req, res, next) => {
         tokens: {
           access_token: newAccessToken,
           refresh_token: newRefreshToken,
-          token_type: "Bearer",
-          expires_in: process.env.JWT_ACCESS_EXPIRES || "15m",
         },
       },
     });
@@ -302,13 +300,24 @@ const logout = async (req, res, next) => {
  */
 const getMe = async (req, res, next) => {
   try {
-    // Fetch user settings
-    const settings = await UserSetting.findOne({ user_id: req.user._id });
+    const settings = await UserSetting.findOne({ user_id: req.user._id })
+      .select([
+        "theme",
+        "language",
+        "notifications_enabled",
+        "push_notifications_enabled",
+        "email_notifications_enabled",
+        "quiet_hours_enabled",
+        "quiet_hours",
+        "allow_friend_requests",
+        "show_last_active",
+      ].join(" "))
+      .lean();
 
     res.json({
       status: "success",
       data: {
-        user: req.user.toPublicProfile(),
+        user: serializeAuthUser(req.user),
         settings: settings || null,
       },
     });
@@ -401,21 +410,11 @@ const resendVerification = async (req, res, next) => {
       emailSent,
     });
 
-    const response = {
+    res.json({
       status: "success",
       message:
         "If an account exists with this email, a verification link has been sent.",
-    };
-
-    // Include verification token in development mode for testing
-    if (process.env.NODE_ENV === "development") {
-      response.data = {
-        verification_token: token,
-        verify_url: `/api/auth/verify-email?token=${token}`,
-      };
-    }
-
-    res.json(response);
+    });
   } catch (error) {
     next(error);
   }
