@@ -31,6 +31,7 @@ jest.mock("../config/logger", () => ({
 
 jest.mock("../services/email.service", () => ({
   sendVerificationEmail: jest.fn(),
+  sendPasswordResetEmail: jest.fn(),
 }));
 
 jest.mock("../models", () => ({
@@ -62,7 +63,10 @@ jest.mock("../models", () => ({
 
 const app = require("../app");
 const { User, UserSetting } = require("../models");
-const { sendVerificationEmail } = require("../services/email.service");
+const {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+} = require("../services/email.service");
 
 const USER_ID = "507f1f77bcf86cd799439011";
 
@@ -183,5 +187,84 @@ describe("Auth API", () => {
     expect(response.status).toBe(401);
     expect(response.body.status).toBe("fail");
     expect(response.body.message).toBe("Access token required");
+  });
+
+  test("POST /api/auth/forgot-password -> generic success when user exists", async () => {
+    const userDoc = {
+      _id: USER_ID,
+      email: "hamid@example.com",
+      name: "Hamid",
+      is_active: true,
+      password_hash: "hashed",
+      save: jest.fn().mockResolvedValue(),
+    };
+
+    User.findOne.mockReturnValue({
+      select: jest.fn().mockResolvedValue(userDoc),
+    });
+    sendPasswordResetEmail.mockResolvedValue(true);
+
+    const response = await request(app).post("/api/auth/forgot-password").send({
+      email: "hamid@example.com",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe("success");
+    expect(response.body.message).toMatch(/If an account exists/i);
+    expect(sendPasswordResetEmail).toHaveBeenCalledTimes(1);
+  });
+
+  test("POST /api/auth/forgot-password -> generic success when user missing", async () => {
+    User.findOne.mockReturnValue({
+      select: jest.fn().mockResolvedValue(null),
+    });
+
+    const response = await request(app).post("/api/auth/forgot-password").send({
+      email: "nouser@example.com",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe("success");
+    expect(response.body.message).toMatch(/If an account exists/i);
+    expect(sendPasswordResetEmail).not.toHaveBeenCalled();
+  });
+
+  test("POST /api/auth/reset-password -> success", async () => {
+    const userDoc = {
+      _id: USER_ID,
+      email: "hamid@example.com",
+      is_active: true,
+      password_hash: "old-hash",
+      password_reset_token: "token-hash",
+      password_reset_expires: new Date(Date.now() + 1000 * 60 * 10),
+      refresh_token_hash: "refresh-hash",
+      save: jest.fn().mockResolvedValue(),
+    };
+
+    User.findOne.mockReturnValue({
+      select: jest.fn().mockResolvedValue(userDoc),
+    });
+
+    const response = await request(app).post("/api/auth/reset-password").send({
+      token: "plain-token",
+      new_password: "secret123",
+      confirm_password: "secret123",
+    });
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe("success");
+    expect(response.body.message).toMatch(/Password reset successful/i);
+    expect(userDoc.password_hash).toBe("secret123");
+  });
+
+  test("POST /api/auth/reset-password -> mismatch password validation", async () => {
+    const response = await request(app).post("/api/auth/reset-password").send({
+      token: "plain-token",
+      new_password: "secret123",
+      confirm_password: "secret999",
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.status).toBe("fail");
   });
 });

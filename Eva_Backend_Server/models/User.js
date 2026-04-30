@@ -68,7 +68,7 @@ const userSchema = new mongoose.Schema(
     timezone: {
       type: String,
       required: true,
-      default: "UTC",
+      default: "Asia/Karachi",
     },
     push_tokens: {
       type: [String],

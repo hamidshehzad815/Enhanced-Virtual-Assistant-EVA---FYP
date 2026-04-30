@@ -13,6 +13,8 @@ const {
   getMe,
   verifyEmail,
   resendVerification,
+  forgotPassword,
+  resetPassword,
 } = require("../controllers/auth.controller");
 
 // Public routes
@@ -21,6 +23,8 @@ router.post("/login", login);
 router.post("/refresh", refresh);
 router.get("/verify-email", verifyEmail);
 router.post("/resend-verification", resendVerification);
+router.post("/forgot-password", forgotPassword);
+router.post("/reset-password", resetPassword);
 
 // Protected routes
 router.post("/logout", protect, logout);
