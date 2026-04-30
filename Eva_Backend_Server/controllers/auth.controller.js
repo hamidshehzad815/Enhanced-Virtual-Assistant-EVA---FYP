@@ -12,7 +12,11 @@ const {
   ConflictError,
 } = require("../middleware/errorHandler");
 const logger = require("../config/logger");
-const { sendVerificationEmail } = require("../services/email.service");
+const { normalizeTimezone } = require("../utils/timezone");
+const {
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+} = require("../services/email.service");
 
 const serializeAuthUser = (user) => ({
   _id: user._id,
@@ -56,6 +60,17 @@ const generateVerificationToken = () => {
 };
 
 /**
+ * Generate password reset token
+ * @returns {Object} { token, hashedToken, expires }
+ */
+const generatePasswordResetToken = () => {
+  const token = crypto.randomBytes(32).toString("hex");
+  const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+  const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+  return { token, hashedToken, expires };
+};
+
+/**
  * POST /api/auth/register
  * Register a new user
  */
@@ -88,12 +103,14 @@ const register = async (req, res, next) => {
     const { token, hashedToken, expires } = generateVerificationToken();
 
     // Create user
+    const userTimezone = normalizeTimezone(timezone || "Asia/Karachi");
+
     const user = await User.create({
       name,
       username: username.toLowerCase(),
       email: email.toLowerCase(),
       password_hash: password,
-      timezone: timezone || "UTC",
+      timezone: userTimezone,
       auth_provider: "local",
       is_verified: false,
       email_verification_token: hashedToken,
@@ -420,6 +437,102 @@ const resendVerification = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/auth/forgot-password
+ * Sends a password reset email if account exists.
+ */
+const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      throw new BadRequestError("Email is required");
+    }
+
+    const normalizedEmail = String(email).toLowerCase().trim();
+    const user = await User.findOne({ email: normalizedEmail }).select("+password_hash");
+
+    // Generic response to avoid account enumeration.
+    const genericMessage =
+      "If an account exists with this email, a password reset link has been sent.";
+
+    if (!user || !user.is_active || !user.password_hash) {
+      return res.json({
+        status: "success",
+        message: genericMessage,
+      });
+    }
+
+    const { token, hashedToken, expires } = generatePasswordResetToken();
+    user.password_reset_token = hashedToken;
+    user.password_reset_expires = expires;
+    await user.save();
+
+    const emailSent = await sendPasswordResetEmail(user.email, user.name, token);
+    logger.info("Password reset requested", {
+      userId: user._id,
+      email: user.email,
+      emailSent,
+    });
+
+    return res.json({
+      status: "success",
+      message: genericMessage,
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
+/**
+ * POST /api/auth/reset-password
+ * Reset password using reset token from email.
+ */
+const resetPassword = async (req, res, next) => {
+  try {
+    const { token, new_password, confirm_password } = req.body;
+
+    if (!token || !new_password || !confirm_password) {
+      throw new BadRequestError(
+        "token, new_password, and confirm_password are required",
+      );
+    }
+
+    if (String(new_password).length < 6) {
+      throw new BadRequestError("Password must be at least 6 characters");
+    }
+
+    if (new_password !== confirm_password) {
+      throw new BadRequestError("new_password and confirm_password do not match");
+    }
+
+    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+    const user = await User.findOne({
+      password_reset_token: hashedToken,
+      password_reset_expires: { $gt: new Date() },
+      is_active: true,
+    }).select("+password_reset_token +password_reset_expires +password_hash +refresh_token_hash");
+
+    if (!user) {
+      throw new BadRequestError("Invalid or expired reset token");
+    }
+
+    user.password_hash = new_password;
+    user.password_reset_token = undefined;
+    user.password_reset_expires = undefined;
+    user.refresh_token_hash = undefined; // force fresh login on all devices
+    await user.save();
+
+    logger.info("Password reset successful", { userId: user._id, email: user.email });
+
+    return res.json({
+      status: "success",
+      message: "Password reset successful. Please login with your new password.",
+    });
+  } catch (error) {
+    return next(error);
+  }
+};
+
 module.exports = {
   register,
   login,
@@ -428,4 +541,6 @@ module.exports = {
   getMe,
   verifyEmail,
   resendVerification,
+  forgotPassword,
+  resetPassword,
 };
