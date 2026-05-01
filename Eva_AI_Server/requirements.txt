@@ -30,3 +30,4 @@ pyspellchecker==0.8.1
 
 # Utilities
 pydantic==2.6.1
+tzdata==2026.2

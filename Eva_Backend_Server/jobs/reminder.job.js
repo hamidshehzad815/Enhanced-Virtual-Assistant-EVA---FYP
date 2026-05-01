@@ -10,10 +10,7 @@ const cron = require("node-cron");
 const logger = require("../config/logger");
 const { Task, User } = require("../models");
 const { insert_and_dispatch } = require("../services/notification.service");
-const {
-  formatDateInTimezone,
-  resolveTimezone,
-} = require("../utils/timezone");
+const { formatDateInTimezone, resolveTimezone } = require("../utils/timezone");
 
 let activeJob = null;
 let isRunning = false;
@@ -38,7 +35,7 @@ const buildReminderNotification = (task, timezoneValue) => ({
   title: "Task reminder",
   message: `Reminder: ${task.title} is coming up at ${formatDue(task.due_datetime, timezoneValue)}.`,
   action_required: false,
-  delivery_channel: ["push", "in_app"],
+  delivery_channel: ["push", "in_app", "email"],
   scheduled_at: new Date(),
 });
 
@@ -51,7 +48,7 @@ const buildOverdueNotification = (task, timezoneValue) => ({
   title: "Task overdue",
   message: `Overdue: ${task.title} was due at ${formatDue(task.due_datetime, timezoneValue)}.`,
   action_required: true,
-  delivery_channel: ["push", "in_app"],
+  delivery_channel: ["push", "in_app", "email"],
   scheduled_at: new Date(),
 });
 
@@ -109,7 +106,9 @@ const sendReminderNotifications = async (now) => {
     return { checked: pendingTasks.length, sentFor: 0 };
   }
 
-  const ownerIds = [...new Set(dueForReminder.map((task) => String(task.owner_id)))];
+  const ownerIds = [
+    ...new Set(dueForReminder.map((task) => String(task.owner_id))),
+  ];
   const timezoneByUserId = await loadUserTimezones(ownerIds);
   const payloads = dueForReminder.map((task) =>
     buildReminderNotification(
@@ -154,7 +153,9 @@ const sendOverdueAlerts = async (now) => {
     return { sentFor: 0 };
   }
 
-  const ownerIds = [...new Set(overdueTasks.map((task) => String(task.owner_id)))];
+  const ownerIds = [
+    ...new Set(overdueTasks.map((task) => String(task.owner_id))),
+  ];
   const timezoneByUserId = await loadUserTimezones(ownerIds);
   const payloads = overdueTasks.map((task) =>
     buildOverdueNotification(
