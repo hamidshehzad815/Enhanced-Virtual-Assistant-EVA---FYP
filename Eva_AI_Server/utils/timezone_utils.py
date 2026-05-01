@@ -1,14 +1,15 @@
 """
 Timezone helpers for converting user-local schedule values to UTC-naive datetimes.
 """
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timezone, tzinfo
 from typing import Optional, Tuple, Union
-from zoneinfo import ZoneInfo
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 
 _TIMEZONE_ALIASES = {
     "UTC": "UTC",
     "GMT": "UTC",
+    "ASIA/KARACHI": "Asia/Karachi",
     "PKT": "Asia/Karachi",
     "IST": "Asia/Kolkata",
     "PST": "America/Los_Angeles",
@@ -31,12 +32,17 @@ def resolve_timezone_name(raw_timezone: Optional[str]) -> str:
     return _TIMEZONE_ALIASES.get(alias_key, normalized)
 
 
-def get_zoneinfo(raw_timezone: Optional[str]) -> ZoneInfo:
+def get_zoneinfo(raw_timezone: Optional[str]) -> tzinfo:
     timezone_name = resolve_timezone_name(raw_timezone)
     try:
         return ZoneInfo(timezone_name)
-    except Exception:
-        return ZoneInfo("UTC")
+    except ZoneInfoNotFoundError:
+        try:
+            return ZoneInfo("UTC")
+        except ZoneInfoNotFoundError:
+            # Last-resort fallback when IANA timezone data is unavailable
+            # (common on some Windows Python setups without `tzdata`).
+            return timezone.utc
 
 
 def local_datetime_to_utc_naive(
