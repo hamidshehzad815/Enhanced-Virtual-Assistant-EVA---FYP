@@ -42,16 +42,6 @@ from services.gemini import gemini_service
 from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
 from utils.timezone_utils import resolve_timezone_name, utc_naive_to_local
 
-_WEEKDAYS = (
-    "monday",
-    "tuesday",
-    "wednesday",
-    "thursday",
-    "friday",
-    "saturday",
-    "sunday",
-)
-
 _COMMAND_VERBS = {
     "add",
     "schedule",
@@ -167,65 +157,6 @@ def _safe_reply(
         return gemini_service.generate_reply(payload, user_name, history or [])
     except Exception:
         return "I am still here, but I could not process that clearly. Please try again."
-
-
-def _normalize_weekday_value(value, original_text: str):
-    if not isinstance(value, str):
-        return value
-
-    normalized = value.strip().lower()
-    if not normalized:
-        return value
-    if normalized in _WEEKDAYS:
-        return normalized
-    if not normalized.endswith("day"):
-        return value
-
-    text_lower = (original_text or "").lower()
-    weekday_matches = [
-        weekday
-        for weekday in _WEEKDAYS
-        if re.search(rf"\b{re.escape(weekday)}\b", text_lower)
-    ]
-
-    if len(weekday_matches) == 1:
-        weekday = weekday_matches[0]
-        if normalized == "day" or weekday.endswith(normalized):
-            return weekday
-
-    suffix_matches = [weekday for weekday in _WEEKDAYS if weekday.endswith(normalized)]
-    if len(suffix_matches) == 1:
-        return suffix_matches[0]
-
-    return value
-
-
-def _repair_weekday_date_entity(raw_entities, original_text: str):
-    if not isinstance(raw_entities, dict):
-        return raw_entities
-
-    repaired = dict(raw_entities)
-    date_value = repaired.get("date")
-    if isinstance(date_value, list):
-        repaired["date"] = [
-            _normalize_weekday_value(item, original_text)
-            for item in date_value
-        ]
-    elif date_value is not None:
-        repaired["date"] = _normalize_weekday_value(date_value, original_text)
-
-    return repaired
-
-
-def _extract_weekday_from_text(text: str) -> Optional[str]:
-    normalized = (text or "").strip().lower()
-    if not normalized:
-        return None
-
-    for weekday in _WEEKDAYS:
-        if re.search(rf"\b{re.escape(weekday)}\b", normalized):
-            return weekday
-    return None
 
 
 def _looks_like_command_text(text: str) -> bool:
@@ -512,57 +443,27 @@ async def process_message(payload: ProcessRequest):
                             "settings": settings_data,
                         }
 
-                if pending_intent in {"behavioral"}:
-                    weekday_value = _extract_weekday_from_text(message)
-                    if not weekday_value:
-                        await redis_client.set_context(payload.user_id, pending_context)
-                        if user_name:
-                            response_text = (
-                                f"I didn't catch the day, {user_name}. "
-                                "Please tell me a weekday like Monday or Friday."
-                            )
-                        else:
-                            response_text = (
-                                "I didn't catch the day. "
-                                "Please tell me a weekday like Monday or Friday."
-                            )
-                        return {
-                            "status": "ok",
-                            "too_short": False,
-                            "preprocessed": processed,
-                            "context_handled": True,
-                            "expected_response": "free_text",
-                            "response_text": response_text,
-                            "user_name": user_name,
-                            "settings": settings_data,
-                        }
-
+                if pending_intent in {
+                    "behavioral",
+                    "learning_create",
+                    "learning_update",
+                    "learning_delete",
+                    "learning_show",
+                }:
                     await redis_client.delete_context(payload.user_id)
-                    merged_entities = dict(pending_action.get("entities") or {})
-                    merged_entities["day"] = weekday_value
-                    routed_result = await route_intent(
-                        "behavioral",
-                        entities=merged_entities,
-                        context={
-                            **route_context_base,
-                            "pending_context": pending_context,
-                            "pending_reply_type": "free_text",
-                            "pending_reply_value": weekday_value,
-                        },
+                    response_text = _safe_reply(
+                        "out_of_scope",
+                        user_name,
+                        history,
+                        {"user_message": message},
                     )
-
                     return {
                         "status": "ok",
                         "too_short": False,
                         "preprocessed": processed,
                         "context_handled": True,
                         "expected_response": "free_text",
-                        "merged_entities": merged_entities,
-                        "route": routed_result,
-                        "handler_status": routed_result.get("status"),
-                        "notifications": routed_result.get("notifications", []),
-                        "response_text": routed_result.get("response_text")
-                        or _safe_reply("pending_free_text_captured", user_name, history),
+                        "response_text": response_text,
                         "user_name": user_name,
                         "settings": settings_data,
                     }
@@ -1185,7 +1086,6 @@ async def process_message(payload: ProcessRequest):
             canonical_intent = normalize_intent(intent_classification["label"])
 
             raw_entities = ner_extractor.extract(nlu_message, intent_hint=canonical_intent)
-            raw_entities = _repair_weekday_date_entity(raw_entities, nlu_message)
             scoped_entities = scope_entities(raw_entities, canonical_intent)
             user_timezone = resolve_timezone_name((fetched.user or {}).get("timezone"))
             resolved_entities = await resolve_all(scoped_entities, timezone=user_timezone)
