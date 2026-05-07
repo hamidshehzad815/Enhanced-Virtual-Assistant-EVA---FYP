@@ -14,7 +14,12 @@ from context.redis_client import redis_client
 from db.activity_logs import count_completed, get_best_hour, insert_log
 from db.chat_sessions import update_last_message
 from db.conversation_history import insert_message
-from db.tasks import find_duplicate, find_overlapping_task, insert_task, update_task
+from db.tasks import (
+    find_duplicate,
+    find_overlapping_task_for_user,
+    insert_task,
+    update_task,
+)
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
@@ -981,7 +986,7 @@ async def handle_scheduling_add(
         }
 
     # Step 4: cancel immediately if the requested window overlaps another task.
-    conflicting_task = await find_overlapping_task(user_id, due_datetime, duration_minutes)
+    conflicting_task = await find_overlapping_task_for_user(user_id, due_datetime, duration_minutes)
     if conflicting_task:
         conflicting_title = _coerce_text(conflicting_task.get("title")) or "another task"
         conflicting_time = _format_time_range(
@@ -1093,6 +1098,48 @@ async def handle_scheduling_add(
             "intent": "scheduling_add",
             "response_text": collaborator_error,
             "notifications": [],
+        }
+
+    # Step 6.1: strict collaborator-busy blocking for productivity protection.
+    for collaborator in collaborators:
+        collaborator_user_id = str(collaborator.get("user_id") or "")
+        if not collaborator_user_id:
+            continue
+
+        collaborator_conflict = await find_overlapping_task_for_user(
+            collaborator_user_id,
+            due_datetime,
+            duration_minutes,
+        )
+        if not collaborator_conflict:
+            continue
+
+        collaborator_name = _coerce_text(collaborator.get("name")) or "This collaborator"
+        response_text = (
+            f"{collaborator_name} is busy at {_format_time_display(time_value)} on "
+            f"{_format_date_display(date_value)} and cannot collaborate on this task. "
+            "Please choose a different time."
+        )
+        await _save_turn(
+            session_id,
+            user_message,
+            response_text,
+            input_type,
+            "scheduling_add",
+            entities,
+        )
+        return {
+            "status": "conflict",
+            "intent": "scheduling_add",
+            "response_text": response_text,
+            "notifications": [],
+            "conflict": {
+                "reason": "collaborator_busy",
+                "collaborator_name": collaborator_name,
+                "collaborator_user_id": collaborator_user_id,
+                "task_id": collaborator_conflict.get("_id"),
+                "title": _coerce_text(collaborator_conflict.get("title")),
+            },
         }
 
     reminder_minutes = int(settings.get("default_reminder_minutes", 30))
@@ -1240,7 +1287,7 @@ async def handle_scheduling_add(
                 "title": "Collaboration invite",
                 "message": f"{user_name or 'Your friend'} added you to {task_name}",
                 "action_required": True,
-                "delivery_channel": ["push", "in_app"],
+                "delivery_channel": ["push", "in_app", "email"],
             }
         )
 

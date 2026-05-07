@@ -53,7 +53,11 @@ const parseDateOnly = (dateValue) => {
   const month = Number.parseInt(match[2], 10);
   const day = Number.parseInt(match[3], 10);
 
-  if (!Number.isInteger(year) || !Number.isInteger(month) || !Number.isInteger(day)) {
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day)
+  ) {
     return null;
   }
   if (month < 1 || month > 12 || day < 1 || day > 31) {
@@ -95,7 +99,15 @@ const getTimeZoneOffsetMillis = (utcDate, timeZone) => {
   return asUtc - utcDate.getTime();
 };
 
-const toUtcFromLocalParts = (year, month, day, hour, minute, second, timeZone) => {
+const toUtcFromLocalParts = (
+  year,
+  month,
+  day,
+  hour,
+  minute,
+  second,
+  timeZone,
+) => {
   const guessUtc = Date.UTC(year, month - 1, day, hour, minute, second, 0);
   let utcTs = guessUtc - getTimeZoneOffsetMillis(new Date(guessUtc), timeZone);
 
@@ -115,7 +127,15 @@ const toLocalDayRangeUtc = (dateValue, timezoneValue) => {
   const timezone = normalizeTimezone(timezoneValue);
   const { year, month, day } = parsed;
   const start = toUtcFromLocalParts(year, month, day, 0, 0, 0, timezone);
-  const nextDayStart = toUtcFromLocalParts(year, month, day + 1, 0, 0, 0, timezone);
+  const nextDayStart = toUtcFromLocalParts(
+    year,
+    month,
+    day + 1,
+    0,
+    0,
+    0,
+    timezone,
+  );
   const end = new Date(nextDayStart.getTime() - 1);
 
   return {
@@ -161,4 +181,3 @@ module.exports = {
   toLocalDayRangeUtc,
   formatDateInTimezone,
 };
-

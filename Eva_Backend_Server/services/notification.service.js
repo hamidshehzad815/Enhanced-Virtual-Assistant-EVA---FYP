@@ -7,6 +7,7 @@ const nodemailer = require("nodemailer");
 const mongoose = require("mongoose");
 const fs = require("fs");
 const path = require("path");
+const jwt = require("jsonwebtoken");
 
 const logger = require("../config/logger");
 const { Notification, User, UserSetting } = require("../models");
@@ -22,6 +23,10 @@ const SMTP_FROM =
   process.env.EMAIL_FROM ||
   process.env.EMAIL_USER ||
   "no-reply@eva.local";
+const BACKEND_PUBLIC_URL = (
+  process.env.BACKEND_PUBLIC_URL ||
+  `http://localhost:${process.env.PORT || 3000}`
+).replace(/\/+$/, "");
 
 let cachedTransporter = null;
 let cachedFirebaseAdmin = undefined;
@@ -122,6 +127,88 @@ const getTransporter = () => {
   });
 
   return cachedTransporter;
+};
+
+const getCollaborationTokenSecret = () =>
+  process.env.COLLAB_ACTION_SECRET || process.env.JWT_ACCESS_SECRET || "";
+
+const buildCollaborationActionLink = ({
+  notificationId,
+  taskId,
+  recipientId,
+  action,
+}) => {
+  const secret = getCollaborationTokenSecret();
+  if (!secret) {
+    return null;
+  }
+
+  const token = jwt.sign(
+    {
+      notification_id: String(notificationId),
+      task_id: String(taskId),
+      user_id: String(recipientId),
+      action: String(action),
+    },
+    secret,
+    { expiresIn: "72h" },
+  );
+
+  return `${BACKEND_PUBLIC_URL}/api/tasks/collaboration/respond?token=${encodeURIComponent(token)}`;
+};
+
+const buildCollaborationInviteEmail = ({ notification, userDoc }) => {
+  const taskLabel = String(notification.reference_id || "");
+  const acceptLink = buildCollaborationActionLink({
+    notificationId: notification._id,
+    taskId: notification.reference_id,
+    recipientId: notification.user_id,
+    action: "accept",
+  });
+  const rejectLink = buildCollaborationActionLink({
+    notificationId: notification._id,
+    taskId: notification.reference_id,
+    recipientId: notification.user_id,
+    action: "reject",
+  });
+
+  const plainText = [
+    `Hello ${userDoc?.name || "there"},`,
+    "",
+    notification.message,
+    "",
+    "Respond to this collaboration invite:",
+    `Accept: ${acceptLink || "Link unavailable (missing COLLAB_ACTION_SECRET)"}`,
+    `Reject: ${rejectLink || "Link unavailable (missing COLLAB_ACTION_SECRET)"}`,
+    "",
+    `Task ID: ${taskLabel}`,
+  ].join("\n");
+
+  const html = `
+  <div style="font-family: Arial, sans-serif; line-height:1.5; max-width: 620px; margin:0 auto;">
+    <h2 style="margin-bottom: 8px;">${notification.title}</h2>
+    <p>${notification.message}</p>
+    <p style="margin: 18px 0 10px;">Respond to this collaboration invite:</p>
+    <div style="display:flex; gap:10px; margin-bottom: 16px;">
+      ${
+    acceptLink
+      ? `<a href="${acceptLink}" style="background:#16a34a;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">Accept</a>`
+      : ""
+  }
+      ${
+    rejectLink
+      ? `<a href="${rejectLink}" style="background:#dc2626;color:#fff;text-decoration:none;padding:10px 16px;border-radius:8px;font-weight:600;">Reject</a>`
+      : ""
+  }
+    </div>
+    <p style="font-size:12px;color:#666;">Task ID: ${taskLabel}</p>
+  </div>
+  `;
+
+  return {
+    text: plainText,
+    html,
+  };
 };
 
 const normalizeChannels = (channels) => {
@@ -302,11 +389,20 @@ const dispatch_email = async (userId, notification, userDoc) => {
   }
 
   try {
+    const messagePayload =
+      notification?.type === "collaboration_invite"
+        ? buildCollaborationInviteEmail({ notification, userDoc })
+        : {
+          text: notification.message,
+          html: `<p style="font-family: Arial, sans-serif; line-height:1.5;">${notification.message}</p>`,
+        };
+
     await transporter.sendMail({
       from: SMTP_FROM,
       to: userDoc.email,
       subject: notification.title,
-      text: notification.message,
+      text: messagePayload.text,
+      html: messagePayload.html,
     });
 
     return {
@@ -384,7 +480,8 @@ const insert_and_dispatch = async (notifications = []) => {
 
       if (channels.includes("email")) {
         const emailEnabled = userSettings?.email_notifications_enabled === true;
-        if (emailEnabled) {
+        const forceEmailForInvite = saved.type === "collaboration_invite";
+        if (emailEnabled || forceEmailForInvite) {
           const result = await dispatch_email(doc.user_id, saved, userDoc);
           channelResults.push(result);
           if (result.dispatched) {
