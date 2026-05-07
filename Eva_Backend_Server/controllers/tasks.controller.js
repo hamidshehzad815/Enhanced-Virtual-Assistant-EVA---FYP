@@ -4,15 +4,18 @@
  */
 
 const mongoose = require("mongoose");
-const { Task, ActivityLog } = require("../models");
+const jwt = require("jsonwebtoken");
+const { Task, ActivityLog, Notification } = require("../models");
 const { toLocalDayRangeUtc } = require("../utils/timezone");
 const {
   BadRequestError,
   NotFoundError,
+  ConflictError,
 } = require("../middleware/errorHandler");
 
 const STATUS_VALUES = new Set(["pending", "ongoing", "complete"]);
 const PRIORITY_VALUES = new Set(["low", "medium", "high"]);
+const COLLAB_ACTIONS = new Set(["accept", "reject"]);
 
 const PRIORITY_ALIASES = new Map([
   ["high", "high"],
@@ -66,6 +69,11 @@ const normalizePriorityValue = (value) => {
 const normalizeStatusValue = (value) => {
   const normalized = normalizeEnumInput(value);
   return STATUS_ALIASES.get(normalized) || "";
+};
+
+const normalizeCollaborationAction = (value) => {
+  const normalized = normalizeEnumInput(value);
+  return COLLAB_ACTIONS.has(normalized) ? normalized : "";
 };
 
 const toDateOrNull = (value) => {
@@ -125,6 +133,172 @@ const buildCompletedLogPayload = (task) => {
       : null,
   };
 };
+
+const getCollaborationTokenSecret = () =>
+  process.env.COLLAB_ACTION_SECRET || process.env.JWT_ACCESS_SECRET || "";
+
+const verifyCollaborationToken = (token) => {
+  const secret = getCollaborationTokenSecret();
+  if (!secret) {
+    throw new BadRequestError("Collaboration response is not configured");
+  }
+
+  try {
+    return jwt.verify(token, secret);
+  } catch (_error) {
+    throw new BadRequestError("Invalid or expired collaboration response link");
+  }
+};
+
+const sameObjectId = (a, b) => String(a) === String(b);
+
+const markCollaborationNotificationHandled = async ({
+  userId,
+  taskId,
+  action,
+  notificationId = null,
+}) => {
+  const query = {
+    user_id: userId,
+    type: "collaboration_invite",
+    reference_type: "task",
+    reference_id: taskId,
+  };
+
+  if (notificationId && mongoose.Types.ObjectId.isValid(notificationId)) {
+    query._id = new mongoose.Types.ObjectId(notificationId);
+  }
+
+  await Notification.findOneAndUpdate(
+    query,
+    {
+      $set: {
+        is_read: true,
+        action_taken: action === "accept" ? "accepted" : "rejected",
+        action_required: false,
+        updated_at: new Date(),
+      },
+    },
+    {
+      sort: { created_at: -1 },
+    },
+  );
+};
+
+const applyCollaborationAction = async ({
+  taskId,
+  collaboratorUserId,
+  action,
+  notificationId = null,
+}) => {
+  if (!mongoose.Types.ObjectId.isValid(taskId)) {
+    throw new BadRequestError("Invalid task id");
+  }
+
+  if (!mongoose.Types.ObjectId.isValid(collaboratorUserId)) {
+    throw new BadRequestError("Invalid collaborator id");
+  }
+
+  const taskObjectId = new mongoose.Types.ObjectId(taskId);
+  const collaboratorObjectId = new mongoose.Types.ObjectId(collaboratorUserId);
+  const newStatus = action === "accept" ? "accepted" : "rejected";
+
+  const task = await Task.findOne({
+    _id: taskObjectId,
+    is_deleted: false,
+    collaborators: {
+      $elemMatch: {
+        user_id: collaboratorObjectId,
+      },
+    },
+  }).lean();
+
+  if (!task) {
+    throw new NotFoundError("Task not found for this collaborator");
+  }
+
+  const collaboratorRow = Array.isArray(task.collaborators)
+    ? task.collaborators.find((row) => sameObjectId(row.user_id, collaboratorObjectId))
+    : null;
+
+  if (!collaboratorRow) {
+    throw new NotFoundError("Collaborator record not found");
+  }
+
+  if (String(collaboratorRow.status || "").toLowerCase() !== "pending") {
+    await markCollaborationNotificationHandled({
+      userId: collaboratorObjectId,
+      taskId: taskObjectId,
+      action,
+      notificationId,
+    });
+    return {
+      task,
+      already_responded: true,
+      current_status: collaboratorRow.status,
+    };
+  }
+
+  const updatedTask = await Task.findOneAndUpdate(
+    {
+      _id: taskObjectId,
+      is_deleted: false,
+      collaborators: {
+        $elemMatch: {
+          user_id: collaboratorObjectId,
+          status: "pending",
+        },
+      },
+    },
+    {
+      $set: {
+        "collaborators.$.status": newStatus,
+        updated_at: new Date(),
+      },
+    },
+    { new: true },
+  ).lean();
+
+  if (!updatedTask) {
+    throw new ConflictError("This collaboration invite was already handled");
+  }
+
+  await markCollaborationNotificationHandled({
+    userId: collaboratorObjectId,
+    taskId: taskObjectId,
+    action,
+    notificationId,
+  });
+
+  return {
+    task: updatedTask,
+    already_responded: false,
+    current_status: newStatus,
+  };
+};
+
+const renderCollaborationHtml = ({ title, message }) => `
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${title}</title>
+    <style>
+      body { font-family: Arial, sans-serif; background:#f5f7fb; padding:24px; color:#111827; }
+      .card { max-width:620px; margin:0 auto; background:#fff; border-radius:10px; padding:24px; box-shadow:0 8px 28px rgba(0,0,0,0.08); }
+      h1 { margin:0 0 10px; font-size:22px; }
+      p { margin:0; color:#374151; line-height:1.5; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>${title}</h1>
+      <p>${message}</p>
+    </div>
+  </body>
+</html>
+`;
 
 const parsePositiveInt = (value, fallback) => {
   const parsed = Number.parseInt(value, 10);
@@ -376,9 +550,97 @@ const deleteTask = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/tasks/:id/collaborators/respond
+ * Authenticated collaborator accepts/rejects invite.
+ */
+const respondToCollaborationInvite = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const action = normalizeCollaborationAction(req.body?.action);
+    if (!action) {
+      throw new BadRequestError('action must be "accept" or "reject"');
+    }
+
+    const result = await applyCollaborationAction({
+      taskId: id,
+      collaboratorUserId: req.userId,
+      action,
+    });
+
+    const verb = action === "accept" ? "accepted" : "rejected";
+    const message = result.already_responded
+      ? `Invite already ${String(result.current_status || "").toLowerCase()}.`
+      : `Collaboration invite ${verb}.`;
+
+    res.json({
+      status: "success",
+      message,
+      data: {
+        task_id: String(result.task._id),
+        collaboration_status: result.current_status,
+        already_responded: result.already_responded,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/tasks/collaboration/respond?token=...
+ * Web/email testing endpoint for Accept/Reject links.
+ */
+const respondToCollaborationInviteViaLink = async (req, res, next) => {
+  try {
+    const token = String(req.query?.token || "").trim();
+    if (!token) {
+      throw new BadRequestError("Missing response token");
+    }
+
+    const payload = verifyCollaborationToken(token);
+    const action = normalizeCollaborationAction(payload?.action);
+    if (!action) {
+      throw new BadRequestError("Invalid action in response token");
+    }
+
+    const taskId = String(payload?.task_id || "");
+    const userId = String(payload?.user_id || "");
+    const notificationId = payload?.notification_id ? String(payload.notification_id) : null;
+
+    const result = await applyCollaborationAction({
+      taskId,
+      collaboratorUserId: userId,
+      action,
+      notificationId,
+    });
+
+    const verbPast = action === "accept" ? "accepted" : "rejected";
+    const html = renderCollaborationHtml({
+      title: result.already_responded ? "Already Responded" : "Response Saved",
+      message: result.already_responded
+        ? `This invitation was already ${String(result.current_status || "").toLowerCase()}.`
+        : `You have ${verbPast} this collaboration invite successfully.`,
+    });
+
+    res.status(200).type("html").send(html);
+  } catch (error) {
+    if (error instanceof BadRequestError || error instanceof NotFoundError || error instanceof ConflictError) {
+      const html = renderCollaborationHtml({
+        title: "Unable to Process Invite",
+        message: error.message,
+      });
+      return res.status(error.statusCode || 400).type("html").send(html);
+    }
+    return next(error);
+  }
+};
+
 module.exports = {
   getTasks,
   getTaskById,
   updateTaskStatus,
   deleteTask,
+  respondToCollaborationInvite,
+  respondToCollaborationInviteViaLink,
 };

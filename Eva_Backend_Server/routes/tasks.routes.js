@@ -12,9 +12,13 @@ const {
   getTaskById,
   updateTaskStatus,
   deleteTask,
+  respondToCollaborationInvite,
+  respondToCollaborationInviteViaLink,
 } = require("../controllers/tasks.controller");
 
+router.get("/collaboration/respond", respondToCollaborationInviteViaLink);
 router.get("/", protect, getTasks);
+router.post("/:id/collaborators/respond", protect, respondToCollaborationInvite);
 router.get("/:id", protect, getTaskById);
 router.patch("/:id/status", protect, updateTaskStatus);
 router.delete("/:id", protect, deleteTask);

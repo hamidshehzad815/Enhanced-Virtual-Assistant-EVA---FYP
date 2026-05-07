@@ -215,6 +215,64 @@ async def find_overlapping_task(
     return conflict
 
 
+async def find_overlapping_task_for_user(
+    user_id: str,
+    due_datetime: datetime,
+    duration_minutes: int,
+) -> Optional[Dict[str, Any]]:
+    """
+    Find the first non-deleted overlapping task where the user is either:
+    - owner_id, or
+    - an accepted collaborator.
+    """
+    db = get_db()
+    user_object_id = _to_object_id(user_id)
+    user_variants = [user_object_id]
+    if user_object_id != user_id:
+        user_variants.append(user_id)
+
+    new_start = due_datetime
+    new_end = new_start + timedelta(minutes=max(1, int(duration_minutes or 0)))
+    search_start = new_start - timedelta(days=1)
+
+    base_query = {
+        "due_datetime": {"$gte": search_start, "$lt": new_end},
+        "is_deleted": {"$ne": True},
+    }
+
+    for user_value in user_variants:
+        query = {
+            **base_query,
+            "$or": [
+                {"owner_id": user_value},
+                {
+                    "collaborators": {
+                        "$elemMatch": {
+                            "user_id": user_value,
+                            "status": "accepted",
+                        }
+                    }
+                },
+            ],
+        }
+        rows = await db.tasks.find(query).sort("due_datetime", 1).to_list(length=100)
+
+        for row in rows:
+            existing_start = row.get("due_datetime")
+            if not isinstance(existing_start, datetime):
+                continue
+
+            if task_windows_overlap(
+                existing_start,
+                row.get("duration", 120),
+                new_start,
+                duration_minutes,
+            ):
+                return _normalize_doc(row)
+
+    return None
+
+
 def _build_delete_query(
     owner_value: Any,
     filters: Optional[Dict[str, Any]] = None,
@@ -370,6 +428,18 @@ async def find_tasks_for_show(
 
     for owner_value in owner_variants:
         query = _build_show_query(owner_value, filters)
+        query.pop("owner_id", None)
+        query["$or"] = [
+            {"owner_id": owner_value},
+            {
+                "collaborators": {
+                    "$elemMatch": {
+                        "user_id": owner_value,
+                        "status": "accepted",
+                    }
+                }
+            },
+        ]
         cursor = db.tasks.find(query).sort("due_datetime", sort_direction).limit(20)
         rows = await cursor.to_list(length=20)
         total_count = int(await db.tasks.count_documents(query))

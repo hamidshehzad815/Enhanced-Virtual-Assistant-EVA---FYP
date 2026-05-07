@@ -40,7 +40,7 @@
     {
       "label": "4. AI Server",
       "type": "shell",
-      "command": "D:/FYP_20March/Eva_AI_Server./.venv/Scripts/Activate.ps1 && python -m uvicorn main:app --port 8080 --reload",
+      "command": "source /Users/hamidshehzad/FYP_FINAL_INSHALLAH/Eva_AI_server/.venv/bin/activate && python -m uvicorn main:app --host 127.0.0.1 --port 8080 --reload",
       "options": { "cwd": "${workspaceFolder}/Eva_AI_server" },
       "presentation": { "group": "servers", "reveal": "always" }
     }
