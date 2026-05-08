@@ -56,6 +56,24 @@ def hour_to_12h_format(hour: Any) -> Optional[str]:
     return f"{hour_12}{period}"
 
 
+def days_since(timestamp: Any) -> float:
+    """
+    Return non-negative days elapsed since timestamp.
+    Naive datetimes are treated as UTC.
+    """
+    if not isinstance(timestamp, datetime):
+        return 0.0
+
+    if timestamp.tzinfo is not None:
+        ts_utc = timestamp.astimezone(timezone.utc)
+    else:
+        ts_utc = timestamp.replace(tzinfo=timezone.utc)
+
+    now_utc = datetime.now(timezone.utc)
+    delta_days = (now_utc - ts_utc).total_seconds() / 86400.0
+    return max(0.0, float(delta_days))
+
+
 def _parse_duckling_value(value: Any) -> Optional[datetime]:
     if isinstance(value, datetime):
         return value

@@ -38,8 +38,34 @@ async def insert_log(log_data: Dict[str, Any]) -> str:
         "action_timestamp",
         datetime.now(timezone.utc).replace(tzinfo=None),
     )
+    payload.setdefault("reschedule_count", 0)
     result = await db.activity_logs.insert_one(payload)
     return str(result.inserted_id)
+
+
+async def increment_reschedule_count(task_id: str) -> bool:
+    """
+    Increment reschedule_count on the task_created activity log for a task.
+    Returns True when a matching log is found (and increment attempted), else False.
+    """
+    db = get_db()
+    task_object_id = _to_object_id(task_id)
+    task_variants = [task_object_id]
+    if task_object_id != task_id:
+        task_variants.append(task_id)
+
+    for task_value in task_variants:
+        result = await db.activity_logs.update_one(
+            {
+                "task_id": task_value,
+                "action_type": "task_created",
+            },
+            {"$inc": {"reschedule_count": 1}},
+        )
+        if int(getattr(result, "matched_count", 0)) > 0:
+            return True
+
+    return False
 
 
 async def count_completed(user_id: str) -> int:
@@ -58,6 +84,128 @@ async def count_completed(user_id: str) -> int:
         count = await db.activity_logs.count_documents(query)
 
     return int(count)
+
+
+async def get_completed_logs_for_scoring(user_id: str) -> List[Dict[str, Any]]:
+    """
+    Return completed-task logs for scoring, sorted by action_timestamp desc.
+    """
+    db = get_db()
+    owner_object_id = _to_object_id(user_id)
+    owner_variants = [owner_object_id]
+    if owner_object_id != user_id:
+        owner_variants.append(user_id)
+
+    query = {
+        "user_id": {"$in": owner_variants},
+        "action_type": "task_completed",
+    }
+    projection = {
+        "_id": 0,
+        "hour_of_day": 1,
+        "day_of_week": 1,
+        "was_on_time": 1,
+        "time_taken_minutes": 1,
+        "action_timestamp": 1,
+        "reschedule_count": 1,
+        "scheduled_hour": 1,
+        "task_priority": 1,
+    }
+
+    cursor = db.activity_logs.find(query, projection).sort("action_timestamp", -1)
+    raw_rows = await cursor.to_list(length=50000)
+    rows: List[Dict[str, Any]] = []
+    for row in raw_rows:
+        payload = dict(row)
+        payload["reschedule_count"] = int(payload.get("reschedule_count") or 0)
+        rows.append(payload)
+    return rows
+
+
+async def get_logs_for_day(user_id: str, day_of_week: int) -> List[Dict[str, Any]]:
+    """
+    Return completed-task logs for a specific day_of_week (0=Mon..6=Sun),
+    sorted by action_timestamp desc.
+    """
+    if not isinstance(day_of_week, int) or day_of_week < 0 or day_of_week > 6:
+        return []
+
+    db = get_db()
+    owner_object_id = _to_object_id(user_id)
+    owner_variants = [owner_object_id]
+    if owner_object_id != user_id:
+        owner_variants.append(user_id)
+
+    query = {
+        "user_id": {"$in": owner_variants},
+        "action_type": "task_completed",
+        "day_of_week": int(day_of_week),
+    }
+    projection = {
+        "_id": 0,
+        "hour_of_day": 1,
+        "day_of_week": 1,
+        "was_on_time": 1,
+        "time_taken_minutes": 1,
+        "action_timestamp": 1,
+        "reschedule_count": 1,
+        "scheduled_hour": 1,
+        "task_priority": 1,
+    }
+
+    cursor = db.activity_logs.find(query, projection).sort("action_timestamp", -1)
+    raw_rows = await cursor.to_list(length=50000)
+    rows: List[Dict[str, Any]] = []
+    for row in raw_rows:
+        payload = dict(row)
+        payload["reschedule_count"] = int(payload.get("reschedule_count") or 0)
+        rows.append(payload)
+    return rows
+
+
+async def get_log_count_per_day(user_id: str) -> Dict[int, int]:
+    """
+    Aggregate completed logs by day_of_week and return full 0..6 map.
+    """
+    db = get_db()
+    owner_object_id = _to_object_id(user_id)
+    owner_variants = [owner_object_id]
+    if owner_object_id != user_id:
+        owner_variants.append(user_id)
+
+    pipeline = [
+        {
+            "$match": {
+                "user_id": {"$in": owner_variants},
+                "action_type": "task_completed",
+                "day_of_week": {"$gte": 0, "$lte": 6},
+            }
+        },
+        {
+            "$group": {
+                "_id": "$day_of_week",
+                "count": {"$sum": 1},
+            }
+        },
+    ]
+
+    counts = {day: 0 for day in range(7)}
+    rows = await db.activity_logs.aggregate(pipeline).to_list(length=7)
+    for row in rows:
+        try:
+            day = int(row.get("_id"))
+        except Exception:
+            continue
+        if 0 <= day <= 6:
+            counts[day] = int(row.get("count") or 0)
+    return counts
+
+
+async def get_total_completed(user_id: str) -> int:
+    """
+    Return total completed-task logs for a user (alias for threshold checks).
+    """
+    return await count_completed(user_id)
 
 
 async def get_best_hour(user_id: str, weekday: int) -> Optional[int]:

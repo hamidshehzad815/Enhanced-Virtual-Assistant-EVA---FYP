@@ -2,7 +2,10 @@
 Entity scoping for Phase 7.
 Filters and normalizes extracted entities according to detected intent.
 """
+import re
 from typing import Any, Dict, Set
+
+from config.settings import settings
 
 _INTENT_ENTITY_SCOPE: Dict[str, Set[str]] = {
     "scheduling_add": {"task_name", "date", "time", "priority", "duration", "collaborator"},
@@ -20,6 +23,7 @@ _INTENT_ENTITY_SCOPE: Dict[str, Set[str]] = {
         "new_duration",
     },
     "scheduling_show": {"date", "priority", "status", "task_name"},
+    "behavioral": {"day"},
 }
 
 _ENTITY_ALIASES: Dict[str, str] = {
@@ -55,6 +59,22 @@ def _normalize_key(key: str) -> str:
     return _ENTITY_ALIASES.get(key, key)
 
 
+_WEEKDAY_PATTERN = re.compile(
+    r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
+    flags=re.IGNORECASE,
+)
+
+
+def _extract_weekday(value: Any) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    match = _WEEKDAY_PATTERN.search(text)
+    if not match:
+        return ""
+    return str(match.group(1)).lower()
+
+
 def scope_entities(entities: Dict[str, Any], intent: str) -> Dict[str, Any]:
     """
     Keep only entities relevant to an intent and normalize entity keys.
@@ -68,8 +88,33 @@ def scope_entities(entities: Dict[str, Any], intent: str) -> Dict[str, Any]:
     for raw_key, value in entities.items():
         key = _normalize_key(raw_key)
 
+        if raw_key == "subject" and "task_name" in scoped:
+            # Do not allow a generic subject alias to override a strong task_name.
+            continue
+
+        if intent == "behavioral":
+            if key == "day":
+                day_value = _extract_weekday(value) or str(value or "").strip().lower()
+                if day_value:
+                    scoped["day"] = day_value
+                continue
+
+            if key == "date" and bool(getattr(settings, "BEHAVIORAL_DATE_AS_DAY_FALLBACK", False)):
+                day_value = _extract_weekday(value)
+                if day_value:
+                    scoped["day"] = day_value
+                continue
+            continue
+
         if allowed and key not in allowed:
             continue
+
+        if key == "date" and intent == "scheduling_delete":
+            weekday = _extract_weekday(value)
+            if weekday:
+                scoped[key] = weekday
+                continue
+
         scoped[key] = value
 
     return scoped
