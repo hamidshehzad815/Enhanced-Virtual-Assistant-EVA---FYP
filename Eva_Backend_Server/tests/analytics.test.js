@@ -25,6 +25,11 @@ jest.mock("../config/logger", () => ({
   },
 }));
 
+jest.mock("../services/ai.service", () => ({
+  callAIServer: jest.fn(),
+  callAIAnalytics: jest.fn(),
+}));
+
 jest.mock("../models", () => ({
   User: {
     findById: jest.fn(),
@@ -55,6 +60,7 @@ jest.mock("../models", () => ({
 
 const app = require("../app");
 const { User, ActivityLog } = require("../models");
+const { callAIAnalytics } = require("../services/ai.service");
 
 const USER_ID = "507f1f77bcf86cd799439011";
 
@@ -74,14 +80,21 @@ describe("Analytics API", () => {
     });
   });
 
-  test("GET /api/analytics/productivity -> returns completion metrics + days", async () => {
-    ActivityLog.aggregate
-      .mockResolvedValueOnce([{ total_completed: 5, on_time: 3 }])
-      .mockResolvedValueOnce([{ week: 12, count: 2 }, { week: 13, count: 3 }])
-      .mockResolvedValueOnce([
-        { _id: 1, count: 3, on_time_count: 2 },
-        { _id: 0, count: 2, on_time_count: 1 },
-      ]);
+  test("GET /api/analytics/productivity -> 200 + scored shape", async () => {
+    callAIAnalytics.mockResolvedValueOnce({
+      status: "success",
+      data: {
+        type: "full",
+        has_enough_data: true,
+        total_completed: 25,
+        thresholds: { global: 20, per_day: 5 },
+        days: [{ day: "Monday", day_num: 0, score: 0.82, log_count: 8, on_time_rate: 0.88 }],
+        unreliable_days: [{ day: "Wednesday", day_num: 2, log_count: 2, needed: 5 }],
+        hours: [{ day: "Monday", day_num: 0, hour: 18, hour_display: "6PM", score: 0.83, on_time_rate: 0.9, log_count: 6 }],
+        completion_rate: { total_completed: 25, on_time: 21, late: 4, on_time_rate: 84, weekly_trend: [] },
+        avg_time_taken: 64.2,
+      },
+    });
 
     const response = await request(app)
       .get("/api/analytics/productivity")
@@ -89,47 +102,29 @@ describe("Analytics API", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.status).toBe("success");
-    expect(response.body.data.total_completed).toBe(5);
-    expect(response.body.data.on_time).toBe(3);
-    expect(response.body.data.late).toBe(2);
-    expect(response.body.data.on_time_rate).toBe(60);
-    expect(response.body.data.weekly_trend).toEqual([
-      { week: 12, count: 2 },
-      { week: 13, count: 3 },
-    ]);
-    expect(response.body.data.days).toHaveLength(7);
-    expect(response.body.data.days[0]).toMatchObject({
-      day_name: "Tuesday",
-      day_num: 1,
-      count: 3,
-      on_time_rate: 0.67,
+    expect(response.body.data.type).toBe("full");
+    expect(response.body.data.total_completed).toBe(25);
+    expect(Array.isArray(response.body.data.days)).toBe(true);
+    expect(Array.isArray(response.body.data.unreliable_days)).toBe(true);
+    expect(callAIAnalytics).toHaveBeenCalledWith({
+      userId: USER_ID,
+      type: "full",
     });
   });
 
-  test("GET /api/analytics/productivity with date range applies user timezone boundaries", async () => {
-    ActivityLog.aggregate
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([]);
-
-    const response = await request(app)
-      .get("/api/analytics/productivity?start_date=2026-03-30&end_date=2026-03-31")
-      .set("Authorization", `Bearer ${makeToken()}`);
-
-    expect(response.status).toBe(200);
-    expect(ActivityLog.aggregate).toHaveBeenCalled();
-
-    const summaryPipeline = ActivityLog.aggregate.mock.calls[0][0];
-    const match = summaryPipeline[0].$match;
-    expect(match.action_timestamp.$gte.toISOString()).toBe("2026-03-29T19:00:00.000Z");
-    expect(match.action_timestamp.$lte.toISOString()).toBe("2026-03-31T18:59:59.999Z");
-  });
-
-  test("GET /api/analytics/hours?day=monday -> returns filtered hours", async () => {
-    ActivityLog.aggregate.mockResolvedValueOnce([
-      { _id: 18, count: 3, on_time_count: 2 },
-      { _id: 10, count: 1, on_time_count: 1 },
-    ]);
+  test("GET /api/analytics/hours?day=monday -> filtered scored data", async () => {
+    callAIAnalytics.mockResolvedValueOnce({
+      status: "success",
+      data: {
+        type: "hours",
+        day_filter: 0,
+        has_enough_data: true,
+        hours: [
+          { day: "Monday", day_num: 0, hour: 18, hour_display: "6PM", score: 0.88, on_time_rate: 0.9, log_count: 7 },
+          { day: "Monday", day_num: 0, hour: 20, hour_display: "8PM", score: 0.81, on_time_rate: 0.86, log_count: 6 },
+        ],
+      },
+    });
 
     const response = await request(app)
       .get("/api/analytics/hours?day=monday")
@@ -137,17 +132,14 @@ describe("Analytics API", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.status).toBe("success");
-    expect(response.body.data.filter).toEqual({
-      day: 0,
-      day_name: "Monday",
+    expect(response.body.data.type).toBe("hours");
+    expect(response.body.data.day_filter).toBe(0);
+    expect(response.body.data.hours[0].day_num).toBe(0);
+    expect(callAIAnalytics).toHaveBeenCalledWith({
+      userId: USER_ID,
+      type: "hours",
+      day: "monday",
     });
-    expect(response.body.data.hours).toEqual([
-      { hour: 18, count: 3, on_time_rate: 0.67 },
-      { hour: 10, count: 1, on_time_rate: 1 },
-    ]);
-
-    const pipeline = ActivityLog.aggregate.mock.calls[0][0];
-    expect(pipeline[0].$match.day_of_week).toBe(0);
   });
 
   test("GET /api/analytics/hours with invalid day -> 400", async () => {
@@ -158,14 +150,24 @@ describe("Analytics API", () => {
     expect(response.status).toBe(400);
     expect(response.body.status).toBe("fail");
     expect(response.body.message).toBe("Invalid day query value");
-    expect(ActivityLog.aggregate).not.toHaveBeenCalled();
+    expect(callAIAnalytics).not.toHaveBeenCalled();
   });
 
-  test("GET /api/analytics/days -> returns ranked day distribution", async () => {
-    ActivityLog.aggregate.mockResolvedValueOnce([
-      { _id: 4, count: 5, on_time_count: 4 },
-      { _id: 1, count: 7, on_time_count: 5 },
-    ]);
+  test("GET /api/analytics/days -> reliable/unreliable split", async () => {
+    callAIAnalytics.mockResolvedValueOnce({
+      status: "success",
+      data: {
+        type: "days",
+        has_enough_data: true,
+        days: [
+          { day: "Tuesday", day_num: 1, score: 0.85, log_count: 9, on_time_rate: 0.89 },
+          { day: "Monday", day_num: 0, score: 0.81, log_count: 8, on_time_rate: 0.88 },
+        ],
+        unreliable_days: [
+          { day: "Friday", day_num: 4, log_count: 2, needed: 5 },
+        ],
+      },
+    });
 
     const response = await request(app)
       .get("/api/analytics/days")
@@ -173,12 +175,12 @@ describe("Analytics API", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.status).toBe("success");
-    expect(response.body.data.days).toHaveLength(7);
-    expect(response.body.data.days[0]).toMatchObject({
-      day_name: "Tuesday",
-      day_num: 1,
-      count: 7,
-      on_time_rate: 0.71,
+    expect(response.body.data.type).toBe("days");
+    expect(response.body.data.days[0].day).toBe("Tuesday");
+    expect(response.body.data.unreliable_days[0].day).toBe("Friday");
+    expect(callAIAnalytics).toHaveBeenCalledWith({
+      userId: USER_ID,
+      type: "days",
     });
   });
 
@@ -227,13 +229,40 @@ describe("Analytics API", () => {
   });
 
   test("analytics empty-data responses return success and zero/empty payloads", async () => {
-    ActivityLog.aggregate
-      .mockResolvedValueOnce([]) // productivity summary
-      .mockResolvedValueOnce([]) // productivity trend
-      .mockResolvedValueOnce([]) // productivity days
-      .mockResolvedValueOnce([]) // hours
-      .mockResolvedValueOnce([]) // days
-      .mockResolvedValueOnce([]); // completion trend
+    callAIAnalytics
+      .mockResolvedValueOnce({
+        status: "success",
+        data: {
+          type: "full",
+          total_completed: 0,
+          has_enough_data: false,
+          thresholds: { global: 20, per_day: 5 },
+          days: [],
+          unreliable_days: [],
+          hours: [],
+          completion_rate: { total_completed: 0, on_time: 0, late: 0, on_time_rate: 0, weekly_trend: [] },
+          avg_time_taken: null,
+        },
+      })
+      .mockResolvedValueOnce({
+        status: "success",
+        data: {
+          type: "hours",
+          has_enough_data: false,
+          hours: [],
+        },
+      })
+      .mockResolvedValueOnce({
+        status: "success",
+        data: {
+          type: "days",
+          has_enough_data: false,
+          days: [],
+          unreliable_days: [],
+        },
+      });
+
+    ActivityLog.aggregate.mockResolvedValueOnce([]);
 
     const [productivity, hours, days, trend] = await Promise.all([
       request(app)
@@ -252,18 +281,17 @@ describe("Analytics API", () => {
 
     expect(productivity.status).toBe(200);
     expect(productivity.body.data.total_completed).toBe(0);
-    expect(productivity.body.data.on_time_rate).toBe(0);
-    expect(productivity.body.data.days).toHaveLength(7);
+    expect(productivity.body.data.days).toEqual([]);
 
     expect(hours.status).toBe(200);
     expect(hours.body.data.hours).toEqual([]);
 
     expect(days.status).toBe(200);
-    expect(days.body.data.days).toHaveLength(7);
-    expect(days.body.data.days.every((item) => item.count === 0)).toBe(true);
+    expect(days.body.data.days).toEqual([]);
 
     expect(trend.status).toBe(200);
     expect(trend.body.data.weeks).toBe(4);
     expect(trend.body.data.trend).toEqual([]);
   });
 });
+

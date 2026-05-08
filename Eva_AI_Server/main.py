@@ -19,6 +19,14 @@ from handlers.general_handler import (
     handle_out_of_scope,
 )
 from handlers.router import normalize_intent, route_intent
+from db.activity_logs import (
+    get_avg_time_taken,
+    get_completed_logs_for_scoring,
+    get_completion_rate,
+    get_log_count_per_day,
+    get_total_completed,
+)
+from db.readers import fetch_user_settings
 from context.context_manager import (
     extract_update_fields,
     handle_free_text_reply,
@@ -39,7 +47,9 @@ from pipeline.preprocessor import is_too_short, preprocess
 from services.self_fetch import self_fetch_all
 from services.duckling import duckling_client
 from services.gemini import gemini_service
+from services.productivity_scorer import get_productive_days, get_productive_hours
 from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
+from utils.date_utils import weekday_name_to_number
 from utils.timezone_utils import resolve_timezone_name, utc_naive_to_local
 
 _COMMAND_VERBS = {
@@ -58,6 +68,10 @@ _COMMAND_VERBS = {
 
 _SALUTATION_PATTERN = re.compile(
     r"^\s*(?:(?:hey|hi|hello|salam|assalamualaikum|aoa|yo|ok|okay)\b[\s,!:.-]*)*(?:eva\b[\s,!:.-]*)*",
+    flags=re.IGNORECASE,
+)
+_WEEKDAY_PATTERN = re.compile(
+    r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
     flags=re.IGNORECASE,
 )
 
@@ -189,6 +203,22 @@ def _first_entity_value(value):
     return value
 
 
+def _repair_weekday_fragment_date(raw_entities: dict, source_text: str) -> dict:
+    """
+    Repair occasional NER artifact where date is extracted as bare 'day'
+    while the utterance contains a weekday.
+    """
+    entities = dict(raw_entities or {})
+    date_value = str(entities.get("date") or "").strip().lower()
+    if date_value != "day":
+        return entities
+
+    match = _WEEKDAY_PATTERN.search(str(source_text or ""))
+    if match:
+        entities["date"] = str(match.group(1)).lower()
+    return entities
+
+
 def _normalize_priority_update(value) -> str:
     return canonicalize_priority(_first_entity_value(value))
 
@@ -248,6 +278,18 @@ def _build_pending_update_payload(entities: dict):
     return payload, ", ".join(parts)
 
 
+def _parse_analytics_day(day_value: Optional[str]) -> Optional[int]:
+    if day_value is None:
+        return None
+    raw = str(day_value).strip()
+    if not raw:
+        return None
+    if raw.isdigit():
+        parsed = int(raw)
+        return parsed if 0 <= parsed <= 6 else None
+    return weekday_name_to_number(raw)
+
+
 @app.get("/health")
 async def health_check():
     """
@@ -293,6 +335,114 @@ async def root():
         "version": "1.0.0",
         "status": "running"
     }
+
+
+@app.get("/analytics")
+async def analytics(
+    user_id: str,
+    type: str = "full",
+    day: Optional[str] = None,
+):
+    """
+    Behavioral analytics endpoint for dashboard clients.
+    Returns scoring-based analytics payloads.
+    """
+    analytics_type = str(type or "full").strip().lower()
+    if analytics_type == "productivity":
+        analytics_type = "full"
+    if analytics_type not in {"full", "hours", "days", "slots"}:
+        return {
+            "status": "error",
+            "message": "Invalid analytics type. Use full|hours|days|slots.",
+            "data": {},
+        }
+
+    settings_data = await fetch_user_settings(user_id)
+    global_threshold = int(settings_data.get("analytics_min_tasks_threshold", 20) or 20)
+    per_day_threshold = int(settings_data.get("analytics_min_tasks_per_day", 5) or 5)
+    if global_threshold <= 0:
+        global_threshold = 20
+    if per_day_threshold <= 0:
+        per_day_threshold = 5
+
+    total_completed = await get_total_completed(user_id)
+    day_counts = await get_log_count_per_day(user_id)
+    logs = await get_completed_logs_for_scoring(user_id)
+    day_num = _parse_analytics_day(day)
+
+    has_enough_data = int(total_completed) >= int(global_threshold)
+    base = {
+        "status": "success",
+        "data": {
+            "type": analytics_type,
+            "total_completed": int(total_completed),
+            "thresholds": {
+                "global": int(global_threshold),
+                "per_day": int(per_day_threshold),
+            },
+            "has_enough_data": bool(has_enough_data),
+            "day_filter": day_num,
+            "day_log_counts": {int(k): int(v) for k, v in dict(day_counts or {}).items()},
+        },
+    }
+
+    if not has_enough_data:
+        base["data"].update(
+            {
+                "hours": [],
+                "days": [],
+                "unreliable_days": [],
+                "completion_rate": {
+                    "total_completed": int(total_completed),
+                    "on_time": 0,
+                    "late": 0,
+                    "on_time_rate": 0.0,
+                    "weekly_trend": [],
+                },
+                "avg_time_taken": None,
+            }
+        )
+        return base
+
+    if analytics_type in {"hours", "slots"}:
+        # If a specific day is requested, enforce per-day reliability threshold.
+        if day_num is not None and int(day_counts.get(day_num, 0)) < int(per_day_threshold):
+            base["data"].update(
+                {
+                    "hours": [],
+                    "message": "Insufficient day data for reliable hourly analytics.",
+                }
+            )
+            return base
+
+        hours_rows = get_productive_hours(logs, day=day_num)
+        base["data"].update({"hours": hours_rows})
+        return base
+
+    if analytics_type == "days":
+        day_result = get_productive_days(logs, day_counts, per_day_threshold)
+        base["data"].update(
+            {
+                "days": list(day_result.get("reliable") or []),
+                "unreliable_days": list(day_result.get("unreliable") or []),
+            }
+        )
+        return base
+
+    # full
+    day_result = get_productive_days(logs, day_counts, per_day_threshold)
+    completion = await get_completion_rate(user_id)
+    avg_time_taken = await get_avg_time_taken(user_id)
+    base["data"].update(
+        {
+            "days": list(day_result.get("reliable") or []),
+            "unreliable_days": list(day_result.get("unreliable") or []),
+            "hours": get_productive_hours(logs),
+            "completion_rate": completion,
+            "avg_time_taken": avg_time_taken,
+        }
+    )
+    return base
 
 
 @app.post("/process")
@@ -443,13 +593,7 @@ async def process_message(payload: ProcessRequest):
                             "settings": settings_data,
                         }
 
-                if pending_intent in {
-                    "behavioral",
-                    "learning_create",
-                    "learning_update",
-                    "learning_delete",
-                    "learning_show",
-                }:
+                if pending_intent in {"learning_create", "learning_update", "learning_delete", "learning_show"}:
                     await redis_client.delete_context(payload.user_id)
                     response_text = _safe_reply(
                         "out_of_scope",
@@ -474,14 +618,14 @@ async def process_message(payload: ProcessRequest):
                     message,
                 )
 
-                if pending_intent in {"add", "scheduling_add", "delete", "scheduling_delete", "update", "scheduling_update"}:
+                if pending_intent in {"add", "scheduling_add", "delete", "scheduling_delete", "update", "scheduling_update", "behavioral"}:
                     routed_intent = (
                         "scheduling_add"
                         if pending_intent in {"add", "scheduling_add"}
                         else (
                             "scheduling_delete"
                             if pending_intent in {"delete", "scheduling_delete"}
-                            else "scheduling_update"
+                            else ("scheduling_update" if pending_intent in {"update", "scheduling_update"} else "behavioral")
                         )
                     )
                     routed_result = await route_intent(
@@ -1031,6 +1175,7 @@ async def process_message(payload: ProcessRequest):
                     updated_context["expected_response"] = "free_text"
                     updated_context["missing_entity"] = "time"
                     updated_context.pop("suggested_time", None)
+                    updated_context.pop("suggested_range", None)
                     await redis_client.set_context(payload.user_id, updated_context)
 
                 return {
@@ -1086,6 +1231,7 @@ async def process_message(payload: ProcessRequest):
             canonical_intent = normalize_intent(intent_classification["label"])
 
             raw_entities = ner_extractor.extract(nlu_message, intent_hint=canonical_intent)
+            raw_entities = _repair_weekday_fragment_date(raw_entities, nlu_message)
             scoped_entities = scope_entities(raw_entities, canonical_intent)
             user_timezone = resolve_timezone_name((fetched.user or {}).get("timezone"))
             resolved_entities = await resolve_all(scoped_entities, timezone=user_timezone)

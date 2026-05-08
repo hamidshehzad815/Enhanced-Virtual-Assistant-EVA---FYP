@@ -8,7 +8,7 @@ from unittest.mock import patch
 
 from bson import ObjectId
 
-from db.activity_logs import insert_log
+from db.activity_logs import increment_reschedule_count, insert_log
 from db.tasks import (
     check_update_overlap,
     find_tasks_for_update,
@@ -101,6 +101,24 @@ class FakeActivityLogsCollection:
         row["_id"] = ObjectId()
         self.rows.append(row)
         return FakeInsertResult(row["_id"])
+
+    @staticmethod
+    def _normalize(value):
+        return str(value)
+
+    async def update_one(self, query, update):
+        for row in self.rows:
+            row_task = self._normalize(row.get("task_id"))
+            query_task = self._normalize(query.get("task_id"))
+            if (
+                row_task == query_task
+                and row.get("action_type") == query.get("action_type")
+            ):
+                if "$inc" in update:
+                    for key, amount in update["$inc"].items():
+                        row[key] = int(row.get(key) or 0) + int(amount)
+                return FakeResult(matched_count=1, modified_count=1)
+        return FakeResult(matched_count=0, modified_count=0)
 
 
 class FakeDB:
@@ -270,7 +288,30 @@ class TestUpdatePhase24DbLayer(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(fake_db.activity_logs.rows), 1)
         self.assertEqual(fake_db.activity_logs.rows[0]["action_type"], "task_updated")
 
+    async def test_increment_reschedule_count_increments_task_created_log(self):
+        fake_logs = FakeActivityLogsCollection()
+        fake_db = FakeDB(activity_logs_collection=fake_logs)
+        with patch("db.activity_logs.get_db", return_value=fake_db):
+            task_id = ObjectId()
+            await insert_log(
+                {
+                    "user_id": self.owner_id,
+                    "task_id": task_id,
+                    "action_type": "task_created",
+                    "subject": "Physics exam",
+                    "reschedule_count": 0,
+                }
+            )
+
+            ok_first = await increment_reschedule_count(str(task_id))
+            ok_second = await increment_reschedule_count(str(task_id))
+            missing = await increment_reschedule_count(str(ObjectId()))
+
+        self.assertTrue(ok_first)
+        self.assertTrue(ok_second)
+        self.assertFalse(missing)
+        self.assertEqual(fake_logs.rows[0]["reschedule_count"], 2)
+
 
 if __name__ == "__main__":
     unittest.main()
-

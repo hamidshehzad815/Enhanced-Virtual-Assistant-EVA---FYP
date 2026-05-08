@@ -73,6 +73,14 @@ class Settings:
     # Context Manager
     CONTEXT_TTL: int = int(os.getenv("CONTEXT_TTL", "300"))
 
+    # Behavioral NER fallback:
+    # When True, behavioral entity scoping can interpret weekday-like `date`
+    # as `day` for legacy NER outputs.
+    BEHAVIORAL_DATE_AS_DAY_FALLBACK: bool = _as_bool(
+        os.getenv("BEHAVIORAL_DATE_AS_DAY_FALLBACK"),
+        True,
+    )
+
 
 # Singleton instance
 settings = Settings()

@@ -103,9 +103,15 @@ const userSettingSchema = new mongoose.Schema(
     },
     analytics_min_tasks_threshold: {
       type: Number,
-      default: 10,
+      default: 20,
       min: [1, "Threshold must be at least 1"],
       max: [100, "Threshold cannot exceed 100"],
+    },
+    analytics_min_tasks_per_day: {
+      type: Number,
+      default: 5,
+      min: [1, "Per-day threshold must be at least 1"],
+      max: [100, "Per-day threshold cannot exceed 100"],
     },
     preferred_learning_duration: {
       type: Number,

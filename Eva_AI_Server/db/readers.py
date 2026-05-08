@@ -71,7 +71,10 @@ async def fetch_user_settings(user_id: str) -> Dict[str, Any]:
 			if doc:
 				break
 
-	return _normalize_doc_id(doc) or {}
+	settings = _normalize_doc_id(doc) or {}
+	settings.setdefault("analytics_min_tasks_threshold", 20)
+	settings.setdefault("analytics_min_tasks_per_day", 5)
+	return settings
 
 
 async def fetch_conversation_history(
