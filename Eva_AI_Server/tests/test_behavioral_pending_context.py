@@ -74,6 +74,7 @@ class TestBehavioralPendingContext(unittest.IsolatedAsyncioTestCase):
     async def test_free_text_weekday_reply_routes_behavioral_handler(self):
         pending_context = {
             "expected_response": "free_text",
+            "missing_entity": "day",
             "pending_action": {
                 "intent": "behavioral",
                 "sub_intent": "best_time_for_day",
@@ -110,7 +111,7 @@ class TestBehavioralPendingContext(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["context_handled"])
         self.assertEqual(result["handler_status"], "success")
         self.assertEqual(result["route"]["intent"], "behavioral")
-        self.assertEqual(result["merged_entities"]["day"], "friday")
+        self.assertEqual(str(result["merged_entities"]["day"]).lower(), "friday")
         mock_clear.assert_awaited_once_with(USER_ID)
         mock_route.assert_awaited_once()
 
@@ -172,19 +173,26 @@ class TestBehavioralPendingContext(unittest.IsolatedAsyncioTestCase):
             "main.self_fetch_all",
             new=AsyncMock(return_value=_fetched(pending_context)),
         ), patch(
-            "main.redis_client.set_context",
-            new=AsyncMock(return_value=True),
-        ) as mock_set, patch(
             "main.route_intent",
-            new=AsyncMock(return_value={}),
+            new=AsyncMock(
+                return_value={
+                    "status": "pending",
+                    "intent": "behavioral",
+                    "response_text": "ACTION:behavioral_ask_day",
+                    "notifications": [],
+                    "pending": {
+                        "expected_response": "free_text",
+                        "missing_entity": "day",
+                    },
+                }
+            ),
         ) as mock_route:
             result = await ai_main.process_message(payload)
 
         self.assertTrue(result["context_handled"])
         self.assertEqual(result["expected_response"], "free_text")
-        self.assertIn("didn't catch the day", result["response_text"].lower())
-        mock_set.assert_awaited_once_with(USER_ID, pending_context)
-        mock_route.assert_not_awaited()
+        self.assertEqual(result["response_text"], "ACTION:behavioral_ask_day")
+        mock_route.assert_awaited_once()
 
 
 if __name__ == "__main__":

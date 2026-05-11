@@ -1,0 +1,851 @@
+================================================================
+EVA — BEHAVIORAL ANALYTICS LAYER 1
+Productivity Scoring System — Complete TODO
+================================================================
+
+OVERVIEW
+================================================================
+
+  Current approach : frequency counting (shallow)
+  New approach     : weighted productivity scoring
+
+  Productivity score per (day, hour) slot combines:
+    → Volume     — how many tasks completed (weighted)
+    → Reliability — how often completed on time
+    → Efficiency  — how fast relative to estimated duration
+    → Recency     — recent completions weighted higher
+    → Penalty     — rescheduling reduces slot score
+
+  Threshold system:
+    → Global : 20 completed logs before any analytics
+    → Per day: 5 completed logs before that day scores
+
+
+================================================================
+SCORING FORMULA
+================================================================
+
+  Per log — time decay weight:
+  ─────────────────────────────────────────────────────────
+    weight = e^(-0.01 × days_since_completion)
+
+    7 days ago  → 0.93
+    30 days ago → 0.74
+    90 days ago → 0.41
+
+  Per (day, hour) slot:
+  ─────────────────────────────────────────────────────────
+    volume_score      = sum(weights in slot)
+                        / max slot weight sum across all slots
+                        → normalized 0-1
+
+    reliability_score = sum(weight for on_time logs in slot)
+                        / sum(all weights in slot)
+                        → 0-1
+
+    efficiency_score  = weighted average of
+                        min(task_duration / time_taken, 1.0)
+                        → 0-1
+                        → skip log if time_taken_minutes null
+
+    reschedule_penalty = 1 - min(avg_reschedule_count / 3, 0.5)
+                        → reschedule 0 times → penalty = 1.0 (none)
+                        → reschedule 3+ times → penalty = 0.5 (max)
+
+    slot_score = (
+        0.35 × volume_score +
+        0.40 × reliability_score +
+        0.25 × efficiency_score
+    ) × reschedule_penalty
+
+  Hour range building:
+  ─────────────────────────────────────────────────────────
+    PRODUCTIVITY_THRESHOLD = 0.6
+    MERGE_THRESHOLD        = 0.6
+
+    hours scoring above threshold → merge consecutive into range
+    e.g. hours 18, 19, 20 all above 0.6 → "6PM-9PM"
+    gap between hours → separate ranges, not merged
+
+  Threshold check:
+  ─────────────────────────────────────────────────────────
+    global  : total completed >= 20 → proceed
+    per day : logs on that day >= 5 → day included in rankings
+              logs on that day < 5  → day excluded, flagged
+
+
+================================================================
+WHAT THIS ENABLES
+================================================================
+
+  1. "What is my most productive day?"
+     → aggregate slot scores by day
+     → rank reliable days only
+     → EVA explains which days have insufficient data
+
+  2. "What is my best time on Monday?"
+     → filter slots where day = Monday
+     → rank by score
+     → merge top hours into range
+     → EVA: "Your best window on Monday is 6PM-9PM"
+
+  3. Task scheduling suggestion when time missing
+     → add handler calls scoring engine
+     → returns best range for that day
+     → EVA: "Your best window on Mondays is 6PM-9PM.
+             Want me to use that or pick a different time?
+             1. Use 6PM
+             2. Enter a time"
+
+  4. Task scheduling suggestion when date also missing
+     → scoring engine returns best reliable day
+     → and best range for that day
+     → EVA suggests both together
+
+
+================================================================
+PHASE 1 — SCHEMA CHANGES
+================================================================
+
+Goal: All required fields exist before any code is written.
+
+  AI Server / MongoDB
+  ─────────────────────────────────────────────────────────
+
+  [x] Add to Activity_Logs collection:
+      reschedule_count    Integer, default 0
+      → tracks how many times task was rescheduled
+        before this completion
+      → set to 0 on task_created log
+      → incremented on each due_datetime change
+
+  [x] Update User_Settings collection:
+      analytics_min_tasks_threshold  → change default 10 → 20
+      analytics_min_tasks_per_day    → new field, default 5
+
+  [x] Update Node.js UserSetting model:
+      → add analytics_min_tasks_per_day field
+      → update analytics_min_tasks_threshold default to 20
+
+  [x] Update AI server settings reader:
+      → db/readers.py fetch_user_settings must return
+        both threshold fields
+
+  PHASE 1 TEST:
+  [x] Insert activity log → confirm reschedule_count = 0
+  [x] Fetch user settings → confirm both threshold fields present
+  [x] New user registration → settings created with new defaults
+
+
+================================================================
+PHASE 2 — DATA COLLECTION
+================================================================
+
+Goal: reschedule_count correctly set and incremented
+      by existing handlers.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [x] Update handlers/scheduling/add.py — STEP 9:
+      → activity log insert already exists
+      → add reschedule_count = 0 to insert payload
+      → nothing else changes
+
+  [x] Update handlers/scheduling/update.py — STEP 9:
+      → after successful update
+      → check if new_date or new_time was in update_data
+      → if yes:
+          db.activity_logs.updateOne(
+            { task_id: task_id,
+              action_type: "task_created" },
+            { $inc: { reschedule_count: 1 } }
+          )
+      → if no date/time change → skip
+
+  [x] Add to db/activity_logs.py:
+      increment_reschedule_count(task_id) → bool
+        → finds log where task_id matches
+          and action_type = "task_created"
+        → increments reschedule_count by 1
+        → returns True on success
+
+  [x] Unit test increment_reschedule_count:
+      → insert log with reschedule_count = 0
+      → call increment → verify count = 1
+      → call again → verify count = 2
+      → call with invalid task_id → returns False
+
+  PHASE 2 TEST:
+  [ ] Add task → confirm activity log has reschedule_count = 0
+  [ ] Update task date → confirm reschedule_count = 1
+  [ ] Update task priority only → confirm reschedule_count unchanged
+  [ ] Update task date twice → confirm reschedule_count = 2
+
+
+================================================================
+PHASE 3 — DB LAYER FOR SCORING
+================================================================
+
+Goal: All DB query functions needed by scoring engine
+      exist and are independently tested.
+
+  AI Server — db/activity_logs.py
+  ─────────────────────────────────────────────────────────
+
+  [x] Add get_completed_logs_for_scoring(user_id) → list
+      → query:
+          user_id     = user_id
+          action_type = "task_completed"
+      → return fields:
+          hour_of_day, day_of_week, was_on_time,
+          time_taken_minutes, action_timestamp,
+          reschedule_count, scheduled_hour,
+          task_priority
+      → no limit — fetch all for scoring
+      → sort by action_timestamp descending
+
+  [x] Add get_logs_for_day(user_id, day_of_week) → list
+      → same as above but add filter:
+          day_of_week = day_of_week
+      → used for day-specific queries
+
+  [x] Add get_log_count_per_day(user_id) → dict
+      → aggregates completed logs by day_of_week
+      → returns:
+          { 0: 8, 1: 12, 2: 3, 3: 5, 4: 2, 5: 0, 6: 0 }
+      → used for per-day threshold check
+
+  [x] Add get_total_completed(user_id) → int
+      → count where action_type = "task_completed"
+      → used for global threshold check
+      → may already exist as count_completed → verify or alias
+
+  [x] Unit test each function:
+      → get_completed_logs_for_scoring:
+          insert 5 completed logs → returns 5
+          insert 2 created logs → not returned
+      → get_logs_for_day:
+          logs on Mon/Tue/Wed → filter Monday → returns Mon only
+      → get_log_count_per_day:
+          3 Mon, 5 Tue, 0 others → correct dict
+      → get_total_completed:
+          5 completed, 3 created → returns 5
+
+  PHASE 3 TEST:
+  [x] Insert 15 completed logs across 4 days
+  [x] get_completed_logs_for_scoring → returns all 15
+  [x] get_logs_for_day(Monday) → returns only Monday logs
+  [x] get_log_count_per_day → correct counts per day
+  [x] get_total_completed → returns 15
+
+
+================================================================
+PHASE 4 — UTILITY FUNCTIONS
+================================================================
+
+Goal: All math and helper functions needed by scoring engine
+      exist and are independently tested.
+
+  AI Server — utils/date_utils.py additions
+  ─────────────────────────────────────────────────────────
+
+  [x] Add days_since(timestamp) → float
+      → calculates float days between timestamp and now
+      → used for time decay weight calculation
+      → returns 0.0 for today
+
+  [x] Add hour_to_12h_format(hour) → str
+      → already may exist → confirm or add
+      → 18 → "6PM"
+      → 10 → "10AM"
+      → 0  → "12AM"
+      → 12 → "12PM"
+
+  AI Server — utils/analytics_utils.py (new file)
+  ─────────────────────────────────────────────────────────
+
+  [x] compute_time_decay(days_ago, lambda_val=0.01) → float
+      → formula: e^(-lambda_val × days_ago)
+      → days_ago = 0  → 1.0
+      → days_ago = 30 → ~0.74
+      → days_ago = 90 → ~0.41
+
+  [x] normalize_scores(scores_dict) → dict
+      → takes dict of key: raw_score
+      → divides all by max value
+      → returns dict of key: normalized 0-1
+      → if all zeros → return all zeros
+
+  [x] compute_slot_score(volume, reliability,
+                         efficiency, penalty) → float
+      → applies formula:
+        (0.35 × volume + 0.40 × reliability
+         + 0.25 × efficiency) × penalty
+      → all inputs expected 0-1
+      → returns float 0-1
+
+  [x] build_hour_ranges(scored_hours,
+                        threshold=0.6,
+                        merge_threshold=0.6) → list of str
+      → scored_hours: list of (hour, score) tuples
+      → filter hours scoring above threshold
+      → sort by hour
+      → merge consecutive hours scoring above merge_threshold
+      → return list of range strings:
+          [(18, 0.8), (19, 0.7), (20, 0.3)]
+          threshold=0.6 → keep 18, 19 only
+          consecutive → "6PM-8PM"
+      → return ["6PM-8PM"] or ["10AM-12PM", "6PM-8PM"] etc
+
+  [x] aggregate_day_scores(slot_scores) → dict
+      → slot_scores: dict of (day, hour): score
+      → returns dict of day: average_score
+      → { 0: 0.71, 1: 0.84, 2: 0.43, ... }
+
+  [x] filter_reliable_days(day_log_counts,
+                           per_day_threshold) → tuple
+      → day_log_counts: dict from get_log_count_per_day
+      → returns (reliable_days set, unreliable_days set)
+      → reliable   = days where count >= threshold
+      → unreliable = days where count < threshold
+
+  [x] get_top_slots(slot_scores, n=3) → list
+      → returns top n (day, hour) tuples by score
+      → sorted descending
+
+  [x] get_top_days(day_scores,
+                   reliable_days, n=3) → list
+      → returns top n days by score
+      → only includes reliable days
+      → sorted descending with scores and metadata
+
+  [x] get_best_range_for_day(slot_scores, day) → str or None
+      → filters slot_scores for given day
+      → calls build_hour_ranges on filtered scores
+      → returns best range string or None if no data
+
+  [x] get_best_day_overall(day_scores,
+                           reliable_days) → int or None
+      → returns day number (0-6) of highest scoring day
+      → only from reliable_days
+      → returns None if no reliable days
+
+  [x] Unit tests for all functions:
+      → compute_time_decay: day 0 → 1.0, day 30 → ~0.74
+      → normalize_scores: [0.2, 0.4, 0.8] → [0.25, 0.5, 1.0]
+      → compute_slot_score: known inputs → expected output
+      → build_hour_ranges:
+          consecutive high hours → merged range
+          gap between hours → separate ranges
+          no hours above threshold → empty list
+          single hour above threshold → single hour string
+      → aggregate_day_scores: correct averages per day
+      → filter_reliable_days:
+          day with 5 logs, threshold 5 → reliable
+          day with 4 logs, threshold 5 → unreliable
+          day with 0 logs → unreliable
+      → get_top_slots: returns correct top 3
+      → get_best_range_for_day: correct range for day
+      → get_best_day_overall: returns correct day
+
+
+================================================================
+PHASE 5 — CORE SCORING ENGINE
+================================================================
+
+Goal: Scoring engine runs end to end on raw logs
+      and produces slot scores, day scores, ranges.
+
+  AI Server — services/productivity_scorer.py (new file)
+  ─────────────────────────────────────────────────────────
+
+  [x] Implement score_all_slots(logs) → dict
+      Input  : list of log dicts from DB
+      Output : dict of (day_int, hour_int): score_float
+
+      Algorithm:
+        for each log:
+          days_ago = days_since(log.action_timestamp)
+          weight   = compute_time_decay(days_ago)
+
+        for each unique (day, hour) slot:
+          volume_raw      = sum(weights for logs in slot)
+          on_time_raw     = sum(weight for on_time logs in slot)
+          efficiency_vals = [min(duration/time_taken, 1.0)
+                             for logs with time_taken not null]
+          avg_reschedule  = avg(reschedule_count for slot logs)
+
+          reliability_score  = on_time_raw / volume_raw
+          efficiency_score   = weighted avg of efficiency_vals
+                               or 0.5 if no time_taken data
+          reschedule_penalty = 1 - min(avg_reschedule/3, 0.5)
+
+        volume_scores = normalize_scores(volume_raw per slot)
+
+        for each slot:
+          slot_score = compute_slot_score(
+            volume_scores[slot],
+            reliability_score,
+            efficiency_score,
+            reschedule_penalty
+          )
+
+        return { (day, hour): score }
+
+  [x] Implement get_productive_hours(logs,
+                                     day=None) → list
+      → if day given: filter logs for that day
+      → call score_all_slots on filtered logs
+      → if day given: keep only slots matching day
+      → call get_best_range_for_day
+      → return list of:
+          {
+            hour         : 18,
+            hour_display : "6PM",
+            score        : 0.87,
+            on_time_rate : 0.91,
+            log_count    : 12
+          }
+        sorted by score descending
+
+  [x] Implement get_productive_days(logs,
+                                    day_log_counts,
+                                    per_day_threshold) → dict
+      → call score_all_slots(logs)
+      → call aggregate_day_scores(slot_scores)
+      → call filter_reliable_days(day_log_counts,
+                                   per_day_threshold)
+      → return:
+          {
+            reliable: [
+              { day: "Tuesday", day_num: 1,
+                score: 0.84, log_count: 12,
+                on_time_rate: 0.89 },
+              ...
+            ],
+            unreliable: [
+              { day: "Wednesday", day_num: 2,
+                log_count: 3, needed: 5 },
+              ...
+            ]
+          }
+
+  [x] Implement get_best_time_for_day(logs, day,
+                                       existing_tasks) → dict
+      → filter logs for day
+      → call score_all_slots
+      → call build_hour_ranges
+      → conflict check:
+          for each hour in best range:
+            check existing_tasks for overlap at that hour
+          if conflict: try next best range
+          if all ranges conflict: return None for range
+      → return:
+          {
+            day          : "Monday",
+            best_range   : "6PM-9PM",
+            start_hour   : 18,
+            score        : 0.87,
+            conflict_free: True
+          }
+
+  [x] Implement get_scheduling_suggestion(logs,
+                                           day_log_counts,
+                                           existing_tasks,
+                                           day=None) → dict
+      → used by add handler when time missing
+      → if day given:
+          check day is reliable
+          call get_best_time_for_day(logs, day, tasks)
+      → if no day given:
+          call get_productive_days → get best reliable day
+          call get_best_time_for_day for that day
+      → return:
+          {
+            day          : "Monday",
+            best_range   : "6PM-9PM",
+            start_hour   : 18,
+            has_data     : True / False
+          }
+      → return has_data: False if no reliable data yet
+
+  [x] Unit tests for scoring engine:
+      → score_all_slots:
+          logs at 18:00 Monday × 5 → Monday 18 scores highest
+          time decay: old logs score lower than recent
+          reschedule penalty: rescheduled logs score lower
+          missing time_taken → efficiency defaults to 0.5
+          empty logs → returns empty dict
+      → get_productive_hours:
+          correct hours returned with metadata
+          day filter works correctly
+      → get_productive_days:
+          reliable days returned with scores
+          unreliable days flagged separately
+      → get_best_time_for_day:
+          conflict check excludes occupied slots
+          returns next best if first conflicts
+          returns None if all conflict
+      → get_scheduling_suggestion:
+          returns correct day and range
+          has_data False when no reliable data
+
+
+================================================================
+PHASE 6 — UPDATE ADD HANDLER
+================================================================
+
+Goal: Add handler uses scoring engine for time suggestion
+      instead of simple frequency. Range shown not single hour.
+
+  AI Server — handlers/scheduling/add.py
+  ─────────────────────────────────────────────────────────
+
+  [x] Update STEP 3 — time missing branch:
+
+      OLD:
+        query Activity_Logs for best hour
+        single hour returned
+        set Redis: { suggested_time: "18:00" }
+        EVA: "You tend to be most focused at 6PM"
+
+      NEW:
+        check global threshold first:
+          total_completed < 20 → fall to NO branch
+          (not enough data → just ask user for time)
+
+        check per-day threshold:
+          logs_on_weekday < 5 → fall to NO branch
+
+        call get_scheduling_suggestion(logs,
+          day_log_counts, existing_tasks,
+          day=task_weekday)
+
+        if has_data = False → fall to NO branch
+
+        set Redis:
+          {
+            expected_response : "number",
+            missing_entity    : "time",
+            suggested_range   : "6PM-9PM",
+            suggested_time    : "18:00",
+            pending_action    : { ... }
+          }
+
+        EVA: "Your best window on Mondays is 6PM-9PM.
+              Want me to use that or pick a different time?
+              1. Use 6PM
+              2. Enter a time"
+
+  [x] Update STEP 3 — context manager State 4 handling:
+      → user picks "1" → use suggested_time (start of range)
+        → scheduled_by = "behavioral_analytics"
+      → user picks "2" → ask for time manually
+        → same as before
+
+  PHASE 6 TEST:
+  [x] Add task with time missing, sufficient behavioral data
+      → EVA shows range suggestion not single hour
+      → Redis State 4 has both suggested_range and suggested_time
+  [x] Add task with time missing, insufficient data
+      → EVA asks for time directly (no suggestion)
+  [x] Pick option 1 → task scheduled at start of range
+  [x] Pick option 2 → asked for time manually
+
+
+================================================================
+PHASE 7 — UPDATE CONTEXT MANAGER
+================================================================
+
+Goal: State 4 Redis structure updated to store range.
+      Flow unchanged — only display text changes.
+
+  AI Server — context/context_manager.py
+  ─────────────────────────────────────────────────────────
+
+  [x] Update State 4 Redis structure:
+      was:
+        { suggested_time: "18:00" }
+      now:
+        {
+          suggested_range : "6PM-9PM",
+          suggested_time  : "18:00"
+        }
+
+  [x] Update handle reply for State 4:
+      → user picks "1":
+          use suggested_time from Redis (unchanged)
+          scheduled_by = "behavioral_analytics"
+      → user picks "2":
+          clear suggested_range and suggested_time
+          set expected = "free_text"
+          ask for time (unchanged)
+
+  [x] Update unit tests for State 4:
+      → Redis state has suggested_range field
+      → picking "1" uses suggested_time correctly
+      → Gemini reply mentions range not single hour
+
+  PHASE 7 TEST:
+  [x] Manually set State 4 in Redis with suggested_range
+  [x] Reply "1" → task uses suggested_time correctly
+  [x] Reply "2" → free_text state set, range cleared
+
+
+================================================================
+PHASE 8 — REWRITE BEHAVIORAL HANDLER
+================================================================
+
+Goal: Behavioral handler uses scoring engine for all
+      sub-intents. Threshold now checks both global and per-day.
+
+  AI Server — handlers/behavioral/behavioral.py
+  ─────────────────────────────────────────────────────────
+
+  [x] Update STEP 1 — threshold check:
+      OLD:
+        total_completed < threshold → stop
+
+      NEW:
+        total_completed < 20 (global) → stop with reply
+
+      NOTE: per-day threshold handled inside each sub-intent
+            not at global level
+
+  [x] Update productive_hours sub-intent:
+      → call get_completed_logs_for_scoring(user_id)
+      → call scorer.get_productive_hours(logs, day)
+      → check per-day threshold if day given:
+          logs on that day < 5 → no data reply for that day
+      → build action_context with ranges not single hours
+      → EVA: "Your most productive window is 6PM-9PM, Ali —
+              that's when you complete tasks fastest and
+              most consistently."
+
+  [x] Update productive_days sub-intent:
+      → call get_completed_logs_for_scoring
+      → call get_log_count_per_day
+      → call scorer.get_productive_days(logs, counts, 5)
+      → reliable days → ranked in reply
+      → unreliable days → mentioned naturally:
+          "I have enough data for Tuesday, Monday, and
+           Thursday so far. Wednesday and Friday need a
+           few more completions before I can score them."
+
+  [x] Update best_time_for_day sub-intent:
+      → call scorer.get_best_time_for_day(logs, day, tasks)
+      → check day reliability first
+      → conflict check included in scorer
+      → EVA: "Based on your history, 6PM-9PM is your
+              best window on Mondays, Ali — and you have
+              no tasks blocking that time right now."
+
+  [x] Keep completion_rate sub-intent unchanged:
+      → not score based
+      → queries same as before
+
+  [x] Update productivity_report sub-intent:
+      → combines all updated sub-intents
+      → includes unreliable days note
+
+  [x] Update all Gemini prompt helpers:
+      → productive_hours_prompt → uses ranges
+      → productive_days_prompt → mentions unreliable days
+      → best_time_prompt → uses range not single hour
+      → productivity_report_prompt → full updated summary
+
+  PHASE 8 TEST:
+  [x] "when am I most productive"
+      → scoring engine used
+      → range returned not single hour
+      → only reliable data used
+  [x] "what are my best hours on Monday" (< 5 logs Monday)
+      → no data reply mentioning Monday needs more data
+  [x] "which days am I most focused"
+      → reliable days ranked
+      → unreliable days mentioned
+  [x] "find the best time on Tuesday" (conflict exists)
+      → conflict-free range returned
+  [x] below global threshold
+      → not enough data reply
+
+
+================================================================
+PHASE 9 — ANALYTICS API ENDPOINT
+================================================================
+
+Goal: Analytics data accessible via API for dashboard.
+      Scoring engine used not raw frequency.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [x] Add GET /analytics endpoint to main.py
+      → protected by user_id in request
+      → accepts query params:
+          type = "hours" | "days" | "slots" | "full"
+          day  = 0-6 (optional, for hours query)
+      → calls scoring engine based on type
+      → returns JSON
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [x] GET /api/analytics/productivity (protected)
+      → proxy to AI server GET /analytics?type=full
+      → return JSON to frontend
+
+  [x] GET /api/analytics/hours (protected)
+      → proxy to AI server GET /analytics?type=hours
+      → optional query param: day=monday
+
+  [x] GET /api/analytics/days (protected)
+      → proxy to AI server GET /analytics?type=days
+
+  [x] GET /api/analytics/completion-trend (protected)
+      → this one stays in Node.js
+      → queries Activity_Logs directly
+      → returns weekly completion counts
+
+  PHASE 9 TEST:
+  [ ] GET /api/analytics/productivity → 200 + scored data
+  [ ] GET /api/analytics/hours?day=monday → filtered scored data
+  [ ] GET /api/analytics/days → ranked days with reliability flags
+  [ ] All routes → 401 without token
+  [ ] Empty data case → returns zeros not error
+
+
+================================================================
+PHASE 10 — TESTING
+================================================================
+
+Goal: Full test coverage for scoring system.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [x] Create tests/test_analytics_utils.py
+      → compute_time_decay all edge cases
+      → normalize_scores edge cases
+      → compute_slot_score known inputs
+      → build_hour_ranges:
+          consecutive hours → merged
+          gap → separate
+          no hours above threshold → empty
+      → aggregate_day_scores correct
+      → filter_reliable_days correct split
+      → get_top_slots correct ordering
+      → get_best_day_overall correct day returned
+
+  [x] Create tests/test_productivity_scorer.py
+      → score_all_slots:
+          time decay applied correctly
+          volume normalized correctly
+          reliability correct
+          efficiency skips null time_taken
+          reschedule penalty applied
+          empty logs → empty dict
+          single log → scores correctly
+          all logs same slot → normalizes correctly
+      → get_productive_hours correct metadata
+      → get_productive_days:
+          reliable days included
+          unreliable days excluded from ranking
+          all days unreliable → correct response
+      → get_best_time_for_day:
+          conflict check works
+          returns next best on conflict
+          returns None if all conflict
+      → get_scheduling_suggestion:
+          day given → correct range
+          no day → best day + range
+          no reliable data → has_data False
+
+  [x] Update tests/test_behavioral_handler.py
+      → replace frequency assertions with score assertions
+      → add per-day threshold test cases:
+          day with 3 logs → excluded from ranking
+          day with 5 logs → included
+      → add range assertion tests:
+          reply contains range string not single hour
+      → add unreliable days mention test
+
+  [x] Update tests/test_add_handler.py
+      → State 4 Redis has suggested_range field
+      → EVA reply mentions range not single hour
+      → picking "1" schedules at start of range
+      → insufficient behavioral data → no suggestion shown
+
+  [x] Run full AI test suite → all tests pass
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [x] Add to tests/analytics.test.js:
+      → GET /api/analytics/productivity → 200 + scored shape
+      → GET /api/analytics/hours → correct structure
+      → GET /api/analytics/days → reliable/unreliable split
+      → all routes → 401 without token
+      → empty data → zeros not error
+
+  [ ] Run full Node.js test suite → all tests pass
+
+  PHASE 10 END-TO-END TESTS:
+  [ ] Insert 25 completed logs across 4 days with
+      varied hours, on_time, time_taken, reschedule_count
+  [ ] "when am I most productive" → range in reply
+  [ ] "what are my best hours on Tuesday" → filtered range
+  [ ] "which days am I most focused" → ranked + unreliable note
+  [ ] "find best time on Wednesday" → conflict-free range
+  [ ] Add task, skip time → range suggestion shown
+  [ ] Pick suggestion → task scheduled at start of range
+  [ ] All replies use user name, 12h format, natural tone
+
+
+================================================================
+SUMMARY
+================================================================
+
+  Schema changes          3 fields
+                            reschedule_count (Activity_Logs)
+                            analytics_min_tasks_threshold update
+                            analytics_min_tasks_per_day (new)
+
+  Data collection         2 handler updates
+                            add.py → reschedule_count = 0
+                            update.py → increment on date change
+
+  New DB functions        4 functions in activity_logs.py
+
+  New utility file        analytics_utils.py (~10 functions)
+  Updated utility file    date_utils.py (days_since, hour format)
+
+  New scoring engine      productivity_scorer.py (~5 functions)
+
+  Handler updates         2 handlers
+                            add.py → range suggestion
+                            behavioral.py → full rewrite
+
+  Context manager         1 small update (State 4 structure)
+
+  Node.js changes         4 analytics API routes (proxies)
+
+  New test files          2 files
+  Updated test files      2 files
+
+
+================================================================
+BUILD ORDER
+================================================================
+
+  Phase 1  → Schema changes
+  Phase 2  → Data collection (add + update handlers)
+  Phase 3  → DB layer (activity_logs.py functions)
+  Phase 4  → Utility functions (analytics_utils.py)
+  Phase 5  → Core scoring engine (productivity_scorer.py)
+  Phase 6  → Update add handler (range suggestion)
+  Phase 7  → Update context manager (State 4)
+  Phase 8  → Rewrite behavioral handler
+  Phase 9  → Analytics API endpoints
+  Phase 10 → Full test suite

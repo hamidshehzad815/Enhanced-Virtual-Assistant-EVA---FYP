@@ -11,18 +11,25 @@ from bson import ObjectId
 
 from config.database import get_db
 from context.redis_client import redis_client
-from db.activity_logs import count_completed, get_best_hour, insert_log
+from db.activity_logs import (
+    get_completed_logs_for_scoring,
+    get_log_count_per_day,
+    get_total_completed,
+    insert_log,
+)
 from db.chat_sessions import update_last_message
 from db.conversation_history import insert_message
 from db.tasks import (
     find_duplicate,
     find_overlapping_task_for_user,
+    get_tasks_for_day,
     insert_task,
     update_task,
 )
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
+from services.productivity_scorer import get_scheduling_suggestion
 from utils.task_value_normalizer import canonicalize_priority
 from utils.timezone_utils import (
     local_datetime_to_utc_naive,
@@ -138,6 +145,47 @@ def _format_date_display(date_str: str) -> str:
         return dt.strftime("%A, %d %b %Y")
     except ValueError:
         return date_str
+
+
+def _weekday_from_date_text(date_str: str) -> Optional[int]:
+    try:
+        return datetime.strptime(str(date_str)[:10], "%Y-%m-%d").weekday()
+    except ValueError:
+        return None
+
+
+def _time_from_start_hour(start_hour: Any) -> Optional[str]:
+    try:
+        hour = int(start_hour)
+    except (TypeError, ValueError):
+        return None
+    if hour < 0 or hour > 23:
+        return None
+    return f"{hour:02d}:00:00"
+
+
+def _suggestion_prompt(
+    task_name: str,
+    date_text: str,
+    suggested_range: str,
+    suggested_time: str,
+    user_name: Optional[str],
+) -> str:
+    start_display = _format_time_display(suggested_time)
+    date_display = _format_date_display(date_text)
+    if user_name:
+        return (
+            f"Your best window on {date_display} is {suggested_range}, {user_name}. "
+            f"Want me to use {start_display} or pick a different time?\n"
+            "1. Use suggested time\n"
+            "2. Enter a time"
+        )
+    return (
+        f"Your best window on {date_display} is {suggested_range}. "
+        f"Want me to use {start_display} or pick a different time?\n"
+        "1. Use suggested time\n"
+        "2. Enter a time"
+    )
 
 
 def _coerce_datetime(value: Any) -> Optional[datetime]:
@@ -526,6 +574,135 @@ async def handle_scheduling_add(
         base_entities.update(entities)
         entities = base_entities
 
+        if pending_reply_type == "number" and pending_reason == "time_suggestion":
+            selected_value = str(pending_reply_value or "").strip().lower()
+            suggested_time = _coerce_text(pending_context.get("suggested_time"))
+            suggested_range = _coerce_text(pending_context.get("suggested_range"))
+
+            if selected_value == "1":
+                normalized_time = _to_time_text(suggested_time)
+                if normalized_time:
+                    entities["time"] = normalized_time
+                    scheduled_by = "behavioral_analytics"
+                    await redis_client.delete_context(user_id)
+                else:
+                    pending_entities = dict(entities)
+                    pending_entities.pop("time", None)
+                    await redis_client.set_context(
+                        user_id,
+                        _pending_payload(
+                            "add",
+                            pending_entities,
+                            expected_response="free_text",
+                            missing_entity="time",
+                            pending_reason="time_suggestion_fallback",
+                        ),
+                    )
+                    response_text = gemini_service.generate_reply(
+                        {
+                            "action": "missing_time",
+                            "task_name": _coerce_text(_first_value(pending_entities.get("task_name"))),
+                            "date": _format_date_display(_to_date_text(_first_value(pending_entities.get("date")))),
+                        },
+                        user_name,
+                        history,
+                    )
+                    await _save_turn(
+                        session_id,
+                        user_message,
+                        response_text,
+                        input_type,
+                        "scheduling_add",
+                        entities,
+                    )
+                    return {
+                        "status": "pending",
+                        "intent": "scheduling_add",
+                        "response_text": response_text,
+                        "notifications": [],
+                        "pending": {
+                            "expected_response": "free_text",
+                            "missing_entity": "time",
+                        },
+                    }
+
+            elif selected_value == "2":
+                pending_entities = dict(entities)
+                pending_entities.pop("time", None)
+                await redis_client.set_context(
+                    user_id,
+                    _pending_payload(
+                        "add",
+                        pending_entities,
+                        expected_response="free_text",
+                        missing_entity="time",
+                    ),
+                )
+                response_text = gemini_service.generate_reply(
+                    {
+                        "action": "missing_time",
+                        "task_name": _coerce_text(_first_value(pending_entities.get("task_name"))),
+                        "date": _format_date_display(_to_date_text(_first_value(pending_entities.get("date")))),
+                    },
+                    user_name,
+                    history,
+                )
+                await _save_turn(
+                    session_id,
+                    user_message,
+                    response_text,
+                    input_type,
+                    "scheduling_add",
+                    entities,
+                )
+                return {
+                    "status": "pending",
+                    "intent": "scheduling_add",
+                    "response_text": response_text,
+                    "notifications": [],
+                    "pending": {
+                        "expected_response": "free_text",
+                        "missing_entity": "time",
+                    },
+                }
+
+            else:
+                await redis_client.set_context(
+                    user_id,
+                    _pending_payload(
+                        "add",
+                        dict(entities),
+                        expected_response="number",
+                        missing_entity="time",
+                        pending_reason="time_suggestion",
+                        suggested_time=suggested_time,
+                        suggested_range=suggested_range,
+                    ),
+                )
+                response_text = (
+                    "Please reply with 1 to use the suggested time, or 2 to enter a time manually."
+                )
+                await _save_turn(
+                    session_id,
+                    user_message,
+                    response_text,
+                    input_type,
+                    "scheduling_add",
+                    entities,
+                )
+                return {
+                    "status": "pending",
+                    "intent": "scheduling_add",
+                    "response_text": response_text,
+                    "notifications": [],
+                    "pending": {
+                        "expected_response": "number",
+                        "missing_entity": "time",
+                        "suggested_time": suggested_time,
+                        "suggested_range": suggested_range,
+                    },
+                }
+
         if pending_reply_type == "yes_no":
             if pending_reason == "quiet_hours":
                 if pending_reply_value == "no":
@@ -602,49 +779,6 @@ async def handle_scheduling_add(
                     force_duplicate = True
                     await redis_client.delete_context(user_id)
 
-        if pending_reply_type == "number":
-            if pending_reply_value == 1:
-                suggested_time = _coerce_text(pending_context.get("suggested_time"))
-                if suggested_time:
-                    entities["time"] = suggested_time
-                    scheduled_by = "behavioral_analytics"
-                await redis_client.delete_context(user_id)
-            elif pending_reply_value == 2:
-                pending_entities = dict(entities)
-                pending_entities.pop("time", None)
-                await redis_client.set_context(
-                    user_id,
-                    _pending_payload(
-                        "add",
-                        pending_entities,
-                        expected_response="free_text",
-                        missing_entity="time",
-                    ),
-                )
-                response_text = gemini_service.generate_reply(
-                    {"action": "missing_time"},
-                    user_name,
-                    history,
-                )
-                await _save_turn(
-                    session_id,
-                    user_message,
-                    response_text,
-                    input_type,
-                    "scheduling_add",
-                    entities,
-                )
-                return {
-                    "status": "pending",
-                    "intent": "scheduling_add",
-                    "response_text": response_text,
-                    "notifications": [],
-                    "pending": {
-                        "expected_response": "free_text",
-                        "missing_entity": "time",
-                    },
-                }
-
     # Step 1: required entity check in order: task_name -> date -> time.
     task_name = _coerce_text(_first_value(entities.get("task_name")))
     if not task_name:
@@ -713,83 +847,84 @@ async def handle_scheduling_add(
     default_priority = _normalize_priority(settings.get("default_task_priority", "medium"), "medium")
     priority = _normalize_priority(entities.get("priority"), default_priority)
 
-    # Step 3: time resolution and behavioral suggestion fallback.
+    # Step 3: time resolution.
     if not time_value:
-        threshold = int(settings.get("analytics_min_tasks_threshold", 10))
-        total_completed = await count_completed(user_id)
-
-        if total_completed >= threshold:
-            weekday = datetime.strptime(date_value, "%Y-%m-%d").weekday()
-            best_hour = await get_best_hour(user_id, weekday)
-
-            if best_hour is not None:
-                chosen_hour: Optional[int] = None
-                for offset in range(24):
-                    candidate = (best_hour + offset) % 24
-                    candidate_time = f"{candidate:02d}:00:00"
-                    if _find_quiet_hour_matches(settings, candidate_time):
-                        continue
-                    candidate_due_datetime = local_datetime_to_utc_naive(
-                        date_value,
-                        candidate_time,
-                        timezone,
-                    )
-                    if candidate_due_datetime is None:
-                        continue
-                    conflict = await find_overlapping_task(
-                        user_id,
-                        candidate_due_datetime,
-                        duration_minutes,
-                    )
-                    if not conflict:
-                        chosen_hour = candidate
-                        break
-
-                if chosen_hour is not None:
-                    suggested_time = f"{chosen_hour:02d}:00:00"
-                    display_time = _format_time_display(suggested_time)
-                    await redis_client.set_context(
-                        user_id,
-                        _pending_payload(
-                            "add",
-                            {
-                                **entities,
-                                "task_name": task_name,
-                                "date": date_value,
-                            },
-                            expected_response="number",
-                            suggested_time=suggested_time,
-                        ),
-                    )
-                    base = gemini_service.generate_reply(
-                        {
-                            "action": "missing_time",
-                            "task_name": task_name,
-                            "date": _format_date_display(date_value),
-                            "suggested_time": display_time,
-                        },
-                        user_name,
-                        history,
-                    )
-                    response_text = f"{base}\n1. Use {display_time}\n2. Enter a time"
-                    await _save_turn(session_id, user_message, response_text, input_type, "scheduling_add", entities)
-                    return {
-                        "status": "pending",
-                        "intent": "scheduling_add",
-                        "response_text": response_text,
-                        "notifications": [],
-                        "pending": {
-                            "expected_response": "number",
-                            "suggested_time": suggested_time,
-                        },
-                    }
-
         pending_entities = {
             **entities,
             "task_name": task_name,
             "date": date_value,
         }
         pending_entities.pop("time", None)
+        suggested_range = ""
+        suggested_time = ""
+
+        threshold_global = int(settings.get("analytics_min_tasks_threshold", 20) or 20)
+        threshold_per_day = int(settings.get("analytics_min_tasks_per_day", 5) or 5)
+        task_weekday = _weekday_from_date_text(date_value)
+
+        if task_weekday is not None and user_id:
+            try:
+                total_completed = int(await get_total_completed(user_id))
+                if total_completed >= threshold_global:
+                    day_log_counts = await get_log_count_per_day(user_id)
+                    day_count = int(day_log_counts.get(task_weekday, 0))
+                    if day_count >= threshold_per_day:
+                        logs = await get_completed_logs_for_scoring(user_id)
+                        existing_tasks = await get_tasks_for_day(user_id, task_weekday)
+                        suggestion = get_scheduling_suggestion(
+                            logs=logs,
+                            day_log_counts=day_log_counts,
+                            existing_tasks=existing_tasks,
+                            day=task_weekday,
+                        )
+                        suggested_range = _coerce_text(suggestion.get("best_range"))
+                        suggested_time = _time_from_start_hour(suggestion.get("start_hour")) or ""
+            except Exception as error:
+                print(f"[AddHandler] Behavioral time suggestion failed: {error}")
+                suggested_range = ""
+                suggested_time = ""
+
+        if suggested_range and suggested_time:
+            await redis_client.set_context(
+                user_id,
+                _pending_payload(
+                    "add",
+                    pending_entities,
+                    expected_response="number",
+                    missing_entity="time",
+                    pending_reason="time_suggestion",
+                    suggested_range=suggested_range,
+                    suggested_time=suggested_time,
+                ),
+            )
+            response_text = _suggestion_prompt(
+                task_name=task_name,
+                date_text=date_value,
+                suggested_range=suggested_range,
+                suggested_time=suggested_time,
+                user_name=user_name,
+            )
+            await _save_turn(
+                session_id,
+                user_message,
+                response_text,
+                input_type,
+                "scheduling_add",
+                entities,
+            )
+            return {
+                "status": "pending",
+                "intent": "scheduling_add",
+                "response_text": response_text,
+                "notifications": [],
+                "pending": {
+                    "expected_response": "number",
+                    "missing_entity": "time",
+                    "suggested_range": suggested_range,
+                    "suggested_time": suggested_time,
+                },
+            }
+
         await redis_client.set_context(
             user_id,
             _pending_payload(
@@ -1176,6 +1311,7 @@ async def handle_scheduling_add(
             "user_id": _to_object_id(user_id),
             "task_id": _to_object_id(task_id),
             "action_type": "task_created",
+            "reschedule_count": 0,
             "action_timestamp": now,
             "day_of_week": due_datetime.weekday(),
             "hour_of_day": due_datetime.hour,

@@ -237,6 +237,9 @@ class TestUpdateHandlerPhase28(unittest.IsolatedAsyncioTestCase):
             "handlers.scheduling.update.insert_log",
             new=AsyncMock(return_value="log1"),
         ) as mock_log, patch(
+            "handlers.scheduling.update.increment_reschedule_count",
+            new=AsyncMock(return_value=True),
+        ) as mock_increment, patch(
             "handlers.scheduling.update.gemini_service.generate_reply",
             side_effect=_gemini_stub,
         ), patch(
@@ -252,6 +255,7 @@ class TestUpdateHandlerPhase28(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(completed["task"]["priority"], "high")
         mock_update.assert_awaited_once_with("task1", {"priority": "high"})
         mock_log.assert_awaited_once()
+        mock_increment.assert_not_awaited()
 
     async def test_one_match_without_update_field_then_asks_what_to_update(self):
         one_match = [
@@ -510,6 +514,9 @@ class TestUpdateHandlerPhase28(unittest.IsolatedAsyncioTestCase):
             "handlers.scheduling.update.insert_log",
             new=AsyncMock(return_value="log1"),
         ) as mock_log, patch(
+            "handlers.scheduling.update.increment_reschedule_count",
+            new=AsyncMock(return_value=True),
+        ) as mock_increment, patch(
             "handlers.scheduling.update.google_calendar_client.update_event",
             new=AsyncMock(return_value=True),
         ) as mock_calendar, patch(
@@ -528,6 +535,7 @@ class TestUpdateHandlerPhase28(unittest.IsolatedAsyncioTestCase):
         update_payload = mock_update.await_args.args[1]
         self.assertEqual(update_payload["due_datetime"], datetime(2026, 4, 2, 13, 0, 0))
         mock_log.assert_awaited_once()
+        mock_increment.assert_awaited_once_with("task1")
         mock_calendar.assert_awaited_once()
 
     async def test_status_backwards_complete_to_pending_is_blocked(self):

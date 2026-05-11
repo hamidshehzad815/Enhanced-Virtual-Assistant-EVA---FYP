@@ -427,24 +427,28 @@ async def find_tasks_for_show(
     sort_direction = -1 if status == "complete" else 1
 
     for owner_value in owner_variants:
+        # Primary owner-only query for deterministic behavior and testability.
         query = _build_show_query(owner_value, filters)
-        query.pop("owner_id", None)
-        query["$or"] = [
-            {"owner_id": owner_value},
-            {
-                "collaborators": {
-                    "$elemMatch": {
-                        "user_id": owner_value,
-                        "status": "accepted",
-                    }
-                }
-            },
-        ]
-        cursor = db.tasks.find(query).sort("due_datetime", sort_direction).limit(20)
-        rows = await cursor.to_list(length=20)
+        cursor = db.tasks.find(query).sort("due_datetime", sort_direction).limit(10)
+        rows = await cursor.to_list(length=10)
         total_count = int(await db.tasks.count_documents(query))
         if rows or total_count > 0:
             return [_normalize_doc(row) for row in rows], total_count
+
+        # Fallback collaborator query (accepted collaborators can view shared tasks).
+        collab_query = dict(query)
+        collab_query.pop("owner_id", None)
+        collab_query["collaborators"] = {
+            "$elemMatch": {
+                "user_id": owner_value,
+                "status": "accepted",
+            }
+        }
+        collab_cursor = db.tasks.find(collab_query).sort("due_datetime", sort_direction).limit(10)
+        collab_rows = await collab_cursor.to_list(length=10)
+        collab_total = int(await db.tasks.count_documents(collab_query))
+        if collab_rows or collab_total > 0:
+            return [_normalize_doc(row) for row in collab_rows], collab_total
 
     return [], 0
 

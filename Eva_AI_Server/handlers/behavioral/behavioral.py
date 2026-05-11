@@ -1,61 +1,31 @@
 """
-Phase 31 behavioral handler.
-Implements threshold check, sub-intent detection, analytics queries, and natural replies.
+Behavioral analytics handler (Phase 8).
+Uses scoring engine + reliability thresholds for productivity insights.
 """
 from datetime import datetime, timezone as dt_timezone
-import asyncio
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 
 from context.redis_client import redis_client
 from db.activity_logs import (
-    count_completed,
     get_avg_time_taken,
+    get_completed_logs_for_scoring,
     get_completion_rate,
-    get_days_distribution,
-    get_hours_distribution,
+    get_log_count_per_day,
+    get_total_completed,
 )
 from db.chat_sessions import update_last_message
 from db.conversation_history import insert_message
-from db.tasks import get_tasks_for_day, task_windows_overlap
+from db.tasks import get_tasks_for_day
 from services.gemini import gemini_service
-from utils.date_utils import hour_to_12h_format, weekday_name_to_number
+from services.productivity_scorer import (
+    get_best_time_for_day,
+    get_productive_days,
+)
+from utils.date_utils import weekday_name_to_number
 
 
-_WEEKDAY_PATTERN = re.compile(
-    r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
-    flags=re.IGNORECASE,
-)
-
-_BEST_TIME_KEYWORDS = (
-    "best time",
-    "when should i schedule",
-    "suggest a time",
-    "ideal time",
-)
-_COMPLETION_KEYWORDS = (
-    "completion",
-    "on time",
-    "finish rate",
-    "success rate",
-    "on-time",
-)
-_REPORT_KEYWORDS = (
-    "report",
-    "summary",
-    "overview",
-    "analytics",
-    "performance",
-    "habits",
-)
-_DAYS_KEYWORDS = (
-    "days",
-    "best day",
-    "which day",
-    "day of week",
-)
-
-_DAY_LABELS = {
+_WEEKDAY_NAMES = {
     0: "Monday",
     1: "Tuesday",
     2: "Wednesday",
@@ -72,265 +42,106 @@ def _coerce_text(value: Any) -> str:
     return str(value).strip()
 
 
-def _to_datetime(value: Any) -> Optional[datetime]:
-    if isinstance(value, datetime):
-        parsed = value
-    else:
-        raw = _coerce_text(value)
-        if not raw:
-            return None
-        try:
-            parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-        except ValueError:
-            return None
-
-    if parsed.tzinfo is not None:
-        parsed = parsed.astimezone(dt_timezone.utc).replace(tzinfo=None)
-    return parsed
+def _safe_int(value: Any, default: int) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return int(default)
 
 
-def _normalize_day(value: Any) -> str:
-    if isinstance(value, list):
-        for item in value:
-            normalized = _normalize_day(item)
-            if normalized:
-                return normalized
-        return ""
+def _extract_weekday_from_text(text: str) -> Optional[int]:
+    lowered = _coerce_text(text).lower()
+    if not lowered:
+        return None
 
-    raw = _coerce_text(value).lower()
-    if not raw:
-        return ""
-    if weekday_name_to_number(raw) is not None:
-        return raw
+    for name, day_num in {
+        "monday": 0,
+        "tuesday": 1,
+        "wednesday": 2,
+        "thursday": 3,
+        "friday": 4,
+        "saturday": 5,
+        "sunday": 6,
+    }.items():
+        if re.search(rf"\b{name}\b", lowered):
+            return day_num
+    return None
 
-    match = _WEEKDAY_PATTERN.search(raw)
-    if match:
-        return match.group(1).lower()
-    return ""
+
+def _extract_day(entities: Dict[str, Any], message: str) -> Optional[int]:
+    payload = dict(entities or {})
+
+    for key in ("day", "date"):
+        raw = payload.get(key)
+        if isinstance(raw, list):
+            raw = raw[0] if raw else None
+        if raw is None:
+            continue
+
+        if isinstance(raw, int):
+            return raw if 0 <= raw <= 6 else None
+
+        text = _coerce_text(raw)
+        if not text:
+            continue
+
+        day_num = weekday_name_to_number(text)
+        if day_num is not None:
+            return day_num
+
+        iso = re.match(r"^(\d{4})-(\d{2})-(\d{2})$", text)
+        if iso:
+            try:
+                return datetime.strptime(text, "%Y-%m-%d").weekday()
+            except ValueError:
+                pass
+
+        from_sentence = _extract_weekday_from_text(text)
+        if from_sentence is not None:
+            return from_sentence
+
+    return _extract_weekday_from_text(message)
 
 
 def _detect_sub_intent(message: str) -> str:
-    lowered = _coerce_text(message).lower()
+    text = _coerce_text(message).lower()
 
-    if any(keyword in lowered for keyword in _BEST_TIME_KEYWORDS):
-        return "best_time_for_day"
-    if any(keyword in lowered for keyword in _COMPLETION_KEYWORDS):
-        return "completion_rate"
-    if any(keyword in lowered for keyword in _REPORT_KEYWORDS):
+    if any(token in text for token in ("productivity report", "productivity snapshot", "full report", "summary report")):
         return "productivity_report"
-    if any(keyword in lowered for keyword in _DAYS_KEYWORDS):
+
+    if any(token in text for token in ("completion rate", "on-time rate", "ontime rate", "how many completed", "completion trend")):
+        return "completion_rate"
+
+    if any(token in text for token in ("best day", "best days", "which day", "which days", "most focused day", "strongest day", "productive day")):
         return "productive_days"
+
+    if any(token in text for token in ("best time", "schedule on", "find time on", "when should i schedule")):
+        return "best_time_for_day"
+
     return "productive_hours"
 
 
-def _pending_payload_for_day() -> Dict[str, Any]:
-    return {
-        "expected_response": "free_text",
-        "pending_action": {
-            "intent": "behavioral",
-            "sub_intent": "best_time_for_day",
-            "entities": {},
-        },
-    }
+def _join_with_and(items: List[str]) -> str:
+    values = [item for item in items if item]
+    if not values:
+        return ""
+    if len(values) == 1:
+        return values[0]
+    if len(values) == 2:
+        return f"{values[0]} and {values[1]}"
+    return f"{', '.join(values[:-1])}, and {values[-1]}"
 
 
-def _hour_row_to_text(row: Dict[str, Any]) -> str:
-    hour = int(row.get("hour") or 0)
-    count = int(row.get("count") or 0)
-    on_time_rate = float(row.get("on_time_rate") or 0.0) * 100
-    hour_label = hour_to_12h_format(hour) or f"{hour}:00"
-    return f"{hour_label} ({count} completions, {on_time_rate:.0f}% on-time)"
-
-
-def _day_row_to_text(row: Dict[str, Any]) -> str:
-    day_name = _coerce_text(row.get("day_name")) or "Unknown day"
-    count = int(row.get("count") or 0)
-    on_time_rate = float(row.get("on_time_rate") or 0.0) * 100
-    return f"{day_name} ({count} completions, {on_time_rate:.0f}% on-time)"
-
-
-def _hour_has_conflict(hour: int, tasks: List[Dict[str, Any]]) -> bool:
-    for task in tasks:
-        existing_start = _to_datetime(task.get("due_datetime"))
-        if existing_start is None:
-            continue
-        duration = int(task.get("duration") or 120)
-        candidate_start = existing_start.replace(hour=hour, minute=0, second=0, microsecond=0)
-        if task_windows_overlap(
-            existing_start=existing_start,
-            existing_duration_minutes=duration,
-            new_start=candidate_start,
-            new_duration_minutes=60,
-        ):
-            return True
-    return False
-
-
-def _pick_best_hour_with_conflict_check(
-    hour_rows: List[Dict[str, Any]],
-    tasks: List[Dict[str, Any]],
-) -> Tuple[Optional[int], bool]:
-    if not hour_rows:
-        return None, False
-
-    for row in hour_rows:
-        hour = int(row.get("hour") or 0)
-        if not _hour_has_conflict(hour, tasks):
-            return hour, True
-
-    return int(hour_rows[0].get("hour") or 0), False
-
-
-def _weekly_trend_text(weekly_trend: List[Dict[str, Any]]) -> str:
-    if not weekly_trend:
-        return "No weekly trend yet"
-    parts = []
-    for row in weekly_trend:
-        week = int(row.get("week") or 0)
-        count = int(row.get("count") or 0)
-        parts.append(f"W{week}: {count}")
-    return ", ".join(parts)
-
-
-def productive_hours_prompt(
-    user_name: Optional[str],
-    top_hours: List[Dict[str, Any]],
-    day_filter: str,
-    history: Optional[List[Dict[str, Any]]] = None,
-) -> str:
-    return gemini_service.generate_reply(
-        {
-            "action": "behavioral_productive_hours",
-            "day_filter": day_filter,
-            "top_hours_text": ", ".join(_hour_row_to_text(row) for row in top_hours),
-        },
-        user_name,
-        history or [],
-    )
-
-
-def productive_days_prompt(
-    user_name: Optional[str],
-    days: List[Dict[str, Any]],
-    history: Optional[List[Dict[str, Any]]] = None,
-) -> str:
-    return gemini_service.generate_reply(
-        {
-            "action": "behavioral_productive_days",
-            "top_days_text": ", ".join(_day_row_to_text(row) for row in days[:3]),
-        },
-        user_name,
-        history or [],
-    )
-
-
-def best_time_prompt(
-    user_name: Optional[str],
-    day: str,
-    best_hour: int,
-    conflict_free: bool,
-    history: Optional[List[Dict[str, Any]]] = None,
-) -> str:
-    return gemini_service.generate_reply(
-        {
-            "action": "behavioral_best_time",
-            "day_filter": day.title(),
-            "best_hour_text": hour_to_12h_format(best_hour) or f"{best_hour}:00",
-            "conflict_free": bool(conflict_free),
-        },
-        user_name,
-        history or [],
-    )
-
-
-def completion_rate_prompt(
-    user_name: Optional[str],
-    rate_data: Dict[str, Any],
-    history: Optional[List[Dict[str, Any]]] = None,
-) -> str:
-    return gemini_service.generate_reply(
-        {
-            "action": "behavioral_completion_rate",
-            "total_completed": int(rate_data.get("total_completed") or 0),
-            "on_time": int(rate_data.get("on_time") or 0),
-            "late": int(rate_data.get("late") or 0),
-            "on_time_rate": float(rate_data.get("on_time_rate") or 0.0),
-            "weekly_trend_text": _weekly_trend_text(rate_data.get("weekly_trend") or []),
-        },
-        user_name,
-        history or [],
-    )
-
-
-def productivity_report_prompt(
-    user_name: Optional[str],
-    full_data: Dict[str, Any],
-    history: Optional[List[Dict[str, Any]]] = None,
-) -> str:
-    top_hours = full_data.get("top_hours") or []
-    top_days = full_data.get("top_days") or []
-    completion = full_data.get("completion_rate") or {}
-    avg_time_taken = full_data.get("avg_time_taken")
-
-    avg_time_text = "N/A"
-    if isinstance(avg_time_taken, (int, float)):
-        avg_time_text = f"{float(avg_time_taken):.1f} minutes"
-
-    return gemini_service.generate_reply(
-        {
-            "action": "behavioral_productivity_report",
-            "top_hours_text": ", ".join(_hour_row_to_text(row) for row in top_hours[:3]),
-            "top_days_text": ", ".join(_day_row_to_text(row) for row in top_days[:3]),
-            "on_time_rate": float(completion.get("on_time_rate") or 0.0),
-            "total_completed": int(completion.get("total_completed") or 0),
-            "avg_time_taken_text": avg_time_text,
-            "weekly_trend_text": _weekly_trend_text(completion.get("weekly_trend") or []),
-        },
-        user_name,
-        history or [],
-    )
-
-
-def not_enough_data_prompt(
-    user_name: Optional[str],
-    threshold: int,
-    completed_count: int,
-    history: Optional[List[Dict[str, Any]]] = None,
-) -> str:
-    return gemini_service.generate_reply(
-        {
-            "action": "behavioral_not_enough_data",
-            "threshold": int(threshold),
-            "total_completed": int(completed_count),
-        },
-        user_name,
-        history or [],
-    )
-
-
-def no_data_for_filter_prompt(
-    user_name: Optional[str],
-    filter_used: str,
-    history: Optional[List[Dict[str, Any]]] = None,
-) -> str:
-    return gemini_service.generate_reply(
-        {
-            "action": "behavioral_no_data_for_filter",
-            "filter_used": filter_used,
-        },
-        user_name,
-        history or [],
-    )
-
-
-def ask_day_prompt(user_name: Optional[str], history: Optional[List[Dict[str, Any]]] = None) -> str:
-    return gemini_service.generate_reply(
-        {
-            "action": "behavioral_ask_day",
-        },
-        user_name,
-        history or [],
-    )
+def _unreliable_days_note(unreliable_rows: List[Dict[str, Any]]) -> str:
+    if not unreliable_rows:
+        return ""
+    labels = []
+    for row in unreliable_rows:
+        day_name = _coerce_text(row.get("day"))
+        count = int(row.get("log_count") or 0)
+        needed = int(row.get("needed") or 5)
+        labels.append(f"{day_name} ({count}/{needed})")
+    return f"Still building reliable data for {_join_with_and(labels)}."
 
 
 async def _save_turn(
@@ -338,11 +149,9 @@ async def _save_turn(
     user_message: str,
     eva_reply: str,
     input_type: str,
+    intent: str,
     entities: Optional[Dict[str, Any]] = None,
 ) -> None:
-    if not session_id:
-        return
-
     now = datetime.now(dt_timezone.utc).replace(tzinfo=None)
     try:
         await insert_message(
@@ -351,7 +160,7 @@ async def _save_turn(
                 "role": "user",
                 "content": user_message,
                 "input_type": input_type or "text",
-                "intent": "behavioral",
+                "intent": intent,
                 "entities": entities or {},
                 "status": "processed",
                 "created_at": now,
@@ -368,7 +177,6 @@ async def _save_turn(
         )
         await update_last_message(session_id, eva_reply, now)
     except Exception as error:
-        # Save errors should not break behavioral response.
         print(f"[BehavioralHandler] Failed to save conversation turn: {error}")
 
 
@@ -379,223 +187,417 @@ async def handle_behavioral(
     entities = dict(entities or {})
     context = dict(context or {})
 
-    user_id = _coerce_text(context.get("user_id"))
-    session_id = _coerce_text(context.get("session_id"))
-    user_message = _coerce_text(context.get("message"))
-    input_type = _coerce_text(context.get("input_type")) or "text"
+    user_id = str(context.get("user_id") or "")
+    session_id = str(context.get("session_id") or "")
     user = context.get("user") or {}
     settings = context.get("settings") or {}
     history = context.get("history") or []
+    message = _coerce_text(context.get("message"))
+    input_type = _coerce_text(context.get("input_type")) or "text"
+    user_name = user.get("name")
 
-    user_name = _coerce_text(user.get("name")) or None
-    pending_context = context.get("pending_context") or {}
-    pending_action = pending_context.get("pending_action") or {}
+    sub_intent = str(context.get("sub_intent") or "") or _detect_sub_intent(message)
+    if sub_intent not in {
+        "productive_hours",
+        "productive_days",
+        "best_time_for_day",
+        "completion_rate",
+        "productivity_report",
+    }:
+        sub_intent = "productive_hours"
 
-    # Step 1: threshold check.
-    try:
-        threshold = int(settings.get("analytics_min_tasks_threshold", 10))
-    except (TypeError, ValueError):
-        threshold = 10
-    threshold = max(1, threshold)
+    global_threshold = _safe_int(settings.get("analytics_min_tasks_threshold"), 20)
+    if global_threshold <= 0:
+        global_threshold = 20
+    per_day_threshold = _safe_int(settings.get("analytics_min_tasks_per_day"), 5)
+    if per_day_threshold <= 0:
+        per_day_threshold = 5
 
-    completed_count = await count_completed(user_id)
-    if completed_count < threshold:
-        response_text = not_enough_data_prompt(user_name, threshold, completed_count, history)
-        await _save_turn(session_id, user_message, response_text, input_type, entities)
+    total_completed = await get_total_completed(user_id)
+    if total_completed < global_threshold:
+        response_text = gemini_service.generate_reply(
+            {
+                "action": "behavioral_not_enough_data",
+                "total_completed": int(total_completed),
+                "threshold": int(global_threshold),
+            },
+            user_name,
+            history,
+        )
+        await _save_turn(session_id, message, response_text, input_type, "behavioral", entities)
         return {
             "status": "not_enough_data",
             "intent": "behavioral",
+            "sub_intent": sub_intent,
             "response_text": response_text,
-            "notifications": [],
-            "required_threshold": threshold,
-            "total_completed": completed_count,
-        }
-
-    # Step 2: sub-intent detection.
-    forced_sub_intent = ""
-    if _coerce_text(pending_action.get("intent")).lower() == "behavioral":
-        forced_sub_intent = _coerce_text(pending_action.get("sub_intent")).lower()
-    sub_intent = forced_sub_intent or _detect_sub_intent(user_message)
-
-    merged_entities = dict(pending_action.get("entities") or {})
-    merged_entities.update(entities)
-
-    day_value = _normalize_day(merged_entities.get("day"))
-    if sub_intent == "best_time_for_day" and not day_value:
-        await redis_client.set_context(user_id, _pending_payload_for_day())
-        response_text = ask_day_prompt(user_name, history)
-        await _save_turn(session_id, user_message, response_text, input_type, merged_entities)
-        return {
-            "status": "pending",
-            "intent": "behavioral",
-            "sub_intent": "best_time_for_day",
-            "response_text": response_text,
-            "notifications": [],
-            "pending": {
-                "expected_response": "free_text",
-                "missing_entity": "day",
+            "analytics": {
+                "total_completed": int(total_completed),
+                "threshold": int(global_threshold),
             },
+            "notifications": [],
         }
 
-    # Step 3: analytics query + Step 4 no-data handling + Step 5 prompt generation.
-    analytics_payload: Dict[str, Any] = {"sub_intent": sub_intent}
+    logs = await get_completed_logs_for_scoring(user_id)
+    day_counts = await get_log_count_per_day(user_id)
 
     if sub_intent == "productive_hours":
-        day_num = weekday_name_to_number(day_value) if day_value else None
-        hours = await get_hours_distribution(user_id, day_num)
-        if not hours:
-            filter_used = day_value.title() if day_value else "your activity history"
-            response_text = no_data_for_filter_prompt(user_name, filter_used, history)
-            await _save_turn(session_id, user_message, response_text, input_type, merged_entities)
+        day_num = _extract_day(entities, message)
+        if day_num is not None and int(day_counts.get(day_num, 0)) < per_day_threshold:
+            filter_used = _WEEKDAY_NAMES.get(day_num, "that day")
+            response_text = gemini_service.generate_reply(
+                {
+                    "action": "behavioral_no_data_for_filter",
+                    "filter_used": filter_used,
+                },
+                user_name,
+                history,
+            )
+            await _save_turn(session_id, message, response_text, input_type, "behavioral", entities)
             return {
                 "status": "no_data",
                 "intent": "behavioral",
                 "sub_intent": sub_intent,
                 "response_text": response_text,
+                "analytics": {
+                    "filter_day": day_num,
+                    "required_per_day": int(per_day_threshold),
+                    "day_count": int(day_counts.get(day_num, 0)),
+                },
                 "notifications": [],
-                "filter_used": filter_used,
             }
 
-        top_hours = hours[:3]
-        response_text = productive_hours_prompt(
-            user_name=user_name,
-            top_hours=top_hours,
-            day_filter=day_value.title() if day_value else "",
-            history=history,
-        )
-        analytics_payload["top_hours"] = top_hours
-
-    elif sub_intent == "productive_days":
-        days = await get_days_distribution(user_id)
-        has_data = any(int(row.get("count") or 0) > 0 for row in days)
-        if not has_data:
-            response_text = no_data_for_filter_prompt(user_name, "day patterns", history)
-            await _save_turn(session_id, user_message, response_text, input_type, merged_entities)
+        day_result = get_productive_days(logs, day_counts, per_day_threshold)
+        reliable_days = list(day_result.get("reliable") or [])
+        unreliable_days = list(day_result.get("unreliable") or [])
+        if not reliable_days:
+            response_text = gemini_service.generate_reply(
+                {
+                    "action": "behavioral_no_data_for_filter",
+                    "filter_used": "your current history",
+                },
+                user_name,
+                history,
+            )
+            await _save_turn(session_id, message, response_text, input_type, "behavioral", entities)
             return {
                 "status": "no_data",
                 "intent": "behavioral",
                 "sub_intent": sub_intent,
                 "response_text": response_text,
+                "analytics": {
+                    "reliable_days": [],
+                    "unreliable_days": unreliable_days,
+                },
                 "notifications": [],
-                "filter_used": "day patterns",
             }
 
-        response_text = productive_days_prompt(
-            user_name=user_name,
-            days=days,
-            history=history,
-        )
-        analytics_payload["days"] = days
+        top_ranges: List[str] = []
+        if day_num is not None:
+            best_for_day = get_best_time_for_day(logs, day_num, [])
+            if best_for_day.get("best_range"):
+                top_ranges.append(f"{_WEEKDAY_NAMES.get(day_num, 'That day')} {best_for_day['best_range']}")
+        else:
+            for row in reliable_days[:3]:
+                row_day_num = int(row.get("day_num"))
+                best_for_day = get_best_time_for_day(logs, row_day_num, [])
+                if best_for_day.get("best_range"):
+                    top_ranges.append(f"{row.get('day')} {best_for_day['best_range']}")
 
-    elif sub_intent == "best_time_for_day":
-        day_num = weekday_name_to_number(day_value)
+        if not top_ranges:
+            response_text = gemini_service.generate_reply(
+                {
+                    "action": "behavioral_no_data_for_filter",
+                    "filter_used": "that request",
+                },
+                user_name,
+                history,
+            )
+            await _save_turn(session_id, message, response_text, input_type, "behavioral", entities)
+            return {
+                "status": "no_data",
+                "intent": "behavioral",
+                "sub_intent": sub_intent,
+                "response_text": response_text,
+                "analytics": {
+                    "reliable_days": reliable_days,
+                    "unreliable_days": unreliable_days,
+                },
+                "notifications": [],
+            }
+
+        unreliable_note = _unreliable_days_note(unreliable_days)
+        response_text = gemini_service.generate_reply(
+            {
+                "action": "behavioral_productive_hours",
+                "top_hours_text": _join_with_and(top_ranges[:3]),
+                "unreliable_days_text": unreliable_note,
+            },
+            user_name,
+            history,
+        )
+        if unreliable_note:
+            response_text = f"{response_text} {unreliable_note}"
+
+        await _save_turn(session_id, message, response_text, input_type, "behavioral", entities)
+        return {
+            "status": "success",
+            "intent": "behavioral",
+            "sub_intent": sub_intent,
+            "response_text": response_text,
+            "analytics": {
+                "top_ranges": top_ranges[:3],
+                "reliable_days": reliable_days,
+                "unreliable_days": unreliable_days,
+            },
+            "notifications": [],
+        }
+
+    if sub_intent == "productive_days":
+        day_result = get_productive_days(logs, day_counts, per_day_threshold)
+        reliable_days = list(day_result.get("reliable") or [])
+        unreliable_days = list(day_result.get("unreliable") or [])
+        if not reliable_days:
+            response_text = gemini_service.generate_reply(
+                {
+                    "action": "behavioral_no_data_for_filter",
+                    "filter_used": "your weekdays",
+                },
+                user_name,
+                history,
+            )
+            await _save_turn(session_id, message, response_text, input_type, "behavioral", entities)
+            return {
+                "status": "no_data",
+                "intent": "behavioral",
+                "sub_intent": sub_intent,
+                "response_text": response_text,
+                "analytics": {
+                    "reliable_days": [],
+                    "unreliable_days": unreliable_days,
+                },
+                "notifications": [],
+            }
+
+        top_days_text = _join_with_and(
+            [f"{row.get('day')} ({int(row.get('log_count') or 0)} completions)" for row in reliable_days[:3]]
+        )
+        unreliable_note = _unreliable_days_note(unreliable_days)
+        response_text = gemini_service.generate_reply(
+            {
+                "action": "behavioral_productive_days",
+                "top_days_text": top_days_text,
+                "unreliable_days_text": unreliable_note,
+            },
+            user_name,
+            history,
+        )
+        if unreliable_note:
+            response_text = f"{response_text} {unreliable_note}"
+
+        await _save_turn(session_id, message, response_text, input_type, "behavioral", entities)
+        return {
+            "status": "success",
+            "intent": "behavioral",
+            "sub_intent": sub_intent,
+            "response_text": response_text,
+            "analytics": {
+                "days": reliable_days,
+                "unreliable_days": unreliable_days,
+            },
+            "notifications": [],
+        }
+
+    if sub_intent == "best_time_for_day":
+        day_num = _extract_day(entities, message)
         if day_num is None:
-            await redis_client.set_context(user_id, _pending_payload_for_day())
-            response_text = ask_day_prompt(user_name, history)
-            await _save_turn(session_id, user_message, response_text, input_type, merged_entities)
+            pending_context = {
+                "expected_response": "free_text",
+                "missing_entity": "day",
+                "pending_action": {
+                    "intent": "behavioral",
+                    "sub_intent": "best_time_for_day",
+                    "entities": dict(entities),
+                },
+            }
+            await redis_client.set_context(user_id, pending_context)
+            response_text = gemini_service.generate_reply(
+                {"action": "behavioral_ask_day"},
+                user_name,
+                history,
+            )
+            await _save_turn(session_id, message, response_text, input_type, "behavioral", entities)
             return {
                 "status": "pending",
                 "intent": "behavioral",
-                "sub_intent": "best_time_for_day",
+                "sub_intent": sub_intent,
                 "response_text": response_text,
-                "notifications": [],
                 "pending": {
                     "expected_response": "free_text",
                     "missing_entity": "day",
                 },
+                "notifications": [],
             }
 
-        hours = await get_hours_distribution(user_id, day_num)
-        if not hours:
-            response_text = no_data_for_filter_prompt(user_name, day_value.title(), history)
-            await _save_turn(session_id, user_message, response_text, input_type, merged_entities)
+        if int(day_counts.get(day_num, 0)) < per_day_threshold:
+            day_label = _WEEKDAY_NAMES.get(day_num, "that day")
+            response_text = gemini_service.generate_reply(
+                {
+                    "action": "behavioral_no_data_for_filter",
+                    "filter_used": day_label,
+                },
+                user_name,
+                history,
+            )
+            await _save_turn(session_id, message, response_text, input_type, "behavioral", entities)
             return {
                 "status": "no_data",
                 "intent": "behavioral",
                 "sub_intent": sub_intent,
                 "response_text": response_text,
+                "analytics": {
+                    "filter_day": day_num,
+                    "required_per_day": int(per_day_threshold),
+                    "day_count": int(day_counts.get(day_num, 0)),
+                },
                 "notifications": [],
-                "filter_used": day_value.title(),
             }
 
-        day_tasks = await get_tasks_for_day(user_id, day_num)
-        best_hour, conflict_free = _pick_best_hour_with_conflict_check(hours, day_tasks)
-        if best_hour is None:
-            response_text = no_data_for_filter_prompt(user_name, day_value.title(), history)
-            await _save_turn(session_id, user_message, response_text, input_type, merged_entities)
+        existing_tasks = await get_tasks_for_day(user_id, day_num)
+        best = get_best_time_for_day(logs, day_num, existing_tasks)
+        best_range = _coerce_text(best.get("best_range"))
+
+        if not best_range:
+            day_label = _WEEKDAY_NAMES.get(day_num, "that day")
+            response_text = gemini_service.generate_reply(
+                {
+                    "action": "behavioral_no_data_for_filter",
+                    "filter_used": day_label,
+                },
+                user_name,
+                history,
+            )
+            await _save_turn(session_id, message, response_text, input_type, "behavioral", entities)
             return {
                 "status": "no_data",
                 "intent": "behavioral",
                 "sub_intent": sub_intent,
                 "response_text": response_text,
+                "analytics": {
+                    "day": day_label,
+                    "conflict_free": False,
+                },
                 "notifications": [],
-                "filter_used": day_value.title(),
             }
 
-        response_text = best_time_prompt(
-            user_name=user_name,
-            day=day_value,
-            best_hour=best_hour,
-            conflict_free=conflict_free,
-            history=history,
+        conflict_note = (
+            "This window is currently conflict-free."
+            if best.get("conflict_free")
+            else "You may have a conflict in this window."
         )
-        analytics_payload["day"] = day_value
-        analytics_payload["best_hour"] = best_hour
-        analytics_payload["conflict_free"] = conflict_free
-
-    elif sub_intent == "completion_rate":
-        completion = await get_completion_rate(user_id)
-        if int(completion.get("total_completed") or 0) <= 0:
-            response_text = no_data_for_filter_prompt(user_name, "completion history", history)
-            await _save_turn(session_id, user_message, response_text, input_type, merged_entities)
-            return {
-                "status": "no_data",
-                "intent": "behavioral",
-                "sub_intent": sub_intent,
-                "response_text": response_text,
-                "notifications": [],
-                "filter_used": "completion history",
-            }
-
-        response_text = completion_rate_prompt(user_name, completion, history)
-        analytics_payload["completion_rate"] = completion
-
-    else:
-        top_hours, top_days, completion, avg_time_taken = await asyncio.gather(
-            get_hours_distribution(user_id),
-            get_days_distribution(user_id),
-            get_completion_rate(user_id),
-            get_avg_time_taken(user_id),
+        response_text = gemini_service.generate_reply(
+            {
+                "action": "behavioral_best_time",
+                "day_filter": _WEEKDAY_NAMES.get(day_num, "that day"),
+                "best_hour_text": best_range,
+                "conflict_note": conflict_note,
+            },
+            user_name,
+            history,
         )
-        has_data = int(completion.get("total_completed") or 0) > 0
-        if not has_data:
-            response_text = no_data_for_filter_prompt(user_name, "productivity report", history)
-            await _save_turn(session_id, user_message, response_text, input_type, merged_entities)
-            return {
-                "status": "no_data",
-                "intent": "behavioral",
-                "sub_intent": sub_intent,
-                "response_text": response_text,
-                "notifications": [],
-                "filter_used": "productivity report",
-            }
-
-        full_data = {
-            "top_hours": top_hours,
-            "top_days": top_days,
-            "completion_rate": completion,
-            "avg_time_taken": avg_time_taken,
+        await _save_turn(session_id, message, response_text, input_type, "behavioral", entities)
+        return {
+            "status": "success",
+            "intent": "behavioral",
+            "sub_intent": sub_intent,
+            "response_text": response_text,
+            "analytics": {
+                "day": _WEEKDAY_NAMES.get(day_num, "that day"),
+                "day_num": day_num,
+                "best_range": best_range,
+                "start_hour": best.get("start_hour"),
+                "score": best.get("score"),
+                "conflict_free": bool(best.get("conflict_free")),
+            },
+            "notifications": [],
         }
-        response_text = productivity_report_prompt(user_name, full_data, history)
-        analytics_payload.update(full_data)
 
-    # Step 6: save + return.
-    await _save_turn(session_id, user_message, response_text, input_type, merged_entities)
+    if sub_intent == "completion_rate":
+        completion = await get_completion_rate(user_id)
+        response_text = gemini_service.generate_reply(
+            {
+                "action": "behavioral_completion_rate",
+                "total_completed": int(completion.get("total_completed") or 0),
+                "on_time": int(completion.get("on_time") or 0),
+                "late": int(completion.get("late") or 0),
+                "on_time_rate": float(completion.get("on_time_rate") or 0.0),
+                "weekly_trend_text": str(completion.get("weekly_trend") or []),
+            },
+            user_name,
+            history,
+        )
+        await _save_turn(session_id, message, response_text, input_type, "behavioral", entities)
+        return {
+            "status": "success",
+            "intent": "behavioral",
+            "sub_intent": sub_intent,
+            "response_text": response_text,
+            "analytics": {"completion_rate": completion},
+            "notifications": [],
+        }
+
+    # productivity_report
+    day_result = get_productive_days(logs, day_counts, per_day_threshold)
+    reliable_days = list(day_result.get("reliable") or [])
+    unreliable_days = list(day_result.get("unreliable") or [])
+    completion = await get_completion_rate(user_id)
+    avg_time_taken = await get_avg_time_taken(user_id)
+
+    top_ranges: List[str] = []
+    for row in reliable_days[:3]:
+        row_day_num = int(row.get("day_num"))
+        best_for_day = get_best_time_for_day(logs, row_day_num, [])
+        if best_for_day.get("best_range"):
+            top_ranges.append(f"{row.get('day')} {best_for_day['best_range']}")
+
+    top_days_text = _join_with_and([_coerce_text(row.get("day")) for row in reliable_days[:3]]) or "No reliable days yet"
+    top_hours_text = _join_with_and(top_ranges[:3]) or "No reliable hour ranges yet"
+    weekly_trend = completion.get("weekly_trend") or []
+    weekly_trend_text = ", ".join([f"W{row.get('week')}: {row.get('count')}" for row in weekly_trend]) or "No recent trend yet"
+    avg_time_text = f"{round(float(avg_time_taken), 1)} minutes" if avg_time_taken is not None else "not available yet"
+    unreliable_note = _unreliable_days_note(unreliable_days)
+
+    response_text = gemini_service.generate_reply(
+        {
+            "action": "behavioral_productivity_report",
+            "top_hours_text": top_hours_text,
+            "top_days_text": top_days_text,
+            "on_time_rate": float(completion.get("on_time_rate") or 0.0),
+            "total_completed": int(completion.get("total_completed") or 0),
+            "avg_time_taken_text": avg_time_text,
+            "weekly_trend_text": weekly_trend_text,
+            "unreliable_days_text": unreliable_note,
+        },
+        user_name,
+        history,
+    )
+    if unreliable_note:
+        response_text = f"{response_text} {unreliable_note}"
+
+    await _save_turn(session_id, message, response_text, input_type, "behavioral", entities)
     return {
         "status": "success",
         "intent": "behavioral",
-        "sub_intent": sub_intent,
+        "sub_intent": "productivity_report",
         "response_text": response_text,
+        "analytics": {
+            "top_ranges": top_ranges[:3],
+            "reliable_days": reliable_days,
+            "unreliable_days": unreliable_days,
+            "completion_rate": completion,
+            "avg_time_taken": avg_time_taken,
+        },
         "notifications": [],
-        "analytics": analytics_payload,
     }
+
+
+__all__ = ["handle_behavioral", "_detect_sub_intent"]
