@@ -15,7 +15,7 @@ from bson import ObjectId
 
 from context.context_manager import extract_update_fields
 from context.redis_client import redis_client
-from db.activity_logs import insert_log
+from db.activity_logs import increment_reschedule_count, insert_log
 from db.chat_sessions import update_last_message
 from db.conversation_history import insert_message
 from db.tasks import (
@@ -837,6 +837,12 @@ async def _execute_confirmed_update(
         await insert_log(log_payload)
     except Exception as error:
         print(f"[UpdateHandler] Activity log insert failed for task_id={task_id}: {error}")
+
+    if "due_datetime" in update_data:
+        try:
+            await increment_reschedule_count(task_id)
+        except Exception as error:
+            print(f"[UpdateHandler] Reschedule count increment failed for task_id={task_id}: {error}")
 
     calendar_updated = False
     old_event_id = _coerce_text(current_task.get("google_calendar_event_id"))

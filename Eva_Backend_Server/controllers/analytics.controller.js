@@ -6,6 +6,7 @@
 const { ActivityLog } = require("../models");
 const { BadRequestError } = require("../middleware/errorHandler");
 const { toLocalDayRangeUtc } = require("../utils/timezone");
+const { callAIAnalytics } = require("../services/ai.service");
 
 const DAY_LABELS = {
   0: "Monday",
@@ -42,52 +43,6 @@ const roundTo = (value, digits) => {
 const buildOwnerIdFilter = (userId) => {
   const ownerIds = [userId, String(userId)];
   return [...new Set(ownerIds)];
-};
-
-const parseDateRangeQuery = (req) => {
-  const startDateInput = req.query.start_date || req.query.start || null;
-  const endDateInput = req.query.end_date || req.query.end || null;
-
-  if (!startDateInput && !endDateInput) {
-    return {
-      rangeQuery: null,
-      filters: {
-        start_date: null,
-        end_date: null,
-      },
-    };
-  }
-
-  const timezone = req.user?.timezone;
-  const rangeQuery = {};
-
-  if (startDateInput) {
-    const startRange = toLocalDayRangeUtc(startDateInput, timezone);
-    if (!startRange) {
-      throw new BadRequestError("Invalid start_date query format");
-    }
-    rangeQuery.$gte = startRange.start;
-  }
-
-  if (endDateInput) {
-    const endRange = toLocalDayRangeUtc(endDateInput, timezone);
-    if (!endRange) {
-      throw new BadRequestError("Invalid end_date query format");
-    }
-    rangeQuery.$lte = endRange.end;
-  }
-
-  if (rangeQuery.$gte && rangeQuery.$lte && rangeQuery.$gte > rangeQuery.$lte) {
-    throw new BadRequestError("start_date must be before or equal to end_date");
-  }
-
-  return {
-    rangeQuery,
-    filters: {
-      start_date: startDateInput || null,
-      end_date: endDateInput || null,
-    },
-  };
 };
 
 const buildCompletionMatch = (userId, rangeQuery = null) => {
@@ -177,93 +132,12 @@ const mapDayRowsToFullWeek = (dayRows) => {
  */
 const getProductivity = async (req, res, next) => {
   try {
-    const { rangeQuery, filters } = parseDateRangeQuery(req);
-    const baseMatch = buildCompletionMatch(req.userId, rangeQuery);
-
-    const [summaryRows, weeklyTrendRows, dayRows] = await Promise.all([
-      ActivityLog.aggregate([
-        { $match: baseMatch },
-        {
-          $group: {
-            _id: null,
-            total_completed: { $sum: 1 },
-            on_time: {
-              $sum: {
-                $cond: [{ $eq: ["$was_on_time", true] }, 1, 0],
-              },
-            },
-          },
-        },
-      ]),
-      ActivityLog.aggregate([
-        {
-          $match: {
-            ...baseMatch,
-            week_number: { $gte: 1, $lte: 53 },
-          },
-        },
-        {
-          $group: {
-            _id: "$week_number",
-            count: { $sum: 1 },
-          },
-        },
-        { $sort: { _id: -1 } },
-        { $limit: 4 },
-        {
-          $project: {
-            _id: 0,
-            week: "$_id",
-            count: 1,
-          },
-        },
-        { $sort: { week: 1 } },
-      ]),
-      ActivityLog.aggregate([
-        {
-          $match: {
-            ...baseMatch,
-            day_of_week: { $gte: 0, $lte: 6 },
-          },
-        },
-        {
-          $group: {
-            _id: "$day_of_week",
-            count: { $sum: 1 },
-            on_time_count: {
-              $sum: {
-                $cond: [{ $eq: ["$was_on_time", true] }, 1, 0],
-              },
-            },
-          },
-        },
-      ]),
-    ]);
-
-    const summary = summaryRows[0] || { total_completed: 0, on_time: 0 };
-    const totalCompleted = Number(summary.total_completed || 0);
-    const onTime = Number(summary.on_time || 0);
-    const late = Math.max(0, totalCompleted - onTime);
-    const onTimeRate =
-      totalCompleted > 0 ? roundTo((onTime / totalCompleted) * 100, 1) : 0.0;
-
-    const days = mapDayRowsToFullWeek(dayRows);
-
-    res.json({
-      status: "success",
-      data: {
-        total_completed: totalCompleted,
-        on_time: onTime,
-        late,
-        on_time_rate: onTimeRate,
-        weekly_trend: weeklyTrendRows.map((row) => ({
-          week: Number(row.week),
-          count: Number(row.count || 0),
-        })),
-        days,
-        filters,
-      },
+    const aiResponse = await callAIAnalytics({
+      userId: req.userId,
+      type: "full",
     });
+
+    res.json(aiResponse);
   } catch (error) {
     next(error);
   }
@@ -275,54 +149,17 @@ const getProductivity = async (req, res, next) => {
  */
 const getHoursDistribution = async (req, res, next) => {
   try {
-    const dayOfWeek = parseDayQuery(req.query.day);
-    const match = {
-      user_id: { $in: buildOwnerIdFilter(req.userId) },
-      action_type: "task_completed",
-      hour_of_day: { $gte: 0, $lte: 23 },
-    };
-
-    if (dayOfWeek !== null) {
-      match.day_of_week = dayOfWeek;
+    if (req.query.day !== undefined && req.query.day !== null && req.query.day !== "") {
+      // Validate day shape here to preserve clean 400 behavior.
+      parseDayQuery(req.query.day);
     }
-
-    const rows = await ActivityLog.aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: "$hour_of_day",
-          count: { $sum: 1 },
-          on_time_count: {
-            $sum: {
-              $cond: [{ $eq: ["$was_on_time", true] }, 1, 0],
-            },
-          },
-        },
-      },
-      { $sort: { count: -1, _id: 1 } },
-    ]);
-
-    const hours = rows.map((row) => {
-      const count = Number(row.count || 0);
-      const onTimeCount = Number(row.on_time_count || 0);
-      const rate = count > 0 ? roundTo(onTimeCount / count, 2) : 0.0;
-      return {
-        hour: Number(row._id),
-        count,
-        on_time_rate: rate,
-      };
+    const aiResponse = await callAIAnalytics({
+      userId: req.userId,
+      type: "hours",
+      day: req.query.day,
     });
 
-    res.json({
-      status: "success",
-      data: {
-        hours,
-        filter: {
-          day: dayOfWeek,
-          day_name: dayOfWeek !== null ? DAY_LABELS[dayOfWeek] : null,
-        },
-      },
-    });
+    res.json(aiResponse);
   } catch (error) {
     next(error);
   }
@@ -334,32 +171,12 @@ const getHoursDistribution = async (req, res, next) => {
  */
 const getDaysDistribution = async (req, res, next) => {
   try {
-    const match = {
-      ...buildCompletionMatch(req.userId),
-      day_of_week: { $gte: 0, $lte: 6 },
-    };
-
-    const dayRows = await ActivityLog.aggregate([
-      { $match: match },
-      {
-        $group: {
-          _id: "$day_of_week",
-          count: { $sum: 1 },
-          on_time_count: {
-            $sum: {
-              $cond: [{ $eq: ["$was_on_time", true] }, 1, 0],
-            },
-          },
-        },
-      },
-    ]);
-
-    res.json({
-      status: "success",
-      data: {
-        days: mapDayRowsToFullWeek(dayRows),
-      },
+    const aiResponse = await callAIAnalytics({
+      userId: req.userId,
+      type: "days",
     });
+
+    res.json(aiResponse);
   } catch (error) {
     next(error);
   }

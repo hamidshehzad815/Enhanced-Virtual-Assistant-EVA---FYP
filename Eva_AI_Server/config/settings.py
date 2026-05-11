@@ -64,17 +64,6 @@ class Settings:
 
     # Model Settings
     CONFIDENCE_THRESHOLD: float = float(os.getenv("CONFIDENCE_THRESHOLD", "0.7"))
-    # Global admin switch: set to false/0 to disable behavioral commands
-    # for all users system-wide (e.g. during maintenance or rollback).
-    BEHAVIORAL_ENABLED: bool = _as_bool(os.getenv("BEHAVIORAL_ENABLED"), True)
-
-    # Temporary compatibility switch:
-    # some NER versions emit weekday as `date` for behavioral intent.
-    # When enabled, behavioral scope remaps weekday-like `date` -> `day`.
-    BEHAVIORAL_DATE_AS_DAY_FALLBACK: bool = _as_bool(
-        os.getenv("BEHAVIORAL_DATE_AS_DAY_FALLBACK"),
-        True,
-    )
 
     # Model Paths
     CLF1_MODEL_DIR: Path = BASE_DIR / os.getenv("CLF1_MODEL_DIR", "models/clf1")
@@ -83,6 +72,14 @@ class Settings:
 
     # Context Manager
     CONTEXT_TTL: int = int(os.getenv("CONTEXT_TTL", "300"))
+
+    # Behavioral NER fallback:
+    # When True, behavioral entity scoping can interpret weekday-like `date`
+    # as `day` for legacy NER outputs.
+    BEHAVIORAL_DATE_AS_DAY_FALLBACK: bool = _as_bool(
+        os.getenv("BEHAVIORAL_DATE_AS_DAY_FALLBACK"),
+        True,
+    )
 
 
 # Singleton instance

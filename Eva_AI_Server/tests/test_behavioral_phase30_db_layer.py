@@ -9,10 +9,14 @@ from bson import ObjectId
 
 from db.activity_logs import (
     count_completed,
+    get_completed_logs_for_scoring,
     get_avg_time_taken,
     get_completion_rate,
     get_days_distribution,
     get_hours_distribution,
+    get_log_count_per_day,
+    get_logs_for_day,
+    get_total_completed,
 )
 from db.tasks import get_tasks_for_day
 from utils.date_utils import hour_to_12h_format, weekday_name_to_number
@@ -47,6 +51,8 @@ class FakeActivityLogsCollection:
     def _match_condition(actual, expected):
         if isinstance(expected, dict):
             for op, value in expected.items():
+                if op == "$in" and actual not in value:
+                    return False
                 if actual is None and op in {"$gte", "$lte"}:
                     return False
                 if op == "$gte" and actual < value:
@@ -67,6 +73,23 @@ class FakeActivityLogsCollection:
 
     async def count_documents(self, query):
         return sum(1 for doc in self.docs if self._matches(doc, query))
+
+    def find(self, query, projection=None):
+        rows = [dict(doc) for doc in self.docs if self._matches(doc, query)]
+        if projection:
+            include_keys = {
+                key
+                for key, include in projection.items()
+                if include and key != "_id"
+            }
+            normalized = []
+            for row in rows:
+                filtered = {key: row.get(key) for key in include_keys}
+                if projection.get("_id", 1):
+                    filtered["_id"] = row.get("_id")
+                normalized.append(filtered)
+            rows = normalized
+        return FakeTasksCursor(rows)
 
     def aggregate(self, pipeline):
         rows = [dict(doc) for doc in self.docs]
@@ -292,6 +315,171 @@ class TestBehavioralPhase30DbLayer(unittest.IsolatedAsyncioTestCase):
 
         # (60 + 90 + 120 + 75 + 105) / 5 = 90
         self.assertEqual(avg, 90.0)
+
+    async def test_get_completed_logs_for_scoring_returns_only_completed_sorted(self):
+        docs = [
+            {
+                "_id": ObjectId(),
+                "user_id": self.owner_id,
+                "action_type": "task_completed",
+                "day_of_week": 0,
+                "hour_of_day": 18,
+                "was_on_time": True,
+                "time_taken_minutes": 50,
+                "action_timestamp": datetime(2026, 4, 20, 10, 0, 0),
+                "reschedule_count": 2,
+                "scheduled_hour": 18,
+                "task_priority": "high",
+            },
+            {
+                "_id": ObjectId(),
+                "user_id": self.owner_id,
+                "action_type": "task_created",
+                "day_of_week": 0,
+                "hour_of_day": 17,
+                "action_timestamp": datetime(2026, 4, 20, 9, 0, 0),
+            },
+            {
+                "_id": ObjectId(),
+                "user_id": self.owner_id,
+                "action_type": "task_completed",
+                "day_of_week": 1,
+                "hour_of_day": 10,
+                "was_on_time": False,
+                "time_taken_minutes": 80,
+                "action_timestamp": datetime(2026, 4, 21, 8, 0, 0),
+                "scheduled_hour": 10,
+                "task_priority": "medium",
+            },
+            {
+                "_id": ObjectId(),
+                "user_id": self.other_owner_id,
+                "action_type": "task_completed",
+                "day_of_week": 1,
+                "hour_of_day": 14,
+                "action_timestamp": datetime(2026, 4, 21, 7, 0, 0),
+            },
+        ]
+        fake_db = FakeDB(activity_logs_collection=FakeActivityLogsCollection(docs))
+        with patch("db.activity_logs.get_db", return_value=fake_db):
+            rows = await get_completed_logs_for_scoring(str(self.owner_id))
+
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[0]["action_timestamp"], datetime(2026, 4, 21, 8, 0, 0))
+        self.assertEqual(rows[1]["action_timestamp"], datetime(2026, 4, 20, 10, 0, 0))
+        self.assertIn("reschedule_count", rows[0])
+
+    async def test_get_logs_for_day_filters_requested_day_only(self):
+        docs = [
+            {
+                "_id": ObjectId(),
+                "user_id": self.owner_id,
+                "action_type": "task_completed",
+                "day_of_week": 0,
+                "hour_of_day": 18,
+                "action_timestamp": datetime(2026, 4, 20, 10, 0, 0),
+            },
+            {
+                "_id": ObjectId(),
+                "user_id": self.owner_id,
+                "action_type": "task_completed",
+                "day_of_week": 1,
+                "hour_of_day": 19,
+                "action_timestamp": datetime(2026, 4, 21, 10, 0, 0),
+            },
+            {
+                "_id": ObjectId(),
+                "user_id": self.owner_id,
+                "action_type": "task_completed",
+                "day_of_week": 0,
+                "hour_of_day": 20,
+                "action_timestamp": datetime(2026, 4, 22, 10, 0, 0),
+            },
+        ]
+        fake_db = FakeDB(activity_logs_collection=FakeActivityLogsCollection(docs))
+        with patch("db.activity_logs.get_db", return_value=fake_db):
+            monday = await get_logs_for_day(str(self.owner_id), 0)
+            invalid = await get_logs_for_day(str(self.owner_id), 99)
+
+        self.assertEqual(len(monday), 2)
+        self.assertTrue(all(row["day_of_week"] == 0 for row in monday))
+        self.assertEqual(invalid, [])
+
+    async def test_get_log_count_per_day_returns_full_day_map(self):
+        docs = [
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "day_of_week": 0},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "day_of_week": 0},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "day_of_week": 0},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "day_of_week": 1},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "day_of_week": 1},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "day_of_week": 1},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "day_of_week": 1},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed", "day_of_week": 1},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_created", "day_of_week": 1},
+        ]
+        fake_db = FakeDB(activity_logs_collection=FakeActivityLogsCollection(docs))
+        with patch("db.activity_logs.get_db", return_value=fake_db):
+            counts = await get_log_count_per_day(str(self.owner_id))
+
+        self.assertEqual(counts[0], 3)
+        self.assertEqual(counts[1], 5)
+        self.assertEqual(counts[2], 0)
+        self.assertEqual(set(counts.keys()), set(range(7)))
+
+    async def test_get_total_completed_counts_only_completed(self):
+        docs = [
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed"},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed"},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed"},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed"},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_completed"},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_created"},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_created"},
+            {"_id": ObjectId(), "user_id": self.owner_id, "action_type": "task_created"},
+        ]
+        fake_db = FakeDB(activity_logs_collection=FakeActivityLogsCollection(docs))
+        with patch("db.activity_logs.get_db", return_value=fake_db):
+            total = await get_total_completed(str(self.owner_id))
+
+        self.assertEqual(total, 5)
+
+    async def test_phase3_scenario_15_completed_logs_across_4_days(self):
+        docs = []
+        day_sequence = [0] * 4 + [1] * 5 + [2] * 3 + [3] * 3  # total 15
+        for index, day in enumerate(day_sequence):
+            docs.append(
+                {
+                    "_id": ObjectId(),
+                    "user_id": self.owner_id,
+                    "action_type": "task_completed",
+                    "day_of_week": day,
+                    "hour_of_day": 9 + (index % 8),
+                    "action_timestamp": datetime(2026, 4, 1, 10, 0, 0),
+                }
+            )
+        docs.append(
+            {
+                "_id": ObjectId(),
+                "user_id": self.owner_id,
+                "action_type": "task_created",
+                "day_of_week": 0,
+            }
+        )
+
+        fake_db = FakeDB(activity_logs_collection=FakeActivityLogsCollection(docs))
+        with patch("db.activity_logs.get_db", return_value=fake_db):
+            all_logs = await get_completed_logs_for_scoring(str(self.owner_id))
+            monday_logs = await get_logs_for_day(str(self.owner_id), 0)
+            counts = await get_log_count_per_day(str(self.owner_id))
+            total = await get_total_completed(str(self.owner_id))
+
+        self.assertEqual(len(all_logs), 15)
+        self.assertEqual(len(monday_logs), 4)
+        self.assertEqual(counts[0], 4)
+        self.assertEqual(counts[1], 5)
+        self.assertEqual(counts[2], 3)
+        self.assertEqual(counts[3], 3)
+        self.assertEqual(total, 15)
 
     async def test_get_tasks_for_day_returns_monday_tasks_only(self):
         fake_db = FakeDB(tasks_collection=FakeTasksCollection(self.task_docs))

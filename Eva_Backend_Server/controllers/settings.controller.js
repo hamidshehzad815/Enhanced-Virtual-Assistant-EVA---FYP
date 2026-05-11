@@ -201,6 +201,10 @@ const updateSettings = async (req, res, next) => {
       req.body.analytics_min_tasks_threshold,
       "analytics_min_tasks_threshold",
     );
+    const analyticsMinTasksPerDay = normalizeInteger(
+      req.body.analytics_min_tasks_per_day,
+      "analytics_min_tasks_per_day",
+    );
     const preferredLearningDuration = normalizeInteger(
       req.body.preferred_learning_duration,
       "preferred_learning_duration",
@@ -267,6 +271,9 @@ const updateSettings = async (req, res, next) => {
 
     if (analyticsMinTasksThreshold !== undefined) {
       update.analytics_min_tasks_threshold = analyticsMinTasksThreshold;
+    }
+    if (analyticsMinTasksPerDay !== undefined) {
+      update.analytics_min_tasks_per_day = analyticsMinTasksPerDay;
     }
 
     if (preferredLearningDuration !== undefined) {
