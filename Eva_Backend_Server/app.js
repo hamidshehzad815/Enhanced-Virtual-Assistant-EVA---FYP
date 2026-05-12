@@ -35,7 +35,7 @@ app.use(helmet());
 // Enable CORS
 app.use(
   cors({
-    origin: process.env.FRONTEND_URL || "*",
+    origin: true,   // Reflects the request origin (no wildcard)
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -128,6 +128,10 @@ const startServer = async () => {
     logger.info("=".repeat(50));
   });
 };
+
+app.listen(4500, "0.0.0.0", () => {
+  console.log("Server running on port 4500");
+});
 
 // Handle uncaught exceptions
 process.on("uncaughtException", (err) => {

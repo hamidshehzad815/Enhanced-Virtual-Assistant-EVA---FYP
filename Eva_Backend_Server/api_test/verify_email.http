@@ -1,0 +1,7 @@
+GET  http://localhost:3000/api/auth/verify-email?token=<token>
+Content-Type: application/json
+
+{
+  "email": "areejfatima2954@gmail.com",
+  "password": "Areej@1234"
+}
