@@ -1,0 +1,6 @@
+POST http://192.168.100.11:4500/api/auth/forgot-password
+Content-Type: application/json
+
+{
+  "email": "areejfatima2954@gmail.com"
+}
