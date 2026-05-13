@@ -1,0 +1,384 @@
+================================================================
+CONTEXT MANAGER — LEARNING ADD COMMAND (FINAL)
+Runs inside AI Server — Redis managed by AI Server directly
+================================================================
+
+DECISIONS LOCKED
+================================================================
+
+  1. Context manager runs BEFORE Model 1 on every input
+  2. Redis state fetched at request start (self-fetch)
+  3. All 3 pending states are free_text
+     → Model 1 skipped for all states
+     → replies handled directly without classification
+  4. Cancel checked FIRST before anything else
+  5. TTL = 300 seconds, reset on every Redis write
+  6. Handler re-entered from STEP 1 after every valid reply
+  7. All 3 missing entities asked one by one in order:
+     topic → start_date → duration
+  8. Subtopic never asked — optional, general if missing
+  9. Person never asked mid-flow — only validated if present
+
+
+================================================================
+REDIS STATE STRUCTURE
+================================================================
+
+  Key    : "context:{user_id}"
+  Value  : JSON string
+  TTL    : 300 seconds, reset on every write
+  Managed by: AI Server directly
+
+  {
+    expected_response : "free_text",
+    pending_action    : {
+      intent   : "learning_create",
+      stage    : "topic" | "start_date" | "duration",
+      entities : { ...collected so far... }
+    }
+  }
+
+
+================================================================
+ALL PENDING STATES FOR LEARNING ADD
+================================================================
+
+  State 1 — topic missing
+  ────────────────────────────────────────────────────────
+  {
+    expected_response : "free_text",
+    pending_action    : {
+      intent   : "learning_create",
+      stage    : "topic",
+      entities : {}
+    }
+  }
+  EVA asked: "What would you like to learn, Ali?"
+
+
+  State 2 — start_date missing
+  ────────────────────────────────────────────────────────
+  {
+    expected_response : "free_text",
+    pending_action    : {
+      intent   : "learning_create",
+      stage    : "start_date",
+      entities : {
+        topic    : "Python",
+        subtopic : "basics"       ← null if not extracted
+      }
+    }
+  }
+  EVA asked: "When would you like to start
+              learning Python, Ali?"
+
+
+  State 3 — duration missing
+  ────────────────────────────────────────────────────────
+  {
+    expected_response : "free_text",
+    pending_action    : {
+      intent   : "learning_create",
+      stage    : "duration",
+      entities : {
+        topic      : "Python",
+        subtopic   : "basics",    ← null if not extracted
+        start_date : "2026-05-23"
+      }
+    }
+  }
+  EVA asked: "How long would you like to spend
+              on Python basics, Ali?"
+
+
+================================================================
+CONTEXT MANAGER DECISION FLOW
+================================================================
+
+  Input arrives at AI server
+       ↓
+  PREPROCESSING
+  → lowercase + too_short check
+       ↓
+  Redis state already fetched (from self-fetch)
+       │
+       ├── NO pending state
+       │   → pass to Model 1 normally
+       │
+       └── pending state EXISTS
+               ↓
+           CHECK CANCEL FIRST
+           cancel / stop / abort / never mind /
+           forget it / leave it / discard / no cancel
+               │
+               ├── YES
+               │   → AI server clears Redis
+               │   → EVA: "No problem Ali,
+               │           I've cancelled that."
+               │   → STOP
+               │
+               └── NO
+                     │
+                     └── expected = free_text
+                           → SKIP Model 1 entirely
+                           → route by stage
+
+
+================================================================
+FREE TEXT HANDLING — STATE 1 (stage: topic)
+================================================================
+
+  Why Model 1 skipped:
+  Reply like "Python" or "I want to learn JavaScript"
+  has no command structure. Model 1 would misclassify.
+  We know exactly what we are waiting for.
+
+  User replies: anything
+
+  → pass reply through NER to extract topic
+    (and subtopic if present in reply)
+
+  → topic not found in reply:
+      Redis stays (TTL resets)
+      EVA: "I didn't catch that. Which topic would
+            you like to learn? For example Python,
+            JavaScript, or MySQL."
+      STOP
+
+  → topic found:
+      Validation 1 — is topic supported?
+        check SUPPORTED_TOPICS list
+        not supported:
+          clear Redis
+          EVA: "[topic] is not supported yet.
+                I currently support: Python,
+                JavaScript, TypeScript, Java,
+                C#, C++, Go, Rust, PHP, Kotlin,
+                Swift, Ruby, Dart, C, Oracle,
+                MySQL, Microsoft SQL Server,
+                PostgreSQL, MongoDB, SQL."
+          STOP
+
+      Validation 2 — normalize topic
+        apply TOPIC_ALIAS_MAP
+        "py" → "Python", "js" → "JavaScript" etc.
+
+      Validation 3 — subtopic present?
+        yes → apply SUBTOPIC_ALIAS_MAP
+              regex search against roadmap keys
+              match found → store mapped subtopic
+              no match → store subtopic as null
+                         (general roadmap used)
+        no  → store subtopic as null
+
+      → merge topic + subtopic into entities
+      → AI server clears Redis
+      → re-enter handler from STEP 1
+      → handler now has topic → checks start_date next
+
+
+================================================================
+FREE TEXT HANDLING — STATE 2 (stage: start_date)
+================================================================
+
+  Why Model 1 skipped:
+  Reply like "Monday" or "next week" is not a command.
+  We know we are waiting for a start date.
+
+  User replies: anything
+
+  → pass reply to Duckling
+  → Duckling fails:
+      Redis stays (TTL resets)
+      EVA: "I didn't catch that date. Try something
+            like 'Monday' or '25th May', Ali."
+      STOP
+
+  → Duckling resolves:
+      Validation 1 — is date in the past?
+        resolved date < today:
+          Redis stays (TTL resets)
+          EVA: "That date has already passed.
+                When would you like to start, Ali?"
+          STOP
+
+      → extract date part only (strip time)
+      → merge resolved date into entities
+      → AI server clears Redis
+      → re-enter handler from STEP 1
+      → handler now has topic + start_date
+        → checks duration next
+
+
+================================================================
+FREE TEXT HANDLING — STATE 3 (stage: duration)
+================================================================
+
+  Why Model 1 skipped:
+  Reply like "2 weeks" or "1 month" is not a command.
+  We know we are waiting for a duration value.
+
+  User replies: anything
+
+  → pass reply to duration parser
+  → parse fails:
+      Redis stays (TTL resets)
+      EVA: "I didn't catch that. Try something
+            like '2 weeks' or '1 month', Ali."
+      STOP
+
+  → parse succeeds → duration in calendar days:
+      Validation 1 — minimum duration check
+        duration < 7 days:
+          Redis stays (TTL resets)
+          EVA: "That's quite short for a learning
+                goal. I'd suggest at least 1 week.
+                How long would you like, Ali?"
+          STOP
+
+      Validation 2 — feasibility check
+        calculate available sessions in duration:
+          count learning days from start_date
+          to start_date + duration
+        compare with roadmap sessions required
+
+        not feasible:
+          Redis stays (TTL resets)
+          EVA: "[topic] [level] needs [X] sessions
+                but with your [N] learning days
+                per week you only have [Y] sessions
+                in [duration]. You need at least
+                [Z] weeks or add more learning
+                days in settings."
+          STOP
+
+      → merge duration into entities
+      → AI server clears Redis
+      → re-enter handler from STEP 1
+      → handler now has all 3 required entities
+        → continues to STEP 2 (settings validation)
+
+
+================================================================
+CROSS CUTTING CASES
+================================================================
+
+CANCEL — always checked first, applies to ALL states
+────────────────────────────────────────────────────────────
+  cancel / stop / abort / never mind / forget it /
+  forget that / leave it / discard / no cancel
+
+  → AI server clears Redis
+  → EVA: "No problem Ali, I've cancelled that."
+  → STOP
+
+
+NEW COMMAND WHILE PENDING
+────────────────────────────────────────────────────────────
+  All 3 states skip Model 1 entirely.
+  New command detection does not apply here.
+
+  If user sends a full new command like
+  "add physics exam on Monday at 5PM" while
+  learning add pending:
+  → context manager treats entire reply as
+    the expected entity value
+  → NER runs on reply (for stage: topic)
+    or Duckling runs (for stage: start_date/duration)
+  → if extraction fails → ask again naturally
+  → user can always say cancel first then
+    send new command
+
+  This is acceptable because:
+  → TTL = 300s auto-clears if user abandons
+  → free_text states only expect simple values
+    so misclassification risk is low
+
+
+TTL EXPIRY — all states
+────────────────────────────────────────────────────────────
+  User silent for 300 seconds
+  → Redis key auto-expires
+  → next input starts pipeline fresh
+  → no message needed
+
+
+================================================================
+GEMINI REPLY GUIDELINES
+================================================================
+
+  WRONG — never use:
+  × "Invalid topic."
+  × "Please enter a valid date."
+  × "Duration parsing error."
+  × "Topic not supported."
+
+  CORRECT — what EVA says:
+  ✓ "What would you like to learn, Ali?"
+  ✓ "When would you like to start learning Python?"
+  ✓ "How long would you like to spend on Python basics?"
+  ✓ "I didn't catch that date — try something like
+     'Monday' or '25th May', Ali."
+  ✓ "React isn't supported yet. I can help you with
+     Python, JavaScript, and 18 other topics."
+  ✓ "Python basics needs 12 sessions but you only
+     have 8 in 2 weeks. You need at least 6 weeks
+     or add more learning days in settings."
+  ✓ "No problem Ali, I've cancelled that."
+
+  All replies must:
+  → use user's name
+  → mention topic name where relevant
+  → be specific about what went wrong
+  → never use technical error language
+  → be short — 1-2 sentences maximum
+
+
+================================================================
+SUMMARY TABLE
+================================================================
+
+  State │ stage      │ expected  │ Model 1? │ on valid reply
+  ──────┼────────────┼───────────┼──────────┼──────────────────────────
+  1     │ topic      │ free_text │ NO       │ validate → re-enter STEP 1
+  2     │ start_date │ free_text │ NO       │ Duckling → re-enter STEP 1
+  3     │ duration   │ free_text │ NO       │ parse + feasibility
+        │            │           │          │ → re-enter STEP 1
+
+
+================================================================
+HANDLER RE-ENTRY RULE
+================================================================
+
+  After every valid reply:
+  → entity merged into pending_action.entities
+  → AI server clears Redis
+  → handler re-entered from STEP 1
+
+  Handler checks every time from top:
+    preferred_learning_schedule set? → stop if not
+    active goal conflict?            → stop if yes
+    topic missing?                   → ask → STOP
+    topic validated?                 → stop if invalid
+    start_date missing?              → ask → STOP
+    start_date validated?            → stop if invalid
+    duration missing?                → ask → STOP
+    duration validated?              → stop if invalid
+    all present and valid?           → continue to STEP 2
+
+  Handler never needs to know which step it was on.
+  It re-evaluates with what it currently has.
+
+
+================================================================
+LEARNING ADD vs OTHER COMMANDS — CONTEXT COMPARISON
+================================================================
+
+  Command        │ States │ Confirmation │ Model 1 skipped
+  ───────────────┼────────┼──────────────┼────────────────
+  scheduling add │ 5      │ yes (dup)    │ free_text only
+  delete         │ 4      │ yes          │ free_text only
+  update         │ 4      │ yes          │ free_text only
+  show           │ 0      │ no           │ n/a
+  behavioral     │ 1      │ no           │ yes
+  learning add   │ 3      │ no           │ ALL states

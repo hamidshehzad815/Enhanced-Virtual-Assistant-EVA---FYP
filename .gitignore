@@ -3,6 +3,10 @@ Eva_AI_Server/models/*
 *.env
 .venv
 .pytest_cache
+# Python bytecode (Eva_AI_Server and any other Python in repo)
+__pycache__/
+*.py[cod]
+*$py.class
 .vscode
 DataSets
 testingPoints.txt
