@@ -3,8 +3,11 @@
  * Provides authenticated settings read/update endpoints with quiet-hours support.
  */
 
-const { User, UserSetting } = require("../models");
-const { BadRequestError } = require("../middleware/errorHandler");
+const { User, UserSetting, Task } = require("../models");
+const { BadRequestError, ConflictError } = require("../middleware/errorHandler");
+const {
+  findLearningScheduleTaskConflicts,
+} = require("../utils/learningScheduleConflict");
 
 const TIME_PATTERN = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
 
@@ -41,6 +44,48 @@ const normalizeTime = (value, fieldName) => {
   }
 
   return normalized;
+};
+
+const normalizePreferredLearningSchedule = (value) => {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (value === null) {
+    return [];
+  }
+
+  if (!Array.isArray(value)) {
+    throw new BadRequestError("preferred_learning_schedule must be an array");
+  }
+
+  const seenDays = new Set();
+
+  return value.map((slot, index) => {
+    if (!slot || typeof slot !== "object" || Array.isArray(slot)) {
+      throw new BadRequestError(
+        `preferred_learning_schedule[${index}] must be an object with day and time`,
+      );
+    }
+
+    const day = normalizeInteger(slot.day, `preferred_learning_schedule[${index}].day`);
+    if (day < 0 || day > 6) {
+      throw new BadRequestError(
+        `preferred_learning_schedule[${index}].day must be between 0 and 6`,
+      );
+    }
+
+    const time = normalizeTime(slot.time, `preferred_learning_schedule[${index}].time`);
+
+    if (seenDays.has(day)) {
+      throw new BadRequestError(
+        `preferred_learning_schedule: duplicate day ${day}; at most one slot per weekday`,
+      );
+    }
+    seenDays.add(day);
+
+    return { day, time };
+  });
 };
 
 const normalizeQuietHours = (blocks) => {
@@ -148,6 +193,55 @@ const getSettings = async (req, res, next) => {
 };
 
 /**
+ * PATCH /api/settings/learning-schedule
+ * Updates preferred_learning_schedule with validation and task conflict checks.
+ */
+const patchLearningSchedule = async (req, res, next) => {
+  try {
+    const settings = await ensureUserSettings(req.userId);
+    const raw = req.body.preferred_learning_schedule;
+    if (raw === undefined) {
+      throw new BadRequestError("preferred_learning_schedule is required");
+    }
+
+    const schedule = normalizePreferredLearningSchedule(raw);
+    if (schedule.length === 0) {
+      throw new BadRequestError(
+        "preferred_learning_schedule must include at least one day",
+      );
+    }
+
+    const timeZone = (req.user && req.user.timezone) || "UTC";
+    const conflicts = await findLearningScheduleTaskConflicts(
+      req.userId,
+      schedule,
+      timeZone,
+      Task,
+    );
+
+    if (conflicts.length > 0) {
+      throw new ConflictError(
+        "Learning schedule conflicts with existing tasks",
+        { conflicts },
+      );
+    }
+
+    settings.preferred_learning_schedule = schedule;
+    await settings.save();
+
+    res.json({
+      status: "success",
+      message: "Learning schedule updated",
+      data: {
+        settings,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * PATCH /api/settings
  * Update user settings (quiet-hours + notification toggles) for the authenticated user.
  */
@@ -209,7 +303,9 @@ const updateSettings = async (req, res, next) => {
       req.body.preferred_learning_duration,
       "preferred_learning_duration",
     );
-    const preferredLearningTime = normalizeString(req.body.preferred_learning_time);
+    const preferredLearningSchedule = normalizePreferredLearningSchedule(
+      req.body.preferred_learning_schedule,
+    );
     const googleCalendarSyncEnabled = parseBoolean(
       req.body.google_calendar_sync_enabled,
       "google_calendar_sync_enabled",
@@ -280,8 +376,8 @@ const updateSettings = async (req, res, next) => {
       update.preferred_learning_duration = preferredLearningDuration;
     }
 
-    if (preferredLearningTime !== undefined) {
-      update.preferred_learning_time = preferredLearningTime;
+    if (preferredLearningSchedule !== undefined) {
+      update.preferred_learning_schedule = preferredLearningSchedule;
     }
 
     if (googleCalendarSyncEnabled !== undefined) {
@@ -345,4 +441,5 @@ const updateSettings = async (req, res, next) => {
 module.exports = {
   getSettings,
   updateSettings,
+  patchLearningSchedule,
 };

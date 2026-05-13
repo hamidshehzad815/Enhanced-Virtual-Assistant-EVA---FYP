@@ -36,6 +36,8 @@ def _as_bool(raw_value, default=False):
 class Settings:
     """Application settings loaded from environment variables"""
 
+    BASE_DIR: Path = BASE_DIR
+
     # Server
     PORT: int = int(os.getenv("PORT", "8080"))
 
@@ -61,6 +63,17 @@ class Settings:
 
     # YouTube API
     YOUTUBE_API_KEY: str = os.getenv("YOUTUBE_API_KEY", "")
+    YOUTUBE_DAILY_SEARCH_LIMIT: int = int(os.getenv("YOUTUBE_DAILY_SEARCH_LIMIT", "100"))
+    RESOURCE_FETCH_DELAY_SECONDS: float = float(
+        os.getenv("RESOURCE_FETCH_DELAY_SECONDS", "0.5"),
+    )
+    RESOURCE_REFRESH_ENABLED: bool = _as_bool(
+        os.getenv("RESOURCE_REFRESH_ENABLED"),
+        True,
+    )
+    RESOURCE_REFRESH_INTERVAL_DAYS: int = int(
+        os.getenv("RESOURCE_REFRESH_INTERVAL_DAYS", "30"),
+    )
 
     # Model Settings
     CONFIDENCE_THRESHOLD: float = float(os.getenv("CONFIDENCE_THRESHOLD", "0.7"))
@@ -69,6 +82,10 @@ class Settings:
     CLF1_MODEL_DIR: Path = BASE_DIR / os.getenv("CLF1_MODEL_DIR", "models/clf1")
     CLF2_MODEL_DIR: Path = BASE_DIR / os.getenv("CLF2_MODEL_DIR", "models/intent_classifier")
     NER_MODEL_DIR: Path = BASE_DIR / os.getenv("NER_MODEL_DIR", "models/ner_model")
+    LEARNING_NER_MODEL_DIR: Path = BASE_DIR / os.getenv(
+        "LEARNING_NER_MODEL_DIR",
+        "models/learning_ner",
+    )
 
     # Context Manager
     CONTEXT_TTL: int = int(os.getenv("CONTEXT_TTL", "300"))

@@ -2,9 +2,21 @@
 Context manager helpers for pending multi-turn flows.
 """
 import re
-from typing import Any, Dict, Optional
+from datetime import date, datetime
+from typing import Any, Dict, List, Optional, Set
 
 from context.redis_client import redis_client
+from db.roadmap_resources import get_sessions_required
+from pipeline.entity_scoper import scope_entities
+from pipeline.ner import learning_ner_extractor
+from services.duckling import duckling_client
+from utils.learning_utils import (
+    calculate_available_sessions,
+    map_subtopic,
+    normalize_topic,
+    parse_duration,
+)
+from utils.timezone_utils import get_zoneinfo, resolve_timezone_name
 
 
 _CANCEL_KEYWORDS = {
@@ -237,3 +249,157 @@ def has_update_fields(entities: Dict[str, Any]) -> bool:
 def should_block_new_command(model1_label: str) -> bool:
     """Block fresh commands while waiting for pending confirmation/choice."""
     return model1_label in {"command", "multiple_command"}
+
+
+def _learning_weekday_set(schedule: Any) -> Set[int]:
+    days: Set[int] = set()
+    if not isinstance(schedule, list):
+        return days
+    for slot in schedule:
+        if isinstance(slot, dict) and "day" in slot:
+            try:
+                days.add(int(slot["day"]))
+            except (TypeError, ValueError):
+                continue
+    return days
+
+
+def _today_in_user_tz(tz_name: str) -> date:
+    tz = get_zoneinfo(tz_name)
+    return datetime.now(tz).date()
+
+
+async def process_learning_create_free_text_reply(
+    context: Dict[str, Any],
+    reply: str,
+    *,
+    user_timezone: str,
+    preferred_learning_schedule: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Handle a free-text reply for pending ``learning_create`` (stages: topic, start_date, duration).
+
+    Returns:
+      - ``{"outcome": "retry", "message": str}`` — keep Redis context
+      - ``{"outcome": "unsupported_topic", "message": str}`` — clear context
+      - ``{"outcome": "merged", "merged_entities": dict}`` — caller clears context and re-runs handler
+    """
+    pending_action = context.get("pending_action") or {}
+    stage = str(pending_action.get("stage") or "topic").lower()
+    entities = dict(pending_action.get("entities") or {})
+    cleaned = (reply or "").strip()
+    tz_resolved = resolve_timezone_name(user_timezone or "UTC")
+
+    if stage == "topic":
+        if not learning_ner_extractor.loaded:
+            return {
+                "outcome": "retry",
+                "message": "The learning model is not available right now. Please try again shortly.",
+            }
+        raw = learning_ner_extractor.extract(cleaned, intent_hint="learning_create")
+        scoped = scope_entities(raw, "learning_create")
+        topic_raw = scoped.get("topic")
+        if not topic_raw or not str(topic_raw).strip():
+            return {
+                "outcome": "retry",
+                "message": "I didn't catch which topic you want to learn. Try something like “Python” or “MySQL”.",
+            }
+        canonical = normalize_topic(str(topic_raw).strip())
+        if not canonical:
+            return {
+                "outcome": "unsupported_topic",
+                "message": "That topic isn't in our roadmaps yet. Pick one of the supported languages or databases (say “Python”, “JavaScript”, “MySQL”, …).",
+            }
+        merged = {**entities, "topic": canonical}
+        sub = scoped.get("subtopic")
+        if sub and str(sub).strip():
+            merged["subtopic"] = str(sub).strip()
+        return {"outcome": "merged", "merged_entities": merged}
+
+    if stage == "start_date":
+        iso = await duckling_client.resolve_date(cleaned, timezone=tz_resolved)
+        if not iso:
+            return {
+                "outcome": "retry",
+                "message": "I couldn't parse that date. Try “next Monday”, “May 20”, or a clear day.",
+            }
+        try:
+            start = date.fromisoformat(str(iso)[:10])
+        except ValueError:
+            return {
+                "outcome": "retry",
+                "message": "I couldn't parse that date. Try a specific day like “next Monday”.",
+            }
+        today = _today_in_user_tz(tz_resolved)
+        if start < today:
+            return {
+                "outcome": "retry",
+                "message": "That date is in the past. Pick today or a future day to start.",
+            }
+        merged = {**entities, "start_date": str(iso)[:10]}
+        return {"outcome": "merged", "merged_entities": merged}
+
+    if stage == "duration":
+        days = parse_duration(cleaned)
+        if days is None:
+            return {
+                "outcome": "retry",
+                "message": "Please give a duration like “2 weeks”, “1 month”, or “14 days”.",
+            }
+        if days < 7:
+            return {
+                "outcome": "retry",
+                "message": "Learning plans need at least 7 days. Try a longer window.",
+            }
+        topic = entities.get("topic")
+        if not topic:
+            return {
+                "outcome": "retry",
+                "message": "Something went wrong (missing topic). Start your learning request again.",
+            }
+        roadmap_key = map_subtopic(entities.get("subtopic"), str(topic))
+        start_iso = entities.get("start_date")
+        if not start_iso:
+            return {
+                "outcome": "retry",
+                "message": "Something went wrong (missing start date). Start your learning request again.",
+            }
+        try:
+            start_d = date.fromisoformat(str(start_iso)[:10])
+        except ValueError:
+            return {
+                "outcome": "retry",
+                "message": "Something went wrong with the saved date. Try picking the start date again.",
+            }
+
+        learning_days = _learning_weekday_set(preferred_learning_schedule)
+        if not learning_days:
+            return {
+                "outcome": "retry",
+                "message": "Set at least one weekly learning slot in Settings first, then try again.",
+            }
+
+        sessions_needed = await get_sessions_required(str(topic), roadmap_key)
+        available = calculate_available_sessions(start_d, int(days), learning_days)
+        if sessions_needed > 0 and available < sessions_needed:
+            return {
+                "outcome": "retry",
+                "message": (
+                    f"That period only has {available} learning session(s) on your schedule, "
+                    f"but this roadmap needs {sessions_needed}. "
+                    "Try a longer duration or add more learning days in Settings."
+                ),
+                "feasibility_failed": True,
+            }
+
+        merged = {
+            **entities,
+            "duration_days": int(days),
+            "duration": cleaned,
+        }
+        return {"outcome": "merged", "merged_entities": merged}
+
+    return {
+        "outcome": "retry",
+        "message": "I'm not sure which step we're on. Try your learning request again from the start.",
+    }

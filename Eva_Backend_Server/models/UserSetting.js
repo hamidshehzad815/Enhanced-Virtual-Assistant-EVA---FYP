@@ -5,6 +5,26 @@
 
 const mongoose = require("mongoose");
 
+const learningScheduleSlotSchema = new mongoose.Schema(
+  {
+    day: {
+      type: Number,
+      required: true,
+      min: [0, "Learning schedule day must be 0–6 (Mon–Sun)"],
+      max: [6, "Learning schedule day must be 0–6 (Mon–Sun)"],
+    },
+    time: {
+      type: String,
+      required: true,
+      match: [
+        /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/,
+        "Invalid learning schedule time (HH:mm)",
+      ],
+    },
+  },
+  { _id: false },
+);
+
 const quietHourBlockSchema = new mongoose.Schema(
   {
     label: {
@@ -119,10 +139,10 @@ const userSettingSchema = new mongoose.Schema(
       min: [15, "Learning duration must be at least 15 minutes"],
       max: [240, "Learning duration cannot exceed 4 hours"],
     },
-    preferred_learning_time: {
-      type: String,
-      enum: ["morning", "afternoon", "evening"],
-      default: "afternoon",
+    // Weekday 0=Monday … 6=Sunday, local time HH:mm (empty until user sets in app)
+    preferred_learning_schedule: {
+      type: [learningScheduleSlotSchema],
+      default: [],
     },
     google_calendar_sync_enabled: {
       type: Boolean,

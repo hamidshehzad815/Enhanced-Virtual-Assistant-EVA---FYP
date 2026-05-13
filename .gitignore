@@ -14,3 +14,6 @@ EVA_Test_Automation
 Roadmaps
 EVA_Task_Test_Data_HAMID.txt
 Frontend/
+
+# YouTube fetch quota state (local)
+Eva_AI_Server/data/.youtube_search_quota.json

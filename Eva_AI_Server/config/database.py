@@ -4,6 +4,7 @@ MongoDB connection module using Motor (async driver)
 from motor.motor_asyncio import AsyncIOMotorClient
 from pymongo.errors import ConnectionFailure
 from config.settings import settings
+from db.ensure_indexes import ensure_learning_indexes
 
 
 class Database:
@@ -21,6 +22,11 @@ class Database:
             self.db = self.client[db_name]
             # Verify connection
             await self.client.admin.command("ping")
+            try:
+                await ensure_learning_indexes(self.db)
+                print("[MongoDB] Learning/roadmap indexes ensured")
+            except Exception as exc:  # noqa: BLE001
+                print(f"[MongoDB] Index ensure failed (non-fatal): {exc}")
             print(f"[MongoDB] Connected to {db_name}")
             return True
         except ConnectionFailure as e:
