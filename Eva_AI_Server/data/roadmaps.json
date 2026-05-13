@@ -1,0 +1,1344 @@
+{
+  "topics": [
+    "Python",
+    "JavaScript",
+    "TypeScript",
+    "Java",
+    "C#",
+    "C++",
+    "Go",
+    "Rust",
+    "PHP",
+    "Kotlin",
+    "Swift",
+    "Ruby",
+    "Dart",
+    "C",
+    "Oracle",
+    "MySQL",
+    "Microsoft SQL Server",
+    "PostgreSQL",
+    "MongoDB",
+    "SQL"
+  ],
+  "Python": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "Python general session 1: structured topic and hands-on practice",
+        "Python general session 2: structured topic and hands-on practice",
+        "Python general session 3: structured topic and hands-on practice",
+        "Python general session 4: structured topic and hands-on practice",
+        "Python general session 5: structured topic and hands-on practice",
+        "Python general session 6: structured topic and hands-on practice",
+        "Python general session 7: structured topic and hands-on practice",
+        "Python general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "Python basics session 1: structured topic and hands-on practice",
+        "Python basics session 2: structured topic and hands-on practice",
+        "Python basics session 3: structured topic and hands-on practice",
+        "Python basics session 4: structured topic and hands-on practice",
+        "Python basics session 5: structured topic and hands-on practice",
+        "Python basics session 6: structured topic and hands-on practice",
+        "Python basics session 7: structured topic and hands-on practice",
+        "Python basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "Python intermediate session 1: structured topic and hands-on practice",
+        "Python intermediate session 2: structured topic and hands-on practice",
+        "Python intermediate session 3: structured topic and hands-on practice",
+        "Python intermediate session 4: structured topic and hands-on practice",
+        "Python intermediate session 5: structured topic and hands-on practice",
+        "Python intermediate session 6: structured topic and hands-on practice",
+        "Python intermediate session 7: structured topic and hands-on practice",
+        "Python intermediate session 8: structured topic and hands-on practice",
+        "Python intermediate session 9: structured topic and hands-on practice",
+        "Python intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "Python advanced session 1: structured topic and hands-on practice",
+        "Python advanced session 2: structured topic and hands-on practice",
+        "Python advanced session 3: structured topic and hands-on practice",
+        "Python advanced session 4: structured topic and hands-on practice",
+        "Python advanced session 5: structured topic and hands-on practice",
+        "Python advanced session 6: structured topic and hands-on practice",
+        "Python advanced session 7: structured topic and hands-on practice",
+        "Python advanced session 8: structured topic and hands-on practice",
+        "Python advanced session 9: structured topic and hands-on practice",
+        "Python advanced session 10: structured topic and hands-on practice",
+        "Python advanced session 11: structured topic and hands-on practice",
+        "Python advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "JavaScript": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "JavaScript general session 1: structured topic and hands-on practice",
+        "JavaScript general session 2: structured topic and hands-on practice",
+        "JavaScript general session 3: structured topic and hands-on practice",
+        "JavaScript general session 4: structured topic and hands-on practice",
+        "JavaScript general session 5: structured topic and hands-on practice",
+        "JavaScript general session 6: structured topic and hands-on practice",
+        "JavaScript general session 7: structured topic and hands-on practice",
+        "JavaScript general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "JavaScript basics session 1: structured topic and hands-on practice",
+        "JavaScript basics session 2: structured topic and hands-on practice",
+        "JavaScript basics session 3: structured topic and hands-on practice",
+        "JavaScript basics session 4: structured topic and hands-on practice",
+        "JavaScript basics session 5: structured topic and hands-on practice",
+        "JavaScript basics session 6: structured topic and hands-on practice",
+        "JavaScript basics session 7: structured topic and hands-on practice",
+        "JavaScript basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "JavaScript intermediate session 1: structured topic and hands-on practice",
+        "JavaScript intermediate session 2: structured topic and hands-on practice",
+        "JavaScript intermediate session 3: structured topic and hands-on practice",
+        "JavaScript intermediate session 4: structured topic and hands-on practice",
+        "JavaScript intermediate session 5: structured topic and hands-on practice",
+        "JavaScript intermediate session 6: structured topic and hands-on practice",
+        "JavaScript intermediate session 7: structured topic and hands-on practice",
+        "JavaScript intermediate session 8: structured topic and hands-on practice",
+        "JavaScript intermediate session 9: structured topic and hands-on practice",
+        "JavaScript intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "JavaScript advanced session 1: structured topic and hands-on practice",
+        "JavaScript advanced session 2: structured topic and hands-on practice",
+        "JavaScript advanced session 3: structured topic and hands-on practice",
+        "JavaScript advanced session 4: structured topic and hands-on practice",
+        "JavaScript advanced session 5: structured topic and hands-on practice",
+        "JavaScript advanced session 6: structured topic and hands-on practice",
+        "JavaScript advanced session 7: structured topic and hands-on practice",
+        "JavaScript advanced session 8: structured topic and hands-on practice",
+        "JavaScript advanced session 9: structured topic and hands-on practice",
+        "JavaScript advanced session 10: structured topic and hands-on practice",
+        "JavaScript advanced session 11: structured topic and hands-on practice",
+        "JavaScript advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "TypeScript": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "TypeScript general session 1: structured topic and hands-on practice",
+        "TypeScript general session 2: structured topic and hands-on practice",
+        "TypeScript general session 3: structured topic and hands-on practice",
+        "TypeScript general session 4: structured topic and hands-on practice",
+        "TypeScript general session 5: structured topic and hands-on practice",
+        "TypeScript general session 6: structured topic and hands-on practice",
+        "TypeScript general session 7: structured topic and hands-on practice",
+        "TypeScript general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "TypeScript basics session 1: structured topic and hands-on practice",
+        "TypeScript basics session 2: structured topic and hands-on practice",
+        "TypeScript basics session 3: structured topic and hands-on practice",
+        "TypeScript basics session 4: structured topic and hands-on practice",
+        "TypeScript basics session 5: structured topic and hands-on practice",
+        "TypeScript basics session 6: structured topic and hands-on practice",
+        "TypeScript basics session 7: structured topic and hands-on practice",
+        "TypeScript basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "TypeScript intermediate session 1: structured topic and hands-on practice",
+        "TypeScript intermediate session 2: structured topic and hands-on practice",
+        "TypeScript intermediate session 3: structured topic and hands-on practice",
+        "TypeScript intermediate session 4: structured topic and hands-on practice",
+        "TypeScript intermediate session 5: structured topic and hands-on practice",
+        "TypeScript intermediate session 6: structured topic and hands-on practice",
+        "TypeScript intermediate session 7: structured topic and hands-on practice",
+        "TypeScript intermediate session 8: structured topic and hands-on practice",
+        "TypeScript intermediate session 9: structured topic and hands-on practice",
+        "TypeScript intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "TypeScript advanced session 1: structured topic and hands-on practice",
+        "TypeScript advanced session 2: structured topic and hands-on practice",
+        "TypeScript advanced session 3: structured topic and hands-on practice",
+        "TypeScript advanced session 4: structured topic and hands-on practice",
+        "TypeScript advanced session 5: structured topic and hands-on practice",
+        "TypeScript advanced session 6: structured topic and hands-on practice",
+        "TypeScript advanced session 7: structured topic and hands-on practice",
+        "TypeScript advanced session 8: structured topic and hands-on practice",
+        "TypeScript advanced session 9: structured topic and hands-on practice",
+        "TypeScript advanced session 10: structured topic and hands-on practice",
+        "TypeScript advanced session 11: structured topic and hands-on practice",
+        "TypeScript advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "Java": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "Java general session 1: structured topic and hands-on practice",
+        "Java general session 2: structured topic and hands-on practice",
+        "Java general session 3: structured topic and hands-on practice",
+        "Java general session 4: structured topic and hands-on practice",
+        "Java general session 5: structured topic and hands-on practice",
+        "Java general session 6: structured topic and hands-on practice",
+        "Java general session 7: structured topic and hands-on practice",
+        "Java general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "Java basics session 1: structured topic and hands-on practice",
+        "Java basics session 2: structured topic and hands-on practice",
+        "Java basics session 3: structured topic and hands-on practice",
+        "Java basics session 4: structured topic and hands-on practice",
+        "Java basics session 5: structured topic and hands-on practice",
+        "Java basics session 6: structured topic and hands-on practice",
+        "Java basics session 7: structured topic and hands-on practice",
+        "Java basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "Java intermediate session 1: structured topic and hands-on practice",
+        "Java intermediate session 2: structured topic and hands-on practice",
+        "Java intermediate session 3: structured topic and hands-on practice",
+        "Java intermediate session 4: structured topic and hands-on practice",
+        "Java intermediate session 5: structured topic and hands-on practice",
+        "Java intermediate session 6: structured topic and hands-on practice",
+        "Java intermediate session 7: structured topic and hands-on practice",
+        "Java intermediate session 8: structured topic and hands-on practice",
+        "Java intermediate session 9: structured topic and hands-on practice",
+        "Java intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "Java advanced session 1: structured topic and hands-on practice",
+        "Java advanced session 2: structured topic and hands-on practice",
+        "Java advanced session 3: structured topic and hands-on practice",
+        "Java advanced session 4: structured topic and hands-on practice",
+        "Java advanced session 5: structured topic and hands-on practice",
+        "Java advanced session 6: structured topic and hands-on practice",
+        "Java advanced session 7: structured topic and hands-on practice",
+        "Java advanced session 8: structured topic and hands-on practice",
+        "Java advanced session 9: structured topic and hands-on practice",
+        "Java advanced session 10: structured topic and hands-on practice",
+        "Java advanced session 11: structured topic and hands-on practice",
+        "Java advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "C#": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "C# general session 1: structured topic and hands-on practice",
+        "C# general session 2: structured topic and hands-on practice",
+        "C# general session 3: structured topic and hands-on practice",
+        "C# general session 4: structured topic and hands-on practice",
+        "C# general session 5: structured topic and hands-on practice",
+        "C# general session 6: structured topic and hands-on practice",
+        "C# general session 7: structured topic and hands-on practice",
+        "C# general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "C# basics session 1: structured topic and hands-on practice",
+        "C# basics session 2: structured topic and hands-on practice",
+        "C# basics session 3: structured topic and hands-on practice",
+        "C# basics session 4: structured topic and hands-on practice",
+        "C# basics session 5: structured topic and hands-on practice",
+        "C# basics session 6: structured topic and hands-on practice",
+        "C# basics session 7: structured topic and hands-on practice",
+        "C# basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "C# intermediate session 1: structured topic and hands-on practice",
+        "C# intermediate session 2: structured topic and hands-on practice",
+        "C# intermediate session 3: structured topic and hands-on practice",
+        "C# intermediate session 4: structured topic and hands-on practice",
+        "C# intermediate session 5: structured topic and hands-on practice",
+        "C# intermediate session 6: structured topic and hands-on practice",
+        "C# intermediate session 7: structured topic and hands-on practice",
+        "C# intermediate session 8: structured topic and hands-on practice",
+        "C# intermediate session 9: structured topic and hands-on practice",
+        "C# intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "C# advanced session 1: structured topic and hands-on practice",
+        "C# advanced session 2: structured topic and hands-on practice",
+        "C# advanced session 3: structured topic and hands-on practice",
+        "C# advanced session 4: structured topic and hands-on practice",
+        "C# advanced session 5: structured topic and hands-on practice",
+        "C# advanced session 6: structured topic and hands-on practice",
+        "C# advanced session 7: structured topic and hands-on practice",
+        "C# advanced session 8: structured topic and hands-on practice",
+        "C# advanced session 9: structured topic and hands-on practice",
+        "C# advanced session 10: structured topic and hands-on practice",
+        "C# advanced session 11: structured topic and hands-on practice",
+        "C# advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "C++": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "C++ general session 1: structured topic and hands-on practice",
+        "C++ general session 2: structured topic and hands-on practice",
+        "C++ general session 3: structured topic and hands-on practice",
+        "C++ general session 4: structured topic and hands-on practice",
+        "C++ general session 5: structured topic and hands-on practice",
+        "C++ general session 6: structured topic and hands-on practice",
+        "C++ general session 7: structured topic and hands-on practice",
+        "C++ general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "C++ basics session 1: structured topic and hands-on practice",
+        "C++ basics session 2: structured topic and hands-on practice",
+        "C++ basics session 3: structured topic and hands-on practice",
+        "C++ basics session 4: structured topic and hands-on practice",
+        "C++ basics session 5: structured topic and hands-on practice",
+        "C++ basics session 6: structured topic and hands-on practice",
+        "C++ basics session 7: structured topic and hands-on practice",
+        "C++ basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "C++ intermediate session 1: structured topic and hands-on practice",
+        "C++ intermediate session 2: structured topic and hands-on practice",
+        "C++ intermediate session 3: structured topic and hands-on practice",
+        "C++ intermediate session 4: structured topic and hands-on practice",
+        "C++ intermediate session 5: structured topic and hands-on practice",
+        "C++ intermediate session 6: structured topic and hands-on practice",
+        "C++ intermediate session 7: structured topic and hands-on practice",
+        "C++ intermediate session 8: structured topic and hands-on practice",
+        "C++ intermediate session 9: structured topic and hands-on practice",
+        "C++ intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "C++ advanced session 1: structured topic and hands-on practice",
+        "C++ advanced session 2: structured topic and hands-on practice",
+        "C++ advanced session 3: structured topic and hands-on practice",
+        "C++ advanced session 4: structured topic and hands-on practice",
+        "C++ advanced session 5: structured topic and hands-on practice",
+        "C++ advanced session 6: structured topic and hands-on practice",
+        "C++ advanced session 7: structured topic and hands-on practice",
+        "C++ advanced session 8: structured topic and hands-on practice",
+        "C++ advanced session 9: structured topic and hands-on practice",
+        "C++ advanced session 10: structured topic and hands-on practice",
+        "C++ advanced session 11: structured topic and hands-on practice",
+        "C++ advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "Go": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "Go general session 1: structured topic and hands-on practice",
+        "Go general session 2: structured topic and hands-on practice",
+        "Go general session 3: structured topic and hands-on practice",
+        "Go general session 4: structured topic and hands-on practice",
+        "Go general session 5: structured topic and hands-on practice",
+        "Go general session 6: structured topic and hands-on practice",
+        "Go general session 7: structured topic and hands-on practice",
+        "Go general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "Go basics session 1: structured topic and hands-on practice",
+        "Go basics session 2: structured topic and hands-on practice",
+        "Go basics session 3: structured topic and hands-on practice",
+        "Go basics session 4: structured topic and hands-on practice",
+        "Go basics session 5: structured topic and hands-on practice",
+        "Go basics session 6: structured topic and hands-on practice",
+        "Go basics session 7: structured topic and hands-on practice",
+        "Go basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "Go intermediate session 1: structured topic and hands-on practice",
+        "Go intermediate session 2: structured topic and hands-on practice",
+        "Go intermediate session 3: structured topic and hands-on practice",
+        "Go intermediate session 4: structured topic and hands-on practice",
+        "Go intermediate session 5: structured topic and hands-on practice",
+        "Go intermediate session 6: structured topic and hands-on practice",
+        "Go intermediate session 7: structured topic and hands-on practice",
+        "Go intermediate session 8: structured topic and hands-on practice",
+        "Go intermediate session 9: structured topic and hands-on practice",
+        "Go intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "Go advanced session 1: structured topic and hands-on practice",
+        "Go advanced session 2: structured topic and hands-on practice",
+        "Go advanced session 3: structured topic and hands-on practice",
+        "Go advanced session 4: structured topic and hands-on practice",
+        "Go advanced session 5: structured topic and hands-on practice",
+        "Go advanced session 6: structured topic and hands-on practice",
+        "Go advanced session 7: structured topic and hands-on practice",
+        "Go advanced session 8: structured topic and hands-on practice",
+        "Go advanced session 9: structured topic and hands-on practice",
+        "Go advanced session 10: structured topic and hands-on practice",
+        "Go advanced session 11: structured topic and hands-on practice",
+        "Go advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "Rust": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "Rust general session 1: structured topic and hands-on practice",
+        "Rust general session 2: structured topic and hands-on practice",
+        "Rust general session 3: structured topic and hands-on practice",
+        "Rust general session 4: structured topic and hands-on practice",
+        "Rust general session 5: structured topic and hands-on practice",
+        "Rust general session 6: structured topic and hands-on practice",
+        "Rust general session 7: structured topic and hands-on practice",
+        "Rust general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "Rust basics session 1: structured topic and hands-on practice",
+        "Rust basics session 2: structured topic and hands-on practice",
+        "Rust basics session 3: structured topic and hands-on practice",
+        "Rust basics session 4: structured topic and hands-on practice",
+        "Rust basics session 5: structured topic and hands-on practice",
+        "Rust basics session 6: structured topic and hands-on practice",
+        "Rust basics session 7: structured topic and hands-on practice",
+        "Rust basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "Rust intermediate session 1: structured topic and hands-on practice",
+        "Rust intermediate session 2: structured topic and hands-on practice",
+        "Rust intermediate session 3: structured topic and hands-on practice",
+        "Rust intermediate session 4: structured topic and hands-on practice",
+        "Rust intermediate session 5: structured topic and hands-on practice",
+        "Rust intermediate session 6: structured topic and hands-on practice",
+        "Rust intermediate session 7: structured topic and hands-on practice",
+        "Rust intermediate session 8: structured topic and hands-on practice",
+        "Rust intermediate session 9: structured topic and hands-on practice",
+        "Rust intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "Rust advanced session 1: structured topic and hands-on practice",
+        "Rust advanced session 2: structured topic and hands-on practice",
+        "Rust advanced session 3: structured topic and hands-on practice",
+        "Rust advanced session 4: structured topic and hands-on practice",
+        "Rust advanced session 5: structured topic and hands-on practice",
+        "Rust advanced session 6: structured topic and hands-on practice",
+        "Rust advanced session 7: structured topic and hands-on practice",
+        "Rust advanced session 8: structured topic and hands-on practice",
+        "Rust advanced session 9: structured topic and hands-on practice",
+        "Rust advanced session 10: structured topic and hands-on practice",
+        "Rust advanced session 11: structured topic and hands-on practice",
+        "Rust advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "PHP": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "PHP general session 1: structured topic and hands-on practice",
+        "PHP general session 2: structured topic and hands-on practice",
+        "PHP general session 3: structured topic and hands-on practice",
+        "PHP general session 4: structured topic and hands-on practice",
+        "PHP general session 5: structured topic and hands-on practice",
+        "PHP general session 6: structured topic and hands-on practice",
+        "PHP general session 7: structured topic and hands-on practice",
+        "PHP general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "PHP basics session 1: structured topic and hands-on practice",
+        "PHP basics session 2: structured topic and hands-on practice",
+        "PHP basics session 3: structured topic and hands-on practice",
+        "PHP basics session 4: structured topic and hands-on practice",
+        "PHP basics session 5: structured topic and hands-on practice",
+        "PHP basics session 6: structured topic and hands-on practice",
+        "PHP basics session 7: structured topic and hands-on practice",
+        "PHP basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "PHP intermediate session 1: structured topic and hands-on practice",
+        "PHP intermediate session 2: structured topic and hands-on practice",
+        "PHP intermediate session 3: structured topic and hands-on practice",
+        "PHP intermediate session 4: structured topic and hands-on practice",
+        "PHP intermediate session 5: structured topic and hands-on practice",
+        "PHP intermediate session 6: structured topic and hands-on practice",
+        "PHP intermediate session 7: structured topic and hands-on practice",
+        "PHP intermediate session 8: structured topic and hands-on practice",
+        "PHP intermediate session 9: structured topic and hands-on practice",
+        "PHP intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "PHP advanced session 1: structured topic and hands-on practice",
+        "PHP advanced session 2: structured topic and hands-on practice",
+        "PHP advanced session 3: structured topic and hands-on practice",
+        "PHP advanced session 4: structured topic and hands-on practice",
+        "PHP advanced session 5: structured topic and hands-on practice",
+        "PHP advanced session 6: structured topic and hands-on practice",
+        "PHP advanced session 7: structured topic and hands-on practice",
+        "PHP advanced session 8: structured topic and hands-on practice",
+        "PHP advanced session 9: structured topic and hands-on practice",
+        "PHP advanced session 10: structured topic and hands-on practice",
+        "PHP advanced session 11: structured topic and hands-on practice",
+        "PHP advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "Kotlin": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "Kotlin general session 1: structured topic and hands-on practice",
+        "Kotlin general session 2: structured topic and hands-on practice",
+        "Kotlin general session 3: structured topic and hands-on practice",
+        "Kotlin general session 4: structured topic and hands-on practice",
+        "Kotlin general session 5: structured topic and hands-on practice",
+        "Kotlin general session 6: structured topic and hands-on practice",
+        "Kotlin general session 7: structured topic and hands-on practice",
+        "Kotlin general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "Kotlin basics session 1: structured topic and hands-on practice",
+        "Kotlin basics session 2: structured topic and hands-on practice",
+        "Kotlin basics session 3: structured topic and hands-on practice",
+        "Kotlin basics session 4: structured topic and hands-on practice",
+        "Kotlin basics session 5: structured topic and hands-on practice",
+        "Kotlin basics session 6: structured topic and hands-on practice",
+        "Kotlin basics session 7: structured topic and hands-on practice",
+        "Kotlin basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "Kotlin intermediate session 1: structured topic and hands-on practice",
+        "Kotlin intermediate session 2: structured topic and hands-on practice",
+        "Kotlin intermediate session 3: structured topic and hands-on practice",
+        "Kotlin intermediate session 4: structured topic and hands-on practice",
+        "Kotlin intermediate session 5: structured topic and hands-on practice",
+        "Kotlin intermediate session 6: structured topic and hands-on practice",
+        "Kotlin intermediate session 7: structured topic and hands-on practice",
+        "Kotlin intermediate session 8: structured topic and hands-on practice",
+        "Kotlin intermediate session 9: structured topic and hands-on practice",
+        "Kotlin intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "Kotlin advanced session 1: structured topic and hands-on practice",
+        "Kotlin advanced session 2: structured topic and hands-on practice",
+        "Kotlin advanced session 3: structured topic and hands-on practice",
+        "Kotlin advanced session 4: structured topic and hands-on practice",
+        "Kotlin advanced session 5: structured topic and hands-on practice",
+        "Kotlin advanced session 6: structured topic and hands-on practice",
+        "Kotlin advanced session 7: structured topic and hands-on practice",
+        "Kotlin advanced session 8: structured topic and hands-on practice",
+        "Kotlin advanced session 9: structured topic and hands-on practice",
+        "Kotlin advanced session 10: structured topic and hands-on practice",
+        "Kotlin advanced session 11: structured topic and hands-on practice",
+        "Kotlin advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "Swift": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "Swift general session 1: structured topic and hands-on practice",
+        "Swift general session 2: structured topic and hands-on practice",
+        "Swift general session 3: structured topic and hands-on practice",
+        "Swift general session 4: structured topic and hands-on practice",
+        "Swift general session 5: structured topic and hands-on practice",
+        "Swift general session 6: structured topic and hands-on practice",
+        "Swift general session 7: structured topic and hands-on practice",
+        "Swift general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "Swift basics session 1: structured topic and hands-on practice",
+        "Swift basics session 2: structured topic and hands-on practice",
+        "Swift basics session 3: structured topic and hands-on practice",
+        "Swift basics session 4: structured topic and hands-on practice",
+        "Swift basics session 5: structured topic and hands-on practice",
+        "Swift basics session 6: structured topic and hands-on practice",
+        "Swift basics session 7: structured topic and hands-on practice",
+        "Swift basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "Swift intermediate session 1: structured topic and hands-on practice",
+        "Swift intermediate session 2: structured topic and hands-on practice",
+        "Swift intermediate session 3: structured topic and hands-on practice",
+        "Swift intermediate session 4: structured topic and hands-on practice",
+        "Swift intermediate session 5: structured topic and hands-on practice",
+        "Swift intermediate session 6: structured topic and hands-on practice",
+        "Swift intermediate session 7: structured topic and hands-on practice",
+        "Swift intermediate session 8: structured topic and hands-on practice",
+        "Swift intermediate session 9: structured topic and hands-on practice",
+        "Swift intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "Swift advanced session 1: structured topic and hands-on practice",
+        "Swift advanced session 2: structured topic and hands-on practice",
+        "Swift advanced session 3: structured topic and hands-on practice",
+        "Swift advanced session 4: structured topic and hands-on practice",
+        "Swift advanced session 5: structured topic and hands-on practice",
+        "Swift advanced session 6: structured topic and hands-on practice",
+        "Swift advanced session 7: structured topic and hands-on practice",
+        "Swift advanced session 8: structured topic and hands-on practice",
+        "Swift advanced session 9: structured topic and hands-on practice",
+        "Swift advanced session 10: structured topic and hands-on practice",
+        "Swift advanced session 11: structured topic and hands-on practice",
+        "Swift advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "Ruby": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "Ruby general session 1: structured topic and hands-on practice",
+        "Ruby general session 2: structured topic and hands-on practice",
+        "Ruby general session 3: structured topic and hands-on practice",
+        "Ruby general session 4: structured topic and hands-on practice",
+        "Ruby general session 5: structured topic and hands-on practice",
+        "Ruby general session 6: structured topic and hands-on practice",
+        "Ruby general session 7: structured topic and hands-on practice",
+        "Ruby general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "Ruby basics session 1: structured topic and hands-on practice",
+        "Ruby basics session 2: structured topic and hands-on practice",
+        "Ruby basics session 3: structured topic and hands-on practice",
+        "Ruby basics session 4: structured topic and hands-on practice",
+        "Ruby basics session 5: structured topic and hands-on practice",
+        "Ruby basics session 6: structured topic and hands-on practice",
+        "Ruby basics session 7: structured topic and hands-on practice",
+        "Ruby basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "Ruby intermediate session 1: structured topic and hands-on practice",
+        "Ruby intermediate session 2: structured topic and hands-on practice",
+        "Ruby intermediate session 3: structured topic and hands-on practice",
+        "Ruby intermediate session 4: structured topic and hands-on practice",
+        "Ruby intermediate session 5: structured topic and hands-on practice",
+        "Ruby intermediate session 6: structured topic and hands-on practice",
+        "Ruby intermediate session 7: structured topic and hands-on practice",
+        "Ruby intermediate session 8: structured topic and hands-on practice",
+        "Ruby intermediate session 9: structured topic and hands-on practice",
+        "Ruby intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "Ruby advanced session 1: structured topic and hands-on practice",
+        "Ruby advanced session 2: structured topic and hands-on practice",
+        "Ruby advanced session 3: structured topic and hands-on practice",
+        "Ruby advanced session 4: structured topic and hands-on practice",
+        "Ruby advanced session 5: structured topic and hands-on practice",
+        "Ruby advanced session 6: structured topic and hands-on practice",
+        "Ruby advanced session 7: structured topic and hands-on practice",
+        "Ruby advanced session 8: structured topic and hands-on practice",
+        "Ruby advanced session 9: structured topic and hands-on practice",
+        "Ruby advanced session 10: structured topic and hands-on practice",
+        "Ruby advanced session 11: structured topic and hands-on practice",
+        "Ruby advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "Dart": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "Dart general session 1: structured topic and hands-on practice",
+        "Dart general session 2: structured topic and hands-on practice",
+        "Dart general session 3: structured topic and hands-on practice",
+        "Dart general session 4: structured topic and hands-on practice",
+        "Dart general session 5: structured topic and hands-on practice",
+        "Dart general session 6: structured topic and hands-on practice",
+        "Dart general session 7: structured topic and hands-on practice",
+        "Dart general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "Dart basics session 1: structured topic and hands-on practice",
+        "Dart basics session 2: structured topic and hands-on practice",
+        "Dart basics session 3: structured topic and hands-on practice",
+        "Dart basics session 4: structured topic and hands-on practice",
+        "Dart basics session 5: structured topic and hands-on practice",
+        "Dart basics session 6: structured topic and hands-on practice",
+        "Dart basics session 7: structured topic and hands-on practice",
+        "Dart basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "Dart intermediate session 1: structured topic and hands-on practice",
+        "Dart intermediate session 2: structured topic and hands-on practice",
+        "Dart intermediate session 3: structured topic and hands-on practice",
+        "Dart intermediate session 4: structured topic and hands-on practice",
+        "Dart intermediate session 5: structured topic and hands-on practice",
+        "Dart intermediate session 6: structured topic and hands-on practice",
+        "Dart intermediate session 7: structured topic and hands-on practice",
+        "Dart intermediate session 8: structured topic and hands-on practice",
+        "Dart intermediate session 9: structured topic and hands-on practice",
+        "Dart intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "Dart advanced session 1: structured topic and hands-on practice",
+        "Dart advanced session 2: structured topic and hands-on practice",
+        "Dart advanced session 3: structured topic and hands-on practice",
+        "Dart advanced session 4: structured topic and hands-on practice",
+        "Dart advanced session 5: structured topic and hands-on practice",
+        "Dart advanced session 6: structured topic and hands-on practice",
+        "Dart advanced session 7: structured topic and hands-on practice",
+        "Dart advanced session 8: structured topic and hands-on practice",
+        "Dart advanced session 9: structured topic and hands-on practice",
+        "Dart advanced session 10: structured topic and hands-on practice",
+        "Dart advanced session 11: structured topic and hands-on practice",
+        "Dart advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "C": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "C general session 1: structured topic and hands-on practice",
+        "C general session 2: structured topic and hands-on practice",
+        "C general session 3: structured topic and hands-on practice",
+        "C general session 4: structured topic and hands-on practice",
+        "C general session 5: structured topic and hands-on practice",
+        "C general session 6: structured topic and hands-on practice",
+        "C general session 7: structured topic and hands-on practice",
+        "C general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "C basics session 1: structured topic and hands-on practice",
+        "C basics session 2: structured topic and hands-on practice",
+        "C basics session 3: structured topic and hands-on practice",
+        "C basics session 4: structured topic and hands-on practice",
+        "C basics session 5: structured topic and hands-on practice",
+        "C basics session 6: structured topic and hands-on practice",
+        "C basics session 7: structured topic and hands-on practice",
+        "C basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "C intermediate session 1: structured topic and hands-on practice",
+        "C intermediate session 2: structured topic and hands-on practice",
+        "C intermediate session 3: structured topic and hands-on practice",
+        "C intermediate session 4: structured topic and hands-on practice",
+        "C intermediate session 5: structured topic and hands-on practice",
+        "C intermediate session 6: structured topic and hands-on practice",
+        "C intermediate session 7: structured topic and hands-on practice",
+        "C intermediate session 8: structured topic and hands-on practice",
+        "C intermediate session 9: structured topic and hands-on practice",
+        "C intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "C advanced session 1: structured topic and hands-on practice",
+        "C advanced session 2: structured topic and hands-on practice",
+        "C advanced session 3: structured topic and hands-on practice",
+        "C advanced session 4: structured topic and hands-on practice",
+        "C advanced session 5: structured topic and hands-on practice",
+        "C advanced session 6: structured topic and hands-on practice",
+        "C advanced session 7: structured topic and hands-on practice",
+        "C advanced session 8: structured topic and hands-on practice",
+        "C advanced session 9: structured topic and hands-on practice",
+        "C advanced session 10: structured topic and hands-on practice",
+        "C advanced session 11: structured topic and hands-on practice",
+        "C advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "Oracle": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "Oracle general session 1: structured topic and hands-on practice",
+        "Oracle general session 2: structured topic and hands-on practice",
+        "Oracle general session 3: structured topic and hands-on practice",
+        "Oracle general session 4: structured topic and hands-on practice",
+        "Oracle general session 5: structured topic and hands-on practice",
+        "Oracle general session 6: structured topic and hands-on practice",
+        "Oracle general session 7: structured topic and hands-on practice",
+        "Oracle general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "Oracle basics session 1: structured topic and hands-on practice",
+        "Oracle basics session 2: structured topic and hands-on practice",
+        "Oracle basics session 3: structured topic and hands-on practice",
+        "Oracle basics session 4: structured topic and hands-on practice",
+        "Oracle basics session 5: structured topic and hands-on practice",
+        "Oracle basics session 6: structured topic and hands-on practice",
+        "Oracle basics session 7: structured topic and hands-on practice",
+        "Oracle basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "Oracle intermediate session 1: structured topic and hands-on practice",
+        "Oracle intermediate session 2: structured topic and hands-on practice",
+        "Oracle intermediate session 3: structured topic and hands-on practice",
+        "Oracle intermediate session 4: structured topic and hands-on practice",
+        "Oracle intermediate session 5: structured topic and hands-on practice",
+        "Oracle intermediate session 6: structured topic and hands-on practice",
+        "Oracle intermediate session 7: structured topic and hands-on practice",
+        "Oracle intermediate session 8: structured topic and hands-on practice",
+        "Oracle intermediate session 9: structured topic and hands-on practice",
+        "Oracle intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "Oracle advanced session 1: structured topic and hands-on practice",
+        "Oracle advanced session 2: structured topic and hands-on practice",
+        "Oracle advanced session 3: structured topic and hands-on practice",
+        "Oracle advanced session 4: structured topic and hands-on practice",
+        "Oracle advanced session 5: structured topic and hands-on practice",
+        "Oracle advanced session 6: structured topic and hands-on practice",
+        "Oracle advanced session 7: structured topic and hands-on practice",
+        "Oracle advanced session 8: structured topic and hands-on practice",
+        "Oracle advanced session 9: structured topic and hands-on practice",
+        "Oracle advanced session 10: structured topic and hands-on practice",
+        "Oracle advanced session 11: structured topic and hands-on practice",
+        "Oracle advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "MySQL": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "MySQL general session 1: structured topic and hands-on practice",
+        "MySQL general session 2: structured topic and hands-on practice",
+        "MySQL general session 3: structured topic and hands-on practice",
+        "MySQL general session 4: structured topic and hands-on practice",
+        "MySQL general session 5: structured topic and hands-on practice",
+        "MySQL general session 6: structured topic and hands-on practice",
+        "MySQL general session 7: structured topic and hands-on practice",
+        "MySQL general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "MySQL basics session 1: structured topic and hands-on practice",
+        "MySQL basics session 2: structured topic and hands-on practice",
+        "MySQL basics session 3: structured topic and hands-on practice",
+        "MySQL basics session 4: structured topic and hands-on practice",
+        "MySQL basics session 5: structured topic and hands-on practice",
+        "MySQL basics session 6: structured topic and hands-on practice",
+        "MySQL basics session 7: structured topic and hands-on practice",
+        "MySQL basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "MySQL intermediate session 1: structured topic and hands-on practice",
+        "MySQL intermediate session 2: structured topic and hands-on practice",
+        "MySQL intermediate session 3: structured topic and hands-on practice",
+        "MySQL intermediate session 4: structured topic and hands-on practice",
+        "MySQL intermediate session 5: structured topic and hands-on practice",
+        "MySQL intermediate session 6: structured topic and hands-on practice",
+        "MySQL intermediate session 7: structured topic and hands-on practice",
+        "MySQL intermediate session 8: structured topic and hands-on practice",
+        "MySQL intermediate session 9: structured topic and hands-on practice",
+        "MySQL intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "MySQL advanced session 1: structured topic and hands-on practice",
+        "MySQL advanced session 2: structured topic and hands-on practice",
+        "MySQL advanced session 3: structured topic and hands-on practice",
+        "MySQL advanced session 4: structured topic and hands-on practice",
+        "MySQL advanced session 5: structured topic and hands-on practice",
+        "MySQL advanced session 6: structured topic and hands-on practice",
+        "MySQL advanced session 7: structured topic and hands-on practice",
+        "MySQL advanced session 8: structured topic and hands-on practice",
+        "MySQL advanced session 9: structured topic and hands-on practice",
+        "MySQL advanced session 10: structured topic and hands-on practice",
+        "MySQL advanced session 11: structured topic and hands-on practice",
+        "MySQL advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "Microsoft SQL Server": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "Microsoft SQL Server general session 1: structured topic and hands-on practice",
+        "Microsoft SQL Server general session 2: structured topic and hands-on practice",
+        "Microsoft SQL Server general session 3: structured topic and hands-on practice",
+        "Microsoft SQL Server general session 4: structured topic and hands-on practice",
+        "Microsoft SQL Server general session 5: structured topic and hands-on practice",
+        "Microsoft SQL Server general session 6: structured topic and hands-on practice",
+        "Microsoft SQL Server general session 7: structured topic and hands-on practice",
+        "Microsoft SQL Server general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "Microsoft SQL Server basics session 1: structured topic and hands-on practice",
+        "Microsoft SQL Server basics session 2: structured topic and hands-on practice",
+        "Microsoft SQL Server basics session 3: structured topic and hands-on practice",
+        "Microsoft SQL Server basics session 4: structured topic and hands-on practice",
+        "Microsoft SQL Server basics session 5: structured topic and hands-on practice",
+        "Microsoft SQL Server basics session 6: structured topic and hands-on practice",
+        "Microsoft SQL Server basics session 7: structured topic and hands-on practice",
+        "Microsoft SQL Server basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "Microsoft SQL Server intermediate session 1: structured topic and hands-on practice",
+        "Microsoft SQL Server intermediate session 2: structured topic and hands-on practice",
+        "Microsoft SQL Server intermediate session 3: structured topic and hands-on practice",
+        "Microsoft SQL Server intermediate session 4: structured topic and hands-on practice",
+        "Microsoft SQL Server intermediate session 5: structured topic and hands-on practice",
+        "Microsoft SQL Server intermediate session 6: structured topic and hands-on practice",
+        "Microsoft SQL Server intermediate session 7: structured topic and hands-on practice",
+        "Microsoft SQL Server intermediate session 8: structured topic and hands-on practice",
+        "Microsoft SQL Server intermediate session 9: structured topic and hands-on practice",
+        "Microsoft SQL Server intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "Microsoft SQL Server advanced session 1: structured topic and hands-on practice",
+        "Microsoft SQL Server advanced session 2: structured topic and hands-on practice",
+        "Microsoft SQL Server advanced session 3: structured topic and hands-on practice",
+        "Microsoft SQL Server advanced session 4: structured topic and hands-on practice",
+        "Microsoft SQL Server advanced session 5: structured topic and hands-on practice",
+        "Microsoft SQL Server advanced session 6: structured topic and hands-on practice",
+        "Microsoft SQL Server advanced session 7: structured topic and hands-on practice",
+        "Microsoft SQL Server advanced session 8: structured topic and hands-on practice",
+        "Microsoft SQL Server advanced session 9: structured topic and hands-on practice",
+        "Microsoft SQL Server advanced session 10: structured topic and hands-on practice",
+        "Microsoft SQL Server advanced session 11: structured topic and hands-on practice",
+        "Microsoft SQL Server advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "PostgreSQL": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "PostgreSQL general session 1: structured topic and hands-on practice",
+        "PostgreSQL general session 2: structured topic and hands-on practice",
+        "PostgreSQL general session 3: structured topic and hands-on practice",
+        "PostgreSQL general session 4: structured topic and hands-on practice",
+        "PostgreSQL general session 5: structured topic and hands-on practice",
+        "PostgreSQL general session 6: structured topic and hands-on practice",
+        "PostgreSQL general session 7: structured topic and hands-on practice",
+        "PostgreSQL general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "PostgreSQL basics session 1: structured topic and hands-on practice",
+        "PostgreSQL basics session 2: structured topic and hands-on practice",
+        "PostgreSQL basics session 3: structured topic and hands-on practice",
+        "PostgreSQL basics session 4: structured topic and hands-on practice",
+        "PostgreSQL basics session 5: structured topic and hands-on practice",
+        "PostgreSQL basics session 6: structured topic and hands-on practice",
+        "PostgreSQL basics session 7: structured topic and hands-on practice",
+        "PostgreSQL basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "PostgreSQL intermediate session 1: structured topic and hands-on practice",
+        "PostgreSQL intermediate session 2: structured topic and hands-on practice",
+        "PostgreSQL intermediate session 3: structured topic and hands-on practice",
+        "PostgreSQL intermediate session 4: structured topic and hands-on practice",
+        "PostgreSQL intermediate session 5: structured topic and hands-on practice",
+        "PostgreSQL intermediate session 6: structured topic and hands-on practice",
+        "PostgreSQL intermediate session 7: structured topic and hands-on practice",
+        "PostgreSQL intermediate session 8: structured topic and hands-on practice",
+        "PostgreSQL intermediate session 9: structured topic and hands-on practice",
+        "PostgreSQL intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "PostgreSQL advanced session 1: structured topic and hands-on practice",
+        "PostgreSQL advanced session 2: structured topic and hands-on practice",
+        "PostgreSQL advanced session 3: structured topic and hands-on practice",
+        "PostgreSQL advanced session 4: structured topic and hands-on practice",
+        "PostgreSQL advanced session 5: structured topic and hands-on practice",
+        "PostgreSQL advanced session 6: structured topic and hands-on practice",
+        "PostgreSQL advanced session 7: structured topic and hands-on practice",
+        "PostgreSQL advanced session 8: structured topic and hands-on practice",
+        "PostgreSQL advanced session 9: structured topic and hands-on practice",
+        "PostgreSQL advanced session 10: structured topic and hands-on practice",
+        "PostgreSQL advanced session 11: structured topic and hands-on practice",
+        "PostgreSQL advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "MongoDB": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "MongoDB general session 1: structured topic and hands-on practice",
+        "MongoDB general session 2: structured topic and hands-on practice",
+        "MongoDB general session 3: structured topic and hands-on practice",
+        "MongoDB general session 4: structured topic and hands-on practice",
+        "MongoDB general session 5: structured topic and hands-on practice",
+        "MongoDB general session 6: structured topic and hands-on practice",
+        "MongoDB general session 7: structured topic and hands-on practice",
+        "MongoDB general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "MongoDB basics session 1: structured topic and hands-on practice",
+        "MongoDB basics session 2: structured topic and hands-on practice",
+        "MongoDB basics session 3: structured topic and hands-on practice",
+        "MongoDB basics session 4: structured topic and hands-on practice",
+        "MongoDB basics session 5: structured topic and hands-on practice",
+        "MongoDB basics session 6: structured topic and hands-on practice",
+        "MongoDB basics session 7: structured topic and hands-on practice",
+        "MongoDB basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "MongoDB intermediate session 1: structured topic and hands-on practice",
+        "MongoDB intermediate session 2: structured topic and hands-on practice",
+        "MongoDB intermediate session 3: structured topic and hands-on practice",
+        "MongoDB intermediate session 4: structured topic and hands-on practice",
+        "MongoDB intermediate session 5: structured topic and hands-on practice",
+        "MongoDB intermediate session 6: structured topic and hands-on practice",
+        "MongoDB intermediate session 7: structured topic and hands-on practice",
+        "MongoDB intermediate session 8: structured topic and hands-on practice",
+        "MongoDB intermediate session 9: structured topic and hands-on practice",
+        "MongoDB intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "MongoDB advanced session 1: structured topic and hands-on practice",
+        "MongoDB advanced session 2: structured topic and hands-on practice",
+        "MongoDB advanced session 3: structured topic and hands-on practice",
+        "MongoDB advanced session 4: structured topic and hands-on practice",
+        "MongoDB advanced session 5: structured topic and hands-on practice",
+        "MongoDB advanced session 6: structured topic and hands-on practice",
+        "MongoDB advanced session 7: structured topic and hands-on practice",
+        "MongoDB advanced session 8: structured topic and hands-on practice",
+        "MongoDB advanced session 9: structured topic and hands-on practice",
+        "MongoDB advanced session 10: structured topic and hands-on practice",
+        "MongoDB advanced session 11: structured topic and hands-on practice",
+        "MongoDB advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  },
+  "SQL": {
+    "topics": [
+      "general",
+      "basics",
+      "intermediate",
+      "advanced"
+    ],
+    "general": {
+      "days": 8,
+      "topics": [
+        "SQL general session 1: structured topic and hands-on practice",
+        "SQL general session 2: structured topic and hands-on practice",
+        "SQL general session 3: structured topic and hands-on practice",
+        "SQL general session 4: structured topic and hands-on practice",
+        "SQL general session 5: structured topic and hands-on practice",
+        "SQL general session 6: structured topic and hands-on practice",
+        "SQL general session 7: structured topic and hands-on practice",
+        "SQL general session 8: structured topic and hands-on practice"
+      ]
+    },
+    "basics": {
+      "days": 8,
+      "topics": [
+        "SQL basics session 1: structured topic and hands-on practice",
+        "SQL basics session 2: structured topic and hands-on practice",
+        "SQL basics session 3: structured topic and hands-on practice",
+        "SQL basics session 4: structured topic and hands-on practice",
+        "SQL basics session 5: structured topic and hands-on practice",
+        "SQL basics session 6: structured topic and hands-on practice",
+        "SQL basics session 7: structured topic and hands-on practice",
+        "SQL basics session 8: structured topic and hands-on practice"
+      ]
+    },
+    "intermediate": {
+      "days": 10,
+      "topics": [
+        "SQL intermediate session 1: structured topic and hands-on practice",
+        "SQL intermediate session 2: structured topic and hands-on practice",
+        "SQL intermediate session 3: structured topic and hands-on practice",
+        "SQL intermediate session 4: structured topic and hands-on practice",
+        "SQL intermediate session 5: structured topic and hands-on practice",
+        "SQL intermediate session 6: structured topic and hands-on practice",
+        "SQL intermediate session 7: structured topic and hands-on practice",
+        "SQL intermediate session 8: structured topic and hands-on practice",
+        "SQL intermediate session 9: structured topic and hands-on practice",
+        "SQL intermediate session 10: structured topic and hands-on practice"
+      ]
+    },
+    "advanced": {
+      "days": 12,
+      "topics": [
+        "SQL advanced session 1: structured topic and hands-on practice",
+        "SQL advanced session 2: structured topic and hands-on practice",
+        "SQL advanced session 3: structured topic and hands-on practice",
+        "SQL advanced session 4: structured topic and hands-on practice",
+        "SQL advanced session 5: structured topic and hands-on practice",
+        "SQL advanced session 6: structured topic and hands-on practice",
+        "SQL advanced session 7: structured topic and hands-on practice",
+        "SQL advanced session 8: structured topic and hands-on practice",
+        "SQL advanced session 9: structured topic and hands-on practice",
+        "SQL advanced session 10: structured topic and hands-on practice",
+        "SQL advanced session 11: structured topic and hands-on practice",
+        "SQL advanced session 12: structured topic and hands-on practice"
+      ]
+    }
+  }
+}

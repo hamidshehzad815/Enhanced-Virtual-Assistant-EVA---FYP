@@ -172,6 +172,45 @@ class TestPhase7Pipeline(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("time", scoped)
         self.assertNotIn("priority", scoped)
 
+    def test_scope_entities_for_learning_create_keeps_core_entities(self):
+        raw_entities = {
+            "topic": "Python",
+            "subtopic": "basics",
+            "start_date": "Monday",
+            "duration": "2 weeks",
+            "person": "ahmed",
+            "task_name": "physics exam",
+            "time": "5pm",
+            "priority": "high",
+            "status": "pending",
+            "day": "Monday",
+        }
+        scoped = scope_entities(raw_entities, "learning_create")
+        self.assertEqual(
+            set(scoped.keys()),
+            {"topic", "subtopic", "start_date", "duration", "person"},
+        )
+        self.assertEqual(scoped["person"], "ahmed")
+
+    def test_scope_entities_for_learning_create_maps_collaborator_and_date(self):
+        raw_entities = {
+            "topic": "MySQL",
+            "collaborator": "sara",
+            "date": "next Monday",
+            "duration": "1 month",
+        }
+        scoped = scope_entities(raw_entities, "learning_create")
+        self.assertEqual(scoped.get("person"), "sara")
+        self.assertEqual(scoped.get("start_date"), "next Monday")
+        self.assertNotIn("collaborator", scoped)
+        self.assertNotIn("date", scoped)
+
+    def test_scope_entities_for_learning_create_maps_subject_to_topic(self):
+        raw_entities = {"subject": "JavaScript", "duration": "3 weeks"}
+        scoped = scope_entities(raw_entities, "learning_create")
+        self.assertEqual(scoped.get("topic"), "JavaScript")
+        self.assertEqual(scoped.get("duration"), "3 weeks")
+
     def test_scope_entities_for_behavioral_drops_non_weekday_date(self):
         raw_entities = {
             "date": "2026-04-13",
@@ -224,6 +263,24 @@ class TestPhase7Pipeline(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(resolved.get("task_name"), "physics exam")
         self.assertEqual(resolved.get("new_title"), "physics final")
         self.assertNotIn("new_taskname", resolved)
+
+    def test_get_ner_extractor_for_intent_routes_learning_vs_scheduling(self):
+        from pipeline.ner import (
+            get_ner_extractor_for_intent,
+            learning_ner_extractor,
+            ner_extractor,
+        )
+
+        self.assertIs(
+            get_ner_extractor_for_intent("learning_create"),
+            learning_ner_extractor,
+        )
+        self.assertIs(
+            get_ner_extractor_for_intent("learning_show"),
+            learning_ner_extractor,
+        )
+        self.assertIs(get_ner_extractor_for_intent("scheduling_add"), ner_extractor)
+        self.assertIs(get_ner_extractor_for_intent("behavioral"), ner_extractor)
 
 
 if __name__ == "__main__":

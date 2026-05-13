@@ -1,10 +1,13 @@
 """
 NER inference module for Phase 7.
 Extracts entities from original text using token classification.
+
+Scheduling commands use ``ner_model`` (default ``NER_MODEL_DIR``).
+``learning_*`` intents use ``learning_ner`` (``LEARNING_NER_MODEL_DIR``).
 """
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 from transformers import AutoModelForTokenClassification, AutoTokenizer
@@ -17,8 +20,15 @@ from pipeline.update_entity_fallback import extract_update_entities_fallback
 class NERExtractor:
     """Loads and runs token-level NER model."""
 
-    def __init__(self):
-        self.model_dir: Path = settings.NER_MODEL_DIR
+    def __init__(
+        self,
+        model_dir: Optional[Path] = None,
+        log_tag: str = "",
+    ):
+        self.model_dir: Path = (
+            Path(model_dir) if model_dir is not None else settings.NER_MODEL_DIR
+        )
+        self.log_tag = log_tag.strip()
         self.tokenizer = None
         self.model = None
         self.id2label: Dict[int, str] = {}
@@ -57,8 +67,8 @@ class NERExtractor:
             }
 
             self.loaded = True
-            # print(f"[NER] Loaded from {candidate} (tokenizer={tokenizer_mode})")
-            print(f"[NER] Loaded")
+            tag = f" [{self.log_tag}]" if self.log_tag else ""
+            print(f"[NER] Loaded{tag}")
             return True
 
         print("[NER] Load failed for all candidates.")
@@ -271,5 +281,25 @@ class NERExtractor:
         return entities
 
 
-# Singleton instance
-ner_extractor = NERExtractor()
+_LEARNING_NER_INTENTS = frozenset(
+    {
+        "learning_create",
+        "learning_update",
+        "learning_delete",
+        "learning_show",
+    },
+)
+
+
+def get_ner_extractor_for_intent(canonical_intent: str) -> NERExtractor:
+    """Return the NER model for scheduling vs learning intents."""
+    if canonical_intent in _LEARNING_NER_INTENTS:
+        return learning_ner_extractor
+    return ner_extractor
+
+
+ner_extractor = NERExtractor(model_dir=settings.NER_MODEL_DIR)
+learning_ner_extractor = NERExtractor(
+    model_dir=settings.LEARNING_NER_MODEL_DIR,
+    log_tag="learning",
+)

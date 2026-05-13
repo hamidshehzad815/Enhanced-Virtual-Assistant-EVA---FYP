@@ -45,7 +45,10 @@ def _import_ai_main_with_stubs():
         fake_classifier2.classifier2 = _StubModel()
 
         fake_ner = types.ModuleType("pipeline.ner")
-        fake_ner.ner_extractor = _StubModel()
+        _shared_ner = _StubModel()
+        fake_ner.ner_extractor = _shared_ner
+        fake_ner.learning_ner_extractor = _shared_ner
+        fake_ner.get_ner_extractor_for_intent = lambda _intent: _shared_ner
 
         sys.modules["pipeline.classifier1"] = fake_classifier1
         sys.modules["pipeline.classifier2"] = fake_classifier2

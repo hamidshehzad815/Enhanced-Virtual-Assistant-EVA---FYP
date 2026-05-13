@@ -115,18 +115,47 @@ COLLECTION OWNERSHIP
   title               String, required            e.g. "Learn Python Basics"
   description         String                      Optional extra details
   subject             String                      e.g. "python", normalized lowercase
+  roadmap_key         String, required            Roadmap level key (general, basics, …)
   start_date          Date                        When learning begins
-  end_date            Date                        Calculated from start_date + duration
+  end_date            Date                        Last scheduled session date
+  duration_days       Number                      User-chosen calendar span (e.g. 14)
   status              Enum                        "active" / "completed" / "paused" / "cancelled"
   paused_at           Date                        Null unless status = "paused"
   total_topics        Number                      Total topics in roadmap
   completed_topics    Number                      How many topics done so far
   collaborators       Array of {user_id, status}  Max 2, pending/accepted/rejected
   generated_by        Enum                        "eva" / "manual"
+  started_at          Date                        Null until first topic starts
+  completed_at        Date                        Null until all topics done
+  time_taken_days     Number                      Null until completed; wall-clock span
   is_deleted          Boolean                     Soft delete, default false
   deleted_at          Date                        When deleted
   created_at          Date                        Auto timestamp
   updated_at          Date                        Auto timestamp
+
+
+================================================================
+4b. ROADMAP_RESOURCES (MongoDB, AI server)
+================================================================
+
+  Collection  : roadmap_resources
+  Owned by    : AI Server (seed + read at learning add)
+
+  Field        Type              Purpose
+  ──────────────────────────────────────────────────────────────
+  language     String            e.g. "Python"
+  level        String            e.g. "basics", "general"
+  order        Number            1-based sequence within level
+  title        String            Session title / search query text
+  resources    Array             Embedded { title, url, thumbnail, channel }
+  fetched_at   Date or null      When YouTube resources were last fetched
+  created_at   Date
+  updated_at   Date
+
+  Indexes:
+    { language: 1, level: 1, order: 1 }
+    { language: 1, level: 1 }
+    { fetched_at: 1 }
 
 
 ================================================================
@@ -280,9 +309,10 @@ COLLECTION OWNERSHIP
   default_task_duration           Number          Default 120 minutes
   behavioral_analytics_enabled    Boolean         Default true
   analytics_min_tasks_threshold   Number          Min completed tasks before analytics activates,
-                                                  default 10
+                                                  default 20
   preferred_learning_duration     Number          Minutes per session, e.g. 45 / 120
-  preferred_learning_time         Enum            "morning" / "afternoon" / "evening"
+  preferred_learning_schedule     Array           Learning slots [{ day: 0-6, time: "HH:mm" }],
+                                                  0=Monday … 6=Sunday, default [] until user sets
   google_calendar_sync_enabled    Boolean         Default false until connected
   allow_friend_requests           Enum            "everyone" / "nobody", default "everyone"
   show_last_active                Boolean         Default true
@@ -350,6 +380,11 @@ INDEXES (RECOMMENDED)
 
   Roadmap_Topics:
     { goal_id: 1, order: 1 }                  → ordered roadmap fetch
+
+  roadmap_resources:
+    { language: 1, level: 1, order: 1 }       → fetch ordered sessions for a level
+    { language: 1, level: 1 }                 → all docs for a level
+    { fetched_at: 1 }                         → YouTube refresh / unfetched queries
 
 
 ================================================================

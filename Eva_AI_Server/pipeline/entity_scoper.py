@@ -24,6 +24,13 @@ _INTENT_ENTITY_SCOPE: Dict[str, Set[str]] = {
     },
     "scheduling_show": {"date", "priority", "status", "task_name"},
     "behavioral": {"day"},
+    "learning_create": {
+        "topic",
+        "subtopic",
+        "start_date",
+        "duration",
+        "person",
+    },
 }
 
 _ENTITY_ALIASES: Dict[str, str] = {
@@ -87,6 +94,14 @@ def scope_entities(entities: Dict[str, Any], intent: str) -> Dict[str, Any]:
 
     for raw_key, value in entities.items():
         key = _normalize_key(raw_key)
+
+        if intent == "learning_create":
+            if raw_key == "subject":
+                key = "topic"
+            if key == "collaborator":
+                key = "person"
+            if key == "date":
+                key = "start_date"
 
         if raw_key == "subject" and "task_name" in scoped:
             # Do not allow a generic subject alias to override a strong task_name.

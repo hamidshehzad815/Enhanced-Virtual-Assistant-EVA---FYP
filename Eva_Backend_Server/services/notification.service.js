@@ -287,7 +287,7 @@ const removeInvalidPushTokens = async (userId, tokens) => {
   );
 };
 
-const dispatch_push = async (userId, notification, userDoc) => {
+const dispatch_push = async (userId, notification, userDoc, extraPushData = {}) => {
   const admin = getFirebaseAdmin();
   if (!admin) {
     logger.warn("Push dispatch skipped: Firebase not configured", {
@@ -314,6 +314,22 @@ const dispatch_push = async (userId, notification, userDoc) => {
     };
   }
 
+  const baseData = {
+    notification_id: String(notification._id),
+    type: String(notification.type || ""),
+    reference_type: String(notification.reference_type || ""),
+    reference_id: String(notification.reference_id || ""),
+  };
+  const merged = { ...baseData };
+  if (extraPushData && typeof extraPushData === "object") {
+    Object.entries(extraPushData).forEach(([key, value]) => {
+      if (value === undefined || value === null) {
+        return;
+      }
+      merged[String(key)] = String(value);
+    });
+  }
+
   try {
     const response = await admin.messaging().sendEachForMulticast({
       tokens,
@@ -321,12 +337,7 @@ const dispatch_push = async (userId, notification, userDoc) => {
         title: notification.title,
         body: notification.message,
       },
-      data: {
-        notification_id: String(notification._id),
-        type: String(notification.type || ""),
-        reference_type: String(notification.reference_type || ""),
-        reference_id: String(notification.reference_id || ""),
-      },
+      data: merged,
     });
 
     const invalidTokens = [];
@@ -464,7 +475,12 @@ const insert_and_dispatch = async (notifications = []) => {
       if (channels.includes("push")) {
         const pushEnabled = userSettings?.push_notifications_enabled !== false;
         if (pushEnabled) {
-          const result = await dispatch_push(doc.user_id, saved, userDoc);
+          const result = await dispatch_push(
+            doc.user_id,
+            saved,
+            userDoc,
+            payload.push_data || {},
+          );
           channelResults.push(result);
           if (result.dispatched) {
             summary.dispatched_push += 1;

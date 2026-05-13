@@ -129,10 +129,6 @@ const startServer = async () => {
   });
 };
 
-app.listen(4500, "0.0.0.0", () => {
-  console.log("Server running on port 4500");
-});
-
 // Handle uncaught exceptions
 process.on("uncaughtException", (err) => {
   logger.error("Uncaught Exception", { error: err.message, stack: err.stack });

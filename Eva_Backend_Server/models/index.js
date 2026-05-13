@@ -12,6 +12,8 @@ const Task = require("./Task");
 const ActivityLog = require("./ActivityLog");
 const Integration = require("./Integration");
 const Friend = require("./Friend");
+const LearningGoal = require("./LearningGoal");
+const RoadmapTopic = require("./RoadmapTopic");
 
 module.exports = {
   User,
@@ -23,4 +25,6 @@ module.exports = {
   ActivityLog,
   Integration,
   Friend,
+  LearningGoal,
+  RoadmapTopic,
 };
