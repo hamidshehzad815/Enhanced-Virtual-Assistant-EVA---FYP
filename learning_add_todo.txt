@@ -1,0 +1,917 @@
+================================================================
+EVA — LEARNING ADD (CREATE) COMMAND
+Complete TODO List — Parallel Build
+================================================================
+
+WHAT IS ALREADY DONE
+================================================================
+
+  AI Server:
+  ✓ Self-fetch pipeline
+  ✓ Preprocessing (lowercase + too_short)
+  ✓ Model 1 and Model 2 running
+  ✓ NER model trained (includes learning entities)
+  ✓ Entity scoper (needs learning scope added)
+  ✓ Duckling date resolver
+  ✓ Context manager (free_text states work)
+  ✓ Gemini service with fallback
+  ✓ Conversation history save
+  ✓ Router (learning_create routed to placeholder)
+  ✓ Google Calendar create_event exists
+  ✓ db/tasks.py exists
+  ✓ db/activity_logs.py exists
+
+  Node.js:
+  ✓ Chat bridge running
+  ✓ Notification service exists
+  ✓ Settings model exists (needs new fields)
+  ✓ Task model exists
+
+  Data:
+  ✓ roadmaps.json complete (20 languages)
+  ✓ NER dataset generated and model trained
+
+
+================================================================
+KNOWN GAPS TO FIX BEFORE STARTING
+================================================================
+
+  [ ] days field mismatch in roadmaps.json
+      → verify days == len(topics) for every language/level
+      → fix any mismatches
+
+  [ ] general roadmap missing for all 20 languages
+      → add general roadmap to each language in JSON
+      → used when user specifies no subtopic
+      → do this after other levels verified
+
+  [ ] preferred_learning_schedule not in User_Settings
+      → replaces preferred_learning_time (old enum)
+      → needs to be added before any learning flow works
+
+
+================================================================
+PHASE 1 — SCHEMA CHANGES
+================================================================
+
+Goal: All required fields and collections exist.
+
+  AI Server / MongoDB
+  ─────────────────────────────────────────────────────────
+
+  [ ] Create roadmap_resources collection with indexes:
+      { language: 1, level: 1, order: 1 }
+      { language: 1, level: 1 }
+      { fetched_at: 1 }
+
+  [ ] Update Learning_Goals collection — add fields:
+      roadmap_key     : String, required
+      started_at      : Date, default null
+      completed_at    : Date, default null
+      time_taken_days : Number, default null
+
+  [ ] Update User_Settings collection:
+      remove: preferred_learning_time (old enum field)
+      add   : preferred_learning_schedule
+              Array of { day: Number 0-6, time: String "HH:MM" }
+              default: [] (empty — user must set)
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] Create models/LearningGoal.js
+      → all fields from EVA_Schemas.txt
+      → plus new fields: roadmap_key, started_at,
+        completed_at, time_taken_days
+
+  [ ] Create models/RoadmapTopic.js
+      → all fields from EVA_Schemas.txt
+
+  [ ] Update models/UserSetting.js
+      → remove preferred_learning_time
+      → add preferred_learning_schedule (Array)
+
+  PHASE 1 TEST:
+  [ ] Insert test learning goal → confirm new fields exist
+  [ ] Insert test user setting → confirm new schedule field
+  [ ] Fetch user settings → schedule field returned correctly
+
+
+================================================================
+PHASE 2 — ROADMAP DATA SEEDING
+================================================================
+
+Goal: roadmap_resources collection populated with all
+      topics from roadmaps.json. Ready for YouTube fetch.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Create Eva_AI_Server/data/ directory
+      → move roadmaps.json here
+
+  [ ] Fix roadmaps.json:
+      → verify days == len(topics) for every entry
+      → fix all mismatches
+
+  [ ] Create db/roadmap_resources.py:
+      → get_roadmap(language, level) → list
+      → get_topic(language, level, order) → dict
+      → get_unfetched_topics(limit=50) → list
+      → get_stale_topics(days=30, limit=50) → list
+      → update_resources(doc_id, resources) → bool
+      → count_unfetched() → int
+      → get_sessions_required(language, level) → int
+
+  [ ] Create scripts/seed_roadmaps.py:
+      → loads roadmaps.json
+      → for each language → level → topic:
+          check if exists (idempotent)
+          insert with resources=[], fetched_at=null
+      → prints progress and summary
+
+  [ ] Run seed_roadmaps.py:
+      → verify all topics inserted
+      → verify count matches expected (~800+ documents)
+
+  [ ] Unit test db/roadmap_resources.py:
+      → get_roadmap returns correct count
+      → get_roadmap sorted by order
+      → get_sessions_required matches JSON days field
+      → get_unfetched returns only null fetched_at docs
+      → update_resources sets fetched_at correctly
+
+  PHASE 2 TEST:
+  [ ] Run seed script → confirm ~800 documents inserted
+  [ ] Query roadmap_resources for Python basics
+      → 8 documents returned (matches JSON days)
+  [ ] Query for unfetched → all 800 returned
+  [ ] Re-run seed → nothing inserted (idempotent)
+
+
+================================================================
+PHASE 3 — YOUTUBE RESOURCE FETCHING
+================================================================
+
+Goal: YouTube resources fetched and stored for all topics.
+      Refresh job running automatically.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Create services/youtube.py:
+      search_topic(query, max_results=3) → list
+        → calls YouTube Data API v3 search
+        → returns list of:
+          { title, url, thumbnail, channel }
+        → handles API errors gracefully
+        → returns [] on failure (never raises)
+
+  [ ] Create scripts/fetch_resources.py:
+      → loads unfetched topics in batches of 50
+      → for each topic:
+          calls youtube.search_topic(topic.title)
+          calls db.update_resources(doc_id, results)
+          waits 0.5 seconds between calls
+      → tracks daily quota (100 searches/day)
+      → stops when quota reached
+      → prints progress every 10 topics
+      → safe to run multiple days until complete
+
+  [ ] Create jobs/resource_refresh.py:
+      → same logic as fetch_resources.py
+      → targets stale topics (fetched_at > 30 days)
+      → runs as APScheduler job every 30 days
+      → non-blocking background task
+
+  [ ] Integrate refresh job into main.py:
+      from jobs.resource_refresh import start_refresh_scheduler
+      start_refresh_scheduler()
+      → called at server startup
+      → runs in background
+
+  [ ] Run fetch_resources.py:
+      → run daily until all topics fetched
+      → verify sample topics have 3 resources each
+
+  [ ] Unit test services/youtube.py:
+      → valid query → returns list of 3 results
+      → each result has title, url, thumbnail, channel
+      → API failure → returns [] not exception
+      → invalid query → returns [] gracefully
+
+  PHASE 3 TEST:
+  [ ] Run fetch script → 100 topics fetched day 1
+  [ ] Spot check 5 topics → resources array has 3 items
+  [ ] Each resource has url starting with youtube.com
+  [ ] Stale topics query works correctly
+  [ ] Refresh job starts without error on server startup
+
+
+================================================================
+PHASE 4 — ENTITY SCOPER + ALIAS MAPS
+================================================================
+
+Goal: Entity scoper handles learning_create.
+      Alias maps normalize topic and subtopic values.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Update pipeline/entity_scoper.py:
+      → add "learning_create" scope:
+        keep: topic, subtopic, start_date, duration, person
+        drop: task_name, date, time, priority, status,
+              new_date, new_time, new_priority, new_status,
+              new_duration, new_taskname, day, subject
+
+  [ ] Create utils/learning_utils.py:
+
+      SUPPORTED_TOPICS set:
+        { "Python", "JavaScript", "TypeScript", "Java",
+          "C#", "C++", "Go", "Rust", "PHP", "Kotlin",
+          "Swift", "Ruby", "Dart", "C", "Oracle", "MySQL",
+          "Microsoft SQL Server", "PostgreSQL", "MongoDB",
+          "SQL" }
+
+      TOPIC_ALIAS_MAP dict:
+        "py" → "Python", "js" → "JavaScript",
+        "ts" → "TypeScript", "golang" → "Go",
+        "cpp" → "C++", "c sharp" → "C#",
+        "mongo" → "MongoDB", "postgres" → "PostgreSQL",
+        "mssql" → "Microsoft SQL Server",
+        "sql server" → "Microsoft SQL Server",
+        "my sql" → "MySQL", "mongo db" → "MongoDB"
+        ... (full map)
+
+      SUBTOPIC_ALIAS_MAP dict:
+        "beginner" → "basics", "fundamentals" → "basics",
+        "intro" → "basics", "mid" → "intermediate",
+        "expert" → "advanced", "pro" → "advanced",
+        "oop" → "object oriented programming",
+        "object oriented" → "object oriented programming",
+        "async" → "async await coroutines",
+        ... (full map)
+
+      normalize_topic(extracted) → canonical or None
+        → check TOPIC_ALIAS_MAP first
+        → if no alias, check SUPPORTED_TOPICS directly
+        → returns canonical name or None if not found
+
+      map_subtopic(extracted, language) → roadmap_key
+        → Step 1: check SUBTOPIC_ALIAS_MAP
+        → Step 2: regex search roadmap[language].keys()
+        → returns matched key or "general"
+
+      parse_duration(text) → int (calendar days) or None
+        → "2 weeks"  → 14
+        → "1 month"  → 30
+        → "10 days"  → 10
+        → "3 months" → 90
+        → "1 week"   → 7
+        → "6 months" → 180
+        → fails      → None
+
+      calculate_available_sessions(start_date,
+                                   duration_days,
+                                   learning_days) → int
+        → counts occurrences of learning weekdays
+          from start_date to start_date + duration_days
+        → returns integer count
+
+      calculate_min_weeks_needed(sessions_required,
+                                 sessions_per_week) → int
+        → ceil(sessions_required / sessions_per_week)
+
+      build_schedule(start_date, topics,
+                     preferred_learning_schedule) → list
+        → assigns each topic to next available
+          learning day sequentially
+        → returns list of:
+          { order, title, resources, scheduled_date }
+
+  [ ] Unit test all functions in learning_utils.py:
+      → normalize_topic: "py" → "Python"
+      → normalize_topic: "react" → None (unsupported)
+      → normalize_topic: "Python" → "Python" (already canonical)
+      → map_subtopic: "oop" → "object oriented programming"
+      → map_subtopic: "beginner" → "basics"
+      → map_subtopic: "xyz" → "general" (no match)
+      → parse_duration: all valid formats correct
+      → parse_duration: invalid input → None
+      → calculate_available_sessions:
+          Mon/Wed/Fri × 2 weeks → 6 sessions
+          Mon/Wed/Fri × 1 week → 3 sessions
+      → calculate_min_weeks_needed: ceil(12/3) = 4
+      → build_schedule: correct dates in order
+      → build_schedule: skips non-learning days
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+  [ ] Nothing new this phase.
+
+  PHASE 4 TEST:
+  [ ] Entity scoper on learning_create input:
+      → keeps topic, subtopic, start_date, duration, person
+      → drops task_name, time, priority, status
+  [ ] normalize_topic("py") → "Python"
+  [ ] map_subtopic("oop", "Python") → "object oriented programming"
+  [ ] parse_duration("2 weeks") → 14
+  [ ] calculate_available_sessions with known dates → correct
+
+
+================================================================
+PHASE 5 — DB LAYER FOR LEARNING
+================================================================
+
+Goal: All DB functions for learning add exist and tested.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Create db/learning_goals.py:
+
+      insert_goal(goal_data) → goal_id
+        → inserts Learning_Goal document
+        → returns inserted _id
+
+      get_active_goals_for_user(user_id) → list
+        → returns all goals where:
+          user_id = user_id
+          status = "active"
+          is_deleted = false
+
+      check_duplicate_goal(user_id, topic,
+                           roadmap_key) → bool
+        → returns True if duplicate exists:
+          active goal with same topic + roadmap_key
+          OR active goal with roadmap_key = "general"
+            for same topic (blocks everything)
+
+      update_goal_status(goal_id, status,
+                         extra_fields={}) → bool
+        → updates status and any extra fields
+        → always sets updated_at = now
+        → if status = "completed":
+            sets completed_at = now
+            calculates time_taken_days
+
+      update_completed_topics(goal_id) → bool
+        → increments completed_topics by 1
+        → if completed_topics == total_topics:
+            triggers goal completion
+            calls update_goal_status("completed")
+
+  [ ] Create db/roadmap_topics.py:
+
+      insert_topic(topic_data) → topic_id
+        → inserts single RoadmapTopic document
+
+      insert_topics_bulk(topics_list) → list of ids
+        → bulk insert all topics for a goal
+        → returns list of inserted ids
+
+      update_topic_task_id(topic_id, task_id) → bool
+        → sets task_id on roadmap topic after task created
+
+      update_topic_status(topic_id, status,
+                          completed_at=None) → bool
+        → updates topic status
+        → if status = "completed": sets completed_at
+        → if first topic going "ongoing":
+            update parent goal started_at = now
+
+      get_topics_for_goal(goal_id) → list
+        → returns all topics sorted by order
+
+      get_pending_topic(goal_id) → dict or None
+        → returns next pending topic
+        → used when user marks completion via chat
+
+  [ ] Unit test all DB functions:
+      → insert_goal → returns valid id
+      → get_active_goals: 2 active, 1 completed → returns 2
+      → check_duplicate_goal:
+          exact match → True
+          general active → True for any subtopic
+          different subtopic → False
+      → update_goal_status: status updated correctly
+      → update_goal_status completed: completed_at set
+      → update_completed_topics:
+          increments correctly
+          triggers completion when count matches total
+      → insert_topics_bulk: correct count inserted
+      → update_topic_task_id: task_id set correctly
+      → update_topic_status: completed_at set when done
+      → get_pending_topic: returns lowest order pending
+
+  PHASE 5 TEST:
+  [ ] Insert goal → query → correct fields
+  [ ] Insert 3 topics → query by goal → all 3 returned
+  [ ] Mark topic complete → completed_topics incremented
+  [ ] Mark last topic complete → goal status = completed
+  [ ] check_duplicate_goal: all cases correct
+
+
+================================================================
+PHASE 6 — SETTINGS PAGE — LEARNING SCHEDULE
+================================================================
+
+Goal: User can set preferred_learning_schedule in settings.
+      Conflict check runs against existing tasks.
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] Update routes/settings.routes.js:
+      → add PATCH /api/settings/learning-schedule
+
+  [ ] Update controllers/settings.controller.js:
+      → handle learning schedule update
+      → validate input:
+          days must be 0-6
+          time must be valid HH:MM format
+          at least 1 day required
+          no duplicate days
+      → conflict check:
+          for each { day, time } in schedule:
+            query tasks where:
+              owner_id = user_id
+              is_deleted = false
+              status != "complete"
+              day_of_week(due_datetime) = day
+              hour_of_minute(due_datetime) = time
+            if any tasks found:
+              return conflict error with task details
+      → if no conflicts:
+          save preferred_learning_schedule
+
+  [ ] Update models/UserSetting.js:
+      → add preferred_learning_schedule field
+      → remove preferred_learning_time field
+
+  [ ] Test settings routes:
+      [ ] PATCH /api/settings/learning-schedule
+          valid days + times → saved correctly
+      [ ] invalid day (8) → 400 error
+      [ ] invalid time format → 400 error
+      [ ] conflict with existing task → conflict error
+      [ ] no conflict → saved and 200 returned
+      [ ] get settings → schedule returned in response
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Update db/readers.py:
+      → fetch_user_settings must return
+        preferred_learning_schedule
+      → used in self-fetch at request start
+
+  [ ] Update services/self_fetch.py:
+      → confirm preferred_learning_schedule
+        included in fetched settings object
+
+  PHASE 6 TEST:
+  [ ] Set learning schedule via API → saved in DB
+  [ ] AI server self-fetch → schedule in settings object
+  [ ] Conflict detection in settings page works
+
+
+================================================================
+PHASE 7 — CONTEXT MANAGER UPDATE
+================================================================
+
+Goal: Context manager handles all 3 learning add states.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Update context/context_manager.py:
+      → add routing for pending intent = "learning_create"
+      → all 3 stages are free_text → skip Model 1
+
+      stage = "topic":
+        → pass reply through NER
+        → extract topic (and subtopic if present)
+        → topic not found → ask again
+        → topic found → validate → merge → clear Redis
+        → re-enter handler from STEP 1
+
+      stage = "start_date":
+        → pass reply to Duckling
+        → fails → ask again
+        → in past → ask again
+        → valid → extract date only → merge → clear Redis
+        → re-enter handler from STEP 1
+
+      stage = "duration":
+        → pass reply to parse_duration
+        → fails → ask again
+        → < 7 days → ask again
+        → feasibility check:
+            load sessions_required from roadmap_resources
+            calculate available_sessions
+            not feasible → tell user → stay in state
+        → feasible → merge → clear Redis
+        → re-enter handler from STEP 1
+
+  [ ] Add cancel handling for learning_create:
+      → same cancel keywords as other commands
+      → clear Redis → EVA: "No problem, I've cancelled that."
+
+  [ ] Write unit tests for learning context manager:
+      → State 1 (topic):
+          valid topic → merged, Redis cleared
+          unsupported topic → clean reply, Redis cleared
+          invalid reply → ask again, Redis stays
+          cancel → Redis cleared
+      → State 2 (start_date):
+          valid date → merged, Redis cleared
+          past date → ask again, Redis stays
+          invalid → ask again, Redis stays
+          cancel → Redis cleared
+      → State 3 (duration):
+          valid + feasible → merged, Redis cleared
+          valid but not feasible → explain, Redis stays
+          too short → ask again, Redis stays
+          invalid → ask again, Redis stays
+          cancel → Redis cleared
+      → new command while pending → treated as entity value
+        fails extraction → ask again naturally
+
+  PHASE 7 TEST:
+  [ ] Manually set State 1 → reply "Python" → merged
+  [ ] Manually set State 2 → reply "next Monday" → merged
+  [ ] Manually set State 3 → reply "2 weeks" (feasible) → merged
+  [ ] Manually set State 3 → reply "3 days" (too short) → ask again
+  [ ] Cancel in any state → Redis cleared
+
+
+================================================================
+PHASE 8 — LEARNING ADD HANDLER
+================================================================
+
+Goal: Full learning add handler runs STEP 1 to STEP 17.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Create handlers/learning/__init__.py
+
+  [ ] Create handlers/learning/create.py
+
+  [ ] Implement STEP 1 — pre-entity validations:
+      → check preferred_learning_schedule set
+      → check duplicate goal if topic already extracted
+
+  [ ] Implement STEP 2 — topic validation:
+      → not present → Redis State 1 → STOP
+      → normalize via TOPIC_ALIAS_MAP
+      → check SUPPORTED_TOPICS
+      → not supported → clean reply → STOP
+
+  [ ] Implement STEP 3 — subtopic mapping:
+      → not present → roadmap_key = "general"
+      → present → SUBTOPIC_ALIAS_MAP → regex search
+      → no match → roadmap_key = "general"
+
+  [ ] Implement STEP 4 — start_date validation:
+      → not present → Redis State 2 → STOP
+      → pass to Duckling → fails → ask again → STOP
+      → in past → ask again → STOP
+      → extract date part only
+
+  [ ] Implement STEP 5 — duration validation + feasibility:
+      → not present → Redis State 3 → STOP
+      → parse to calendar days → fails → ask again → STOP
+      → < 7 days → ask again → STOP
+      → feasibility check → fails → explain → STOP
+
+  [ ] Implement STEP 6 — collaborator validation:
+      → not present → skip
+      → count > 2 → stop
+      → username lookup → not found → stop
+      → friendship check → not friend → stop
+
+  [ ] Implement STEP 7 — load roadmap:
+      → get_roadmap(topic, roadmap_key) from DB
+      → sessions_required = len(topics)
+
+  [ ] Implement STEP 8 — build schedule:
+      → call build_schedule(start_date, topics,
+                            preferred_learning_schedule)
+      → sequential assignment, no conflict check
+      → end_date = last session date
+
+  [ ] Implement STEP 9 — insert Learning_Goal:
+      → insert with all fields
+      → get goal_id
+
+  [ ] Implement STEP 10 — insert Roadmap_Topics:
+      → bulk insert all topics
+      → get topic_ids list
+
+  [ ] Implement STEP 11 — create Tasks:
+      → for each topic create task
+      → update roadmap_topic.task_id
+
+  [ ] Implement STEP 12 — activity log:
+      → insert goal_created log
+
+  [ ] Implement STEP 13 — Google Calendar sync:
+      → if integration active:
+          for each topic task create_event
+          update task.google_calendar_event_id
+
+  [ ] Implement STEP 14 — collaborator invite:
+      → build notification payload for each collaborator
+      → add to notifications array for Node.js
+
+  [ ] Implement STEP 15 — save conversation history:
+      → save user message
+      → save EVA reply
+      → update Chat_Session
+
+  [ ] Implement STEP 16 — generate EVA reply:
+      → confirm + first 3 sessions
+      → mention collaborator if present
+      → mention calendar sync if done
+
+  [ ] Implement STEP 17 — return to Node.js:
+      → { status, response_text, notifications[] }
+
+  [ ] Wire learning_create into router.py:
+      → remove learning_create placeholder
+      → import and call create handler
+
+  PHASE 8 TEST:
+  [ ] "learn Python basics in 2 weeks starting Monday"
+      (all entities present, settings configured)
+      → goal created in DB
+      → 8 roadmap topics created
+      → 8 tasks created
+      → activity log inserted
+      → EVA reply with first 3 sessions
+      → Conversation_History saved
+
+  [ ] "learn Python" (missing start_date and duration)
+      → EVA asks for start_date
+      → reply "next Monday"
+      → EVA asks for duration
+      → reply "3 weeks"
+      → goal created
+
+  [ ] "learn React" (unsupported topic)
+      → EVA lists supported topics → stop
+
+  [ ] "learn Python basics in 3 days" (too short)
+      → EVA suggests at least 1 week
+
+  [ ] "learn Python basics in 1 week" (not feasible
+      with 2 learning days, needs 8 sessions)
+      → EVA explains sessions needed and time required
+
+  [ ] "learn Python" when Python general already active
+      → EVA tells user to complete or pause first
+
+  [ ] "learn Python OOP" when Python basics active
+      → allowed (different subtopic)
+
+  [ ] cancel mid-flow → nothing created in DB
+
+
+================================================================
+PHASE 9 — NODE.JS LEARNING ROUTES
+================================================================
+
+Goal: Frontend can fetch learning goals and roadmap topics.
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] Create routes/learning.routes.js:
+      GET  /api/learning            → get all active goals
+      GET  /api/learning/:id        → get single goal
+      GET  /api/learning/:id/topics → get roadmap topics
+      PATCH /api/learning/:id/status → pause/resume/cancel
+
+  [ ] Create controllers/learning.controller.js:
+      → getAllGoals: fetch active goals for user
+      → getGoal: single goal with progress
+      → getTopics: ordered topics with resources
+      → updateStatus: pause/resume/cancel (not complete)
+                      complete is AI server triggered only
+
+  [ ] Update routes/index.js:
+      → register learning routes
+
+  [ ] Test all routes:
+      [ ] GET /api/learning → returns active goals
+      [ ] GET /api/learning/:id → correct goal
+      [ ] GET /api/learning/:id/topics → ordered topics
+      [ ] PATCH status pause → goal paused
+      [ ] PATCH status resume → goal active
+      [ ] PATCH status cancel → goal cancelled + tasks soft deleted
+      [ ] All routes protected → 401 without token
+
+  PHASE 9 TEST:
+  [ ] Create goal via chat
+  [ ] GET /api/learning → goal appears
+  [ ] GET /api/learning/:id/topics → 8 topics in order
+  [ ] Each topic has resources array with YouTube links
+  [ ] PATCH pause → status = paused in DB
+
+
+================================================================
+PHASE 10 — TOPIC COMPLETION FLOW
+================================================================
+
+Goal: User can mark topics complete via push, popup, chat.
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] Update jobs/reminder.job.js:
+      → add learning topic reminder:
+          query roadmap_topics where:
+            scheduled_date - reminder_minutes = now
+            status = "pending"
+          send push notification with action button
+          "Mark Complete" action in notification
+
+  [ ] Add POST /api/learning/:id/topics/:topicId/complete
+      → marks topic as complete
+      → called by push notification action button
+      → called by app popup response
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Add topic completion detection in chat:
+      → in router or general handler detect:
+        "I completed today's session"
+        "done with Python today"
+        "finished today's topic"
+      → identify current pending topic for user
+      → mark as complete
+      → update goal progress
+      → if last topic → mark goal complete
+          set completed_at, calculate time_taken_days
+      → EVA: natural reply + progress update
+
+  [ ] Update update_topic_status in db/roadmap_topics.py:
+      → when first topic goes "ongoing":
+          update Learning_Goal.started_at = now
+      → when topic completes:
+          call update_completed_topics on goal
+          if last topic: trigger goal completion
+
+  PHASE 10 TEST:
+  [ ] Reminder fires 30 min before topic session
+  [ ] Tap "Mark Complete" → topic status = completed
+  [ ] Say "I completed today's session" via chat
+      → correct topic marked complete
+      → goal completed_topics incremented
+  [ ] Complete last topic → goal status = completed
+      → completed_at set, time_taken_days calculated
+
+
+================================================================
+PHASE 11 — TESTING
+================================================================
+
+Goal: Full learning add test suite.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Create tests/test_learning_utils.py
+      → normalize_topic: all aliases correct
+      → normalize_topic: unsupported → None
+      → map_subtopic: alias map correct
+      → map_subtopic: regex match correct
+      → map_subtopic: no match → "general"
+      → parse_duration: all valid formats
+      → parse_duration: invalid → None
+      → calculate_available_sessions: correct counts
+      → calculate_min_weeks_needed: correct ceiling
+      → build_schedule: correct dates in order
+
+  [ ] Create tests/test_learning_create_handler.py
+      → all entities present → goal created
+      → topic missing → Redis State 1
+      → start_date missing → Redis State 2
+      → duration missing → Redis State 3
+      → unsupported topic → clean reply, no Redis
+      → schedule not set → stop with settings message
+      → duration too short → ask again
+      → not feasible → explain with numbers
+      → duplicate general goal → blocked
+      → duplicate same subtopic → blocked
+      → different subtopic → allowed
+      → collaborator not found → stop
+      → collaborator not friend → stop
+      → goal inserted correctly in DB
+      → correct number of topics inserted
+      → correct number of tasks inserted
+      → activity log inserted
+      → calendar sync called if integration active
+      → conversation history saved
+      → cancel mid-flow → nothing in DB
+
+  [ ] Update tests to include new context manager states:
+      → State 1 all cases
+      → State 2 all cases
+      → State 3 all cases including feasibility
+
+  [ ] Run full AI test suite → all tests pass
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] Add tests/learning.test.js:
+      → GET /api/learning → 200 + correct shape
+      → GET /api/learning/:id → correct goal
+      → GET /api/learning/:id/topics → correct count
+      → PATCH pause/resume/cancel → correct status
+      → POST topic complete → correct status
+      → all routes protected → 401 without token
+
+  [ ] Run full Node.js test suite → all tests pass
+
+  PHASE 11 END-TO-END TESTS:
+  [ ] Full flow: set learning schedule in settings
+  [ ] "learn Python basics in 3 weeks starting Monday"
+      → goal created, 8 topics, 8 tasks
+      → EVA reply with first 3 sessions
+  [ ] GET /api/learning → goal appears
+  [ ] GET /api/learning/:id/topics → 8 topics with resources
+  [ ] Reminder fires before first session
+  [ ] Mark first topic complete → progress updates
+  [ ] "pause my Python learning" → status paused
+  [ ] "resume my Python learning" → status active
+  [ ] Complete all 8 topics → goal completed
+      → completed_at set, time_taken_days calculated
+
+
+================================================================
+SUMMARY
+================================================================
+
+  Schema changes:
+    roadmap_resources collection (new)
+    Learning_Goals: 3 new fields
+    User_Settings: preferred_learning_schedule (new)
+    LearningGoal.js model (new)
+    RoadmapTopic.js model (new)
+
+  New AI Server files:
+    data/roadmaps.json (moved)
+    db/roadmap_resources.py
+    db/learning_goals.py
+    db/roadmap_topics.py
+    services/youtube.py
+    utils/learning_utils.py
+    handlers/learning/__init__.py
+    handlers/learning/create.py
+    scripts/seed_roadmaps.py
+    scripts/fetch_resources.py
+    jobs/resource_refresh.py
+
+  Updated AI Server files:
+    pipeline/entity_scoper.py (learning scope)
+    context/context_manager.py (3 new states)
+    handlers/router.py (wire learning_create)
+    db/readers.py (preferred_learning_schedule)
+    services/self_fetch.py (schedule in settings)
+    jobs/ (topic reminder)
+
+  New Node.js files:
+    models/LearningGoal.js
+    models/RoadmapTopic.js
+    routes/learning.routes.js
+    controllers/learning.controller.js
+    tests/learning.test.js
+
+  Updated Node.js files:
+    models/UserSetting.js
+    routes/index.js
+    jobs/reminder.job.js
+    controllers/settings.controller.js
+
+
+================================================================
+BUILD ORDER
+================================================================
+
+  Phase 1  → Schema changes (both servers)
+  Phase 2  → Roadmap seeding (AI server)
+  Phase 3  → YouTube fetch + refresh job (AI server)
+  Phase 4  → Entity scoper + alias maps + utils (AI server)
+  Phase 5  → DB layer for learning (AI server)
+  Phase 6  → Settings learning schedule (Node.js)
+  Phase 7  → Context manager update (AI server)
+  Phase 8  → Learning add handler (AI server)
+  Phase 9  → Node.js learning routes
+  Phase 10 → Topic completion flow (both)
+  Phase 11 → Full test suite (both)
