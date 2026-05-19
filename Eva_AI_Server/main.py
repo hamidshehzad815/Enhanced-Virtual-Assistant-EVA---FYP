@@ -12,6 +12,7 @@ from pydantic import BaseModel
 
 from config.settings import settings
 from config.database import database
+from handlers.learning.topic_done_chat import maybe_handle_learning_topic_done_chat
 from handlers.general_handler import (
     handle_confirmation_unexpected,
     handle_general,
@@ -35,6 +36,7 @@ from context.context_manager import (
     handle_number_reply,
     handle_yes_no_reply,
     is_cancel,
+    process_learning_create_free_text_reply,
     should_block_new_command,
 )
 from context.redis_client import redis_client
@@ -42,11 +44,15 @@ from pipeline.classifier1 import classifier1
 from pipeline.classifier2 import classifier2
 from pipeline.date_resolver import resolve_all
 from pipeline.entity_scoper import scope_entities
-from pipeline.ner import ner_extractor
+from pipeline.ner import get_ner_extractor_for_intent, learning_ner_extractor, ner_extractor
 from pipeline.preprocessor import is_too_short, preprocess
 from services.self_fetch import self_fetch_all
 from services.duckling import duckling_client
 from services.gemini import gemini_service
+from jobs.resource_refresh import (
+    shutdown_refresh_scheduler,
+    start_refresh_scheduler,
+)
 from services.productivity_scorer import get_productive_days, get_productive_hours
 from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
 from utils.date_utils import weekday_name_to_number
@@ -101,11 +107,20 @@ async def lifespan(app: FastAPI):
     # Load Model 2 (intent classifier)
     model2_ok = classifier2.load()
 
-    # Load NER model
+    # Load NER models (scheduling vs learning intents)
     ner_ok = ner_extractor.load()
+    learning_ner_ok = learning_ner_extractor.load()
 
     print("=" * 50)
-    if mongodb_ok and redis_ok and duckling_ok and model1_ok and model2_ok and ner_ok:
+    if (
+        mongodb_ok
+        and redis_ok
+        and duckling_ok
+        and model1_ok
+        and model2_ok
+        and ner_ok
+        and learning_ner_ok
+    ):
         print("All services connected successfully!")
     else:
         print("WARNING: Some services failed to connect")
@@ -120,13 +135,19 @@ async def lifespan(app: FastAPI):
         if not model2_ok:
             print("  - Model2: FAILED")
         if not ner_ok:
-            print("  - NER: FAILED")
+            print("  - NER (scheduling): FAILED")
+        if not learning_ner_ok:
+            print("  - NER (learning): FAILED")
     print("=" * 50)
+
+    if mongodb_ok:
+        await start_refresh_scheduler()
 
     yield
 
     # Shutdown
     print("EVA AI Server Shutting down...")
+    await shutdown_refresh_scheduler()
     await database.disconnect()
     await redis_client.disconnect()
     print("Shutdown complete.")
@@ -301,6 +322,7 @@ async def health_check():
     model1_healthy = classifier1.loaded
     model2_healthy = classifier2.loaded
     ner_healthy = ner_extractor.loaded
+    learning_ner_healthy = learning_ner_extractor.loaded
 
     all_healthy = (
         mongodb_healthy
@@ -309,6 +331,7 @@ async def health_check():
         and model1_healthy
         and model2_healthy
         and ner_healthy
+        and learning_ner_healthy
     )
 
     return {
@@ -321,6 +344,7 @@ async def health_check():
             "model1": "loaded" if model1_healthy else "not_loaded",
             "model2": "loaded" if model2_healthy else "not_loaded",
             "ner": "loaded" if ner_healthy else "not_loaded",
+            "ner_learning": "loaded" if learning_ner_healthy else "not_loaded",
         }
     }
 
@@ -508,6 +532,94 @@ async def process_message(payload: ProcessRequest):
                     "settings": settings_data,
                 }
 
+            if (
+                expected_response == "number"
+                and pending_intent == "learning_create"
+                and pending_stage == "schedule_choice"
+            ):
+                from utils.learning_schedules import (
+                    parse_schedule_choice_number,
+                    schedule_choice_is_settings_redirect,
+                )
+
+                options = list(pending_action.get("schedule_options") or [])
+                chosen_id = parse_schedule_choice_number(message, options)
+                if not chosen_id:
+                    await redis_client.set_context(payload.user_id, pending_context)
+                    total = len(options)
+                    if user_name:
+                        prompt = (
+                            f"Please pick a number from 1 to {total}, {user_name}, "
+                            "or say cancel to stop."
+                        )
+                    else:
+                        prompt = f"Please pick a number from 1 to {total}, or say cancel to stop."
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "expected_response": "number",
+                        "stage": "schedule_choice",
+                        "response_text": prompt,
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                if schedule_choice_is_settings_redirect(chosen_id):
+                    await redis_client.delete_context(payload.user_id)
+                    if user_name:
+                        settings_msg = (
+                            f"No problem, {user_name}. Add a schedule in Settings with the days, "
+                            "times, and session lengths you want for this topic, then ask me to "
+                            "create your learning plan again."
+                        )
+                    else:
+                        settings_msg = (
+                            "Add a schedule in Settings with the days, times, and session lengths "
+                            "you want for this topic, then ask me to create your learning plan again."
+                        )
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "expected_response": "free_text",
+                        "stage": "schedule_choice",
+                        "response_text": settings_msg,
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                merged_learning = dict(pending_action.get("entities") or {})
+                merged_learning["learning_schedule_id"] = chosen_id
+                await redis_client.delete_context(payload.user_id)
+                routed_result = await route_intent(
+                    "learning_create",
+                    entities=merged_learning,
+                    context={
+                        **route_context_base,
+                        "pending_context": pending_context,
+                        "pending_reply_type": "number",
+                    },
+                )
+                return {
+                    "status": "ok",
+                    "too_short": False,
+                    "preprocessed": processed,
+                    "context_handled": True,
+                    "expected_response": "number",
+                    "stage": "schedule_choice",
+                    "merged_entities": merged_learning,
+                    "route": routed_result,
+                    "handler_status": routed_result.get("status"),
+                    "notifications": routed_result.get("notifications", []),
+                    "response_text": routed_result.get("response_text")
+                    or _safe_reply("pending_number_processed", user_name, history),
+                    "user_name": user_name,
+                    "settings": settings_data,
+                }
+
             if expected_response == "free_text":
                 if pending_intent in {"update", "scheduling_update"} and pending_stage == "what_to_update":
                     if not ner_extractor.loaded:
@@ -593,7 +705,95 @@ async def process_message(payload: ProcessRequest):
                             "settings": settings_data,
                         }
 
-                if pending_intent in {"learning_create", "learning_update", "learning_delete", "learning_show"}:
+                if pending_intent == "learning_create":
+                    pending_stage_lc = str(
+                        (pending_context.get("pending_action") or {}).get("stage") or "topic",
+                    ).lower()
+                    if pending_stage_lc == "topic" and not learning_ner_extractor.loaded:
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "response_text": _safe_reply("model_unavailable", user_name, history),
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    from utils.learning_schedules import slots_for_plan_entities
+
+                    pending_entities = (pending_context.get("pending_action") or {}).get(
+                        "entities",
+                    ) or {}
+                    plan_slots = slots_for_plan_entities(settings_data, pending_entities)
+
+                    lc_result = await process_learning_create_free_text_reply(
+                        pending_context,
+                        message,
+                        user_timezone=resolve_timezone_name(
+                            (fetched.user or {}).get("timezone"),
+                        ),
+                        preferred_learning_schedule=plan_slots,
+                    )
+                    outcome = lc_result.get("outcome")
+                    if outcome == "retry":
+                        await redis_client.set_context(payload.user_id, pending_context)
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "expected_response": "free_text",
+                            "stage": pending_stage_lc,
+                            "response_text": lc_result.get("message")
+                            or _safe_reply("pending_free_text_captured", user_name, history),
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+                    if outcome == "unsupported_topic":
+                        await redis_client.delete_context(payload.user_id)
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "expected_response": "free_text",
+                            "response_text": lc_result.get("message")
+                            or _safe_reply("unknown_input_type", user_name, history),
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    merged_learning = lc_result.get("merged_entities") or {}
+                    await redis_client.delete_context(payload.user_id)
+                    routed_result = await route_intent(
+                        "learning_create",
+                        entities=merged_learning,
+                        context={
+                            **route_context_base,
+                            "pending_context": pending_context,
+                            "pending_reply_type": "free_text",
+                            "pending_stage": pending_stage_lc,
+                        },
+                    )
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "expected_response": "free_text",
+                        "stage": pending_stage_lc,
+                        "merged_entities": merged_learning,
+                        "route": routed_result,
+                        "handler_status": routed_result.get("status"),
+                        "notifications": routed_result.get("notifications", []),
+                        "response_text": routed_result.get("response_text")
+                        or _safe_reply("pending_free_text_captured", user_name, history),
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                if pending_intent in {"learning_update", "learning_delete", "learning_show"}:
                     await redis_client.delete_context(payload.user_id)
                     response_text = _safe_reply(
                         "out_of_scope",
@@ -1191,6 +1391,18 @@ async def process_message(payload: ProcessRequest):
                     "settings": settings_data,
                 }
 
+        if not pending_context:
+            learning_done = await maybe_handle_learning_topic_done_chat(
+                user_id=payload.user_id,
+                message_lower=processed["processed"],
+                user_name=user_name,
+                history=history,
+                settings_data=settings_data,
+                preprocessed=processed,
+            )
+            if learning_done is not None:
+                return learning_done
+
         if is_too_short(processed["processed"]):
             return {
                 "status": "ok",
@@ -1215,7 +1427,7 @@ async def process_message(payload: ProcessRequest):
         label = classification["label"]
 
         if label == "command":
-            if not classifier2.loaded or not ner_extractor.loaded:
+            if not classifier2.loaded:
                 return {
                     "status": "ok",
                     "too_short": False,
@@ -1229,8 +1441,20 @@ async def process_message(payload: ProcessRequest):
 
             intent_classification = classifier2.predict(nlu_processed)
             canonical_intent = normalize_intent(intent_classification["label"])
+            active_ner = get_ner_extractor_for_intent(canonical_intent)
+            if not active_ner.loaded:
+                return {
+                    "status": "ok",
+                    "too_short": False,
+                    "preprocessed": processed,
+                    "classification": classification,
+                    "intent_pending": False,
+                    "response_text": _safe_reply("model_unavailable", user_name, history),
+                    "user_name": user_name,
+                    "settings": settings_data,
+                }
 
-            raw_entities = ner_extractor.extract(nlu_message, intent_hint=canonical_intent)
+            raw_entities = active_ner.extract(nlu_message, intent_hint=canonical_intent)
             raw_entities = _repair_weekday_fragment_date(raw_entities, nlu_message)
             scoped_entities = scope_entities(raw_entities, canonical_intent)
             user_timezone = resolve_timezone_name((fetched.user or {}).get("timezone"))

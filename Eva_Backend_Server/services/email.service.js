@@ -5,17 +5,13 @@
 
 const nodemailer = require("nodemailer");
 const logger = require("../config/logger");
+const { buildBackendPublicUrl } = require("../utils/publicUrl");
 
 // Create reusable transporter
 let transporter = null;
 
 const buildPublicApiBaseUrl = () => {
-  const explicit = String(process.env.BACKEND_PUBLIC_URL || "").trim();
-  if (explicit) {
-    return explicit.replace(/\/+$/, "");
-  }
-  const port = process.env.PORT || 3000;
-  return `http://localhost:${port}`;
+  return buildBackendPublicUrl();
 };
 
 const buildTokenLink = (template, fallbackPath, token) => {

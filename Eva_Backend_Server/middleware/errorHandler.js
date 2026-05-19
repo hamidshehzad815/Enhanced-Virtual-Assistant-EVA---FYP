@@ -62,8 +62,9 @@ class ForbiddenError extends ApiError {
  * Conflict Error (409)
  */
 class ConflictError extends ApiError {
-  constructor(message = "Conflict") {
+  constructor(message = "Conflict", payload = undefined) {
     super(409, message);
+    this.payload = payload;
   }
 }
 
@@ -161,6 +162,10 @@ const errorHandler = (err, req, res, next) => {
     status: error.status,
     message: error.message,
   };
+
+  if (error.payload !== undefined) {
+    response.data = error.payload;
+  }
 
   // Add validation errors if present
   if (error.errors) {
