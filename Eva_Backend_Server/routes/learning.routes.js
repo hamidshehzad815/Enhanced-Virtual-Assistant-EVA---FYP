@@ -12,9 +12,13 @@ const {
   getTopics,
   completeTopic,
   updateStatus,
+  respondToLearningCollaborationInvite,
+  respondToLearningCollaborationInviteViaLink,
 } = require("../controllers/learning.controller");
 
+router.get("/collaboration/respond", respondToLearningCollaborationInviteViaLink);
 router.get("/", protect, getAllGoals);
+router.post("/:id/collaborators/respond", protect, respondToLearningCollaborationInvite);
 router.get("/:id/topics", protect, getTopics);
 router.post("/:id/topics/:topicId/complete", protect, completeTopic);
 router.get("/:id", protect, getGoal);

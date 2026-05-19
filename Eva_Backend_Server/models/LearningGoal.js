@@ -54,6 +54,13 @@ const learningGoalSchema = new mongoose.Schema(
       trim: true,
       maxlength: [120, "roadmap_key cannot exceed 120 characters"],
     },
+    /** User_Settings preferred_learning_schedules[].id used for this plan */
+    learning_schedule_id: {
+      type: String,
+      trim: true,
+      maxlength: [64, "learning_schedule_id cannot exceed 64 characters"],
+      default: null,
+    },
     start_date: {
       type: Date,
       required: true,

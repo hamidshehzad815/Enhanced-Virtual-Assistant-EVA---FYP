@@ -4,7 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from config.settings import settings
-from services.youtube import search_topic
+from services.youtube import YouTubeSearchFailed, search_topic
 
 
 class YoutubeServiceTests(unittest.IsolatedAsyncioTestCase):
@@ -12,10 +12,11 @@ class YoutubeServiceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await search_topic(""), [])
         self.assertEqual(await search_topic("   "), [])
 
-    async def test_missing_api_key_returns_empty(self):
+    async def test_missing_api_key_raises(self):
         with patch.object(settings, "YOUTUBE_API_KEY", ""):
-            out = await search_topic("python tutorial")
-        self.assertEqual(out, [])
+            with self.assertRaises(YouTubeSearchFailed) as ctx:
+                await search_topic("python tutorial")
+        self.assertIn("YOUTUBE_API_KEY", str(ctx.exception))
 
     async def test_success_returns_three_fields(self):
         payload = {
@@ -60,7 +61,7 @@ class YoutubeServiceTests(unittest.IsolatedAsyncioTestCase):
             self.assertIn("channel", item)
         self.assertTrue(out[0]["url"].startswith("https://www.youtube.com/watch?v="))
 
-    async def test_non_200_returns_empty(self):
+    async def test_non_200_raises(self):
         resp = MagicMock()
         resp.status_code = 403
         resp.text = "quota exceeded"
@@ -72,10 +73,11 @@ class YoutubeServiceTests(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(settings, "YOUTUBE_API_KEY", "k"):
             with patch("services.youtube.httpx.AsyncClient", return_value=mock_client):
-                out = await search_topic("anything")
-        self.assertEqual(out, [])
+                with self.assertRaises(YouTubeSearchFailed) as ctx:
+                    await search_topic("anything")
+        self.assertEqual(ctx.exception.status_code, 403)
 
-    async def test_http_exception_returns_empty(self):
+    async def test_http_exception_raises(self):
         mock_client = MagicMock()
         mock_client.get = AsyncMock(side_effect=RuntimeError("network down"))
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -83,8 +85,9 @@ class YoutubeServiceTests(unittest.IsolatedAsyncioTestCase):
 
         with patch.object(settings, "YOUTUBE_API_KEY", "k"):
             with patch("services.youtube.httpx.AsyncClient", return_value=mock_client):
-                out = await search_topic("query")
-        self.assertEqual(out, [])
+                with self.assertRaises(YouTubeSearchFailed) as ctx:
+                    await search_topic("query")
+        self.assertIn("network", str(ctx.exception).lower())
 
 
 if __name__ == "__main__":

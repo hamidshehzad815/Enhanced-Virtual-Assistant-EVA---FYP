@@ -91,6 +91,10 @@ _ACTION_GUIDANCE: Dict[str, str] = {
     "model_unavailable": "Politely explain the assistant is temporarily unavailable and ask user to retry.",
     "intent_not_implemented": "Explain this command type is recognized but not implemented yet, then redirect to available capabilities.",
     "system_error": "Give a friendly recovery message after an internal error without exposing stack traces.",
+    "learning_missing_topic": "Ask which programming language or database they want to learn (supported roadmaps only).",
+    "learning_missing_start_date": "Ask when they want to start learning {topic}, with concrete date examples.",
+    "learning_missing_duration": "Ask how long they want the plan to run (at least one week), for {topic}.",
+    "learning_plan_created": "Celebrate the new learning plan: mention topic, session count, first dates preview, collaborators or calendar if relevant.",
 }
 
 _FALLBACK_RESPONSES: Dict[str, List[str]] = {
@@ -115,6 +119,26 @@ _FALLBACK_RESPONSES: Dict[str, List[str]] = {
         "Thanks {name}, but I am not waiting for a confirmation right now.",
         "Noted {name}. I currently need a command or specific detail, not a confirmation.",
         "I got your confirmation, {name}, but there is no pending yes/no step at the moment.",
+    ],
+    "learning_missing_topic": [
+        "What topic do you want to learn, {name}? For example Python, JavaScript, or MySQL.",
+        "Tell me the track you want, {name} — like Python, Go, or PostgreSQL.",
+        "Which roadmap should I use, {name}? Pick a supported language or database.",
+    ],
+    "learning_missing_start_date": [
+        "Great choice with {topic}, {name}. When do you want to start? Try “next Monday” or a specific date.",
+        "Love it — {topic} it is, {name}. What day should we begin? (e.g. May 20 or next Tuesday.)",
+        "Perfect, {name}. What start date works for your {topic} plan?",
+    ],
+    "learning_missing_duration": [
+        "How long should this {topic} run, {name}? For example “2 weeks” or “1 month” (at least 7 days).",
+        "Got it, {name}. Over how many days do you want to spread {topic}? Try “3 weeks” or “30 days”.",
+        "Almost there, {name}. Pick a duration for {topic} — at least one week.",
+    ],
+    "learning_plan_created": [
+        "You are set, {name}: {session_count} sessions for {topic}{roadmap_display}. First up: {preview_sessions}.",
+        "All scheduled, {name} — {topic}{roadmap_display} with {session_count} sessions. Kickoff: {preview_sessions}.",
+        "Done, {name}. I lined up {session_count} {topic} sessions{roadmap_display}. Starts with {preview_sessions}.",
     ],
     "missing_task_name": [
         "What should I call this task, {name}?",
@@ -562,6 +586,15 @@ class GeminiService:
             else "That hour overlaps your existing schedule, but it is still your strongest historical slot."
         )
 
+        topic = str(action_context.get("topic") or "that topic")
+        rk = str(action_context.get("roadmap_key") or "").strip()
+        roadmap_display = f" ({rk})" if rk and rk.lower() != "general" else ""
+        try:
+            session_count = int(action_context.get("session_count") or 0)
+        except (TypeError, ValueError):
+            session_count = 0
+        preview_sessions = str(action_context.get("preview_sessions") or "your first sessions")
+
         date_time_suffix = ""
         if date and time:
             date_time_suffix = f" for {date} at {time}"
@@ -600,6 +633,10 @@ class GeminiService:
             threshold=threshold,
             on_time_rate=on_time_rate,
             conflict_note=conflict_note,
+            topic=topic,
+            roadmap_display=roadmap_display,
+            session_count=session_count,
+            preview_sessions=preview_sessions,
         ).strip()
 
     def generate_reply(

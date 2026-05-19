@@ -27,6 +27,8 @@ const notificationSchema = new mongoose.Schema(
         "topic_reminder",
         "overdue_alert",
         "collaboration_invite",
+        "learning_collaboration_invite",
+        "learning_plan_created",
         "friend_request",
         "friend_accepted",
         "behavioral_suggestion",

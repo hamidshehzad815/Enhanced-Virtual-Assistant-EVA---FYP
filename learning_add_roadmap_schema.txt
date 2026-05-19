@@ -32,7 +32,11 @@ OVERVIEW
 ROADMAPS.JSON STRUCTURE
 ================================================================
 
-  File location: Eva_AI_Server/data/roadmaps.json
+  File location (resolution order — see ``get_roadmaps_json_path()`` in ``config/settings.py``):
+
+    1. ``ROADMAPS_JSON_PATH`` environment variable (absolute, or relative to repo root)
+    2. ``<repo root>/Roadmaps/roadmaps.json`` if that file exists
+    3. ``Eva_AI_Server/data/roadmaps.json`` (fallback)
 
   {
     "topics": ["Python", "JavaScript", ...],  ← all 20 supported
@@ -48,8 +52,8 @@ ROADMAPS.JSON STRUCTURE
       ],
 
       "basics": {
-        "days": 8,                            ← sessions required
-        "topics": [                           ← topic titles (YouTube search queries)
+        "days": 8,                            ← suggested calendar-day span for this level
+        "topics": [                           ← one session per entry (YouTube-searchable titles)
           "Python Introduction Versions Python 3 vs 2",
           "Python Installation pyenv conda official installer",
           "Python Hello World print and interactive REPL",
@@ -81,7 +85,9 @@ ROADMAPS.JSON STRUCTURE
   }
 
   IMPORTANT RULES FOR JSON:
-  → days field MUST equal exact length of topics array
+  → ``days`` = suggested **calendar-day span** for that level (how long the track is meant to run on a calendar).
+  → ``topics`` array = one string per **learning session**; ``len(topics)`` is the session count (may differ from ``days``).
+  → Optional density: average sessions per calendar day ≈ ``len(topics) / days`` when both are set (e.g. 10 sessions in 5 days ≈ 2/day).
   → every topic title must be specific and YouTube-searchable
   → topic title must include the language/database name
   → general roadmap to be added later (not yet in file)
@@ -103,6 +109,7 @@ ROADMAP_RESOURCES COLLECTION SCHEMA
     level        : String             "basics"
     order        : Number             1, 2, 3... (position in roadmap)
     title        : String             "Python Introduction Versions Python 3 vs 2"
+    level_calendar_days : Number or null   copy of JSON ``days`` for this level (same on all rows in the level)
     resources    : [                  YouTube results (empty until fetched)
       {
         title     : String            "Python Tutorial for Beginners"
@@ -133,7 +140,8 @@ RELATIONSHIP BETWEEN JSON AND MONGODB
   level: "basics"              →   level: "basics"
   topics[0]: "Python Intro..." →   order: 1, title: "Python Intro..."
   topics[1]: "Python Install..." → order: 2, title: "Python Install..."
-  days: 8                      →   (8 documents for basics level)
+  days: 8 (example)            →   level_calendar_days: 8 on each row for that level
+  len(topics) = N              →   N MongoDB documents (one per session)
 
   JSON defines WHAT topics exist.
   MongoDB stores THOSE topics WITH their YouTube resources.
@@ -207,6 +215,7 @@ SEEDING SCRIPTS
                  level      : lvl,
                  order      : index + 1,
                  title      : topic_title,
+                 level_calendar_days : level["days"] or null,
                  resources  : [],
                  fetched_at : null,
                  created_at : now,
@@ -241,7 +250,9 @@ SEEDING SCRIPTS
     2. Fetch unfetched topics in batches (50 at a time)
     3. For each topic:
          Call YouTube Data API v3 search endpoint:
-           query  = topic.title
+           query  = LOCKED (Python worker): roadmap language (goal subject)
+                    + session title, unless title already starts with language
+                    → build_youtube_search_query() in roadmap_youtube_worker.py
            type   = video
            max    = 3 results
            order  = relevance
@@ -250,8 +261,8 @@ SEEDING SCRIPTS
          Call update_resources(doc_id, resources)
          Wait 0.5 seconds (rate limit safety)
     4. Print progress every 10 topics
-    5. Stop when daily quota reached (100 searches/day free)
-       Resume next day automatically
+    5. If YouTube returns an error (quota, invalid key, network): stop immediately;
+       fix the issue and run the script again (no app-side daily cap)
 
   How to run:
     cd Eva_AI_Server
@@ -262,15 +273,12 @@ SEEDING SCRIPTS
     [1/847] Python Introduction... ✓
     [2/847] Python Installation... ✓
     ...
-    Quota limit reached. 100/847 fetched today.
-    Run again tomorrow to continue.
+    On hard API failure, a framed message explains what broke and that you can re-run after fixing.
 
   Rate limiting:
-    Free YouTube quota: 10,000 units/day
-    Each search: 100 units
-    = 100 searches/day free
-    847 topics ÷ 100 = ~9 days to complete
-    Request quota increase from Google for faster completion
+    A short delay (RESOURCE_FETCH_DELAY_SECONDS, default 0.5s) between successful calls
+    reduces burst traffic. Google's own daily quota still applies; if exceeded, the run
+    stops on the HTTP error so you are not blindly hammering the API.
 
   ─────────────────────────────────────────────────────────
   SCRIPT 3 — refresh_job.py (monthly background job)
@@ -312,7 +320,7 @@ HOW LEARNING ADD HANDLER USES ROADMAP DATA
      → each document has title + resources array
 
   3. sessions_required = len(topics)
-     (same as roadmap[language][level]["days"] in JSON)
+     (number of sessions = MongoDB rows for that level; independent of JSON ``days``)
 
   4. Use topics list to build schedule (STEP 8)
      each topic's title and resources attached to
@@ -335,7 +343,9 @@ YOUTUBE API SETUP
 
   Request parameters:
     part      : snippet
-    q         : topic.title (search query)
+    q         : LOCKED — roadmap ``language`` (same as learning-goal subject)
+                + ``title`` (session line), unless ``title`` already begins
+                with ``language`` (see ``build_youtube_search_query``).
     type      : video
     maxResults: 3
     order     : relevance
@@ -352,7 +362,7 @@ YOUTUBE API SETUP
 
   Error handling:
     API fails → log error → skip topic → continue
-    Quota exceeded → stop → log → resume next run
+    Quota / HTTP error from Google → stop immediately → log / console banner → re-run after fix
     Invalid response → skip → continue
 
 
@@ -361,14 +371,13 @@ COMPLETE SETUP ORDER (ONE TIME)
 ================================================================
 
   1. Verify roadmaps.json is complete and correct
-     (days field matches topics array length for all)
+     (each level has a ``topics`` array; ``days`` is optional suggested calendar span)
 
   2. Run seed_roadmaps.py
      → all topics inserted with empty resources
 
   3. Run fetch_resources.py
-     → YouTube resources fetched day by day
-     (takes ~9 days on free quota)
+     → YouTube resources fetched in one or more runs (re-run if Google returns an error)
 
   4. Verify with spot check:
      pick 3 random topics

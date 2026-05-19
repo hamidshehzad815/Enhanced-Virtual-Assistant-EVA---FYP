@@ -5,7 +5,10 @@ One-time (idempotent) seed: roadmaps.json -> MongoDB roadmap_resources.
 Usage:
   cd Eva_AI_Server
   PYTHONPATH=. python scripts/seed_roadmaps.py
-  PYTHONPATH=. python scripts/seed_roadmaps.py --json data/roadmaps.json
+  PYTHONPATH=. python scripts/seed_roadmaps.py --json ../Roadmaps/roadmaps.json
+
+Default JSON path: ``get_roadmaps_json_path()`` — prefers ``Roadmaps/roadmaps.json``
+at repo root when present, else ``data/roadmaps.json``. Override with ``ROADMAPS_JSON_PATH``.
 """
 
 from __future__ import annotations
@@ -22,6 +25,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from config.database import database  # noqa: E402
+from config.settings import get_roadmaps_json_path  # noqa: E402
 from db.roadmap_resources import seed_from_roadmaps_json  # noqa: E402
 
 
@@ -56,11 +60,11 @@ def main() -> None:
     parser.add_argument(
         "--json",
         type=Path,
-        default=ROOT / "data" / "roadmaps.json",
-        help="Path to roadmaps.json",
+        default=None,
+        help="Path to roadmaps.json (default: get_roadmaps_json_path())",
     )
     args = parser.parse_args()
-    path: Path = args.json
+    path: Path = args.json if args.json is not None else get_roadmaps_json_path()
     if not path.is_file():
         raise SystemExit(f"File not found: {path}")
     asyncio.run(main_async(path))

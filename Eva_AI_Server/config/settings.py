@@ -7,9 +7,33 @@ from dotenv import load_dotenv
 
 # Load .env file from Eva_AI_Server directory
 BASE_DIR = Path(__file__).resolve().parent.parent
+WORKSPACE_ROOT = BASE_DIR.parent
 # Use override=True so local .env values are not shadowed by stale exported
 # shell variables during development/testing runs.
 load_dotenv(BASE_DIR / ".env", override=True)
+
+
+def get_roadmaps_json_path() -> Path:
+    """
+    Path to the roadmap structure JSON used for seeding and learning_utils.
+
+    Resolution order:
+      1. ``ROADMAPS_JSON_PATH`` env (absolute, or relative to workspace root)
+      2. ``<workspace>/Roadmaps/roadmaps.json`` if that file exists
+      3. ``Eva_AI_Server/data/roadmaps.json`` (legacy default)
+    """
+    raw = (os.getenv("ROADMAPS_JSON_PATH") or "").strip()
+    if raw:
+        p = Path(raw)
+        if p.is_absolute():
+            return p
+        return (WORKSPACE_ROOT / p).resolve()
+
+    preferred = WORKSPACE_ROOT / "Roadmaps" / "roadmaps.json"
+    if preferred.is_file():
+        return preferred
+
+    return BASE_DIR / "data" / "roadmaps.json"
 
 
 def _as_bool(raw_value, default=False):
@@ -37,6 +61,7 @@ class Settings:
     """Application settings loaded from environment variables"""
 
     BASE_DIR: Path = BASE_DIR
+    WORKSPACE_ROOT: Path = WORKSPACE_ROOT
 
     # Server
     PORT: int = int(os.getenv("PORT", "8080"))
@@ -63,7 +88,6 @@ class Settings:
 
     # YouTube API
     YOUTUBE_API_KEY: str = os.getenv("YOUTUBE_API_KEY", "")
-    YOUTUBE_DAILY_SEARCH_LIMIT: int = int(os.getenv("YOUTUBE_DAILY_SEARCH_LIMIT", "100"))
     RESOURCE_FETCH_DELAY_SECONDS: float = float(
         os.getenv("RESOURCE_FETCH_DELAY_SECONDS", "0.5"),
     )
@@ -74,6 +98,9 @@ class Settings:
     RESOURCE_REFRESH_INTERVAL_DAYS: int = int(
         os.getenv("RESOURCE_REFRESH_INTERVAL_DAYS", "30"),
     )
+
+    # Learning: map user subtopic text to a roadmap track; fuzzy score must reach this (0–1).
+    SUBTOPIC_MATCH_THRESHOLD: float = float(os.getenv("SUBTOPIC_MATCH_THRESHOLD", "0.56"))
 
     # Model Settings
     CONFIDENCE_THRESHOLD: float = float(os.getenv("CONFIDENCE_THRESHOLD", "0.7"))

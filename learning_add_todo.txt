@@ -36,10 +36,9 @@ WHAT IS ALREADY DONE
 KNOWN GAPS TO FIX BEFORE STARTING
 ================================================================
 
-  [x] days field mismatch in roadmaps.json
-      → verify days == len(topics) for every language/level
-      → fix any mismatches
-      → fixed: Eva_AI_Server/data/roadmaps.json (generated, asserted in script)
+  [x] days vs topics semantics in roadmaps.json
+      → ``days`` = suggested calendar-day span for the level; ``topics`` = one session per entry
+      → they need not be equal; use ``scripts/validate_roadmaps.py`` for a sessions vs days summary
 
   [x] general roadmap missing for all 20 languages
       → add general roadmap to each language in JSON
@@ -117,10 +116,10 @@ Goal: roadmap_resources collection populated with all
   [x] Create Eva_AI_Server/data/ directory
       → move roadmaps.json here
 
-  [x] Fix roadmaps.json:
-      → verify days == len(topics) for every entry
-      → fix all mismatches
-      → enforced in seed + tests/test_roadmap_resources_db.py::RoadmapsJsonFileTests
+  [x] roadmaps.json structure and seeding
+      → each level has ``days`` (optional int) and ``topics`` (array of session titles)
+      → seed stores ``level_calendar_days`` from JSON ``days`` on every row for that level
+      → structure asserted in tests/test_roadmap_resources_db.py::RoadmapsJsonFileTests
 
   [x] Create db/roadmap_resources.py:
       → get_roadmap(language, level) → list
@@ -175,11 +174,10 @@ Goal: YouTube resources fetched and stored for all topics.
         → calls YouTube Data API v3 search
         → returns list of:
           { title, url, thumbnail, channel }
-        → handles API errors gracefully
-        → returns [] on failure (never raises)
+        → empty query → []
+        → HTTP/network/missing key → raises YouTubeSearchFailed (batch fetch stops)
 
-  [x] services/youtube_quota.py + services/roadmap_youtube_worker.py
-      → daily quota file data/.youtube_search_quota.json (gitignored)
+  [x] services/roadmap_youtube_worker.py (YouTube batch fetch; stops on API failure)
 
   [x] Create scripts/fetch_resources.py:
       → loads unfetched topics in batches of 50
@@ -187,10 +185,9 @@ Goal: YouTube resources fetched and stored for all topics.
           calls youtube.search_topic(topic.title)
           calls db.update_resources(doc_id, results)
           waits 0.5 seconds between calls
-      → tracks daily quota (100 searches/day)
-      → stops when quota reached
+      → on YouTube API failure: stops immediately with a clear console message
       → prints progress every 10 topics
-      → safe to run multiple days until complete
+      → safe to re-run until complete
 
   [x] Create jobs/resource_refresh.py:
       → shared worker + get_stale_topics(fetched_at older than 30 days)
@@ -202,7 +199,7 @@ Goal: YouTube resources fetched and stored for all topics.
       await shutdown_refresh_scheduler() on shutdown
 
   [ ] Run fetch_resources.py:
-      → run daily until all topics fetched
+      → run until complete or until YouTube returns an error (fix key/quota, re-run)
       → verify sample topics have 3 resources each
 
   [x] Unit test services/youtube.py:
@@ -212,7 +209,7 @@ Goal: YouTube resources fetched and stored for all topics.
       → tests/test_resource_refresh_job.py
 
   Env (see config/settings.py):
-      YOUTUBE_API_KEY, YOUTUBE_DAILY_SEARCH_LIMIT (100),
+      YOUTUBE_API_KEY,
       RESOURCE_FETCH_DELAY_SECONDS (0.5),
       RESOURCE_REFRESH_ENABLED (true), RESOURCE_REFRESH_INTERVAL_DAYS (30)
 

@@ -22,12 +22,7 @@
     "SQL"
   ],
   "Python": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -88,12 +83,7 @@
     }
   },
   "JavaScript": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -154,12 +144,7 @@
     }
   },
   "TypeScript": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -220,12 +205,7 @@
     }
   },
   "Java": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -286,12 +266,7 @@
     }
   },
   "C#": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -352,12 +327,7 @@
     }
   },
   "C++": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -418,12 +388,7 @@
     }
   },
   "Go": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -484,12 +449,7 @@
     }
   },
   "Rust": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -550,12 +510,7 @@
     }
   },
   "PHP": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -616,12 +571,7 @@
     }
   },
   "Kotlin": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -682,12 +632,7 @@
     }
   },
   "Swift": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -748,12 +693,7 @@
     }
   },
   "Ruby": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -814,12 +754,7 @@
     }
   },
   "Dart": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -880,12 +815,7 @@
     }
   },
   "C": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -946,12 +876,7 @@
     }
   },
   "Oracle": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -1012,12 +937,7 @@
     }
   },
   "MySQL": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -1078,12 +998,7 @@
     }
   },
   "Microsoft SQL Server": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -1144,12 +1059,7 @@
     }
   },
   "PostgreSQL": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -1210,12 +1120,7 @@
     }
   },
   "MongoDB": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [
@@ -1276,12 +1181,7 @@
     }
   },
   "SQL": {
-    "topics": [
-      "general",
-      "basics",
-      "intermediate",
-      "advanced"
-    ],
+    "topics": ["general", "basics", "intermediate", "advanced"],
     "general": {
       "days": 8,
       "topics": [

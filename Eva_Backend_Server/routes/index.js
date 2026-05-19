@@ -17,6 +17,7 @@ const analyticsRoutes = require("./analytics.routes");
 const friendsRoutes = require("./friends.routes");
 const learningRoutes = require("./learning.routes");
 const profileRoutes = require("./profile.routes");
+const dashboardRoutes = require("./dashboard.routes");
 
 // Register routes
 router.use("/", healthRoutes);
@@ -29,6 +30,7 @@ router.use("/api/analytics", analyticsRoutes);
 router.use("/api/friends", friendsRoutes);
 router.use("/api/learning", learningRoutes);
 router.use("/api/profile", profileRoutes);
+router.use("/api/dashboard", dashboardRoutes);
 
 // Future routes will be added here:
 // router.use('/api/notifications', notificationRoutes);
