@@ -8,7 +8,7 @@
 const cron = require("node-cron");
 
 const logger = require("../config/logger");
-const { Task, User } = require("../models");
+const { Task, User, LearningGoal } = require("../models");
 const { insert_and_dispatch } = require("../services/notification.service");
 const { formatDateInTimezone, resolveTimezone } = require("../utils/timezone");
 
@@ -38,6 +38,28 @@ const buildReminderNotification = (task, timezoneValue) => ({
   delivery_channel: ["push", "in_app", "email"],
   scheduled_at: new Date(),
 });
+
+const buildLearningTopicReminderPayload = (task, timezoneValue, planTitle) => {
+  const when = formatDue(task.due_datetime, timezoneValue);
+  const plan = planTitle ? `"${planTitle}"` : "Your learning plan";
+  return {
+    user_id: String(task.owner_id),
+    sender_id: null,
+    type: "topic_reminder",
+    reference_type: "topic",
+    reference_id: String(task.learning_topic_id),
+    title: "Learning session reminder",
+    message: `${plan} — ${task.title} is coming up at ${when}. Mark complete when you finish.`,
+    action_required: true,
+    delivery_channel: ["push", "in_app", "email"],
+    scheduled_at: new Date(),
+    push_data: {
+      learning_goal_id: String(task.learning_plan_id),
+      learning_topic_id: String(task.learning_topic_id),
+      suggested_action: "complete_learning_topic",
+    },
+  };
+};
 
 const buildOverdueNotification = (task, timezoneValue) => ({
   user_id: String(task.owner_id),
@@ -77,7 +99,9 @@ const sendReminderNotifications = async (now) => {
     is_deleted: false,
     reminder_sent_at: null,
   })
-    .select("_id owner_id title due_datetime reminder_minutes_before")
+    .select(
+      "_id owner_id title due_datetime reminder_minutes_before learning_plan_id learning_topic_id",
+    )
     .lean();
 
   if (!pendingTasks.length) {
@@ -110,12 +134,32 @@ const sendReminderNotifications = async (now) => {
     ...new Set(dueForReminder.map((task) => String(task.owner_id))),
   ];
   const timezoneByUserId = await loadUserTimezones(ownerIds);
-  const payloads = dueForReminder.map((task) =>
-    buildReminderNotification(
-      task,
-      timezoneByUserId.get(String(task.owner_id)) || "UTC",
+
+  const learningPlanIds = [
+    ...new Set(
+      dueForReminder
+        .filter((t) => t.learning_topic_id && t.learning_plan_id)
+        .map((t) => String(t.learning_plan_id)),
     ),
-  );
+  ];
+  let titleByPlanId = new Map();
+  if (learningPlanIds.length) {
+    const goals = await LearningGoal.find({
+      _id: { $in: learningPlanIds },
+    })
+      .select("title")
+      .lean();
+    titleByPlanId = new Map(goals.map((g) => [String(g._id), g.title]));
+  }
+
+  const payloads = dueForReminder.map((task) => {
+    const tz = timezoneByUserId.get(String(task.owner_id)) || "UTC";
+    if (task.learning_topic_id && task.learning_plan_id) {
+      const planTitle = titleByPlanId.get(String(task.learning_plan_id)) || "";
+      return buildLearningTopicReminderPayload(task, tz, planTitle);
+    }
+    return buildReminderNotification(task, tz);
+  });
   const summary = await insert_and_dispatch(payloads);
 
   await Task.updateMany(
@@ -231,4 +275,6 @@ module.exports = {
   runReminderCycle,
   startReminderJob,
   stopReminderJob,
+  sendReminderNotifications,
+  sendOverdueAlerts,
 };

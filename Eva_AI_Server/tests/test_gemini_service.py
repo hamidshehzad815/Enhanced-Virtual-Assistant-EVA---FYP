@@ -105,7 +105,58 @@ class TestGeminiService(unittest.TestCase):
         self.assertFalse(service.enabled)
         self.assertIsNone(service.model)
 
-    def test_model_timeout_disables_gemini_and_uses_fallback(self):
+    def test_learning_missing_start_date_fallback_mentions_topic_not_generic(self):
+        service = GeminiService()
+        service.enabled = False
+        service.model = None
+
+        reply = service.generate_reply(
+            action_context={
+                "action": "learning_missing_start_date",
+                "topic": "Python",
+            },
+            user_name="Hamid Shehzad",
+            conversation_history=[],
+        )
+        self.assertIn("Python", reply)
+        self.assertNotIn("Tell me what you want to do next", reply)
+
+    def test_learning_missing_duration_fallback_mentions_topic(self):
+        service = GeminiService()
+        service.enabled = False
+        service.model = None
+
+        reply = service.generate_reply(
+            action_context={
+                "action": "learning_missing_duration",
+                "topic": "JavaScript",
+            },
+            user_name="Alex",
+            conversation_history=[],
+        )
+        self.assertIn("JavaScript", reply)
+        self.assertNotIn("Tell me what you want to do next", reply)
+
+    def test_learning_plan_created_fallback_includes_counts(self):
+        service = GeminiService()
+        service.enabled = False
+        service.model = None
+
+        reply = service.generate_reply(
+            action_context={
+                "action": "learning_plan_created",
+                "topic": "Python",
+                "roadmap_key": "basics",
+                "session_count": 12,
+                "preview_sessions": "Mon at 6 PM",
+            },
+            user_name="Sam",
+            conversation_history=[],
+        )
+        self.assertIn("Python", reply)
+        self.assertIn("12", reply)
+        self.assertIn("Mon at 6 PM", reply)
+
         class SlowModel:
             def generate_content(self, *_args, **_kwargs):
                 time.sleep(0.5)

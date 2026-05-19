@@ -2,8 +2,9 @@
  * EVA Backend Server - Express Entry Point
  */
 
-// Load environment variables first
-require("dotenv").config();
+// Load environment variables first (always from this folder)
+const path = require("path");
+require("dotenv").config({ path: path.join(__dirname, ".env") });
 
 const express = require("express");
 const cors = require("cors");
@@ -35,7 +36,7 @@ app.use(helmet());
 // Enable CORS
 app.use(
   cors({
-    origin: true,   // Reflects the request origin (no wildcard)
+    origin: true, // Reflects the request origin (no wildcard)
     credentials: true,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
@@ -100,7 +101,7 @@ app.use(errorHandler);
 // Server Startup
 // ===========================================
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.BACKEND_PORT || 3000;
 let reminderJobHandle = null;
 
 const startServer = async () => {
@@ -128,10 +129,6 @@ const startServer = async () => {
     logger.info("=".repeat(50));
   });
 };
-
-app.listen(4500, "0.0.0.0", () => {
-  console.log("Server running on port 4500");
-});
 
 // Handle uncaught exceptions
 process.on("uncaughtException", (err) => {

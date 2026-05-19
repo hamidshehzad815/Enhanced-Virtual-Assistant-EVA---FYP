@@ -5,6 +5,7 @@ Routes Model 2 intents to handler stubs.
 from typing import Any, Dict, Optional
 
 from handlers.behavioral import handle_behavioral
+from handlers.learning.create import handle_learning_create
 from handlers.scheduling.add import handle_scheduling_add
 from handlers.scheduling.delete import handle_scheduling_delete
 from handlers.scheduling.show import handle_scheduling_show
@@ -60,12 +61,13 @@ async def route_intent(
     if canonical_intent == "behavioral":
         return await handle_behavioral(entities=entities, context=context)
 
+    if canonical_intent == "learning_create":
+        return await handle_learning_create(entities=entities, context=context)
+
     disabled_intents = {
-        "learning_create",
         "learning_update",
         "learning_delete",
         "learning_show",
-        "add_roadmap",
         "update_roadmap",
         "delete_roadmap",
         "show_roadmap",

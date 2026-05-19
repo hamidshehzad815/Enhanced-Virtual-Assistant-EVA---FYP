@@ -11,6 +11,7 @@ const jwt = require("jsonwebtoken");
 
 const logger = require("../config/logger");
 const { Notification, User, UserSetting } = require("../models");
+const { buildBackendPublicUrl } = require("../utils/publicUrl");
 
 const SMTP_HOST = process.env.SMTP_HOST || process.env.EMAIL_HOST;
 const SMTP_PORT = Number(process.env.SMTP_PORT || process.env.EMAIL_PORT || 587);
@@ -23,10 +24,7 @@ const SMTP_FROM =
   process.env.EMAIL_FROM ||
   process.env.EMAIL_USER ||
   "no-reply@eva.local";
-const BACKEND_PUBLIC_URL = (
-  process.env.BACKEND_PUBLIC_URL ||
-  `http://localhost:${process.env.PORT || 3000}`
-).replace(/\/+$/, "");
+const BACKEND_PUBLIC_URL = buildBackendPublicUrl();
 
 let cachedTransporter = null;
 let cachedFirebaseAdmin = undefined;
@@ -134,7 +132,8 @@ const getCollaborationTokenSecret = () =>
 
 const buildCollaborationActionLink = ({
   notificationId,
-  taskId,
+  referenceId,
+  referenceType = "task",
   recipientId,
   action,
 }) => {
@@ -143,31 +142,48 @@ const buildCollaborationActionLink = ({
     return null;
   }
 
-  const token = jwt.sign(
-    {
-      notification_id: String(notificationId),
-      task_id: String(taskId),
-      user_id: String(recipientId),
-      action: String(action),
-    },
-    secret,
-    { expiresIn: "72h" },
-  );
+  const refType = String(referenceType || "task").trim().toLowerCase();
+  const refId = String(referenceId || "");
 
-  return `${BACKEND_PUBLIC_URL}/api/tasks/collaboration/respond?token=${encodeURIComponent(token)}`;
+  const payload = {
+    notification_id: String(notificationId),
+    reference_type: refType,
+    reference_id: refId,
+    user_id: String(recipientId),
+    action: String(action),
+  };
+
+  if (refType === "task") {
+    payload.task_id = refId;
+  }
+
+  const token = jwt.sign(payload, secret, { expiresIn: "72h" });
+
+  const path =
+    refType === "learning_goal"
+      ? "/api/learning/collaboration/respond"
+      : "/api/tasks/collaboration/respond";
+
+  return `${BACKEND_PUBLIC_URL}${path}?token=${encodeURIComponent(token)}`;
 };
 
 const buildCollaborationInviteEmail = ({ notification, userDoc }) => {
-  const taskLabel = String(notification.reference_id || "");
+  const isLearning = notification.type === "learning_collaboration_invite";
+  const referenceType = isLearning ? "learning_goal" : "task";
+  const refLabel = isLearning ? "Learning plan ID" : "Task ID";
+  const refValue = String(notification.reference_id || "");
+
   const acceptLink = buildCollaborationActionLink({
     notificationId: notification._id,
-    taskId: notification.reference_id,
+    referenceId: notification.reference_id,
+    referenceType,
     recipientId: notification.user_id,
     action: "accept",
   });
   const rejectLink = buildCollaborationActionLink({
     notificationId: notification._id,
-    taskId: notification.reference_id,
+    referenceId: notification.reference_id,
+    referenceType,
     recipientId: notification.user_id,
     action: "reject",
   });
@@ -181,7 +197,7 @@ const buildCollaborationInviteEmail = ({ notification, userDoc }) => {
     `Accept: ${acceptLink || "Link unavailable (missing COLLAB_ACTION_SECRET)"}`,
     `Reject: ${rejectLink || "Link unavailable (missing COLLAB_ACTION_SECRET)"}`,
     "",
-    `Task ID: ${taskLabel}`,
+    `${refLabel}: ${refValue}`,
   ].join("\n");
 
   const html = `
@@ -201,7 +217,7 @@ const buildCollaborationInviteEmail = ({ notification, userDoc }) => {
       : ""
   }
     </div>
-    <p style="font-size:12px;color:#666;">Task ID: ${taskLabel}</p>
+    <p style="font-size:12px;color:#666;">${refLabel}: ${refValue}</p>
   </div>
   `;
 
@@ -287,7 +303,7 @@ const removeInvalidPushTokens = async (userId, tokens) => {
   );
 };
 
-const dispatch_push = async (userId, notification, userDoc) => {
+const dispatch_push = async (userId, notification, userDoc, extraPushData = {}) => {
   const admin = getFirebaseAdmin();
   if (!admin) {
     logger.warn("Push dispatch skipped: Firebase not configured", {
@@ -314,6 +330,22 @@ const dispatch_push = async (userId, notification, userDoc) => {
     };
   }
 
+  const baseData = {
+    notification_id: String(notification._id),
+    type: String(notification.type || ""),
+    reference_type: String(notification.reference_type || ""),
+    reference_id: String(notification.reference_id || ""),
+  };
+  const merged = { ...baseData };
+  if (extraPushData && typeof extraPushData === "object") {
+    Object.entries(extraPushData).forEach(([key, value]) => {
+      if (value === undefined || value === null) {
+        return;
+      }
+      merged[String(key)] = String(value);
+    });
+  }
+
   try {
     const response = await admin.messaging().sendEachForMulticast({
       tokens,
@@ -321,12 +353,7 @@ const dispatch_push = async (userId, notification, userDoc) => {
         title: notification.title,
         body: notification.message,
       },
-      data: {
-        notification_id: String(notification._id),
-        type: String(notification.type || ""),
-        reference_type: String(notification.reference_type || ""),
-        reference_id: String(notification.reference_id || ""),
-      },
+      data: merged,
     });
 
     const invalidTokens = [];
@@ -391,6 +418,7 @@ const dispatch_email = async (userId, notification, userDoc) => {
   try {
     const messagePayload =
       notification?.type === "collaboration_invite"
+      || notification?.type === "learning_collaboration_invite"
         ? buildCollaborationInviteEmail({ notification, userDoc })
         : {
           text: notification.message,
@@ -464,7 +492,12 @@ const insert_and_dispatch = async (notifications = []) => {
       if (channels.includes("push")) {
         const pushEnabled = userSettings?.push_notifications_enabled !== false;
         if (pushEnabled) {
-          const result = await dispatch_push(doc.user_id, saved, userDoc);
+          const result = await dispatch_push(
+            doc.user_id,
+            saved,
+            userDoc,
+            payload.push_data || {},
+          );
           channelResults.push(result);
           if (result.dispatched) {
             summary.dispatched_push += 1;
@@ -480,7 +513,10 @@ const insert_and_dispatch = async (notifications = []) => {
 
       if (channels.includes("email")) {
         const emailEnabled = userSettings?.email_notifications_enabled === true;
-        const forceEmailForInvite = saved.type === "collaboration_invite";
+        const forceEmailForInvite = (
+          saved.type === "collaboration_invite"
+          || saved.type === "learning_collaboration_invite"
+        );
         if (emailEnabled || forceEmailForInvite) {
           const result = await dispatch_email(doc.user_id, saved, userDoc);
           channelResults.push(result);
