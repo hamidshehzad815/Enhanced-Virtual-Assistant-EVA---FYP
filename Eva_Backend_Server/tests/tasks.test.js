@@ -100,7 +100,9 @@ describe("Tasks API", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.status).toBe("success");
-    expect(response.body.data.tasks).toEqual(tasks);
+    expect(response.body.data.tasks).toEqual(
+      tasks.map((task) => ({ ...task, display_status: "pending" })),
+    );
     expect(response.body.data.pagination.total).toBe(1);
     expect(Task.find).toHaveBeenCalledTimes(1);
     const query = Task.find.mock.calls[0][0];
@@ -155,7 +157,7 @@ describe("Tasks API", () => {
     expect(response.status).toBe(200);
     expect(Task.find).toHaveBeenCalledTimes(1);
     const query = Task.find.mock.calls[0][0];
-    expect(query.status).toBe("pending");
+    expect(query.status).toEqual({ $in: ["pending", "ongoing"] });
     expect(query.due_datetime).toBeDefined();
     expect(query.due_datetime.$gte).toBeInstanceOf(Date);
     expect(query.due_datetime.$lte).toBeUndefined();
@@ -188,7 +190,9 @@ describe("Tasks API", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.status).toBe("success");
-    expect(response.body.data.tasks).toEqual(tasks);
+    expect(response.body.data.tasks).toEqual(
+      tasks.map((task) => ({ ...task, display_status: "pending" })),
+    );
     expect(Task.find).toHaveBeenCalledTimes(1);
     expect(Task.find).toHaveBeenCalledWith(
       expect.objectContaining({
