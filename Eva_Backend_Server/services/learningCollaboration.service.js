@@ -9,6 +9,9 @@ const {
   ConflictError,
   NotFoundError,
 } = require("../middleware/errorHandler");
+const {
+  notifyOwnerOfCollaborationResponse,
+} = require("./collaborationNotifications");
 
 const sameObjectId = (a, b) => String(a) === String(b);
 
@@ -230,6 +233,15 @@ const applyLearningCollaborationAction = async ({
     goalId: goalObjectId,
     action,
     notificationId,
+  });
+
+  await notifyOwnerOfCollaborationResponse({
+    ownerId: updatedGoal.user_id,
+    collaboratorUserId,
+    action,
+    referenceType: "learning_goal",
+    referenceId: goalObjectId,
+    itemTitle: updatedGoal.title,
   });
 
   return {

@@ -64,6 +64,7 @@ const taskSchema = new mongoose.Schema(
     },
     status: {
       type: String,
+      // Stored values: pending | complete. "ongoing" kept for legacy documents only.
       enum: ["pending", "ongoing", "complete"],
       default: "pending",
       index: true,

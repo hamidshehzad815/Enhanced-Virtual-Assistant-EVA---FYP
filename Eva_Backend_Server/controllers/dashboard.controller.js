@@ -5,9 +5,11 @@
 
 const { Task, LearningGoal, RoadmapTopic } = require("../models");
 const { normalizeTimezone, toLocalDayRangeUtc } = require("../utils/timezone");
-
-const isTaskCompleted = (status) =>
-  String(status || "").trim().toLowerCase() === "complete";
+const {
+  isStoredComplete,
+  computeTaskDisplayStatus,
+  normalizeStoredStatus,
+} = require("../utils/taskDisplayStatus");
 
 const toLocalDateString = (timeZone, dateValue = new Date()) => {
   const formatter = new Intl.DateTimeFormat("en-CA", {
@@ -46,13 +48,14 @@ const formatDayTime = (dateValue, timeZone) => {
   return { day, time };
 };
 
-const buildDashboardTask = (task, timeZone) => {
+const buildDashboardTask = (task, timeZone, nowUtc = new Date()) => {
   const due = task?.due_datetime ? new Date(task.due_datetime) : null;
   const formatted = due ? formatDayTime(due, timeZone) : { day: null, time: null };
   return {
     task_id: String(task._id),
     title: task.title,
-    status: task.status,
+    status: normalizeStoredStatus(task.status),
+    display_status: computeTaskDisplayStatus(task, nowUtc),
     priority: task.priority,
     day: formatted.day,
     time: formatted.time,
@@ -121,13 +124,10 @@ const getDashboard = async (req, res, next) => {
     const nowUtc = new Date();
     const upNextTask =
       todayTasks.find(
-        (task) =>
-          !isTaskCompleted(task.status)
-          && task.due_datetime
-          && new Date(task.due_datetime).getTime() >= nowUtc.getTime(),
+        (task) => computeTaskDisplayStatus(task, nowUtc) !== "complete",
       ) || null;
 
-    const completedCount = todayTasks.filter((task) => isTaskCompleted(task.status)).length;
+    const completedCount = todayTasks.filter((task) => isStoredComplete(task.status)).length;
     const totalCount = todayTasks.length;
     const completionPercentage =
       totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
@@ -171,7 +171,7 @@ const getDashboard = async (req, res, next) => {
     return res.json({
       status: "success",
       data: {
-        up_next: upNextTask ? buildDashboardTask(upNextTask, timeZone) : null,
+        up_next: upNextTask ? buildDashboardTask(upNextTask, timeZone, nowUtc) : null,
         daily_progress: {
           date: todayLocal,
           timezone: timeZone,
@@ -180,7 +180,7 @@ const getDashboard = async (req, res, next) => {
           completion_percentage: completionPercentage,
         },
         learning,
-        today_schedule: todayTasks.map((task) => buildDashboardTask(task, timeZone)),
+        today_schedule: todayTasks.map((task) => buildDashboardTask(task, timeZone, nowUtc)),
       },
     });
   } catch (error) {

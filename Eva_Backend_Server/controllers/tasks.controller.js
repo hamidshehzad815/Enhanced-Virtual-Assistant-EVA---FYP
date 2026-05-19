@@ -12,8 +12,16 @@ const {
   NotFoundError,
   ConflictError,
 } = require("../middleware/errorHandler");
+const { enrichTaskForApi } = require("../utils/taskDisplayStatus");
+const {
+  notifyOwnerOfCollaborationResponse,
+} = require("../services/collaborationNotifications");
 
-const STATUS_VALUES = new Set(["pending", "ongoing", "complete"]);
+const STATUS_VALUES = new Set(["pending", "complete"]);
+const STORED_STATUS_FILTER = {
+  pending: ["pending", "ongoing"],
+  complete: ["complete"],
+};
 const PRIORITY_VALUES = new Set(["low", "medium", "high"]);
 const COLLAB_ACTIONS = new Set(["accept", "reject"]);
 
@@ -41,10 +49,10 @@ const PRIORITY_ALIASES = new Map([
 
 const STATUS_ALIASES = new Map([
   ["pending", "pending"],
-  ["ongoing", "ongoing"],
-  ["in progress", "ongoing"],
-  ["inprogress", "ongoing"],
-  ["active", "ongoing"],
+  ["ongoing", "pending"],
+  ["in progress", "pending"],
+  ["inprogress", "pending"],
+  ["active", "pending"],
   ["complete", "complete"],
   ["completed", "complete"],
   ["done", "complete"],
@@ -270,6 +278,15 @@ const applyCollaborationAction = async ({
     notificationId,
   });
 
+  await notifyOwnerOfCollaborationResponse({
+    ownerId: updatedTask.owner_id,
+    collaboratorUserId,
+    action,
+    referenceType: "task",
+    referenceId: taskObjectId,
+    itemTitle: updatedTask.title,
+  });
+
   return {
     task: updatedTask,
     already_responded: false,
@@ -341,7 +358,7 @@ const getTasks = async (req, res, next) => {
       if (!STATUS_VALUES.has(normalizedStatus)) {
         throw new BadRequestError("Invalid status filter");
       }
-      query.status = normalizedStatus;
+      query.status = { $in: STORED_STATUS_FILTER[normalizedStatus] };
     }
 
     if (req.query.priority) {
@@ -376,10 +393,11 @@ const getTasks = async (req, res, next) => {
       Task.countDocuments(query),
     ]);
 
+    const now = new Date();
     res.json({
       status: "success",
       data: {
-        tasks,
+        tasks: tasks.map((task) => enrichTaskForApi(task, now)),
         pagination: {
           page,
           limit,
@@ -422,7 +440,7 @@ const getTaskById = async (req, res, next) => {
 
     res.json({
       status: "success",
-      data: { task },
+      data: { task: enrichTaskForApi(task) },
     });
   } catch (error) {
     next(error);
@@ -445,7 +463,7 @@ const updateTaskStatus = async (req, res, next) => {
     const normalizedStatus = normalizeStatusValue(status);
     if (!STATUS_VALUES.has(normalizedStatus)) {
       throw new BadRequestError(
-        "status must be one of pending, ongoing, complete",
+        "status must be one of pending, complete",
       );
     }
 
@@ -498,7 +516,7 @@ const updateTaskStatus = async (req, res, next) => {
     res.json({
       status: "success",
       message: "Task status updated",
-      data: { task },
+      data: { task: enrichTaskForApi(task) },
     });
   } catch (error) {
     next(error);

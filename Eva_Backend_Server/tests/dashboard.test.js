@@ -137,6 +137,8 @@ describe("Dashboard API", () => {
     expect(data).toBeTruthy();
     expect(data.up_next).toBeTruthy();
     expect(data.up_next.title).toBe("Upcoming task");
+    expect(data.up_next.status).toBe("pending");
+    expect(data.up_next.display_status).toBe("pending");
 
     expect(data.daily_progress.total_tasks).toBe(2);
     expect(data.daily_progress.completed_tasks).toBe(1);
@@ -149,6 +151,8 @@ describe("Dashboard API", () => {
 
     expect(Array.isArray(data.today_schedule)).toBe(true);
     expect(data.today_schedule).toHaveLength(2);
+    expect(data.today_schedule[0].display_status).toBe("complete");
+    expect(data.today_schedule[1].display_status).toBe("pending");
   });
 
   test("GET /api/dashboard handles empty state", async () => {
