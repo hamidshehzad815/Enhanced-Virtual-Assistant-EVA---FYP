@@ -124,7 +124,7 @@ class RoadmapResourcesDbTests(unittest.IsolatedAsyncioTestCase):
             "Python": {
                 "topics": ["basics"],
                 "basics": {
-                    "days": 2,
+                    "days": 5,
                     "topics": ["T1", "T2"],
                 },
             },
@@ -136,6 +136,8 @@ class RoadmapResourcesDbTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ins, 2)
         self.assertEqual(skip, 0)
         self.assertEqual(len(fake.roadmap_resources.docs), 2)
+        self.assertEqual(fake.roadmap_resources.docs[0].get("level_calendar_days"), 5)
+        self.assertEqual(fake.roadmap_resources.docs[1].get("level_calendar_days"), 5)
 
         with patch.object(rr, "get_db", return_value=fake):
             ins2, skip2, exp2 = await rr.seed_from_roadmaps_json(data)
@@ -143,7 +145,7 @@ class RoadmapResourcesDbTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(ins2, 0)
         self.assertEqual(skip2, 2)
 
-    async def test_seed_days_mismatch_raises(self):
+    async def test_seed_accepts_days_not_equal_topic_count(self):
         data = {
             "topics": ["Python"],
             "Python": {
@@ -153,8 +155,12 @@ class RoadmapResourcesDbTests(unittest.IsolatedAsyncioTestCase):
         }
         fake = FakeDB()
         with patch.object(rr, "get_db", return_value=fake):
-            with self.assertRaises(ValueError):
-                await rr.seed_from_roadmaps_json(data)
+            ins, skip, exp = await rr.seed_from_roadmaps_json(data)
+        self.assertEqual(exp, 2)
+        self.assertEqual(ins, 2)
+        self.assertEqual(len(fake.roadmap_resources.docs), 2)
+        self.assertEqual(fake.roadmap_resources.docs[0].get("level_calendar_days"), 9)
+        self.assertEqual(fake.roadmap_resources.docs[1].get("level_calendar_days"), 9)
 
     async def test_get_roadmap_sorted_by_order(self):
         fake = FakeDB()
@@ -259,7 +265,8 @@ class RoadmapResourcesDbTests(unittest.IsolatedAsyncioTestCase):
 class RoadmapsJsonFileTests(unittest.TestCase):
     """data/roadmaps.json structure (no DB)."""
 
-    def test_days_match_topic_counts_and_expected_total(self):
+    def test_data_roadmaps_json_structure_and_session_total(self):
+        """``days`` may differ from ``len(topics)``; total session rows is sum of topic list lengths."""
         path = Path(__file__).resolve().parent.parent / "data" / "roadmaps.json"
         data = json.loads(path.read_text(encoding="utf-8"))
         topics = data["topics"]
@@ -270,11 +277,8 @@ class RoadmapsJsonFileTests(unittest.TestCase):
             for level in block["topics"]:
                 level_data = block[level]
                 titles = level_data["topics"]
-                self.assertEqual(
-                    level_data["days"],
-                    len(titles),
-                    f"{lang}/{level}",
-                )
+                self.assertIsInstance(titles, list)
+                self.assertGreater(len(titles), 0)
                 total += len(titles)
         self.assertEqual(total, 760)
 

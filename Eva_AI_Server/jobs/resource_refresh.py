@@ -10,7 +10,6 @@ import logging
 from config.settings import settings
 from db.roadmap_resources import get_stale_topics
 from services.roadmap_youtube_worker import fetch_and_store_for_documents
-from services.youtube_quota import build_default_quota
 
 logger = logging.getLogger(__name__)
 
@@ -24,20 +23,21 @@ async def run_stale_refresh_once(limit: int = 50) -> None:
         logger.info("resource_refresh: no stale roadmap_resources rows")
         return
 
-    quota = build_default_quota()
-    updated, calls, stopped = await fetch_and_store_for_documents(
+    updated, calls, fatal = await fetch_and_store_for_documents(
         docs,
-        quota=quota,
         delay_seconds=settings.RESOURCE_FETCH_DELAY_SECONDS,
         progress_every=10,
         log_prefix="resource_refresh ",
     )
-    logger.info(
-        "resource_refresh: updated=%s api_calls=%s quota_stopped=%s",
-        updated,
-        calls,
-        stopped,
-    )
+    if fatal:
+        logger.warning(
+            "resource_refresh: halted after %s calls (%s rows updated). Reason: %s",
+            calls,
+            updated,
+            fatal,
+        )
+    else:
+        logger.info("resource_refresh: updated=%s api_calls=%s", updated, calls)
 
 
 async def _refresh_loop() -> None:

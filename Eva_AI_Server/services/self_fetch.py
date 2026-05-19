@@ -17,7 +17,7 @@ from db.readers import (
 @dataclass
 class SelfFetchResult:
 	user: Optional[Dict[str, Any]]
-	# Includes preferred_learning_schedule (from fetch_user_settings) for learning add.
+	# Includes preferred_learning_schedules (from fetch_user_settings) for learning add.
 	settings: Dict[str, Any]
 	history: List[Dict[str, Any]]
 	integrations: List[Dict[str, Any]]

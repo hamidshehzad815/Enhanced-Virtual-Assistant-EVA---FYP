@@ -263,6 +263,23 @@ class LearningDbLayerTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(dup_intermediate)
         self.assertFalse(dup_rust)
 
+    async def test_check_duplicate_new_general_blocks_existing_track(self):
+        fake = FakeDB()
+        uid = ObjectId()
+        fake.learning_goals.docs = [
+            {
+                "_id": ObjectId(),
+                "user_id": uid,
+                "subject": "python",
+                "roadmap_key": "functions",
+                "status": "active",
+                "is_deleted": False,
+            },
+        ]
+        with patch_learning_db(fake):
+            dup = await lg.check_duplicate_goal(str(uid), "python", "general")
+        self.assertTrue(dup)
+
     async def test_check_duplicate_general_blocks_any_roadmap_key(self):
         fake = FakeDB()
         uid = ObjectId()

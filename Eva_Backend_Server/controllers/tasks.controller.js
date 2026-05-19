@@ -604,23 +604,63 @@ const respondToCollaborationInviteViaLink = async (req, res, next) => {
       throw new BadRequestError("Invalid action in response token");
     }
 
-    const taskId = String(payload?.task_id || "");
+    const referenceType = String(payload?.reference_type || "").toLowerCase();
+    const referenceId = String(payload?.reference_id || payload?.task_id || "");
     const userId = String(payload?.user_id || "");
     const notificationId = payload?.notification_id ? String(payload.notification_id) : null;
 
-    const result = await applyCollaborationAction({
-      taskId,
-      collaboratorUserId: userId,
-      action,
-      notificationId,
-    });
+    const { applyLearningCollaborationAction } = require("../services/learningCollaboration.service");
+
+    let result;
+    let isLearningInvite = referenceType === "learning_goal";
+
+    if (isLearningInvite) {
+      result = await applyLearningCollaborationAction({
+        goalId: referenceId,
+        collaboratorUserId: userId,
+        action,
+        notificationId,
+      });
+    } else {
+      try {
+        result = await applyCollaborationAction({
+          taskId: referenceId,
+          collaboratorUserId: userId,
+          action,
+          notificationId,
+        });
+      } catch (taskErr) {
+        if (taskErr instanceof NotFoundError && referenceId) {
+          result = await applyLearningCollaborationAction({
+            goalId: referenceId,
+            collaboratorUserId: userId,
+            action,
+            notificationId,
+          });
+          isLearningInvite = true;
+        } else {
+          throw taskErr;
+        }
+      }
+    }
 
     const verbPast = action === "accept" ? "accepted" : "rejected";
+    let successMessage = result.already_responded
+      ? `This invitation was already ${String(result.current_status || "").toLowerCase()}.`
+      : `You have ${verbPast} this collaboration invite successfully.`;
+
+    if (
+      !result.already_responded
+      && action === "accept"
+      && isLearningInvite
+      && result.collaborator_goal_id
+    ) {
+      successMessage += " Your own copy of the learning plan is ready in EVA.";
+    }
+
     const html = renderCollaborationHtml({
       title: result.already_responded ? "Already Responded" : "Response Saved",
-      message: result.already_responded
-        ? `This invitation was already ${String(result.current_status || "").toLowerCase()}.`
-        : `You have ${verbPast} this collaboration invite successfully.`,
+      message: successMessage,
     });
 
     res.status(200).type("html").send(html);

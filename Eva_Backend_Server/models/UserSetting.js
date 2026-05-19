@@ -21,6 +21,39 @@ const learningScheduleSlotSchema = new mongoose.Schema(
         "Invalid learning schedule time (HH:mm)",
       ],
     },
+    duration_minutes: {
+      type: Number,
+      min: [15, "Session duration must be at least 15 minutes"],
+      max: [240, "Session duration cannot exceed 4 hours"],
+    },
+  },
+  { _id: false },
+);
+
+const labeledLearningScheduleSchema = new mongoose.Schema(
+  {
+    id: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: [64, "Schedule id cannot exceed 64 characters"],
+    },
+    label: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: [80, "Schedule label cannot exceed 80 characters"],
+    },
+    slots: {
+      type: [learningScheduleSlotSchema],
+      default: [],
+      validate: {
+        validator(arr) {
+          return Array.isArray(arr) && arr.length > 0;
+        },
+        message: "Each schedule must include at least one weekday slot",
+      },
+    },
   },
   { _id: false },
 );
@@ -139,10 +172,16 @@ const userSettingSchema = new mongoose.Schema(
       min: [15, "Learning duration must be at least 15 minutes"],
       max: [240, "Learning duration cannot exceed 4 hours"],
     },
-    // Weekday 0=Monday … 6=Sunday, local time HH:mm (empty until user sets in app)
-    preferred_learning_schedule: {
-      type: [learningScheduleSlotSchema],
+    // Labeled schedules: [{ id, label, slots: [{ day, time, duration_minutes }] }]
+    preferred_learning_schedules: {
+      type: [labeledLearningScheduleSchema],
       default: [],
+      validate: {
+        validator(arr) {
+          return !Array.isArray(arr) || arr.length <= 20;
+        },
+        message: "At most 20 learning schedules are allowed per user",
+      },
     },
     google_calendar_sync_enabled: {
       type: Boolean,

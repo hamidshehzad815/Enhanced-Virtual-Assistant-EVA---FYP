@@ -15,7 +15,13 @@ def _ctx(**kwargs):
         "session_id": "sess1",
         "user": {"name": "Test", "timezone": "UTC"},
         "settings": {
-            "preferred_learning_schedule": [{"day": 0, "time": "09:00"}],
+            "preferred_learning_schedules": [
+                {
+                    "id": "default",
+                    "label": "Default",
+                    "slots": [{"day": 0, "time": "09:00", "duration_minutes": 60}],
+                },
+            ],
             "default_reminder_minutes": 30,
             "preferred_learning_duration": 60,
         },
@@ -51,8 +57,8 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
         mock_redis = AsyncMock(return_value=True)
         with (
             patch(
-                "handlers.learning.create.check_duplicate_goal",
-                new=AsyncMock(return_value=False),
+                "handlers.learning.create.find_conflicting_goal",
+                new=AsyncMock(return_value=None),
             ),
             patch(
                 "handlers.learning.create.redis_client.set_context",
@@ -74,8 +80,12 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
         mock_redis = AsyncMock(return_value=True)
         with (
             patch(
-                "handlers.learning.create.check_duplicate_goal",
-                new=AsyncMock(return_value=False),
+                "handlers.learning.create.used_learning_schedule_ids",
+                new=AsyncMock(return_value=set()),
+            ),
+            patch(
+                "handlers.learning.create.find_conflicting_goal",
+                new=AsyncMock(return_value=None),
             ),
             patch(
                 "handlers.learning.create.redis_client.set_context",
@@ -90,6 +100,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "topic": "Python",
                     "start_date": "2026-06-01",
+                    "learning_schedule_id": "default",
                 },
                 _ctx(),
             )
@@ -99,8 +110,12 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
     async def test_not_feasible_sessions_returns_pending_message(self):
         with (
             patch(
-                "handlers.learning.create.check_duplicate_goal",
-                new=AsyncMock(return_value=False),
+                "handlers.learning.create.used_learning_schedule_ids",
+                new=AsyncMock(return_value=set()),
+            ),
+            patch(
+                "handlers.learning.create.find_conflicting_goal",
+                new=AsyncMock(return_value=None),
             ),
             patch(
                 "handlers.learning.create.get_sessions_required",
@@ -120,6 +135,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                     "topic": "Python",
                     "start_date": "2026-06-01",
                     "duration_days": 14,
+                    "learning_schedule_id": "default",
                 },
                 _ctx(),
             )
@@ -130,8 +146,12 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
     async def test_collaborator_validation_error_stops(self):
         with (
             patch(
-                "handlers.learning.create.check_duplicate_goal",
-                new=AsyncMock(return_value=False),
+                "handlers.learning.create.used_learning_schedule_ids",
+                new=AsyncMock(return_value=set()),
+            ),
+            patch(
+                "handlers.learning.create.find_conflicting_goal",
+                new=AsyncMock(return_value=None),
             ),
             patch(
                 "handlers.learning.create.get_sessions_required",
@@ -151,6 +171,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                     "topic": "Python",
                     "start_date": "2026-06-01",
                     "duration_days": 14,
+                    "learning_schedule_id": "default",
                     "person": "ghost_user",
                 },
                 _ctx(),
@@ -165,8 +186,12 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
         ]
         with (
             patch(
-                "handlers.learning.create.check_duplicate_goal",
-                new=AsyncMock(return_value=False),
+                "handlers.learning.create.used_learning_schedule_ids",
+                new=AsyncMock(return_value=set()),
+            ),
+            patch(
+                "handlers.learning.create.find_conflicting_goal",
+                new=AsyncMock(return_value=None),
             ),
             patch(
                 "handlers.learning.create.get_roadmap",
@@ -197,6 +222,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                     "topic": "Python",
                     "start_date": "2026-06-01",
                     "duration_days": 14,
+                    "learning_schedule_id": "default",
                 },
                 _ctx(),
             )
@@ -211,6 +237,40 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["status"], "pending")
         self.assertIn("Settings", out["response_text"])
 
+    async def test_single_schedule_prompts_choice_before_duration(self):
+        mock_redis = AsyncMock(return_value=True)
+        with (
+            patch(
+                "handlers.learning.create.used_learning_schedule_ids",
+                new=AsyncMock(return_value=set()),
+            ),
+            patch(
+                "handlers.learning.create.find_conflicting_goal",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "handlers.learning.create.redis_client.set_context",
+                mock_redis,
+            ),
+        ):
+            out = await handle_learning_create(
+                {
+                    "topic": "Python",
+                    "start_date": "2026-06-01",
+                    "duration_days": 14,
+                },
+                _ctx(),
+            )
+        self.assertEqual(out["status"], "pending")
+        self.assertEqual(out.get("stage"), "schedule_choice")
+        self.assertIn("Monday", out["response_text"])
+        self.assertIn("Reply 1", out["response_text"])
+        self.assertIn("Reply 2", out["response_text"])
+        self.assertEqual(
+            mock_redis.call_args[0][1]["pending_action"]["stage"],
+            "schedule_choice",
+        )
+
     async def test_unsupported_topic_stops(self):
         out = await handle_learning_create(
             {"topic": "Klingon", "start_date": "2026-06-01", "duration_days": 14},
@@ -219,12 +279,23 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["status"], "error")
 
     async def test_duration_too_short(self):
-        with patch(
-            "handlers.learning.create.check_duplicate_goal",
-            new=AsyncMock(return_value=False),
+        with (
+            patch(
+                "handlers.learning.create.used_learning_schedule_ids",
+                new=AsyncMock(return_value=set()),
+            ),
+            patch(
+                "handlers.learning.create.find_conflicting_goal",
+                new=AsyncMock(return_value=None),
+            ),
         ):
             out = await handle_learning_create(
-                {"topic": "Python", "start_date": "2026-06-01", "duration_days": 3},
+                {
+                    "topic": "Python",
+                    "start_date": "2026-06-01",
+                    "duration_days": 3,
+                    "learning_schedule_id": "default",
+                },
                 _ctx(),
             )
         self.assertEqual(out["status"], "error")
@@ -232,8 +303,13 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_duplicate_goal(self):
         with patch(
-            "handlers.learning.create.check_duplicate_goal",
-            new=AsyncMock(return_value=True),
+            "handlers.learning.create.find_conflicting_goal",
+            new=AsyncMock(
+                return_value={
+                    "roadmap_key": "functions",
+                    "subject": "python",
+                },
+            ),
         ):
             out = await handle_learning_create(
                 {
@@ -244,7 +320,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                 _ctx(),
             )
         self.assertEqual(out["status"], "error")
-        self.assertIn("already have", out["response_text"])
+        self.assertIn("already have an active Python plan", out["response_text"])
 
     async def test_success_path_creates_goal_and_tasks(self):
         topics = [
@@ -268,8 +344,12 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
 
         with (
             patch(
-                "handlers.learning.create.check_duplicate_goal",
-                new=AsyncMock(return_value=False),
+                "handlers.learning.create.used_learning_schedule_ids",
+                new=AsyncMock(return_value=set()),
+            ),
+            patch(
+                "handlers.learning.create.find_conflicting_goal",
+                new=AsyncMock(return_value=None),
             ),
             patch(
                 "handlers.learning.create.get_roadmap",
@@ -330,6 +410,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                     "subtopic": "basics",
                     "start_date": "2026-06-01",
                     "duration_days": 14,
+                    "learning_schedule_id": "default",
                 },
                 _ctx(),
             )
@@ -354,8 +435,12 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
         mock_cal = AsyncMock(return_value="evt-1")
         with (
             patch(
-                "handlers.learning.create.check_duplicate_goal",
-                new=AsyncMock(return_value=False),
+                "handlers.learning.create.used_learning_schedule_ids",
+                new=AsyncMock(return_value=set()),
+            ),
+            patch(
+                "handlers.learning.create.find_conflicting_goal",
+                new=AsyncMock(return_value=None),
             ),
             patch(
                 "handlers.learning.create.get_roadmap",
@@ -423,6 +508,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                     "topic": "Python",
                     "start_date": "2026-06-01",
                     "duration_days": 14,
+                    "learning_schedule_id": "default",
                 },
                 _ctx(integrations=[{"provider": "google", "status": "active"}]),
             )

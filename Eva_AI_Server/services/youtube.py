@@ -16,6 +16,14 @@ logger = logging.getLogger(__name__)
 YOUTUBE_SEARCH_URL = "https://www.googleapis.com/youtube/v3/search"
 
 
+class YouTubeSearchFailed(Exception):
+    """Raised when the YouTube API cannot be used (config, network, HTTP error). Empty search results do not raise."""
+
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        super().__init__(message)
+        self.status_code = status_code
+
+
 async def search_topic(query: str, max_results: int = 3) -> List[Dict[str, str]]:
     """
     Search YouTube for videos matching `query`.
@@ -23,7 +31,9 @@ async def search_topic(query: str, max_results: int = 3) -> List[Dict[str, str]]
     Returns up to `max_results` items:
       { "title", "url", "thumbnail", "channel" }
 
-    Never raises; returns [] on missing key, HTTP errors, or malformed JSON.
+    Empty query → [].
+    Successful HTTP 200 with no/invalid items → [].
+    Missing key, transport errors, non-200, or bad JSON → YouTubeSearchFailed.
     """
     q = (query or "").strip()
     if not q:
@@ -31,8 +41,7 @@ async def search_topic(query: str, max_results: int = 3) -> List[Dict[str, str]]
 
     api_key = (settings.YOUTUBE_API_KEY or "").strip()
     if not api_key:
-        logger.warning("YOUTUBE_API_KEY is not set; skipping YouTube search")
-        return []
+        raise YouTubeSearchFailed("YOUTUBE_API_KEY is not set — add it to your environment and try again.")
 
     n = max(1, min(int(max_results), 50))
     params = {
@@ -49,22 +58,29 @@ async def search_topic(query: str, max_results: int = 3) -> List[Dict[str, str]]
             response = await client.get(YOUTUBE_SEARCH_URL, params=params)
     except Exception as exc:  # noqa: BLE001
         logger.warning("YouTube HTTP error for query %r: %s", q[:80], exc)
-        return []
+        raise YouTubeSearchFailed(
+            f"Could not reach YouTube (network or timeout). Underlying error: {exc}",
+        ) from exc
 
     if response.status_code != 200:
+        snippet = (response.text or "")[:400]
         logger.warning(
             "YouTube API status %s for query %r: %s",
             response.status_code,
             q[:80],
-            (response.text or "")[:300],
+            snippet,
         )
-        return []
+        raise YouTubeSearchFailed(
+            f"YouTube returned HTTP {response.status_code}. "
+            f"Body (truncated): {snippet!r}",
+            status_code=int(response.status_code),
+        )
 
     try:
         payload: Dict[str, Any] = response.json()
     except Exception as exc:  # noqa: BLE001
         logger.warning("YouTube JSON decode error: %s", exc)
-        return []
+        raise YouTubeSearchFailed(f"Could not parse YouTube response as JSON: {exc}") from exc
 
     items = payload.get("items")
     if not isinstance(items, list):
@@ -80,12 +96,12 @@ async def search_topic(query: str, max_results: int = 3) -> List[Dict[str, str]]
         video_id = vid.get("videoId")
         if not video_id:
             continue
-        snippet = item.get("snippet") or {}
-        if not isinstance(snippet, dict):
+        snippet_d = item.get("snippet") or {}
+        if not isinstance(snippet_d, dict):
             continue
-        title = str(snippet.get("title") or "").strip()
-        channel = str(snippet.get("channelTitle") or "").strip()
-        thumbs = snippet.get("thumbnails") or {}
+        title = str(snippet_d.get("title") or "").strip()
+        channel = str(snippet_d.get("channelTitle") or "").strip()
+        thumbs = snippet_d.get("thumbnails") or {}
         thumb_url = ""
         if isinstance(thumbs, dict):
             high = thumbs.get("high") or thumbs.get("medium") or thumbs.get("default")

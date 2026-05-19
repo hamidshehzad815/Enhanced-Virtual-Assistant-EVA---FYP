@@ -1,5 +1,5 @@
 /**
- * Detect conflicts between preferred_learning_schedule slots and existing tasks.
+ * Detect conflicts between learning schedule slots and existing tasks.
  * Schedule weekday: 0 = Monday … 6 = Sunday (matches Python date.weekday() / EVA schemas).
  */
 

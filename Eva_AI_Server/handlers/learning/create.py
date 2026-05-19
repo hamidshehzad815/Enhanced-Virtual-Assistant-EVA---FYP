@@ -4,6 +4,7 @@ Learning plan creation (learning_create intent) — roadmap, goals, topics, task
 
 from __future__ import annotations
 
+import logging
 import re
 from datetime import date, datetime, timedelta, timezone as dt_timezone
 from typing import Any, Dict, List, Optional, Set
@@ -14,7 +15,7 @@ from context.redis_client import redis_client
 from db.activity_logs import insert_log
 from db.chat_sessions import update_last_message
 from db.conversation_history import insert_message
-from db.learning_goals import check_duplicate_goal, insert_goal
+from db.learning_goals import find_conflicting_goal, insert_goal
 from db.roadmap_resources import get_roadmap, get_sessions_required
 from db.roadmap_topics import insert_topics_bulk, update_topic_task_id
 from db.tasks import insert_task, update_task
@@ -29,15 +30,22 @@ from handlers.scheduling.add import (
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
+from utils.learning_schedules import (
+    resolve_schedule_for_learning,
+    schedules_from_settings,
+    used_learning_schedule_ids,
+)
 from utils.learning_utils import (
     SUPPORTED_TOPICS,
     build_schedule,
     calculate_available_sessions,
+    duration_entity_to_days,
     map_subtopic,
     normalize_topic,
-    parse_duration,
 )
 from utils.timezone_utils import get_zoneinfo, resolve_timezone_name
+
+logger = logging.getLogger(__name__)
 
 
 def _to_object_id(value: Any) -> Any:
@@ -132,7 +140,7 @@ def _duration_days_value(entities: Dict[str, Any]) -> Optional[int]:
             return int(raw)
         except (TypeError, ValueError):
             pass
-    return parse_duration(_coerce_text(entities.get("duration")))
+    return duration_entity_to_days(entities.get("duration"))
 
 
 async def handle_learning_create(
@@ -152,10 +160,12 @@ async def handle_learning_create(
     input_type = str(context.get("input_type") or "text")
     user_name = user.get("name")
     tz = resolve_timezone_name(user.get("timezone"))
-    schedule = list(settings.get("preferred_learning_schedule") or [])
+    labeled_schedules = schedules_from_settings(settings)
 
     reminder_minutes = int(settings.get("default_reminder_minutes", 30))
-    session_duration = int(settings.get("preferred_learning_duration", 90))
+    default_session_duration = int(settings.get("preferred_learning_duration", 90))
+    schedule_slots: List[Dict[str, Any]] = []
+    chosen_schedule_id = ""
 
     async def finish(reply: str, **extra: Any) -> Dict[str, Any]:
         await _save_turn(session_id, user_message, reply, input_type, entities)
@@ -172,10 +182,10 @@ async def handle_learning_create(
         msg = "I need a signed-in user to create a learning plan."
         return await finish(msg, status="error")
 
-    if not schedule:
+    if not labeled_schedules:
         msg = (
-            "Set at least one weekly learning slot in Settings first "
-            "(Settings → learning schedule), then ask me again."
+            "Set up at least one labeled learning schedule in Settings "
+            "(pick your days, times, and how long each session should run), then ask me again."
         )
         return await finish(msg, status="pending")
 
@@ -205,11 +215,26 @@ async def handle_learning_create(
     entities["topic"] = canonical_topic
     roadmap_key = map_subtopic(entities.get("subtopic"), canonical_topic)
 
-    if await check_duplicate_goal(user_id, canonical_topic, roadmap_key):
-        msg = (
-            f"You already have an active learning goal for {canonical_topic} on this track. "
-            "Complete, pause, or cancel it before starting another."
-        )
+    conflicting = await find_conflicting_goal(user_id, canonical_topic, roadmap_key)
+    if conflicting:
+        existing_track = str(conflicting.get("roadmap_key") or "general").replace("_", " ")
+        requested_track = roadmap_key.replace("_", " ")
+        if existing_track == requested_track:
+            msg = (
+                f"You already have an active {canonical_topic} plan on the "
+                f"{existing_track} track. Pause or cancel that plan in Learning, "
+                f"then ask me to set up a new one."
+            )
+        elif existing_track == "general":
+            msg = (
+                f"You already have an active general {canonical_topic} learning plan. "
+                f"Pause or cancel it before starting a {requested_track} track."
+            )
+        else:
+            msg = (
+                f"You already have an active {canonical_topic} plan on the "
+                f"{existing_track} track. Pause or cancel it before starting another plan."
+            )
         return await finish(msg, status="error")
 
     start_s = _start_iso(entities)
@@ -260,6 +285,30 @@ async def handle_learning_create(
 
     entities["start_date"] = start_s[:10]
 
+    used_schedule_ids = await used_learning_schedule_ids(user_id)
+    chosen_schedule, schedule_err, schedule_pending = resolve_schedule_for_learning(
+        entities=entities,
+        schedules=labeled_schedules,
+        used_ids=used_schedule_ids,
+    )
+    if schedule_pending:
+        await redis_client.set_context(user_id, schedule_pending)
+        return await finish(
+            schedule_err or "Which learning schedule should I use? Reply with a number.",
+            status="pending",
+            expected_response="number",
+            stage="schedule_choice",
+        )
+    if schedule_err or not chosen_schedule:
+        return await finish(
+            schedule_err or "I could not pick a learning schedule. Check Settings and try again.",
+            status="error",
+        )
+
+    schedule_slots = list(chosen_schedule.get("slots") or [])
+    chosen_schedule_id = str(chosen_schedule.get("id") or "")
+    entities["learning_schedule_id"] = chosen_schedule_id
+
     dur_days = _duration_days_value(entities)
     if dur_days is None:
         await redis_client.set_context(
@@ -279,7 +328,7 @@ async def handle_learning_create(
         msg = "Learning plans need at least 7 days. Try at least one week or longer."
         return await finish(msg, status="error")
 
-    learning_days = _learning_days(schedule)
+    learning_days = _learning_days(schedule_slots)
     if not learning_days:
         msg = "Add at least one learning day in Settings, then try again."
         return await finish(msg, status="pending")
@@ -309,13 +358,26 @@ async def handle_learning_create(
 
     topics_db = await get_roadmap(canonical_topic, roadmap_key)
     if not topics_db:
+        logger.warning(
+            "No roadmap_resources rows for language=%r level=%r (user_id=%s)",
+            canonical_topic,
+            roadmap_key,
+            user_id,
+        )
+        track = roadmap_key.replace("_", " ") if roadmap_key else "that track"
         msg = (
-            f"I couldn't load roadmap content for {canonical_topic} ({roadmap_key}). "
-            "Try again later or pick another level."
+            f"I do not have a ready lesson list for {canonical_topic} ({track}) on my side yet, "
+            f"so I cannot build this plan right now. Please try a different focus (for example basics or intermediate), "
+            f"or try again later once your study library has been refreshed."
         )
         return await finish(msg, status="error")
 
-    scheduled_rows = build_schedule(start_d, topics_db, schedule)
+    scheduled_rows = build_schedule(
+        start_d,
+        topics_db,
+        schedule_slots,
+        default_duration_minutes=default_session_duration,
+    )
     if len(scheduled_rows) != len(topics_db):
         msg = (
             "I couldn't fit every lesson into that window with your current learning days. "
@@ -340,6 +402,7 @@ async def handle_learning_create(
         "description": None,
         "subject": canonical_topic.lower(),
         "roadmap_key": roadmap_key,
+        "learning_schedule_id": chosen_schedule_id or None,
         "start_date": datetime.combine(start_d, datetime.min.time()),
         "end_date": datetime.combine(end_date, datetime.min.time()),
         "duration_days": int(dur_days),
@@ -361,6 +424,7 @@ async def handle_learning_create(
         sd = sch.get("scheduled_date")
         if not isinstance(sd, datetime):
             sd = datetime.combine(start_d, datetime.min.time())
+        row_dur = int(sch.get("duration_minutes") or default_session_duration)
         bulk_topics.append(
             {
                 "goal_id": goal_id,
@@ -368,7 +432,7 @@ async def handle_learning_create(
                 "title": str(row.get("title") or ""),
                 "resources": row.get("resources") if isinstance(row.get("resources"), list) else [],
                 "scheduled_date": sd,
-                "estimated_duration": session_duration,
+                "estimated_duration": row_dur,
             }
         )
     topic_ids = await insert_topics_bulk(bulk_topics)
@@ -385,12 +449,13 @@ async def handle_learning_create(
         if not isinstance(due, datetime):
             continue
         task_title = f"Learn: {_coerce_text(sch.get('title')) or f'Session {idx + 1}'}"
+        task_dur = int(sch.get("duration_minutes") or default_session_duration)
         task_doc: Dict[str, Any] = {
             "owner_id": owner_oid,
             "title": task_title[:200],
             "due_datetime": due,
             "is_all_day": False,
-            "duration": session_duration,
+            "duration": task_dur,
             "priority": "medium",
             "status": "pending",
             "source": "eva",
@@ -415,7 +480,7 @@ async def handle_learning_create(
                     task_data={
                         "title": task_title,
                         "due_datetime": due,
-                        "duration_minutes": session_duration,
+                        "duration_minutes": task_dur,
                         "timezone": tz,
                         "description": f"Learning plan: {title}",
                         "reminder_minutes_before": reminder_minutes,

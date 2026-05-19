@@ -12,9 +12,9 @@ from pipeline.ner import learning_ner_extractor
 from services.duckling import duckling_client
 from utils.learning_utils import (
     calculate_available_sessions,
+    duration_entity_to_days,
     map_subtopic,
     normalize_topic,
-    parse_duration,
 )
 from utils.timezone_utils import get_zoneinfo, resolve_timezone_name
 
@@ -340,7 +340,7 @@ async def process_learning_create_free_text_reply(
         return {"outcome": "merged", "merged_entities": merged}
 
     if stage == "duration":
-        days = parse_duration(cleaned)
+        days = duration_entity_to_days(cleaned)
         if days is None:
             return {
                 "outcome": "retry",

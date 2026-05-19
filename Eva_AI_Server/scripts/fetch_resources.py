@@ -2,7 +2,8 @@
 """
 Fetch YouTube resources for roadmap_topics with fetched_at=null.
 
-Respects daily search quota (default 100/day, see YOUTUBE_DAILY_SEARCH_LIMIT).
+Stops immediately if the YouTube API fails (quota, auth, network) instead of
+silently burning through the rest of the batch.
 
 Usage:
   cd Eva_AI_Server
@@ -23,7 +24,20 @@ from config.database import database  # noqa: E402
 from config.settings import settings  # noqa: E402
 from db.roadmap_resources import count_unfetched, get_unfetched_topics  # noqa: E402
 from services.roadmap_youtube_worker import fetch_and_store_for_documents  # noqa: E402
-from services.youtube_quota import build_default_quota  # noqa: E402
+
+
+def _resource_fetch_paused_banner(reason: str) -> str:
+    """Human-friendly stop message when YouTube calls fail mid-run."""
+    return (
+        "\n"
+        "  ╭────────────────────────────────────────────────────────────╮\n"
+        "  │  EVA hit a wall — not stubborn, just stopping on purpose.  │\n"
+        "  │  The resource train is parked until YouTube cooperates.     │\n"
+        "  ╰────────────────────────────────────────────────────────────╯\n"
+        f"\n  What went wrong:\n    {reason}\n\n"
+        "  What to do: fix the issue above, then run this script again.\n"
+        "  Rows already saved in Mongo are untouched; nothing was half-written for this topic.\n"
+    )
 
 
 async def run() -> None:
@@ -31,41 +45,33 @@ async def run() -> None:
     if not ok:
         raise SystemExit("MongoDB connection failed")
 
-    quota = build_default_quota()
     total_updated = 0
     batch_no = 0
 
     try:
         initial_left = await count_unfetched()
         print(f"Unfetched roadmap rows: {initial_left}")
-        print(f"Daily search quota remaining: {quota.remaining()}/{settings.YOUTUBE_DAILY_SEARCH_LIMIT}")
 
         while True:
-            rem = quota.remaining()
-            if rem <= 0:
-                print("Daily YouTube search quota reached. Re-run tomorrow.")
-                break
-
-            batch_size = min(50, rem)
+            batch_size = 50
             docs = await get_unfetched_topics(limit=batch_size)
             if not docs:
                 print("All roadmap resources have been fetched (or none pending).")
                 break
 
             batch_no += 1
-            print(f"\nBatch {batch_no}: up to {len(docs)} topics (quota {rem})")
+            print(f"\nBatch {batch_no}: up to {len(docs)} topics")
 
-            updated, _calls, stopped = await fetch_and_store_for_documents(
+            updated, _calls, fatal = await fetch_and_store_for_documents(
                 docs,
-                quota=quota,
                 delay_seconds=settings.RESOURCE_FETCH_DELAY_SECONDS,
                 progress_every=10,
                 log_prefix="fetch_resources ",
             )
             total_updated += updated
 
-            if stopped and quota.remaining() <= 0:
-                print("Stopped: daily quota exhausted.")
+            if fatal:
+                print(_resource_fetch_paused_banner(fatal))
                 break
     finally:
         await database.disconnect()

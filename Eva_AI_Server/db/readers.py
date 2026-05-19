@@ -53,9 +53,8 @@ async def fetch_user_settings(user_id: str) -> Dict[str, Any]:
 	Fetch settings for the user.
 	Returns an empty dict when no document exists yet.
 
-	Always includes ``preferred_learning_schedule`` (list of ``{day, time}`` slots)
-	when missing on the document, defaulting to ``[]`` — used by learning flows
-	and ``self_fetch_all``.
+	Always includes ``preferred_learning_schedules`` when missing on the document,
+	defaulting to ``[]`` — used by learning flows and ``self_fetch_all``.
 	"""
 	db = get_db()
 	user_id_query = _to_object_id(user_id)
@@ -78,7 +77,15 @@ async def fetch_user_settings(user_id: str) -> Dict[str, Any]:
 	settings = _normalize_doc_id(doc) or {}
 	settings.setdefault("analytics_min_tasks_threshold", 20)
 	settings.setdefault("analytics_min_tasks_per_day", 5)
-	settings.setdefault("preferred_learning_schedule", [])
+	settings.setdefault("preferred_learning_schedules", [])
+	try:
+		from utils.learning_schedules import schedules_from_settings
+
+		migrated = schedules_from_settings(settings)
+		if migrated:
+			settings["preferred_learning_schedules"] = migrated
+	except Exception:
+		pass
 	return settings
 
 

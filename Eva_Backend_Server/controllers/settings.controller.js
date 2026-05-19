@@ -3,11 +3,25 @@
  * Provides authenticated settings read/update endpoints with quiet-hours support.
  */
 
-const { User, UserSetting, Task } = require("../models");
-const { BadRequestError, ConflictError } = require("../middleware/errorHandler");
+const { User, UserSetting, Task, LearningGoal } = require("../models");
+const {
+  BadRequestError,
+  ConflictError,
+  NotFoundError,
+} = require("../middleware/errorHandler");
 const {
   findLearningScheduleTaskConflicts,
 } = require("../utils/learningScheduleConflict");
+const {
+  MAX_SCHEDULES,
+  normalizePreferredLearningSchedules,
+  normalizeSingleLearningSchedule,
+  getSchedulesFromSettingsDoc,
+  listSchedulesFromSettings,
+  findScheduleIndex,
+  assertUniqueLabelAmong,
+  applyLearningSchedules,
+} = require("../utils/learningSchedules");
 
 const TIME_PATTERN = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
 
@@ -46,46 +60,12 @@ const normalizeTime = (value, fieldName) => {
   return normalized;
 };
 
-const normalizePreferredLearningSchedule = (value) => {
-  if (value === undefined) {
-    return undefined;
+const wrapBadRequest = (fn, value, ...args) => {
+  try {
+    return fn(value, ...args);
+  } catch (err) {
+    throw new BadRequestError(err.message);
   }
-
-  if (value === null) {
-    return [];
-  }
-
-  if (!Array.isArray(value)) {
-    throw new BadRequestError("preferred_learning_schedule must be an array");
-  }
-
-  const seenDays = new Set();
-
-  return value.map((slot, index) => {
-    if (!slot || typeof slot !== "object" || Array.isArray(slot)) {
-      throw new BadRequestError(
-        `preferred_learning_schedule[${index}] must be an object with day and time`,
-      );
-    }
-
-    const day = normalizeInteger(slot.day, `preferred_learning_schedule[${index}].day`);
-    if (day < 0 || day > 6) {
-      throw new BadRequestError(
-        `preferred_learning_schedule[${index}].day must be between 0 and 6`,
-      );
-    }
-
-    const time = normalizeTime(slot.time, `preferred_learning_schedule[${index}].time`);
-
-    if (seenDays.has(day)) {
-      throw new BadRequestError(
-        `preferred_learning_schedule: duplicate day ${day}; at most one slot per weekday`,
-      );
-    }
-    seenDays.add(day);
-
-    return { day, time };
-  });
 };
 
 const normalizeQuietHours = (blocks) => {
@@ -173,6 +153,36 @@ const ensureUserSettings = async (userId) => {
   return settings;
 };
 
+const defaultLearningDuration = (settings) =>
+  Number(settings.preferred_learning_duration) > 0
+    ? Number(settings.preferred_learning_duration)
+    : 90;
+
+const userTimeZone = (req) => (req.user && req.user.timezone) || "UTC";
+
+const assertNoSlotConflicts = async (userId, entry, timeZone) => {
+  const conflicts = await findLearningScheduleTaskConflicts(
+    userId,
+    entry.slots,
+    timeZone,
+    Task,
+  );
+  if (conflicts.length > 0) {
+    throw new ConflictError(
+      `Learning schedule "${entry.label}" conflicts with existing tasks`,
+      { conflicts, schedule_id: entry.id, schedule_label: entry.label },
+    );
+  }
+};
+
+const schedulesArrayFromDoc = (settings) => {
+  const existing = listSchedulesFromSettings(settings);
+  if (existing.length > 0) {
+    return existing;
+  }
+  return [];
+};
+
 /**
  * GET /api/settings
  * Return the authenticated user's settings document.
@@ -180,11 +190,14 @@ const ensureUserSettings = async (userId) => {
 const getSettings = async (req, res, next) => {
   try {
     const settings = await ensureUserSettings(req.userId);
+    const plain = settings.toObject ? settings.toObject() : settings;
+    const schedulesView = getSchedulesFromSettingsDoc(plain);
 
     res.json({
       status: "success",
       data: {
         settings,
+        preferred_learning_schedules: schedulesView,
       },
     });
   } catch (error) {
@@ -194,46 +207,64 @@ const getSettings = async (req, res, next) => {
 
 /**
  * PATCH /api/settings/learning-schedule
- * Updates preferred_learning_schedule with validation and task conflict checks.
+ * Replace all learning schedules (bulk). Prefer CRUD routes for single-schedule edits.
  */
 const patchLearningSchedule = async (req, res, next) => {
   try {
     const settings = await ensureUserSettings(req.userId);
-    const raw = req.body.preferred_learning_schedule;
-    if (raw === undefined) {
-      throw new BadRequestError("preferred_learning_schedule is required");
+    const defaultDur = defaultLearningDuration(settings);
+
+    if (req.body.preferred_learning_schedules === undefined) {
+      throw new BadRequestError("preferred_learning_schedules is required");
     }
 
-    const schedule = normalizePreferredLearningSchedule(raw);
-    if (schedule.length === 0) {
-      throw new BadRequestError(
-        "preferred_learning_schedule must include at least one day",
-      );
+    let firstScheduleIdProvided = true;
+    const rawSchedules = req.body.preferred_learning_schedules;
+    if (Array.isArray(rawSchedules) && rawSchedules.length > 0) {
+      firstScheduleIdProvided = Boolean(String(rawSchedules[0]?.id || "").trim());
+    }
+    const schedules = wrapBadRequest(
+      normalizePreferredLearningSchedules,
+      rawSchedules,
+      defaultDur,
+    );
+
+    if (!schedules.length) {
+      throw new BadRequestError("At least one labeled learning schedule is required");
+    }
+
+    const existingPrimary = Array.isArray(settings.preferred_learning_schedules)
+      ? settings.preferred_learning_schedules[0]
+      : null;
+    if (existingPrimary && schedules[0] && !firstScheduleIdProvided) {
+      schedules[0].id = String(existingPrimary.id || schedules[0].id || "default");
     }
 
     const timeZone = (req.user && req.user.timezone) || "UTC";
-    const conflicts = await findLearningScheduleTaskConflicts(
-      req.userId,
-      schedule,
-      timeZone,
-      Task,
-    );
-
-    if (conflicts.length > 0) {
-      throw new ConflictError(
-        "Learning schedule conflicts with existing tasks",
-        { conflicts },
+    for (const entry of schedules) {
+      const conflicts = await findLearningScheduleTaskConflicts(
+        req.userId,
+        entry.slots,
+        timeZone,
+        Task,
       );
+      if (conflicts.length > 0) {
+        throw new ConflictError(
+          `Learning schedule "${entry.label}" conflicts with existing tasks`,
+          { conflicts, schedule_id: entry.id, schedule_label: entry.label },
+        );
+      }
     }
 
-    settings.preferred_learning_schedule = schedule;
+    applyLearningSchedules(settings, schedules);
     await settings.save();
 
     res.json({
       status: "success",
-      message: "Learning schedule updated",
+      message: "Learning schedules updated",
       data: {
         settings,
+        preferred_learning_schedules: schedules,
       },
     });
   } catch (error) {
@@ -303,9 +334,27 @@ const updateSettings = async (req, res, next) => {
       req.body.preferred_learning_duration,
       "preferred_learning_duration",
     );
-    const preferredLearningSchedule = normalizePreferredLearningSchedule(
-      req.body.preferred_learning_schedule,
-    );
+    const preferredLearningDurationForSched =
+      preferredLearningDuration !== undefined
+        ? preferredLearningDuration
+        : Number(settings.preferred_learning_duration) || 90;
+
+    let preferredLearningSchedules;
+    let firstScheduleIdProvided = true;
+    if (req.body.preferred_learning_schedules !== undefined) {
+      const rawSchedules = req.body.preferred_learning_schedules;
+      if (Array.isArray(rawSchedules) && rawSchedules.length > 0) {
+        firstScheduleIdProvided = Boolean(
+          String(rawSchedules[0]?.id || "").trim(),
+        );
+      }
+      preferredLearningSchedules = wrapBadRequest(
+        normalizePreferredLearningSchedules,
+        rawSchedules,
+        preferredLearningDurationForSched,
+      );
+    }
+
     const googleCalendarSyncEnabled = parseBoolean(
       req.body.google_calendar_sync_enabled,
       "google_calendar_sync_enabled",
@@ -376,8 +425,16 @@ const updateSettings = async (req, res, next) => {
       update.preferred_learning_duration = preferredLearningDuration;
     }
 
-    if (preferredLearningSchedule !== undefined) {
-      update.preferred_learning_schedule = preferredLearningSchedule;
+    if (preferredLearningSchedules !== undefined) {
+      const existingPrimary = Array.isArray(settings.preferred_learning_schedules)
+        ? settings.preferred_learning_schedules[0]
+        : null;
+      if (existingPrimary && preferredLearningSchedules[0] && !firstScheduleIdProvided) {
+        preferredLearningSchedules[0].id = String(
+          existingPrimary.id || preferredLearningSchedules[0].id || "default",
+        );
+      }
+      update.preferred_learning_schedules = preferredLearningSchedules;
     }
 
     if (googleCalendarSyncEnabled !== undefined) {
@@ -438,8 +495,185 @@ const updateSettings = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/settings/learning-schedules
+ */
+const listLearningSchedules = async (req, res, next) => {
+  try {
+    const settings = await ensureUserSettings(req.userId);
+    const schedules = schedulesArrayFromDoc(settings);
+    res.json({
+      status: "success",
+      data: { preferred_learning_schedules: schedules },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/settings/learning-schedules
+ * Body: { label, slots, id? }
+ */
+const createLearningSchedule = async (req, res, next) => {
+  try {
+    const settings = await ensureUserSettings(req.userId);
+    const defaultDur = defaultLearningDuration(settings);
+    const current = schedulesArrayFromDoc(settings);
+
+    if (current.length >= MAX_SCHEDULES) {
+      throw new BadRequestError(
+        `You can save at most ${MAX_SCHEDULES} learning schedules. Delete one before adding another.`,
+      );
+    }
+
+    let entry;
+    try {
+      entry = normalizeSingleLearningSchedule(req.body, defaultDur, {
+        pathPrefix: "schedule",
+      });
+    } catch (err) {
+      throw new BadRequestError(err.message);
+    }
+
+    if (findScheduleIndex(current, entry.id) >= 0) {
+      throw new BadRequestError("A schedule with this id already exists");
+    }
+
+    try {
+      assertUniqueLabelAmong(current, entry.label);
+    } catch (err) {
+      throw new BadRequestError(err.message);
+    }
+
+    await assertNoSlotConflicts(req.userId, entry, userTimeZone(req));
+
+    const updated = [...current, entry];
+    applyLearningSchedules(settings, updated);
+    await settings.save();
+
+    res.status(201).json({
+      status: "success",
+      message: "Learning schedule created",
+      data: { schedule: entry, preferred_learning_schedules: updated },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * PATCH /api/settings/learning-schedules/:scheduleId
+ * Body: { label?, slots? }
+ */
+const updateLearningSchedule = async (req, res, next) => {
+  try {
+    const scheduleId = String(req.params.scheduleId || "").trim();
+    if (!scheduleId) {
+      throw new BadRequestError("scheduleId is required");
+    }
+
+    const settings = await ensureUserSettings(req.userId);
+    const defaultDur = defaultLearningDuration(settings);
+    const current = schedulesArrayFromDoc(settings);
+    const index = findScheduleIndex(current, scheduleId);
+    if (index < 0) {
+      throw new NotFoundError("Learning schedule not found");
+    }
+
+    const existing = current[index];
+    const merged = {
+      id: existing.id,
+      label:
+        req.body.label !== undefined
+          ? String(req.body.label || "").trim()
+          : existing.label,
+      slots: req.body.slots !== undefined ? req.body.slots : existing.slots,
+    };
+
+    let entry;
+    try {
+      entry = normalizeSingleLearningSchedule(merged, defaultDur, {
+        pathPrefix: "schedule",
+        allowMissingId: false,
+      });
+    } catch (err) {
+      throw new BadRequestError(err.message);
+    }
+    entry.id = existing.id;
+
+    try {
+      assertUniqueLabelAmong(current, entry.label, existing.id);
+    } catch (err) {
+      throw new BadRequestError(err.message);
+    }
+
+    await assertNoSlotConflicts(req.userId, entry, userTimeZone(req));
+
+    const updated = [...current];
+    updated[index] = entry;
+    applyLearningSchedules(settings, updated);
+    await settings.save();
+
+    res.json({
+      status: "success",
+      message: "Learning schedule updated",
+      data: { schedule: entry, preferred_learning_schedules: updated },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * DELETE /api/settings/learning-schedules/:scheduleId
+ */
+const deleteLearningSchedule = async (req, res, next) => {
+  try {
+    const scheduleId = String(req.params.scheduleId || "").trim();
+    if (!scheduleId) {
+      throw new BadRequestError("scheduleId is required");
+    }
+
+    const inUse = await LearningGoal.exists({
+      user_id: req.userId,
+      learning_schedule_id: scheduleId,
+      status: "active",
+    });
+    if (inUse) {
+      throw new ConflictError(
+        "This schedule is linked to an active learning plan. Pause or complete that plan before deleting the schedule.",
+        { schedule_id: scheduleId },
+      );
+    }
+
+    const settings = await ensureUserSettings(req.userId);
+    const current = schedulesArrayFromDoc(settings);
+    const index = findScheduleIndex(current, scheduleId);
+    if (index < 0) {
+      throw new NotFoundError("Learning schedule not found");
+    }
+
+    const updated = current.filter((_, i) => i !== index);
+    applyLearningSchedules(settings, updated);
+    await settings.save();
+
+    res.json({
+      status: "success",
+      message: "Learning schedule deleted",
+      data: { preferred_learning_schedules: updated },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getSettings,
   updateSettings,
   patchLearningSchedule,
+  listLearningSchedules,
+  createLearningSchedule,
+  updateLearningSchedule,
+  deleteLearningSchedule,
 };

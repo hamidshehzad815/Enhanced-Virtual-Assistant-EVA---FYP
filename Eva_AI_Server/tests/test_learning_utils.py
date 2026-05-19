@@ -30,8 +30,29 @@ class MapSubtopicTests(unittest.TestCase):
     def test_intermediate_alias_real_json(self):
         self.assertEqual(lu.map_subtopic("mid", "Python"), "intermediate")
 
-    def test_unknown_to_general(self):
+    def test_unknown_phrase_to_general(self):
         self.assertEqual(lu.map_subtopic("xyz", "Python"), "general")
+
+    def test_array_does_not_force_basics_with_default_tracks(self):
+        # Legacy alias "array" → basics was wrong for granular roadmaps; without a matching
+        # track key, fall back to general (not basics) on the small default Python JSON.
+        self.assertEqual(lu.map_subtopic("array", "Python"), "general")
+        self.assertEqual(lu.map_subtopic("arrays", "Python"), "general")
+
+    def test_array_prefers_granular_track_when_key_contains_term(self):
+        keys = (
+            "basics",
+            "intermediate",
+            "arrays tuples and dictionaries",
+        )
+        self.assertEqual(
+            lu.map_subtopic("array", "X", level_keys=keys),
+            "arrays tuples and dictionaries",
+        )
+        self.assertEqual(
+            lu.map_subtopic("arrays", "X", level_keys=keys),
+            "arrays tuples and dictionaries",
+        )
 
     def test_empty_to_general(self):
         self.assertEqual(lu.map_subtopic("", "Python"), "general")
@@ -59,7 +80,29 @@ class ParseDurationTests(unittest.TestCase):
         self.assertIsNone(lu.parse_duration(""))
 
 
-class AvailableSessionsTests(unittest.TestCase):
+class ExtractDurationDaysTests(unittest.TestCase):
+    def test_embedded_for_one_month(self):
+        self.assertEqual(lu.extract_duration_days("for 1 month"), 30)
+
+    def test_sentence_with_weeks(self):
+        self.assertEqual(lu.extract_duration_days("learn arrays from tomorrow for 3 weeks"), 21)
+
+
+class DurationEntityToDaysTests(unittest.TestCase):
+    def test_duckling_minutes_one_month(self):
+        self.assertEqual(lu.duration_entity_to_days(30 * 24 * 60), 30)
+
+    def test_plain_string_one_month(self):
+        self.assertEqual(lu.duration_entity_to_days("1 month"), 30)
+
+    def test_digit_string_minutes(self):
+        self.assertEqual(lu.duration_entity_to_days(str(14 * 24 * 60)), 14)
+
+    def test_short_int_not_treated_as_days(self):
+        self.assertIsNone(lu.duration_entity_to_days(45))
+
+    def test_list_wraps_first_value(self):
+        self.assertEqual(lu.duration_entity_to_days(["30 days"]), 30)
     def test_mon_wed_fri_two_weeks(self):
         # 2025-01-06 is Monday
         start = date(2025, 1, 6)
@@ -75,6 +118,13 @@ class AvailableSessionsTests(unittest.TestCase):
 class MinWeeksTests(unittest.TestCase):
     def test_ceil(self):
         self.assertEqual(lu.calculate_min_weeks_needed(12, 3), 4)
+
+
+class RoadmapDensityTests(unittest.TestCase):
+    def test_sessions_per_calendar_day(self):
+        self.assertAlmostEqual(lu.roadmap_sessions_per_calendar_day(10, 5), 2.0)
+        self.assertIsNone(lu.roadmap_sessions_per_calendar_day(10, None))
+        self.assertIsNone(lu.roadmap_sessions_per_calendar_day(10, 0))
 
 
 class BuildScheduleTests(unittest.TestCase):

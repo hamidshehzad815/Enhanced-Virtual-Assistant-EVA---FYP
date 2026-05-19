@@ -532,6 +532,94 @@ async def process_message(payload: ProcessRequest):
                     "settings": settings_data,
                 }
 
+            if (
+                expected_response == "number"
+                and pending_intent == "learning_create"
+                and pending_stage == "schedule_choice"
+            ):
+                from utils.learning_schedules import (
+                    parse_schedule_choice_number,
+                    schedule_choice_is_settings_redirect,
+                )
+
+                options = list(pending_action.get("schedule_options") or [])
+                chosen_id = parse_schedule_choice_number(message, options)
+                if not chosen_id:
+                    await redis_client.set_context(payload.user_id, pending_context)
+                    total = len(options)
+                    if user_name:
+                        prompt = (
+                            f"Please pick a number from 1 to {total}, {user_name}, "
+                            "or say cancel to stop."
+                        )
+                    else:
+                        prompt = f"Please pick a number from 1 to {total}, or say cancel to stop."
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "expected_response": "number",
+                        "stage": "schedule_choice",
+                        "response_text": prompt,
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                if schedule_choice_is_settings_redirect(chosen_id):
+                    await redis_client.delete_context(payload.user_id)
+                    if user_name:
+                        settings_msg = (
+                            f"No problem, {user_name}. Add a schedule in Settings with the days, "
+                            "times, and session lengths you want for this topic, then ask me to "
+                            "create your learning plan again."
+                        )
+                    else:
+                        settings_msg = (
+                            "Add a schedule in Settings with the days, times, and session lengths "
+                            "you want for this topic, then ask me to create your learning plan again."
+                        )
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "expected_response": "free_text",
+                        "stage": "schedule_choice",
+                        "response_text": settings_msg,
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                merged_learning = dict(pending_action.get("entities") or {})
+                merged_learning["learning_schedule_id"] = chosen_id
+                await redis_client.delete_context(payload.user_id)
+                routed_result = await route_intent(
+                    "learning_create",
+                    entities=merged_learning,
+                    context={
+                        **route_context_base,
+                        "pending_context": pending_context,
+                        "pending_reply_type": "number",
+                    },
+                )
+                return {
+                    "status": "ok",
+                    "too_short": False,
+                    "preprocessed": processed,
+                    "context_handled": True,
+                    "expected_response": "number",
+                    "stage": "schedule_choice",
+                    "merged_entities": merged_learning,
+                    "route": routed_result,
+                    "handler_status": routed_result.get("status"),
+                    "notifications": routed_result.get("notifications", []),
+                    "response_text": routed_result.get("response_text")
+                    or _safe_reply("pending_number_processed", user_name, history),
+                    "user_name": user_name,
+                    "settings": settings_data,
+                }
+
             if expected_response == "free_text":
                 if pending_intent in {"update", "scheduling_update"} and pending_stage == "what_to_update":
                     if not ner_extractor.loaded:
@@ -632,15 +720,20 @@ async def process_message(payload: ProcessRequest):
                             "settings": settings_data,
                         }
 
+                    from utils.learning_schedules import slots_for_plan_entities
+
+                    pending_entities = (pending_context.get("pending_action") or {}).get(
+                        "entities",
+                    ) or {}
+                    plan_slots = slots_for_plan_entities(settings_data, pending_entities)
+
                     lc_result = await process_learning_create_free_text_reply(
                         pending_context,
                         message,
                         user_timezone=resolve_timezone_name(
                             (fetched.user or {}).get("timezone"),
                         ),
-                        preferred_learning_schedule=list(
-                            settings_data.get("preferred_learning_schedule") or [],
-                        ),
+                        preferred_learning_schedule=plan_slots,
                     )
                     outcome = lc_result.get("outcome")
                     if outcome == "retry":

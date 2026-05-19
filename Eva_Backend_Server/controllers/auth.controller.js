@@ -17,6 +17,7 @@ const {
   sendVerificationEmail,
   sendPasswordResetEmail,
 } = require("../services/email.service");
+const { renderEmailVerificationPage } = require("../utils/verificationPage");
 
 const serializeAuthUser = (user) => ({
   _id: user._id,
@@ -347,28 +348,38 @@ const getMe = async (req, res, next) => {
  * GET /api/auth/verify-email
  * Verify email with token
  */
-const verifyEmail = async (req, res, next) => {
+const sendVerificationHtml = (res, statusCode, payload) =>
+  res.status(statusCode).type("html").send(renderEmailVerificationPage(payload));
+
+const verifyEmail = async (req, res) => {
   try {
     const { token } = req.query;
 
     if (!token) {
-      throw new BadRequestError("Verification token is required");
+      return sendVerificationHtml(res, 400, {
+        success: false,
+        title: "Verification failed",
+        message:
+          "This link is missing a verification code. Open the full link from your email, or request a new verification email from the app.",
+      });
     }
 
-    // Hash the token to compare with stored hash
     const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
 
-    // Find user with valid verification token
     const user = await User.findOne({
       email_verification_token: hashedToken,
       email_verification_expires: { $gt: new Date() },
     }).select("+email_verification_token +email_verification_expires");
 
     if (!user) {
-      throw new BadRequestError("Invalid or expired verification token");
+      return sendVerificationHtml(res, 400, {
+        success: false,
+        title: "Link expired or invalid",
+        message:
+          "This verification link is no longer valid. It may have expired or already been used. Request a new verification email and try again.",
+      });
     }
 
-    // Mark user as verified
     user.is_verified = true;
     user.email_verification_token = undefined;
     user.email_verification_expires = undefined;
@@ -376,12 +387,23 @@ const verifyEmail = async (req, res, next) => {
 
     logger.info("Email verified", { userId: user._id, email: user.email });
 
-    res.json({
-      status: "success",
-      message: "Email verified successfully. You can now login.",
+    return sendVerificationHtml(res, 200, {
+      success: true,
+      title: "Email verified",
+      message:
+        "Your email is confirmed. You can close this page and sign in to EVA.",
     });
   } catch (error) {
-    next(error);
+    logger.error("Email verification error", {
+      message: error.message,
+      stack: error.stack,
+    });
+    return sendVerificationHtml(res, 500, {
+      success: false,
+      title: "Something went wrong",
+      message:
+        "We could not complete verification right now. Please try again in a few minutes.",
+    });
   }
 };
 

@@ -1,5 +1,5 @@
 """
-MongoDB operations for roadmap_resources (seeded from data/roadmaps.json).
+MongoDB operations for roadmap_resources (seeded from roadmaps JSON; see ``get_roadmaps_json_path()``).
 """
 
 from datetime import datetime, timedelta, timezone
@@ -109,6 +109,10 @@ async def seed_from_roadmaps_json(data: Dict[str, Any]) -> Tuple[int, int, int]:
     """
     Insert roadmap_resources rows from parsed roadmaps.json (idempotent).
     Returns (inserted_count, skipped_count, expected_total_sessions).
+
+    ``days`` in JSON is the **suggested calendar span** for that level (not
+    required to equal ``len(topics)``). Session count is ``len(topics)`` (one DB
+    row per session). ``level_calendar_days`` copies ``days`` onto each row.
     """
     topic_names: List[str] = list(data.get("topics") or [])
     inserted = 0
@@ -133,14 +137,15 @@ async def seed_from_roadmaps_json(data: Dict[str, Any]) -> Tuple[int, int, int]:
             if not isinstance(level_data, dict):
                 continue
             titles = level_data.get("topics")
-            days = level_data.get("days")
+            raw_days = level_data.get("days")
             if not isinstance(titles, list):
                 continue
-            if days is not None and int(days) != len(titles):
-                raise ValueError(
-                    f"days/len(topics) mismatch for {language!r} / {level!r}: "
-                    f"days={days}, len={len(titles)}",
-                )
+            level_calendar_days: Optional[int] = None
+            if raw_days is not None:
+                try:
+                    level_calendar_days = int(raw_days)
+                except (TypeError, ValueError):
+                    level_calendar_days = None
 
             for idx, title in enumerate(titles):
                 expected += 1
@@ -160,6 +165,7 @@ async def seed_from_roadmaps_json(data: Dict[str, Any]) -> Tuple[int, int, int]:
                         "level": level,
                         "order": order,
                         "title": title_str,
+                        "level_calendar_days": level_calendar_days,
                         "resources": [],
                         "fetched_at": None,
                         "created_at": now,

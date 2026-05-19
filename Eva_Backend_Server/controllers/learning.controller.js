@@ -3,10 +3,62 @@
  */
 
 const mongoose = require("mongoose");
+const jwt = require("jsonwebtoken");
 const { LearningGoal, RoadmapTopic, Task } = require("../models");
-const { BadRequestError, NotFoundError } = require("../middleware/errorHandler");
+const {
+  BadRequestError,
+  ConflictError,
+  NotFoundError,
+} = require("../middleware/errorHandler");
+const { applyLearningCollaborationAction } = require("../services/learningCollaboration.service");
 
 const PATCH_STATUS = new Set(["active", "paused", "cancelled"]);
+
+const getCollaborationTokenSecret = () =>
+  process.env.COLLAB_ACTION_SECRET || process.env.JWT_ACCESS_SECRET || "";
+
+const verifyCollaborationToken = (token) => {
+  const secret = getCollaborationTokenSecret();
+  if (!secret) {
+    throw new BadRequestError("Collaboration response is not configured");
+  }
+  try {
+    return jwt.verify(token, secret);
+  } catch (_error) {
+    throw new BadRequestError("Invalid or expired collaboration response link");
+  }
+};
+
+const normalizeCollaborationAction = (value) => {
+  const action = String(value || "").trim().toLowerCase();
+  if (action === "accept" || action === "reject") {
+    return action;
+  }
+  return null;
+};
+
+const renderCollaborationHtml = ({ title, message }) => `
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>${title}</title>
+    <style>
+      body { font-family: Arial, sans-serif; background:#f5f7fb; padding:24px; color:#111827; }
+      .card { max-width:620px; margin:0 auto; background:#fff; border-radius:10px; padding:24px; box-shadow:0 8px 28px rgba(0,0,0,0.08); }
+      h1 { margin:0 0 10px; font-size:22px; }
+      p { margin:0; color:#374151; line-height:1.5; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <h1>${title}</h1>
+      <p>${message}</p>
+    </div>
+  </body>
+</html>
+`;
 
 const toObjectId = (value) => {
   try {
@@ -306,10 +358,113 @@ const updateStatus = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/learning/:id/collaborators/respond
+ * Body: { "action": "accept" | "reject" }
+ */
+const respondToLearningCollaborationInvite = async (req, res, next) => {
+  try {
+    const action = normalizeCollaborationAction(req.body?.action);
+    if (!action) {
+      throw new BadRequestError('action must be "accept" or "reject"');
+    }
+
+    const result = await applyLearningCollaborationAction({
+      goalId: req.params.id,
+      collaboratorUserId: req.userId,
+      action,
+    });
+
+    const verb = action === "accept" ? "accepted" : "rejected";
+    const message = result.already_responded
+      ? `Invite already ${String(result.current_status || "").toLowerCase()}.`
+      : `Learning plan invite ${verb}.`;
+
+    res.json({
+      status: "success",
+      message,
+      data: {
+        goal_id: String(result.goal._id),
+        collaborator_goal_id: result.collaborator_goal_id
+          ? String(result.collaborator_goal_id)
+          : null,
+        collaboration_status: result.current_status,
+        already_responded: result.already_responded,
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * GET /api/learning/collaboration/respond?token=...
+ */
+const respondToLearningCollaborationInviteViaLink = async (req, res, next) => {
+  try {
+    const token = String(req.query?.token || "").trim();
+    if (!token) {
+      throw new BadRequestError("Missing response token");
+    }
+
+    const payload = verifyCollaborationToken(token);
+    const action = normalizeCollaborationAction(payload?.action);
+    if (!action) {
+      throw new BadRequestError("Invalid action in response token");
+    }
+
+    const goalId = String(payload?.reference_id || payload?.task_id || "");
+    const userId = String(payload?.user_id || "");
+    const notificationId = payload?.notification_id ? String(payload.notification_id) : null;
+
+    const result = await applyLearningCollaborationAction({
+      goalId,
+      collaboratorUserId: userId,
+      action,
+      notificationId,
+    });
+
+    const verbPast = action === "accept" ? "accepted" : "rejected";
+    let successMessage = result.already_responded
+      ? `This invitation was already ${String(result.current_status || "").toLowerCase()}.`
+      : `You have ${verbPast} this learning plan invite successfully.`;
+
+    if (
+      !result.already_responded
+      && action === "accept"
+      && result.collaborator_goal_id
+    ) {
+      successMessage += " Your own copy of the learning plan is ready in EVA.";
+    }
+
+    const html = renderCollaborationHtml({
+      title: result.already_responded ? "Already Responded" : "Response Saved",
+      message: successMessage,
+    });
+
+    res.status(200).type("html").send(html);
+  } catch (error) {
+    if (
+      error instanceof BadRequestError
+      || error instanceof NotFoundError
+      || error instanceof ConflictError
+    ) {
+      const html = renderCollaborationHtml({
+        title: "Unable to Process Invite",
+        message: error.message,
+      });
+      return res.status(error.statusCode || 400).type("html").send(html);
+    }
+    return next(error);
+  }
+};
+
 module.exports = {
   getAllGoals,
   getGoal,
   getTopics,
   completeTopic,
   updateStatus,
+  respondToLearningCollaborationInvite,
+  respondToLearningCollaborationInviteViaLink,
 };

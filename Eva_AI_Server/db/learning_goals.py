@@ -50,32 +50,51 @@ async def get_active_goals_for_user(user_id: str) -> List[Dict[str, Any]]:
     return [_normalize_doc(r) for r in rows]
 
 
-async def check_duplicate_goal(user_id: str, topic: str, roadmap_key: str) -> bool:
+async def find_conflicting_goal(
+    user_id: str,
+    topic: str,
+    roadmap_key: str,
+) -> Optional[Dict[str, Any]]:
     """
-    True if user already has a conflicting active goal for this subject.
+  Return an active goal that blocks creating this plan, or None.
 
-    Blocks when:
-      - same subject + same roadmap_key, or
-      - same subject + an existing active goal on roadmap_key \"general\"
-        (general blocks any new roadmap for that language).
+  Blocks when:
+    - same subject + same roadmap_key, or
+    - same subject + existing \"general\" (general blocks any new track), or
+    - same subject + new \"general\" while any other active track exists.
+
+  Different subjects may both be active. Different tracks (e.g. basics vs intermediate) may coexist.
     """
     db = get_db()
     uid = _to_object_id(user_id)
     subject_norm = (topic or "").strip().lower()
     rk = (roadmap_key or "general").strip().lower()
 
-    query: Dict[str, Any] = {
+    base: Dict[str, Any] = {
         "user_id": uid,
         "status": "active",
         "is_deleted": False,
         "subject": subject_norm,
-        "$or": [
-            {"roadmap_key": rk},
-            {"roadmap_key": "general"},
-        ],
     }
-    found = await db.learning_goals.find_one(query, {"_id": 1})
-    return found is not None
+
+    if rk == "general":
+        doc = await db.learning_goals.find_one(base)
+        return _normalize_doc(doc) if doc else None
+
+    doc = await db.learning_goals.find_one(
+        {
+            **base,
+            "$or": [
+                {"roadmap_key": rk},
+                {"roadmap_key": "general"},
+            ],
+        },
+    )
+    return _normalize_doc(doc) if doc else None
+
+
+async def check_duplicate_goal(user_id: str, topic: str, roadmap_key: str) -> bool:
+    return (await find_conflicting_goal(user_id, topic, roadmap_key)) is not None
 
 
 async def update_goal_status(
