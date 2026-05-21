@@ -10,6 +10,21 @@ const MAX_DURATION = 240;
 const MAX_LABEL_LEN = 80;
 const MAX_SCHEDULES = 20;
 
+const DAY_LABELS = [
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+  "Sunday",
+];
+
+const formatSlotLabel = (day, time) => {
+  const name = DAY_LABELS[day] || `day ${day}`;
+  return `${name} ${time}`;
+};
+
 const normalizeTime = (value, fieldName) => {
   const normalized = String(value || "").trim();
   if (!TIME_PATTERN.test(normalized)) {
@@ -94,7 +109,7 @@ const normalizePreferredLearningSchedules = (value, defaultDurationMinutes = 90)
   const seenIds = new Set();
   const seenLabels = new Set();
 
-  return value.map((entry, index) => {
+  const schedules = value.map((entry, index) => {
     const base = `preferred_learning_schedules[${index}]`;
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
       throw new Error(`${base} must be an object with label and slots`);
@@ -130,6 +145,9 @@ const normalizePreferredLearningSchedules = (value, defaultDurationMinutes = 90)
 
     return { id, label, slots };
   });
+
+  assertNoDuplicateSlotsAcrossSchedules(schedules);
+  return schedules;
 };
 
 /** One-time read: old Mongo docs may still have a flat slot array under this key. */
@@ -216,6 +234,86 @@ const findScheduleIndex = (schedules, scheduleId) => {
   return schedules.findIndex((s) => String(s?.id || "").trim() === sid);
 };
 
+/**
+ * Find slots in candidateSlots that duplicate (day + time) on another schedule.
+ * @param {{ day: number, time: string }[]} candidateSlots
+ * @param {{ id: string, label: string, slots: object[] }[]} schedules
+ * @param {string|null} excludeScheduleId schedule to skip (e.g. the one being updated)
+ */
+const findCrossScheduleSlotConflicts = (
+  candidateSlots,
+  schedules,
+  excludeScheduleId = null,
+) => {
+  const exclude = excludeScheduleId ? String(excludeScheduleId).trim() : null;
+  const conflicts = [];
+  const seen = new Map();
+
+  for (const sched of schedules || []) {
+    const schedId = String(sched?.id || "").trim();
+    if (exclude && schedId === exclude) {
+      continue;
+    }
+    const schedLabel = String(sched?.label || "").trim() || schedId;
+    for (const slot of sched?.slots || []) {
+      const key = `${slot.day}:${slot.time}`;
+      if (!seen.has(key)) {
+        seen.set(key, { schedule_id: schedId, schedule_label: schedLabel, slot });
+      }
+    }
+  }
+
+  for (const slot of candidateSlots || []) {
+    const key = `${slot.day}:${slot.time}`;
+    const existing = seen.get(key);
+    if (existing) {
+      conflicts.push({
+        slot: { day: slot.day, time: slot.time },
+        conflicting_schedule: {
+          id: existing.schedule_id,
+          label: existing.schedule_label,
+        },
+      });
+    }
+  }
+
+  return conflicts;
+};
+
+/**
+ * Ensure no two schedules share the same weekday + start time.
+ * @throws {Error}
+ */
+const assertNoDuplicateSlotsAcrossSchedules = (schedules) => {
+  const slotOwner = new Map();
+
+  for (const sched of schedules || []) {
+    const schedId = String(sched?.id || "").trim();
+    const schedLabel = String(sched?.label || "").trim() || schedId;
+    for (const slot of sched?.slots || []) {
+      const key = `${slot.day}:${slot.time}`;
+      if (slotOwner.has(key)) {
+        const prev = slotOwner.get(key);
+        throw new Error(
+          `${formatSlotLabel(slot.day, slot.time)} is already used in schedule "${prev.schedule_label}"; `
+          + `the same weekday and start time cannot appear in more than one learning schedule (conflicts with "${schedLabel}")`,
+        );
+      }
+      slotOwner.set(key, { schedule_id: schedId, schedule_label: schedLabel });
+    }
+  }
+};
+
+const crossScheduleConflictMessage = (candidateLabel, conflicts) => {
+  const first = conflicts[0];
+  const slotText = formatSlotLabel(first.slot.day, first.slot.time);
+  const otherLabel = first.conflicting_schedule.label;
+  return (
+    `Learning schedule "${candidateLabel}" uses ${slotText}, which is already set in "${otherLabel}". `
+    + "Use a different start time on that day, or remove the slot from the other schedule."
+  );
+};
+
 const assertUniqueLabelAmong = (schedules, label, excludeId = null) => {
   const key = String(label || "").trim().toLowerCase();
   if (!key) {
@@ -275,12 +373,17 @@ module.exports = {
   MIN_DURATION,
   MAX_DURATION,
   MAX_SCHEDULES,
+  DAY_LABELS,
+  formatSlotLabel,
   normalizeScheduleSlots,
   normalizePreferredLearningSchedules,
   normalizeSingleLearningSchedule,
   getSchedulesFromSettingsDoc,
   listSchedulesFromSettings,
   findScheduleIndex,
+  findCrossScheduleSlotConflicts,
+  assertNoDuplicateSlotsAcrossSchedules,
+  crossScheduleConflictMessage,
   assertUniqueLabelAmong,
   applyLearningSchedules,
 };
