@@ -242,6 +242,87 @@ describe("learning-schedules CRUD", () => {
     expect(mockSettings.preferred_learning_schedules).toHaveLength(2);
   });
 
+  test("POST schedule with duplicate label → 400", async () => {
+    UserSetting.findOne.mockResolvedValue({
+      user_id: USER_ID,
+      preferred_learning_schedules: [
+        {
+          id: "s1",
+          label: "Python learning",
+          slots: [{ day: 0, time: "18:00", duration_minutes: 60 }],
+        },
+      ],
+      save: jest.fn().mockResolvedValue(),
+    });
+
+    const response = await request(app)
+      .post("/api/settings/learning-schedules")
+      .set(authHeaders())
+      .send({
+        label: "Python learning",
+        slots: [{ day: 1, time: "10:00", duration_minutes: 60 }],
+      });
+
+    expect(response.status).toBe(400);
+  });
+
+  test("POST schedule with same day+time as existing → 409", async () => {
+    UserSetting.findOne.mockResolvedValue({
+      user_id: USER_ID,
+      preferred_learning_schedules: [
+        {
+          id: "s1",
+          label: "Python learning",
+          slots: [
+            { day: 0, time: "18:00", duration_minutes: 60 },
+            { day: 2, time: "19:00", duration_minutes: 90 },
+          ],
+        },
+      ],
+      save: jest.fn().mockResolvedValue(),
+    });
+
+    const response = await request(app)
+      .post("/api/settings/learning-schedules")
+      .set(authHeaders())
+      .send({
+        label: "Python learning 2",
+        slots: [
+          { day: 0, time: "18:00", duration_minutes: 60 },
+          { day: 2, time: "19:00", duration_minutes: 75 },
+        ],
+      });
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toMatch(/18:00|Monday/i);
+  });
+
+  test("POST schedule same day different time → 201", async () => {
+    const mockSettings = {
+      user_id: USER_ID,
+      preferred_learning_schedules: [
+        {
+          id: "s1",
+          label: "Python learning",
+          slots: [{ day: 0, time: "18:00", duration_minutes: 60 }],
+        },
+      ],
+      save: jest.fn().mockResolvedValue(),
+    };
+    UserSetting.findOne.mockResolvedValue(mockSettings);
+
+    const response = await request(app)
+      .post("/api/settings/learning-schedules")
+      .set(authHeaders())
+      .send({
+        label: "Python learning 2",
+        slots: [{ day: 0, time: "20:00", duration_minutes: 75 }],
+      });
+
+    expect(response.status).toBe(201);
+    expect(mockSettings.preferred_learning_schedules).toHaveLength(2);
+  });
+
   test("PATCH update by id → 200", async () => {
     const mockSettings = {
       user_id: USER_ID,

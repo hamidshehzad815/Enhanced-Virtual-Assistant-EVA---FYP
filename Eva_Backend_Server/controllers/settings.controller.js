@@ -19,6 +19,8 @@ const {
   getSchedulesFromSettingsDoc,
   listSchedulesFromSettings,
   findScheduleIndex,
+  findCrossScheduleSlotConflicts,
+  crossScheduleConflictMessage,
   assertUniqueLabelAmong,
   applyLearningSchedules,
 } = require("../utils/learningSchedules");
@@ -159,6 +161,24 @@ const defaultLearningDuration = (settings) =>
     : 90;
 
 const userTimeZone = (req) => (req.user && req.user.timezone) || "UTC";
+
+const assertNoCrossScheduleSlotConflicts = (entry, existingSchedules, excludeScheduleId = null) => {
+  const crossConflicts = findCrossScheduleSlotConflicts(
+    entry.slots,
+    existingSchedules,
+    excludeScheduleId,
+  );
+  if (crossConflicts.length > 0) {
+    throw new ConflictError(
+      crossScheduleConflictMessage(entry.label, crossConflicts),
+      {
+        conflicts: crossConflicts,
+        schedule_id: entry.id,
+        schedule_label: entry.label,
+      },
+    );
+  }
+};
 
 const assertNoSlotConflicts = async (userId, entry, timeZone) => {
   const conflicts = await findLearningScheduleTaskConflicts(
@@ -546,6 +566,7 @@ const createLearningSchedule = async (req, res, next) => {
       throw new BadRequestError(err.message);
     }
 
+    assertNoCrossScheduleSlotConflicts(entry, current);
     await assertNoSlotConflicts(req.userId, entry, userTimeZone(req));
 
     const updated = [...current, entry];
@@ -608,6 +629,7 @@ const updateLearningSchedule = async (req, res, next) => {
       throw new BadRequestError(err.message);
     }
 
+    assertNoCrossScheduleSlotConflicts(entry, current, existing.id);
     await assertNoSlotConflicts(req.userId, entry, userTimeZone(req));
 
     const updated = [...current];
