@@ -3,13 +3,40 @@ SCHEDULING — UPDATE COMMAND FLOW (FINAL)
 AI Server handles all DB operations directly
 ================================================================
 
+SYNC WITH CODE (April 2026)
+================================================================
+
+  Intent: scheduling_update; Redis pending_action.intent: "update"
+  Stages: identify | what_to_update | confirm
+
+  Canonical update field: new_title (NER aliases new_taskname → new_title)
+
+  Invalid identifier date → identify + free_text + missing_entity: "date"
+
+  Complete task rules: status blocked (status: "blocked") — cannot change
+    complete→non-complete or complete→complete without clear prompts.
+
+  Overlap at new slot → returns to what_to_update stage (not time-only pending).
+
+  Activity log: task_completed when marking complete; else task_updated.
+
+  Confirm no: handled in main.py (inline "kept unchanged"), not handler STEP 8.
+  Confirm yes: handler _execute_confirmed_update only.
+
+  Number pick shortcut in main: confirm payload may omit new_date/new_time
+    when user picked by number — known limitation vs full handler confirm text.
+
+  Google Calendar update_event when google_calendar_event_id exists.
+
+================================================================
+
 DECISIONS LOCKED
 ================================================================
 
   1. Update requires TWO phases:
-       Phase A — identify which task to update
-       Phase B — identify what to change and confirm
-  2. User must confirm before any update happens
+       Phase A — identify which task to update (stage: identify)
+       Phase B — what to change (stage: what_to_update) + confirm (stage: confirm)
+  2. User must confirm before any update happens (yes_no, stage confirm)
   3. Task identification follows same match logic as delete:
        0 match   → not found reply → stop
        1 match   → proceed to Phase B directly
@@ -21,8 +48,8 @@ DECISIONS LOCKED
   5. Multiple fields can be updated in one command
      e.g. "move physics exam to Tuesday at 3PM"
      → both date AND time updated together
-  6. Status transitions: pending → ongoing → complete only
-     (no backwards transitions — complete cannot go to pending)
+  6. Stored task status: pending | complete (display may show ongoing/overdue).
+     Complete tasks cannot be edited except via blocked paths in handler.
   7. Google Calendar updated if event_id exists (non-blocking)
   8. Activity log inserted after every update
   9. Gemini generates all replies — natural, specific

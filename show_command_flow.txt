@@ -3,17 +3,40 @@ SCHEDULING — SHOW COMMAND FLOW (FINAL)
 AI Server handles all DB operations directly
 ================================================================
 
+SYNC WITH CODE (April 2026)
+================================================================
+
+  Intent: scheduling_show. No Redis pending for show.
+
+  Title filter entity: task_name (NER subject → task_name alias).
+  Doc "subject only" is outdated — use task_name in scoper.
+
+  Week scope: _detect_week_scope on message (this/next/last week) when NER
+    date is not already an explicit week phrase.
+
+  Overdue: message keyword "overdue" → overdue_only query + pending filter.
+
+  Relaxed title match when exact match returns zero rows.
+
+  Completed tasks sorted descending by due_datetime; others ascending.
+
+  Gemini actions: show_results, show_not_found (not tasks_shown).
+
+  Blocking: show blocked when another command has yes_no/number pending.
+    NOT blocked when other command has free_text pending — utterance may
+    be mis-routed as delete/update filter text.
+
+================================================================
+
 DECISIONS LOCKED
 ================================================================
 
   1. Show is READ ONLY — no DB writes except conversation history
   2. No confirmation required — show is non-destructive
-  3. No context manager pending states for show
-     → show never asks follow-up questions mid-flow
-     → if nothing found EVA replies naturally, no re-prompting
-  4. Results always sorted by due_datetime ascending
-  5. Results always displayed in user's local timezone
-  6. Maximum 10 results returned per show query
+  3. No Redis pending states for show (single-shot handler)
+  4. Results sorted by due_datetime (ascending; descending when status=complete)
+  5. Results displayed in user's local timezone
+  6. Maximum 10 results returned per show query (find_tasks_for_show)
   7. If more than 10 match → show first 10, mention total count
   8. Gemini formats results naturally — never raw data dump
   9. No pagination in chat — user refines filter to narrow down

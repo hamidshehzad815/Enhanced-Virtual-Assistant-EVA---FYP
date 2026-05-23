@@ -3,6 +3,19 @@ EVA — OVERALL APPLICATION FLOW
 Frontend to Completion (Final Architecture)
 ================================================================
 
+SYNC WITH CODE (April 2026)
+================================================================
+
+  Built commands: scheduling_add, scheduling_delete, scheduling_update,
+    scheduling_show, behavioral, learning_create (+ topic_done chat hook).
+
+  Learning settings: preferred_learning_schedules (labeled, CRUD on Node).
+  Task display_status on Node dashboard/API; stored status pending|complete.
+
+  See PROJECT_COMPLETION_REPORT.md for full status.
+
+================================================================
+
 ARCHITECTURE DECISION
 ================================================================
 

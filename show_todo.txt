@@ -3,6 +3,11 @@ PHASES 19–22 — SCHEDULING SHOW COMMAND
 Parallel Build: AI Server + Node.js Backend
 ================================================================
 
+DOC SYNC (April 2026): Implementation complete. See show_command_flow.txt SYNC.
+Filter entity task_name; week/overdue/relaxed match; no Redis pending.
+
+================================================================
+
 WHAT IS ALREADY DONE (from completion report)
 ================================================================
 

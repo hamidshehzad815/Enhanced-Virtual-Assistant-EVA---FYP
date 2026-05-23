@@ -3,19 +3,32 @@ CONTEXT MANAGER — LEARNING ADD COMMAND (FINAL)
 Runs inside AI Server — Redis managed by AI Server directly
 ================================================================
 
+SYNC WITH CODE (April 2026)
+================================================================
+
+  Four pending paths (not three):
+    stage topic | start_date | duration → expected_response free_text
+      (process_learning_create_free_text_reply in context_manager.py)
+    stage schedule_choice → expected_response number
+      (handled in main.py — parse_schedule_choice_number, NOT context_manager)
+
+  pending_action.intent: learning_create
+  schedule_choice stores schedule_options[] on pending_action for main.py
+
+  After schedule picked: entities.learning_schedule_id merged, route learning_create
+
+================================================================
+
 DECISIONS LOCKED
 ================================================================
 
   1. Context manager runs BEFORE Model 1 on every input
   2. Redis state fetched at request start (self-fetch)
-  3. All 3 pending states are free_text
-     → Model 1 skipped for all states
-     → replies handled directly without classification
+  3. Pending: free_text (topic/start_date/duration) OR number (schedule_choice)
   4. Cancel checked FIRST before anything else
   5. TTL = 300 seconds, reset on every Redis write
-  6. Handler re-entered from STEP 1 after every valid reply
-  7. All 3 missing entities asked one by one in order:
-     topic → start_date → duration
+  6. Handler re-entered after every valid reply merge
+  7. Order: topic → start_date → schedule_choice (number) → duration
   8. Subtopic never asked — optional, general if missing
   9. Person never asked mid-flow — only validated if present
 
@@ -30,11 +43,12 @@ REDIS STATE STRUCTURE
   Managed by: AI Server directly
 
   {
-    expected_response : "free_text",
+    expected_response : "free_text" | "number",
     pending_action    : {
       intent   : "learning_create",
-      stage    : "topic" | "start_date" | "duration",
-      entities : { ...collected so far... }
+      stage    : "topic" | "start_date" | "schedule_choice" | "duration",
+      entities : { ...collected so far... },
+      schedule_options : [ ... ]   ← only when stage = schedule_choice
     }
   }
 

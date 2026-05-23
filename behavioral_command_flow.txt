@@ -3,17 +3,38 @@ BEHAVIORAL COMMAND FLOW (FINAL)
 AI Server handles all DB operations directly
 ================================================================
 
+SYNC WITH CODE (April 2026)
+================================================================
+
+  Handler: handlers/behavioral/behavioral.py
+  Sub-intents: productive_hours (default), productive_days, best_time_for_day,
+    completion_rate, productivity_report
+
+  Thresholds (user_settings): analytics_min_tasks_threshold default 20;
+    analytics_min_tasks_per_day default 5 for day-filtered queries.
+
+  Analytics engine: services/productivity_scorer.py (hour ranges, reliable days).
+    Legacy get_hours_distribution / get_days_distribution NOT used by handler.
+
+  Status values: success | not_enough_data | no_data | pending
+
+  Pending: only best_time_for_day when day missing — Redis free_text,
+    missing_entity: day, pending_action.intent: behavioral,
+    pending_action.sub_intent: best_time_for_day (resume via main free_text).
+
+  No activity log writes from behavioral handler (read-only).
+
+================================================================
+
 DECISIONS LOCKED
 ================================================================
 
-  1. Behavioral is READ ONLY — queries Activity_Logs only
-  2. No confirmation required — non-destructive
-  3. No context manager pending states for behavioral
-     → single-turn command, always returns a result
-     → if threshold not met → natural reply, no re-prompting
-  4. Threshold = 10 completed task logs (from user_settings)
-  5. Results always shown in user's local timezone
-  6. Gemini formats all results naturally — never raw data
+  1. Behavioral is READ ONLY — queries Activity_Logs (+ tasks for conflict-free hours)
+  2. No confirmation required — non-destructive (except pending ask-day)
+  3. One pending state: best_time_for_day without parseable day
+  4. Threshold = analytics_min_tasks_threshold (default 20), per-day min 5
+  5. Results are natural-language ranges (scorer), not raw histogram dumps
+  6. Gemini formats all results — actions behavioral_* per sub-intent
   7. No Google Calendar sync — analytics only
   8. No notifications generated
 

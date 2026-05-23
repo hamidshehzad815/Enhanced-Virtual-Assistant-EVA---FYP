@@ -2,6 +2,16 @@
 CONTEXT MANAGER — SHOW COMMAND
 ================================================================
 
+SYNC WITH CODE (April 2026)
+================================================================
+
+  Show never writes Redis. should_block_new_command only when pending
+  expected_response is yes_no or number — NOT free_text.
+  During delete/update identify (free_text pending), a "show my tasks"
+  message may be consumed as filter text, not scheduling_show.
+
+================================================================
+
 CORE DECISION
 ================================================================
 
