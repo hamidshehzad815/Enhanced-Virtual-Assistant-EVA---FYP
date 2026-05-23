@@ -3,6 +3,12 @@ PHASES 23–28 — SCHEDULING UPDATE COMMAND
 Parallel Build: AI Server + Node.js Backend
 ================================================================
 
+DOC SYNC (April 2026): Implementation complete. See update_command_flow.txt
+SYNC section. Canonical field new_title; stages identify|what_to_update|confirm;
+Google update_event; activity log task_completed when marking complete.
+
+================================================================
+
 WHAT IS ALREADY DONE
 ================================================================
 

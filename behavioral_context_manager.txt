@@ -1,5 +1,15 @@
 ================================================================
 CONTEXT MANAGER — BEHAVIORAL COMMAND (FINAL)
+
+SYNC WITH CODE (April 2026)
+================================================================
+
+  Only pending: best_time_for_day + missing day → free_text + missing_entity: day.
+  handle_free_text_reply clears Redis; route behavioral with merged entities.
+  Thresholds 20 global / 5 per day (not 10).
+  Invalid weekday: no dedicated CM validation — handler may re-ask via pending.
+
+================================================================
 Runs inside AI Server — Redis managed by AI Server directly
 ================================================================
 

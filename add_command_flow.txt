@@ -3,6 +3,43 @@ SCHEDULING — ADD COMMAND FLOW (FINAL)
 AI Server handles all DB operations directly
 ================================================================
 
+SYNC WITH CODE (April 2026) — read this first; older steps below may differ
+================================================================
+
+  Intent naming:
+    Pipeline/router/handler return: scheduling_add
+    Redis pending_action.intent: "add" (not scheduling_add)
+
+  Handler order (handlers/scheduling/add.py):
+    task_name → date (Duckling) → duration + priority defaults
+    → time (or behavioral suggestion) → past datetime check
+    → quiet hours (yes_no) → owner time overlap (409 conflict, no Redis)
+    → duplicate (yes_no) → collaborators → insert task
+
+  Behavioral time suggestion thresholds (user_settings):
+    analytics_min_tasks_threshold default 20 (not 10)
+    analytics_min_tasks_per_day default 5
+    Uses productivity_scorer (get_scheduling_suggestion), not raw countDocuments only
+
+  Extra pending states (no stage field for add):
+    pending_reason: time_suggestion | time_suggestion_fallback | past_datetime
+      | quiet_hours | duplicate
+    suggested_range + suggested_time for number prompt
+    quiet_hour_matches on Redis for quiet-hours yes_no
+
+  Terminal statuses: pending | success | cancelled | conflict | validation_error
+
+  Collaborators: max 2; lookup by username OR display name; friend required;
+    collaborator busy → conflict (collaborator_busy)
+
+  Notifications: owner task_scheduled (in_app, email);
+    each collaborator collaboration_invite (push, in_app, email)
+
+  Google Calendar: create_event if google_calendar integration active;
+    stores google_calendar_event_id on task (non-blocking)
+
+================================================================
+
 DECISIONS LOCKED
 ================================================================
 
@@ -10,7 +47,8 @@ DECISIONS LOCKED
      EVA asks for any missing, one by one in order
   2. is_all_day = False always, hardcoded
   3. due_datetime always fully populated (both required)
-  4. Behavioral threshold = 10 logs (from user settings)
+  4. Behavioral threshold = analytics_min_tasks_threshold (default 20)
+     and analytics_min_tasks_per_day (default 5) from user_settings
   5. Model 1 has 5 classes (no salutation_command)
   6. AI server self-fetches all required data at request start
   7. AI server performs ALL DB operations directly
@@ -215,6 +253,20 @@ STEP 3 — TIME RESOLUTION
   │   └──────────────────────┘                              │
   └─────────────────────────────────────────────────────────┘
 
+
+================================================================
+STEP 3b — PAST DATETIME / QUIET HOURS / OWNER OVERLAP (implemented)
+================================================================
+
+  Past due_datetime (same day → re-ask time; other day → re-ask date):
+    pending_reason: past_datetime
+
+  Quiet hours (settings.quiet_hours[] or legacy start/end):
+    expected_response: yes_no, pending_reason: quiet_hours
+    yes → allow_quiet_hours_override; no → strip time, re-ask time
+
+  Owner or accepted-collaborator overlap at same slot:
+    status: conflict — no Redis; Gemini action task_time_conflict
 
 ================================================================
 STEP 4 — DUPLICATE CHECK
