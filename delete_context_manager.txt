@@ -1,5 +1,15 @@
 ================================================================
 CONTEXT MANAGER — DELETE COMMAND (FINAL)
+
+SYNC WITH CODE (April 2026)
+================================================================
+
+  State 1b: missing_entity "date" when identifier date invalid/unresolvable.
+  Free-text does NOT always map reply to task_name — uses missing_entity.
+  Number → yes_no confirm (single or bulk all).
+  Cancel first via main is_cancel.
+
+================================================================
 Runs inside AI Server — Redis managed by AI Server directly
 ================================================================
 

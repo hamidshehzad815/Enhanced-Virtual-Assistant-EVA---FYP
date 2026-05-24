@@ -10,13 +10,14 @@ DECISIONS LOCKED
      Optional entities: subtopic, person
   2. Entities validated as soon as extracted (fail fast)
   3. Missing entities asked one by one in order:
-     topic → start_date → duration
+     topic → start_date → schedule_choice (number) → duration
   4. Subtopic never asked — optional, general if missing
   5. Predefined JSON roadmaps — no Gemini for generation
   6. 20 supported topics — unsupported gets clean reply
-  7. Learning schedule pulled from preferred_learning_schedule
-     in User_Settings — never asked inline
-  8. Schedule not set in settings → tell user → stop
+  7. Learning schedules: preferred_learning_schedules[] (labeled, up to 20).
+     User must pick schedule via schedule_choice (reply 1..n or 2 for Settings)
+     EVEN when only one schedule exists (reply 1 = use, 2 = add different in Settings)
+  8. No schedules in settings → tell user → stop
   9. Duration = calendar days, sessions = learning days
      that fall within that duration
   10. Feasibility check: available sessions >= roadmap sessions
@@ -42,9 +43,30 @@ DECISIONS LOCKED
       specific subtopic active → different subtopic allowed
       general/full roadmap active → block same language
       exact same subtopic active → block
-  19. Reminder uses default_topic_reminder_minutes
-      from User_Settings (default 30, independent of tasks)
-  20. All EVA replies natural, specific, use user name
+  19. Task reminders use default_reminder_minutes from User_Settings (default 30)
+  20. learning_schedule_id stored on goal; schedule cannot be reused on another
+      active goal for same user (used_learning_schedule_ids)
+  21. Collaborator notifications: learning_collaboration_invite; owner gets
+      learning_collaboration_response on accept/reject (backend)
+  22. Duration under 7 days in one shot → error (not Redis re-prompt)
+  23. All EVA replies natural, specific, use user name
+
+SYNC WITH CODE (April 2026) — handler order in create.py
+================================================================
+
+  1. schedules_from_settings empty → stop
+  2. topic (pending stage topic if missing)
+  3. find_conflicting_goal (duplicate rules)
+  4. start_date (pending start_date; not past in user TZ)
+  5. schedule_choice — resolve_schedule_for_learning ALWAYS prompts if no
+     learning_schedule_id in entities; main.py handles expected_response number
+  6. duration (pending duration; min 7 days; feasibility vs session count)
+  7. collaborators optional (person/collaborator, max 2, friends only)
+  8. insert goal + topics + tasks; calendar per task; notifications
+  9. delete_context on success
+
+  Chat topic completion (no pending): handlers/learning/topic_done_chat.py in main.py
+  before Model 1 — marks topic completed via update_topic_status.
 
 
 ================================================================

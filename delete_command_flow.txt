@@ -3,6 +3,27 @@ SCHEDULING — DELETE COMMAND FLOW (FINAL)
 AI Server handles all DB operations directly
 ================================================================
 
+SYNC WITH CODE (April 2026)
+================================================================
+
+  Intent: scheduling_delete in API; Redis pending_action.intent: "delete"
+  No stage field on delete pending states.
+
+  Extra pending: invalid identifier date → free_text + missing_entity: "date"
+    (re-prompt for date, not task_name).
+
+  Free-text resume: handle_free_text_reply uses missing_entity when set
+    (date vs task_name).
+
+  Gemini actions in code: delete_single_confirm, delete_not_found,
+    delete_bulk_completed, task_deleted (not only generic names in old doc).
+
+  Bulk: number pick "all" → main sets bulk:true + yes_no confirmation.
+
+  Handler performs delete on yes_no yes; no on confirm routed to handler cancel path.
+
+================================================================
+
 DECISIONS LOCKED
 ================================================================
 
