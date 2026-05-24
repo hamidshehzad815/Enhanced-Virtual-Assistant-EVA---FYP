@@ -3,6 +3,31 @@ CONTEXT MANAGER — ADD COMMAND (FINAL)
 Runs inside AI Server — Redis managed by AI Server directly
 ================================================================
 
+SYNC WITH CODE (April 2026)
+================================================================
+
+  Redis key context:{user_id}, TTL settings.CONTEXT_TTL (default 300s).
+
+  pending_action.intent is always "add".
+
+  Extra top-level fields vs minimal schema:
+    pending_reason, suggested_range, suggested_time, quiet_hour_matches
+
+  Pending types: free_text | yes_no | number
+    No stage field (unlike delete/update/learning).
+
+  handle_free_text_reply CLEARS Redis then handler may SET Redis again
+    for the next missing field.
+
+  Invalid number (not 1 or 2): main.py returns pending_number_prompt
+    (Model 1 must be confirmation); handler re-prompt path rarely used.
+
+  Quiet hours and duplicate use yes_no with pending_reason set.
+
+  Cancel: main.py is_cancel → delete_context, pending_cancelled reply.
+
+================================================================
+
 DECISIONS LOCKED
 ================================================================
 
@@ -35,7 +60,10 @@ REDIS STATE STRUCTURE
   {
     expected_response : "free_text" | "number" | "yes_no",
     missing_entity    : "task_name" | "date" | "time" | null,
-    suggested_time    : "18:00",  ← only in number state
+    pending_reason    : optional (time_suggestion, past_datetime, quiet_hours, duplicate, ...),
+    suggested_time    : "18:00",  ← number / time_suggestion state
+    suggested_range   : optional hour range string for suggestion prompt
+    quiet_hour_matches: optional array — quiet_hours yes_no only
     pending_action    : {
       intent   : "add",
       entities : { ...collected so far... }

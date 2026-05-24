@@ -76,9 +76,10 @@ Goal: All required fields and collections exist.
 
   [x] Update User_Settings collection:
       remove: preferred_learning_time (old enum field)
-      add   : preferred_learning_schedule
-              Array of { day: Number 0-6, time: String "HH:MM" }
+      add   : preferred_learning_schedules (labeled, up to 20)
+              [{ id, label, slots: [{ day, time, duration_minutes }] }]
               default: [] (empty — user must set)
+      [x] Cross-schedule slot conflict: same weekday+time blocked (Node CRUD)
 
   Node.js
   ─────────────────────────────────────────────────────────
@@ -100,7 +101,7 @@ Goal: All required fields and collections exist.
   PHASE 1 TEST:
   [x] Jest: tests/learning.models.test.js — schema paths for new fields
   [ ] Manual: insert learning goal / patch settings in running Mongo (optional)
-  [ ] Manual: GET /api/settings returns preferred_learning_schedule (optional)
+  [x] Manual: GET /api/settings returns preferred_learning_schedules (API implemented)
 
 
 ================================================================

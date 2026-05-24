@@ -1,5 +1,16 @@
 ================================================================
 CONTEXT MANAGER — UPDATE COMMAND (FINAL)
+
+SYNC WITH CODE (April 2026)
+================================================================
+
+  pending_action includes stage: identify | what_to_update | confirm
+  identify free_text: missing_entity task_name OR date (not always task_name).
+  what_to_update free_text: main runs NER+resolve_all, clears Redis, routes update.
+  confirm yes → handler executes; confirm no → main inline cancel (not handler).
+  Update fields: new_title, new_date, new_time, new_priority, new_status, new_duration.
+
+================================================================
 Runs inside AI Server — Redis managed by AI Server directly
 ================================================================
 
