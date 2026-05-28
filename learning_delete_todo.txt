@@ -1,0 +1,558 @@
+================================================================
+EVA — LEARNING DELETE COMMAND
+Complete TODO List — Parallel Build
+================================================================
+
+WHAT IS ALREADY DONE
+================================================================
+
+  AI Server:
+  ✓ Self-fetch pipeline
+  ✓ Preprocessing (lowercase + too_short)
+  ✓ Model 1 and Model 2 running
+  ✓ NER model trained (topic + subtopic entities)
+  ✓ Entity scoper (needs learning_delete scope added)
+  ✓ Duckling resolver (not needed for delete)
+  ✓ Context manager (free_text, yes_no, number all work)
+  ✓ Gemini service with fallback
+  ✓ Conversation history save
+  ✓ Router (learning_delete routed to placeholder)
+  ✓ Google Calendar delete_event exists
+  ✓ db/tasks.py exists (soft_delete_many exists)
+  ✓ db/learning_goals.py exists (from learning add)
+  ✓ db/roadmap_topics.py exists (from learning add)
+  ✓ utils/learning_utils.py exists (alias maps)
+  ✓ TOPIC_ALIAS_MAP exists
+  ✓ SUBTOPIC_ALIAS_MAP exists
+  ✓ SUPPORTED_TOPICS set exists
+
+  Node.js:
+  ✓ Chat bridge running
+  ✓ Notification service exists
+  ✓ LearningGoal model exists
+  ✓ RoadmapTopic model exists
+  ✓ Learning routes exist
+
+
+================================================================
+PHASE 1 — SCHEMA AND NOTIFICATION TYPE
+================================================================
+
+Goal: All required fields and notification types exist.
+
+  AI Server / MongoDB
+  ─────────────────────────────────────────────────────────
+
+  [ ] Verify Learning_Goals has all required fields:
+      is_deleted    : Boolean, default false
+      deleted_at    : Date, default null
+      collaborators : Array of { user_id, status }
+      → already in schema — confirm only
+
+  [ ] Verify Roadmap_Topics has:
+      is_deleted    : Boolean, default false
+      deleted_at    : Date, default null
+      → already in schema — confirm only
+
+  [ ] Verify Activity_Logs accepts:
+      action_type : "goal_deleted"
+      → add to allowed values if not present
+
+  [ ] Verify Notifications schema accepts:
+      type : "learning_goal_deleted"
+      → add to notification type enum if not present
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] Update models/Notification.js:
+      → add "learning_goal_deleted" to type enum
+
+  [ ] Verify notification.service.js handles
+      new type correctly
+      → dispatch_push and dispatch_email both work
+        with learning_goal_deleted type
+
+  PHASE 1 TEST:
+  [ ] Insert notification with type learning_goal_deleted
+      → confirm no validation error
+  [ ] Insert activity log with action_type goal_deleted
+      → confirm no validation error
+
+
+================================================================
+PHASE 2 — ENTITY SCOPER UPDATE
+================================================================
+
+Goal: Entity scoper correctly handles learning_delete intent.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Update pipeline/entity_scoper.py:
+      → add "learning_delete" scope:
+        keep : topic, subtopic
+        drop : task_name, date, time, priority,
+               status, duration, start_date, person,
+               new_date, new_time, new_priority,
+               new_status, new_duration, new_taskname,
+               day, subject
+
+  [ ] Test entity scoper on learning_delete intent:
+      → input with topic + subtopic → both kept
+      → input with extra entities → all dropped
+      → input with topic only → subtopic null
+
+  PHASE 2 TEST:
+  [ ] "delete Python basics roadmap"
+      → topic: "Python", subtopic: "basics" kept
+      → nothing else in scoped entities
+  [ ] "delete Python for 2 weeks"
+      → topic: "Python" kept
+      → duration dropped
+  [ ] "delete Python with Ahmed"
+      → topic: "Python" kept
+      → person dropped
+
+
+================================================================
+PHASE 3 — DB LAYER FOR LEARNING DELETE
+================================================================
+
+Goal: All DB functions needed by delete handler exist
+      and are independently tested.
+
+  AI Server — db/learning_goals.py additions
+  ─────────────────────────────────────────────────────────
+
+  [ ] Add find_goals_for_delete(user_id, topic,
+                                roadmap_key=None) → list
+      → query:
+          user_id    = user_id
+          subject    = topic.lower()
+          is_deleted = false
+      → if roadmap_key present:
+          add roadmap_key filter to query
+      → sort by created_at descending
+      → no limit (we handle 6+ in handler)
+      → returns list of goal dicts with:
+          _id, title, roadmap_key, status,
+          completed_topics, total_topics,
+          collaborators
+
+  [ ] Add soft_delete_goal(goal_id) → bool
+      → updates:
+          is_deleted = true
+          deleted_at = now
+          updated_at = now
+      → returns True on success
+
+  [ ] Add soft_delete_goals_bulk(goal_ids) → int
+      → bulk updateMany on list of goal_ids
+      → returns count of matched documents
+
+  AI Server — db/roadmap_topics.py additions
+  ─────────────────────────────────────────────────────────
+
+  [ ] Add soft_delete_pending_topics(goal_id) → int
+      → updateMany where:
+          goal_id    = goal_id
+          status     = { $in: ["pending", "ongoing"] }
+          is_deleted = false
+      → sets is_deleted=true, deleted_at=now
+      → returns count of deleted topics
+
+  AI Server — db/tasks.py additions
+  ─────────────────────────────────────────────────────────
+
+  [ ] Add soft_delete_pending_learning_tasks(goal_id) → int
+      → updateMany where:
+          learning_plan_id = goal_id
+          status           = { $in: ["pending", "ongoing"] }
+          is_deleted       = false
+      → sets is_deleted=true, deleted_at=now
+      → returns count of deleted tasks
+
+  [ ] Add get_pending_learning_tasks(goal_id) → list
+      → finds pending + ongoing tasks for goal
+      → returns list with google_calendar_event_id
+      → used for calendar cleanup before deletion
+
+  AI Server — db/activity_logs.py
+  ─────────────────────────────────────────────────────────
+
+  [ ] Confirm insert_log accepts action_type = "goal_deleted"
+      → add to allowed values if not present
+
+  [ ] Unit test all new DB functions:
+      → find_goals_for_delete:
+          topic only → returns all goals for topic
+          topic + roadmap_key → returns matching only
+          no matching goals → returns []
+          completed goals → returned (all statuses)
+          is_deleted=true → excluded
+      → soft_delete_goal:
+          is_deleted set to true
+          deleted_at set
+          returns True on success
+          invalid id → returns False
+      → soft_delete_goals_bulk:
+          all ids soft deleted
+          returns correct count
+      → soft_delete_pending_topics:
+          pending + ongoing topics deleted
+          completed topics NOT deleted
+          returns correct count
+      → soft_delete_pending_learning_tasks:
+          pending + ongoing tasks deleted
+          completed tasks NOT deleted
+          returns correct count
+      → get_pending_learning_tasks:
+          returns only pending + ongoing
+          includes google_calendar_event_id
+
+  PHASE 3 TEST:
+  [ ] Insert goal with 5 pending + 3 completed topics
+  [ ] Call soft_delete_pending_topics → 5 deleted
+  [ ] Verify 3 completed topics untouched
+  [ ] Insert 5 pending + 2 completed tasks for goal
+  [ ] Call soft_delete_pending_learning_tasks → 5 deleted
+  [ ] Verify 2 completed tasks untouched
+  [ ] soft_delete_goal → is_deleted = true in DB
+  [ ] find_goals_for_delete with subtopic filter → correct
+
+
+================================================================
+PHASE 4 — CONTEXT MANAGER UPDATE
+================================================================
+
+Goal: Context manager handles all 4 learning delete states.
+
+  AI Server — context/context_manager.py
+  ─────────────────────────────────────────────────────────
+
+  [ ] Add routing for pending intent = "learning_delete":
+
+      State 1 (free_text):
+        → SKIP Model 1
+        → pass reply through NER
+        → extract topic + subtopic
+        → topic not found → ask again naturally
+        → topic found → validate → merge → clear Redis
+        → re-enter handler from STEP 1
+
+      State 2 (yes_no, single goal):
+        → RUN Model 1 first
+        → confirmation → proceed with yes/no flow
+        → yes → clear Redis → STEP 6 (perform deletion)
+        → no  → clear Redis → cancellation reply
+
+      State 3 (number, multiple goals):
+        → RUN Model 1 first
+        → confirmation → proceed with number flow
+        → valid number → update Redis to yes_no State 2
+        → "all" keyword → update Redis to yes_no State 4
+        → out of range → ask again
+        → invalid → ask again
+
+      State 4 (yes_no, bulk):
+        → RUN Model 1 first
+        → same as State 2 but bulk=true
+        → yes → clear Redis → STEP 6 bulk deletion
+
+  [ ] Reuse existing is_all_keyword() function:
+      → already exists from scheduling delete
+      → confirm it works for learning delete too
+
+  [ ] Write unit tests for learning delete context manager:
+      → State 1: valid topic reply → merged, Redis cleared
+      → State 1: invalid reply → ask again, Redis stays
+      → State 1: cancel → Redis cleared
+      → State 2: yes → deletion proceeds
+      → State 2: no → Redis cleared, nothing deleted
+      → State 2: new command → blocked, Redis stays
+      → State 3: valid number → moves to State 2
+      → State 3: "all" → moves to State 4
+      → State 3: out of range → ask again
+      → State 3: new command → blocked
+      → State 4: yes → bulk deletion proceeds
+      → State 4: no → Redis cleared
+      → cancel in any state → Redis cleared
+
+  PHASE 4 TEST:
+  [ ] Manually set State 1 → reply "Python"
+      → Redis cleared, handler re-enters
+  [ ] Manually set State 2 → reply "yes"
+      → deletion proceeds
+  [ ] Manually set State 2 → reply "no"
+      → Redis cleared, nothing deleted
+  [ ] Manually set State 3 (2 goals) → reply "1"
+      → Redis updates to State 2 for goal 1
+  [ ] Manually set State 3 → reply "all"
+      → Redis updates to State 4
+  [ ] Manually set State 4 → reply "yes"
+      → bulk deletion proceeds
+  [ ] Cancel in any state → Redis cleared
+
+
+================================================================
+PHASE 5 — LEARNING DELETE HANDLER
+================================================================
+
+Goal: Full delete handler runs STEP 1 to STEP 8.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Create handlers/learning/delete.py
+
+  [ ] Implement STEP 1 — entity check:
+      → no topic extracted:
+          set Redis State 1 (free_text)
+          EVA asks which goal to delete
+          STOP
+      → topic extracted → continue to STEP 2
+
+  [ ] Implement STEP 2 — topic validation:
+      → normalize via TOPIC_ALIAS_MAP
+      → check SUPPORTED_TOPICS
+      → not supported → not found reply → STOP
+      → supported → continue to STEP 3
+
+  [ ] Implement STEP 3 — subtopic mapping:
+      → not present → roadmap_key = null
+      → present → SUBTOPIC_ALIAS_MAP → regex search
+      → match → roadmap_key = matched
+      → no match → roadmap_key = null
+      → continue to STEP 4
+
+  [ ] Implement STEP 4 — query learning goals:
+      → call find_goals_for_delete(user_id, topic,
+                                   roadmap_key)
+
+  [ ] Implement STEP 5 — handle query results:
+      → 0 found → not found reply → STOP
+      → 1 found → set Redis State 2 → confirm → STOP
+      → 2-5 found → set Redis State 3 → list → STOP
+      → 6+ found → too broad reply → STOP
+
+  [ ] Implement STEP 6 — perform deletion:
+      → for each goal_id:
+          fetch pending tasks for calendar cleanup
+          soft_delete_goal(goal_id)
+          soft_delete_pending_topics(goal_id)
+          soft_delete_pending_learning_tasks(goal_id)
+          delete calendar events (non-blocking)
+          insert goal_deleted activity log
+          build collaborator notification if needed
+
+  [ ] Implement STEP 7 — Gemini response:
+      → single deletion with progress → mention sessions kept
+      → single deletion no progress → clean reply
+      → bulk deletion → mention all removed + sessions kept
+      → cancelled → clean reply
+
+  [ ] Implement STEP 8 — save messages and return:
+      → save user message → Conversation_History
+      → save EVA reply → Conversation_History
+      → update Chat_Session
+      → clear Redis
+      → return { status, response_text, notifications[] }
+
+  [ ] Wire learning_delete into router.py:
+      → remove learning_delete placeholder
+      → import and call delete handler
+
+  PHASE 5 TEST:
+  [ ] "delete Python basics" (1 match)
+      → EVA asks confirmation
+      → Redis State 2 set correctly
+      → "yes" → goal soft deleted
+      → pending topics soft deleted
+      → pending tasks soft deleted
+      → completed topics untouched
+      → completed tasks untouched
+      → activity log goal_deleted inserted
+      → EVA reply natural and mentions sessions kept
+
+  [ ] "delete Python roadmap" (2 matches)
+      → EVA shows numbered list
+      → reply "1" → EVA confirms goal 1
+      → "yes" → only goal 1 deleted
+
+  [ ] "delete Python roadmap" (2 matches)
+      → reply "all" → EVA bulk confirms
+      → "yes" → both goals deleted
+      → 2 activity logs inserted
+
+  [ ] "delete MySQL roadmap" (0 matches)
+      → not found reply
+
+  [ ] "delete my roadmap" (no topic)
+      → EVA asks which topic
+      → reply "Python" → handler re-enters
+
+  [ ] Delete completed goal
+      → allowed → goal soft deleted
+      → completed topics and tasks kept
+      → reply mentions completed sessions kept
+
+  [ ] Delete paused goal
+      → allowed → same flow
+
+  [ ] Cancel at any state
+      → Redis cleared → nothing deleted
+
+  [ ] Goal has collaborator
+      → notification payload built for collaborator
+      → collaborator's goal untouched
+
+
+================================================================
+PHASE 6 — NODE.JS UPDATES
+================================================================
+
+Goal: Notification handling updated for new type.
+      Learning routes handle deletion correctly.
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] Confirm chat.controller.js passes
+      notifications array to notification.service
+      → already works for scheduling — confirm learning too
+
+  [ ] Confirm notification.service.js handles
+      type = "learning_goal_deleted":
+      → dispatch_push works
+      → dispatch_email works if enabled
+
+  [ ] Update PATCH /api/learning/:id/status:
+      → already handles pause/resume/cancel
+      → confirm "cancelled" maps to is_deleted = true
+        (since we removed cancelled status)
+      → or add separate DELETE /api/learning/:id endpoint
+        for UI-triggered deletion
+
+  [ ] Add DELETE /api/learning/:id (protected):
+      → UI-triggered goal deletion (not chat)
+      → soft deletes goal + pending topics + tasks
+      → same logic as AI server deletion
+
+  PHASE 6 TEST:
+  [ ] Notification with learning_goal_deleted → dispatched
+  [ ] DELETE /api/learning/:id → goal soft deleted
+  [ ] Collaborator gets push notification
+
+
+================================================================
+PHASE 7 — TESTING
+================================================================
+
+Goal: Full learning delete test suite.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Create tests/test_learning_delete_handler.py
+
+      Test cases:
+      [ ] no entity → asked → replied → re-entered → 1 match
+      [ ] 1 match → yes → deleted
+      [ ] 1 match → no → not deleted
+      [ ] 1 match → cancel → not deleted
+      [ ] 2-5 matches → pick number → confirm → deleted
+      [ ] 2-5 matches → pick "all" → confirm → all deleted
+      [ ] 2-5 matches → pick "all" → no → nothing deleted
+      [ ] 2-5 matches → out of range → asked again
+      [ ] 6+ matches → too broad → no Redis set
+      [ ] 0 matches → not found reply
+      [ ] completed goal → can be deleted
+      [ ] paused goal → can be deleted
+      [ ] pending topics soft deleted after deletion
+      [ ] completed topics kept after deletion
+      [ ] pending tasks soft deleted after deletion
+      [ ] completed tasks kept after deletion
+      [ ] calendar delete called for pending tasks
+      [ ] calendar failure → does not block deletion
+      [ ] goal has collaborator → notification payload built
+      [ ] collaborator goal untouched after owner deletes
+      [ ] activity log goal_deleted inserted
+      [ ] bulk delete → one log per goal
+      [ ] cancel mid-flow → nothing deleted
+      [ ] new command while yes_no pending → blocked
+      [ ] TTL expiry → fresh start
+
+  [ ] Run full AI test suite → all tests pass
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] Add to tests/learning.test.js:
+      → DELETE /api/learning/:id → soft deleted
+      → GET /api/learning after delete → goal not returned
+      → notification learning_goal_deleted dispatched
+      → all routes protected → 401 without token
+
+  [ ] Run full Node.js test suite → all tests pass
+
+  PHASE 7 END-TO-END TESTS:
+  [ ] Create Python basics goal via chat (learning add)
+  [ ] Complete 2 topics manually
+  [ ] "delete my Python basics" via chat
+      → EVA confirms
+      → "yes"
+      → goal is_deleted = true in DB
+      → pending topics is_deleted = true
+      → pending tasks is_deleted = true
+      → 2 completed topics untouched
+      → 2 completed tasks untouched
+      → activity log goal_deleted inserted
+      → EVA reply mentions completed sessions kept
+  [ ] GET /api/learning → goal not in list
+  [ ] Create same Python basics goal again
+      → allowed (is_deleted excluded from duplicate check)
+
+
+================================================================
+SUMMARY
+================================================================
+
+  Schema changes:
+    Notification type enum: add learning_goal_deleted
+    Activity log type: add goal_deleted
+    (both minor additions to existing schemas)
+
+  New AI Server files:
+    handlers/learning/delete.py
+
+  Updated AI Server files:
+    pipeline/entity_scoper.py (learning_delete scope)
+    context/context_manager.py (4 new states)
+    handlers/router.py (wire learning_delete)
+    db/learning_goals.py (3 new functions)
+    db/roadmap_topics.py (1 new function)
+    db/tasks.py (2 new functions)
+    db/activity_logs.py (confirm goal_deleted type)
+
+  New Node.js files:
+    (none — reuses existing)
+
+  Updated Node.js files:
+    models/Notification.js (new type)
+    controllers/learning.controller.js (delete endpoint)
+    routes/learning.routes.js (DELETE route)
+    tests/learning.test.js (new test cases)
+
+
+================================================================
+BUILD ORDER
+================================================================
+
+  Phase 1 → Schema and notification type
+  Phase 2 → Entity scoper update
+  Phase 3 → DB layer (5 new functions)
+  Phase 4 → Context manager (4 new states)
+  Phase 5 → Learning delete handler
+  Phase 6 → Node.js updates
+  Phase 7 → Full test suite

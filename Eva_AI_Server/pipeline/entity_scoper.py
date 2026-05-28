@@ -31,6 +31,7 @@ _INTENT_ENTITY_SCOPE: Dict[str, Set[str]] = {
         "duration",
         "person",
     },
+    "learning_delete": {"topic", "subtopic"},
 }
 
 _ENTITY_ALIASES: Dict[str, str] = {
@@ -102,6 +103,10 @@ def scope_entities(entities: Dict[str, Any], intent: str) -> Dict[str, Any]:
                 key = "person"
             if key == "date":
                 key = "start_date"
+
+        if intent == "learning_delete":
+            if raw_key == "subject":
+                key = "topic"
 
         if raw_key == "subject" and "task_name" in scoped:
             # Do not allow a generic subject alias to override a strong task_name.

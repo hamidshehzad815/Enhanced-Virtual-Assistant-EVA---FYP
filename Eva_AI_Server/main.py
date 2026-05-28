@@ -3,7 +3,7 @@ EVA AI Server - FastAPI Entry Point
 """
 from datetime import datetime
 import re
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -32,11 +32,17 @@ from context.context_manager import (
     extract_update_fields,
     handle_free_text_reply,
     handle_number_delete,
+    handle_number_learning_delete,
     handle_number_update,
     handle_number_reply,
     handle_yes_no_reply,
     is_cancel,
+    learning_delete_blocked_command_message,
+    learning_delete_bulk_confirm_message,
+    learning_delete_cancel_message,
+    learning_delete_single_confirm_message,
     process_learning_create_free_text_reply,
+    process_learning_delete_free_text_reply,
     should_block_new_command,
 )
 from context.redis_client import redis_client
@@ -522,12 +528,17 @@ async def process_message(payload: ProcessRequest):
 
             if is_cancel(processed["processed"]):
                 await redis_client.delete_context(payload.user_id)
+                cancel_text = (
+                    learning_delete_cancel_message(user_name)
+                    if pending_intent == "learning_delete"
+                    else _safe_reply("pending_cancelled", user_name, history)
+                )
                 return {
                     "status": "ok",
                     "too_short": False,
                     "preprocessed": processed,
                     "context_handled": True,
-                    "response_text": _safe_reply("pending_cancelled", user_name, history),
+                    "response_text": cancel_text,
                     "user_name": user_name,
                     "settings": settings_data,
                 }
@@ -793,7 +804,79 @@ async def process_message(payload: ProcessRequest):
                         "settings": settings_data,
                     }
 
-                if pending_intent in {"learning_update", "learning_delete", "learning_show"}:
+                if pending_intent == "learning_delete":
+                    if not learning_ner_extractor.loaded:
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "response_text": _safe_reply("model_unavailable", user_name, history),
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    ld_result = await process_learning_delete_free_text_reply(
+                        pending_context,
+                        message,
+                        user_name=user_name,
+                    )
+                    ld_outcome = ld_result.get("outcome")
+                    if ld_outcome == "retry":
+                        await redis_client.set_context(payload.user_id, pending_context)
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "expected_response": "free_text",
+                            "response_text": ld_result.get("message")
+                            or _safe_reply("pending_free_text_captured", user_name, history),
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+                    if ld_outcome == "unsupported_topic":
+                        await redis_client.delete_context(payload.user_id)
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "expected_response": "free_text",
+                            "response_text": ld_result.get("message")
+                            or _safe_reply("unknown_input_type", user_name, history),
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    merged_learning_delete = ld_result.get("merged_entities") or {}
+                    await redis_client.delete_context(payload.user_id)
+                    routed_result = await route_intent(
+                        "learning_delete",
+                        entities=merged_learning_delete,
+                        context={
+                            **route_context_base,
+                            "pending_context": pending_context,
+                            "pending_reply_type": "free_text",
+                        },
+                    )
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "expected_response": "free_text",
+                        "merged_entities": merged_learning_delete,
+                        "route": routed_result,
+                        "handler_status": routed_result.get("status"),
+                        "notifications": routed_result.get("notifications", []),
+                        "response_text": routed_result.get("response_text")
+                        or _safe_reply("pending_free_text_captured", user_name, history),
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                if pending_intent in {"learning_update", "learning_show"}:
                     await redis_client.delete_context(payload.user_id)
                     response_text = _safe_reply(
                         "out_of_scope",
@@ -881,40 +964,58 @@ async def process_message(payload: ProcessRequest):
             label = classification["label"]
 
             if should_block_new_command(label):
+                blocked_text = (
+                    learning_delete_blocked_command_message(pending_context, user_name)
+                    if pending_intent == "learning_delete"
+                    else _safe_reply("pending_waiting_reply", user_name, history)
+                )
                 return {
                     "status": "ok",
                     "too_short": False,
                     "preprocessed": processed,
                     "context_handled": True,
                     "classification": classification,
-                    "response_text": _safe_reply("pending_waiting_reply", user_name, history),
+                    "response_text": blocked_text,
                     "user_name": user_name,
                     "settings": settings_data,
                 }
 
             if expected_response == "yes_no":
                 if label != "confirmation":
+                    yes_no_prompt = _safe_reply("pending_yes_no_prompt", user_name, history)
+                    if pending_intent == "learning_delete":
+                        if user_name:
+                            yes_no_prompt = f"Just a yes or no will do, {user_name}."
+                        else:
+                            yes_no_prompt = "Just a yes or no will do."
                     return {
                         "status": "ok",
                         "too_short": False,
                         "preprocessed": processed,
                         "context_handled": True,
                         "classification": classification,
-                        "response_text": _safe_reply("pending_yes_no_prompt", user_name, history),
+                        "response_text": yes_no_prompt,
                         "user_name": user_name,
                         "settings": settings_data,
                     }
 
                 yes_no_value = handle_yes_no_reply(processed["processed"])
                 if (
-                    pending_intent in {"add", "scheduling_add", "delete", "scheduling_delete"}
+                    pending_intent in {
+                        "add",
+                        "scheduling_add",
+                        "delete",
+                        "scheduling_delete",
+                        "learning_delete",
+                    }
                     and yes_no_value in {"yes", "no"}
                 ):
-                    routed_intent = (
-                        "scheduling_add"
-                        if pending_intent in {"add", "scheduling_add"}
-                        else "scheduling_delete"
-                    )
+                    if pending_intent == "learning_delete":
+                        routed_intent = "learning_delete"
+                    elif pending_intent in {"add", "scheduling_add"}:
+                        routed_intent = "scheduling_add"
+                    else:
+                        routed_intent = "scheduling_delete"
                     routed_result = await route_intent(
                         routed_intent,
                         entities=dict(pending_action.get("entities") or {}),
@@ -1016,11 +1117,14 @@ async def process_message(payload: ProcessRequest):
                         "settings": settings_data,
                     }
 
-                if pending_intent in {"delete", "scheduling_delete"} and yes_no_value == "invalid":
+                if (
+                    pending_intent in {"delete", "scheduling_delete", "learning_delete"}
+                    and yes_no_value == "invalid"
+                ):
                     if user_name:
-                        response_text = f"Just yes or no will do, {user_name}."
+                        response_text = f"Just a yes or no will do, {user_name}."
                     else:
-                        response_text = "Just yes or no will do."
+                        response_text = "Just a yes or no will do."
                     return {
                         "status": "ok",
                         "too_short": False,
@@ -1053,13 +1157,13 @@ async def process_message(payload: ProcessRequest):
             if expected_response == "number":
                 if label != "confirmation":
                     response_text = _safe_reply("pending_number_prompt", user_name, history)
-                    if pending_intent in {"delete", "scheduling_delete"}:
+                    if pending_intent in {"delete", "scheduling_delete", "learning_delete"}:
                         if user_name:
                             response_text = (
-                                f"Please pick a number from the list or say 'all', {user_name}."
+                                f"Pick a number from the list, or say 'all', {user_name}."
                             )
                         else:
-                            response_text = "Please pick a number from the list or say 'all'."
+                            response_text = "Pick a number from the list, or say 'all'."
                     if pending_intent in {"update", "scheduling_update"}:
                         if user_name:
                             response_text = f"Please pick a number from the list, {user_name}."
@@ -1071,6 +1175,132 @@ async def process_message(payload: ProcessRequest):
                         "preprocessed": processed,
                         "context_handled": True,
                         "classification": classification,
+                        "response_text": response_text,
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                if pending_intent == "learning_delete":
+                    delete_choice = handle_number_learning_delete(
+                        processed["processed"],
+                        pending_context,
+                    )
+                    pending_goal_ids = list(pending_action.get("goal_ids") or [])
+                    pending_goals = list(pending_action.get("goals") or [])
+                    pending_entities = dict(pending_action.get("entities") or {})
+
+                    if delete_choice == "all":
+                        updated_context = dict(pending_context)
+                        updated_pending_action = dict(pending_action)
+                        updated_pending_action["bulk"] = True
+                        updated_context["pending_action"] = updated_pending_action
+                        updated_context["expected_response"] = "yes_no"
+                        await redis_client.set_context(payload.user_id, updated_context)
+
+                        response_text = learning_delete_bulk_confirm_message(
+                            pending_goals,
+                            pending_entities,
+                            user_name,
+                        )
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "number",
+                            "next_expected_response": "yes_no",
+                            "parsed_value": "all",
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    if delete_choice == "invalid_range":
+                        total = len(pending_goal_ids)
+                        if user_name:
+                            response_text = (
+                                f"That number is not on the list, {user_name}. "
+                                f"Pick between 1 and {total}, or say 'all'."
+                            )
+                        else:
+                            response_text = (
+                                f"That number is not on the list. "
+                                f"Pick between 1 and {total}, or say 'all'."
+                            )
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "number",
+                            "parsed_value": "invalid_range",
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    if delete_choice == "invalid":
+                        if user_name:
+                            response_text = (
+                                f"Pick a number from the list or say 'all' to delete "
+                                f"everything, {user_name}."
+                            )
+                        else:
+                            response_text = (
+                                "Pick a number from the list or say 'all' to delete everything."
+                            )
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "number",
+                            "parsed_value": "invalid",
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    selected_index = None
+                    for index, goal_id in enumerate(pending_goal_ids):
+                        if str(goal_id) == str(delete_choice):
+                            selected_index = index
+                            break
+
+                    selected_goal: Dict[str, Any] = {}
+                    if (
+                        selected_index is not None
+                        and selected_index < len(pending_goals)
+                        and isinstance(pending_goals[selected_index], dict)
+                    ):
+                        selected_goal = dict(pending_goals[selected_index])
+
+                    updated_context = dict(pending_context)
+                    updated_pending_action = dict(pending_action)
+                    updated_pending_action["goal_ids"] = [delete_choice]
+                    updated_pending_action["bulk"] = False
+                    if selected_goal:
+                        updated_pending_action["goals"] = [selected_goal]
+                    updated_context["pending_action"] = updated_pending_action
+                    updated_context["expected_response"] = "yes_no"
+                    await redis_client.set_context(payload.user_id, updated_context)
+
+                    response_text = learning_delete_single_confirm_message(
+                        selected_goal,
+                        user_name,
+                    )
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "classification": classification,
+                        "expected_response": "number",
+                        "next_expected_response": "yes_no",
+                        "parsed_value": delete_choice,
                         "response_text": response_text,
                         "user_name": user_name,
                         "settings": settings_data,

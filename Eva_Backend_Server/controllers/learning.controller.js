@@ -11,6 +11,8 @@ const {
   NotFoundError,
 } = require("../middleware/errorHandler");
 const { applyLearningCollaborationAction } = require("../services/learningCollaboration.service");
+const { softDeleteLearningGoalById } = require("../services/learningDelete.service");
+const { insert_and_dispatch } = require("../services/notification.service");
 
 const PATCH_STATUS = new Set(["active", "paused", "cancelled"]);
 
@@ -321,8 +323,28 @@ const updateStatus = async (req, res, next) => {
       update.status = "active";
       update.paused_at = null;
     } else if (raw === "cancelled") {
-      update.status = "cancelled";
-      update.paused_at = null;
+      const { goal, notifications } = await softDeleteLearningGoalById(
+        req.params.id,
+        req.userId,
+      );
+
+      let notificationSummary = {
+        requested: 0,
+        inserted: 0,
+        dispatched_push: 0,
+        dispatched_email: 0,
+        failed: 0,
+        results: [],
+      };
+      if (notifications.length > 0) {
+        notificationSummary = await insert_and_dispatch(notifications);
+      }
+
+      return res.json({
+        status: "success",
+        message: "Learning goal removed",
+        data: { goal, notifications: notificationSummary },
+      });
     }
 
     const saved = await LearningGoal.findOneAndUpdate(
@@ -331,27 +353,45 @@ const updateStatus = async (req, res, next) => {
       { new: true },
     ).lean();
 
-    if (raw === "cancelled") {
-      await Task.updateMany(
-        {
-          owner_id: req.userId,
-          learning_plan_id: oid,
-          is_deleted: { $ne: true },
-        },
-        {
-          $set: {
-            is_deleted: true,
-            deleted_at: now,
-            updated_at: now,
-          },
-        },
-      );
-    }
-
     res.json({
       status: "success",
       message: "Learning goal updated",
       data: { goal: saved },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * DELETE /api/learning/:id — soft-delete goal (UI); same rules as chat learning_delete.
+ */
+const deleteGoal = async (req, res, next) => {
+  try {
+    const { goal, notifications } = await softDeleteLearningGoalById(
+      req.params.id,
+      req.userId,
+    );
+
+    let notificationSummary = {
+      requested: 0,
+      inserted: 0,
+      dispatched_push: 0,
+      dispatched_email: 0,
+      failed: 0,
+      results: [],
+    };
+    if (notifications.length > 0) {
+      notificationSummary = await insert_and_dispatch(notifications);
+    }
+
+    res.json({
+      status: "success",
+      message: "Learning goal removed",
+      data: {
+        goal,
+        notifications: notificationSummary,
+      },
     });
   } catch (error) {
     next(error);
@@ -465,6 +505,7 @@ module.exports = {
   getTopics,
   completeTopic,
   updateStatus,
+  deleteGoal,
   respondToLearningCollaborationInvite,
   respondToLearningCollaborationInviteViaLink,
 };

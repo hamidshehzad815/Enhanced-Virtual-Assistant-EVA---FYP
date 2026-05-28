@@ -23,6 +23,14 @@ jest.mock("../config/logger", () => ({
   stream: { write: jest.fn() },
 }));
 
+jest.mock("../services/learningDelete.service", () => ({
+  softDeleteLearningGoalById: jest.fn(),
+}));
+
+jest.mock("../services/notification.service", () => ({
+  insert_and_dispatch: jest.fn(),
+}));
+
 jest.mock("../models", () => ({
   User: { findById: jest.fn() },
   LearningGoal: {
@@ -51,6 +59,8 @@ jest.mock("../models", () => ({
 
 const app = require("../app");
 const { User, LearningGoal, RoadmapTopic, Task } = require("../models");
+const { softDeleteLearningGoalById } = require("../services/learningDelete.service");
+const { insert_and_dispatch } = require("../services/notification.service");
 
 const USER_ID = "507f1f77bcf86cd799439011";
 const GOAL_ID = "507f1f77bcf86cd799439099";
@@ -204,7 +214,7 @@ describe("Learning API", () => {
     expect(res.body.data.goal.status).toBe("active");
   });
 
-  test("PATCH /api/learning/:id/status cancel → soft-deletes tasks", async () => {
+  test("PATCH /api/learning/:id/status cancel → soft-deletes via service", async () => {
     LearningGoal.findOne.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
         _id: GOAL_ID,
@@ -214,14 +224,18 @@ describe("Learning API", () => {
       }),
     });
 
-    LearningGoal.findOneAndUpdate.mockReturnValue({
-      lean: jest.fn().mockResolvedValue({
-        _id: GOAL_ID,
-        status: "cancelled",
-      }),
+    softDeleteLearningGoalById.mockResolvedValue({
+      goal: { _id: GOAL_ID, is_deleted: true },
+      notifications: [],
     });
-
-    Task.updateMany.mockResolvedValue({ modifiedCount: 3 });
+    insert_and_dispatch.mockResolvedValue({
+      requested: 0,
+      inserted: 0,
+      dispatched_push: 0,
+      dispatched_email: 0,
+      failed: 0,
+      results: [],
+    });
 
     const res = await request(app)
       .patch(`/api/learning/${GOAL_ID}/status`)
@@ -229,7 +243,62 @@ describe("Learning API", () => {
       .send({ status: "cancelled" });
 
     expect(res.status).toBe(200);
-    expect(Task.updateMany).toHaveBeenCalled();
+    expect(softDeleteLearningGoalById).toHaveBeenCalledWith(GOAL_ID, USER_ID);
+    expect(res.body.data.goal.is_deleted).toBe(true);
+  });
+
+  test("DELETE /api/learning/:id → soft-deletes and dispatches notifications", async () => {
+    const collabId = "507f1f77bcf86cd799439066";
+    softDeleteLearningGoalById.mockResolvedValue({
+      goal: { _id: GOAL_ID, is_deleted: true, title: "Python basics" },
+      notifications: [
+        {
+          user_id: collabId,
+          type: "learning_goal_deleted",
+          title: "Shared learning plan removed",
+          message: "Ali removed python basics from their plan.",
+        },
+      ],
+    });
+    insert_and_dispatch.mockResolvedValue({
+      requested: 1,
+      inserted: 1,
+      dispatched_push: 0,
+      dispatched_email: 0,
+      failed: 0,
+      results: [{ notification_id: "n1" }],
+    });
+
+    const res = await request(app)
+      .delete(`/api/learning/${GOAL_ID}`)
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(softDeleteLearningGoalById).toHaveBeenCalledWith(GOAL_ID, USER_ID);
+    expect(insert_and_dispatch).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ type: "learning_goal_deleted" }),
+      ]),
+    );
+    expect(res.body.data.notifications.inserted).toBe(1);
+  });
+
+  test("DELETE /api/learning/:id without token → 401", async () => {
+    const res = await request(app).delete(`/api/learning/${GOAL_ID}`);
+    expect(res.status).toBe(401);
+  });
+
+  test("GET /api/learning excludes soft-deleted goals", async () => {
+    const sort = jest.fn().mockReturnValue({ lean: jest.fn().mockResolvedValue([]) });
+    LearningGoal.find.mockReturnValue({ sort });
+
+    const res = await request(app)
+      .get("/api/learning")
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(res.status).toBe(200);
+    const filter = LearningGoal.find.mock.calls[0][0];
+    expect(filter.is_deleted).toBe(false);
   });
 
   test("POST /api/learning/:id/topics/:topicId/complete → marks topic and increments goal", async () => {
