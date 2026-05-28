@@ -155,3 +155,89 @@ async def get_goal_by_id(goal_id: str) -> Optional[Dict[str, Any]]:
     db = get_db()
     doc = await db.learning_goals.find_one({"_id": _to_object_id(goal_id)})
     return _normalize_doc(doc) if doc else None
+
+
+async def find_goals_for_delete(
+    user_id: str,
+    topic: str,
+    roadmap_key: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Non-deleted learning goals for a user matching subject (and optional roadmap_key).
+    All statuses (active, paused, completed) are included. Sorted newest first.
+    """
+    db = get_db()
+    uid = _to_object_id(user_id)
+    query: Dict[str, Any] = {
+        "user_id": uid,
+        "subject": (topic or "").strip().lower(),
+        "is_deleted": False,
+    }
+    rk = (roadmap_key or "").strip().lower()
+    if rk:
+        query["roadmap_key"] = rk
+
+    projection = {
+        "_id": 1,
+        "title": 1,
+        "roadmap_key": 1,
+        "status": 1,
+        "completed_topics": 1,
+        "total_topics": 1,
+        "collaborators": 1,
+    }
+    cursor = db.learning_goals.find(query, projection).sort("created_at", -1)
+    rows = await cursor.to_list(length=500)
+    return [_normalize_doc(r) for r in rows]
+
+
+async def soft_delete_goal(goal_id: str) -> bool:
+    """Soft-delete one learning goal. Returns True when a document matched."""
+    db = get_db()
+    now = _now_naive_utc()
+    payload = {
+        "is_deleted": True,
+        "deleted_at": now,
+        "updated_at": now,
+    }
+    gid = _to_object_id(goal_id)
+    result = await db.learning_goals.update_one(
+        {"_id": gid, "is_deleted": False},
+        {"$set": payload},
+    )
+    if result.matched_count == 0 and gid != goal_id:
+        result = await db.learning_goals.update_one(
+            {"_id": goal_id, "is_deleted": False},
+            {"$set": payload},
+        )
+    return result.matched_count > 0
+
+
+async def soft_delete_goals_bulk(goal_ids: List[str]) -> int:
+    """Soft-delete many learning goals. Returns matched document count."""
+    if not goal_ids:
+        return 0
+
+    db = get_db()
+    now = _now_naive_utc()
+    payload = {
+        "is_deleted": True,
+        "deleted_at": now,
+        "updated_at": now,
+    }
+    object_ids = [_to_object_id(goal_id) for goal_id in goal_ids]
+    query: Dict[str, Any] = {
+        "_id": {"$in": object_ids},
+        "is_deleted": False,
+    }
+    result = await db.learning_goals.update_many(query, {"$set": payload})
+
+    if result.matched_count == 0 and any(
+        obj_id != goal_id for obj_id, goal_id in zip(object_ids, goal_ids)
+    ):
+        result = await db.learning_goals.update_many(
+            {"_id": {"$in": list(goal_ids)}, "is_deleted": False},
+            {"$set": payload},
+        )
+
+    return int(result.matched_count)

@@ -15,6 +15,7 @@ _ALLOWED_ACTION_TYPES = {
     "task_deleted",
     "task_completed",
     "goal_created",
+    "goal_deleted",
 }
 
 

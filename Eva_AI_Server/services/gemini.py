@@ -95,6 +95,12 @@ _ACTION_GUIDANCE: Dict[str, str] = {
     "learning_missing_start_date": "Ask when they want to start learning {topic}, with concrete date examples.",
     "learning_missing_duration": "Ask how long they want the plan to run (at least one week), for {topic}.",
     "learning_plan_created": "Celebrate the new learning plan: mention topic, session count, first dates preview, collaborators or calendar if relevant.",
+    "learning_delete_missing_topic": "Ask which learning goal to delete; suggest a topic name like Python or MySQL.",
+    "learning_delete_not_found": "Explain no matching learning goals were found for the topic or level; suggest checking the name.",
+    "learning_delete_single_confirm": "Ask yes/no to delete one learning goal; mention status and session progress if available.",
+    "learning_delete_multi_list": "Introduce that multiple learning goals matched and ask the user to pick a number or say all.",
+    "learning_delete_too_broad": "Ask the user to narrow the request with a level like basics or functions.",
+    "learning_goal_deleted": "Confirm removal; if the user had completed sessions, reassure those are still saved.",
 }
 
 _FALLBACK_RESPONSES: Dict[str, List[str]] = {
@@ -454,6 +460,30 @@ _FALLBACK_RESPONSES: Dict[str, List[str]] = {
         "Something went wrong on my side, {name}, but I am still here. Please try again.",
         "I hit an internal issue while processing that, {name}. Could you resend your request?",
         "I could not complete that due to a system hiccup, {name}. Please retry in a moment.",
+    ],
+    "learning_delete_missing_topic": [
+        "Which learning goal would you like to delete, {name}? You can say the topic name like Python or MySQL.",
+        "Tell me which plan to remove, {name} — for example Python or MySQL.",
+    ],
+    "learning_delete_not_found": [
+        "I couldn't find any {topic} learning goals, {name}. Double check the topic or level name?",
+        "No matching {topic} plans showed up, {name}. Try a more specific level like basics or functions.",
+    ],
+    "learning_delete_single_confirm": [
+        "Found {title} — {status}, {completed_topics} of {total_topics} sessions done. Delete it, {name}?",
+        "Delete {title} ({status}, {completed_topics}/{total_topics} sessions done), {name}?",
+    ],
+    "learning_delete_multi_list": [
+        "I found {count} {topic} goals, {name}. Which one should I remove?",
+        "There are {count} {topic} learning plans, {name}. Pick one from the list.",
+    ],
+    "learning_delete_too_broad": [
+        "That matches quite a few goals, {name}. Can you be more specific? Try adding the level like Python basics.",
+        "Too many matches, {name}. Narrow it down with a level such as basics or functions.",
+    ],
+    "learning_goal_deleted": [
+        "Done {name} — the plan has been removed. Any completed sessions you had are still saved.",
+        "All set {name}. I removed the learning goal and kept your completed session history.",
     ],
 }
 

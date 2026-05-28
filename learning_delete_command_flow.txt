@@ -1,0 +1,502 @@
+================================================================
+LEARNING — DELETE COMMAND FLOW (FINAL)
+AI Server handles all DB operations directly
+================================================================
+
+DECISIONS LOCKED
+================================================================
+
+  1. Deletes entire learning goal only
+     No individual topic deletion
+     Topic skipping → learning update (separate command)
+  2. User must confirm before any deletion happens
+  3. Soft delete only — is_deleted = true, never hard delete
+  4. Match logic same as scheduling delete:
+       0 found   → not found reply → stop
+       1 found   → yes/no confirmation
+       2-5 found → numbered list → pick one or "all"
+       6+ found  → too broad → narrow down
+  5. Bulk delete ("all") supported with separate confirm
+  6. Pending topics → soft deleted
+     Pending tasks → soft deleted
+     Completed topics → kept for history
+     Completed tasks → kept for history
+  7. Pending calendar events → removed (non-blocking)
+     Completed calendar events → kept
+  8. Activity logs → kept always
+     goal_deleted log inserted once per deletion
+  9. Conversation history → kept always
+  10. Schedule slot → automatically freed (no action needed)
+  11. Collaborator's cloned goal → untouched
+      Collaborator notified with new notification type:
+      learning_goal_deleted
+  12. Active, paused, completed goals → all can be deleted
+  13. Ongoing topic/task at time of deletion → soft deleted
+      Delete always wins
+  14. Google Calendar failure → log silently, never block
+  15. All EVA replies natural, specific, use user name
+  16. "cancel" keyword = flow cancellation not goal deletion
+
+
+================================================================
+NER ENTITIES FOR LEARNING DELETE
+================================================================
+
+  Extracted from original cased text:
+    topic    → language or database name (identifier)
+    subtopic → specific roadmap level or area (narrowing)
+
+  No other entities needed:
+    duration   → not applicable for identification
+    start_date → not applicable for identification
+    person     → not applicable for identification
+
+  Examples:
+    "delete my Python roadmap"
+      → topic: "Python", subtopic: null
+      → finds ALL Python goals
+
+    "delete Python basics"
+      → topic: "Python", subtopic: "basics"
+      → finds Python goals where roadmap_key = "basics"
+
+    "remove my Python lists roadmap"
+      → topic: "Python", subtopic: "lists"
+      → finds Python goal where roadmap_key = "lists"
+
+    "cancel my MySQL learning"
+      → topic: "MySQL", subtopic: null
+      → finds ALL MySQL goals
+
+    "delete my roadmap" (no topic)
+      → no entities → State 1 → ask user
+
+
+================================================================
+SUBTOPIC MAPPING (same as learning add)
+================================================================
+
+  Step 1: check SUBTOPIC_ALIAS_MAP
+    "beginner" → "basics"
+    "oop"      → "object oriented programming"
+    etc.
+
+  Step 2: regex search against roadmap keys
+    for that specific language in roadmap JSON
+
+  Step 3: no match → subtopic = null
+    (search all goals for that topic)
+
+
+================================================================
+PIPELINE (inside AI Server)
+================================================================
+
+  REQUEST RECEIVED FROM NODE.JS
+  { message, user_id, session_id, input_type, timestamp }
+  ↓
+  AI SERVER SELF-FETCH
+  → user info (name, timezone)
+  → user settings
+  → conversation history
+  → integrations (google_calendar)
+  → Redis context
+  ↓
+  PREPROCESSING
+  → lowercase only + too_short check
+  ↓
+  CONTEXT MANAGER
+  → check Redis for pending state
+  → pending exists? → handle reply → stop or continue
+  → no pending → continue to Model 1
+  ↓
+  MODEL 1 → command → continue
+  ↓
+  MODEL 2 → learning_delete → continue
+  ↓
+  NER → original cased text
+  → extracts: topic, subtopic
+  ↓
+  ENTITY SCOPING
+  → keep : topic, subtopic
+  → drop : everything else
+  ↓
+  HANDLER — handlers/learning/delete.py
+
+
+================================================================
+STEP 1 — ENTITY CHECK
+================================================================
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ NO entities extracted                                   │
+  │                                                         │
+  │ Example: "delete my roadmap" / "remove my learning"     │
+  │                                                         │
+  │ → set Redis:                                            │
+  │   {                                                     │
+  │     expected_response : "free_text",                    │
+  │     pending_action    : {                               │
+  │       intent   : "learning_delete",                     │
+  │       goal_ids : [],                                    │
+  │       goals    : [],                                    │
+  │       bulk     : false,                                 │
+  │       entities : {}                                     │
+  │     }                                                   │
+  │   }                                                     │
+  │                                                         │
+  │ EVA: "Which learning goal would you like to             │
+  │       delete, Ali? You can say the topic name           │
+  │       like Python or MySQL."                            │
+  │ STOP                                                    │
+  │                                                         │
+  │ → context manager handles reply (see context doc)       │
+  │ → reply passed through NER                              │
+  │ → topic extracted → merged into entities                │
+  │ → handler re-entered from STEP 1                        │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ topic extracted → continue to STEP 2                    │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 2 — TOPIC VALIDATION
+================================================================
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ normalize topic via TOPIC_ALIAS_MAP                     │
+  │ "py" → "Python", "js" → "JavaScript" etc.              │
+  │                                                         │
+  │ check SUPPORTED_TOPICS                                  │
+  │ not in supported list:                                  │
+  │ EVA: "I couldn't find a learning goal for               │
+  │       [topic], Ali. Check the topic name                │
+  │       and try again."                                   │
+  │ STOP                                                    │
+  │                                                         │
+  │ supported → continue to STEP 3                          │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 3 — SUBTOPIC MAPPING
+================================================================
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ subtopic not extracted                                  │
+  │ → roadmap_key filter = null                             │
+  │ → search will find ALL goals for this topic             │
+  │ → continue to STEP 4                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ subtopic extracted                                      │
+  │ → Step 1: check SUBTOPIC_ALIAS_MAP                      │
+  │ → Step 2: regex search roadmap keys for language        │
+  │ → match found → roadmap_key = matched key               │
+  │ → no match → roadmap_key filter = null                  │
+  │   (search all goals for this topic)                     │
+  │ → continue to STEP 4                                    │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 4 — QUERY LEARNING GOALS
+================================================================
+
+  AI server queries Learning_Goals directly:
+
+  query = {
+    user_id    : user_id,
+    subject    : topic.lower(),
+    is_deleted : false
+  }
+
+  if roadmap_key filter present:
+    query["roadmap_key"] = roadmap_key
+
+  results = db.learning_goals.find(query)
+            .sort({ created_at: -1 })
+
+  NOTE: query returns goals of ALL statuses:
+  active, paused, completed — all can be deleted
+
+
+================================================================
+STEP 5 — HANDLE QUERY RESULTS
+================================================================
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 0 goals found                                           │
+  │                                                         │
+  │ EVA: "I couldn't find any Python learning               │
+  │       goals, Ali. Double check the topic                │
+  │       or subtopic name?"                                │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 1 goal found                                            │
+  │                                                         │
+  │ → set Redis:                                            │
+  │   {                                                     │
+  │     expected_response : "yes_no",                       │
+  │     pending_action    : {                               │
+  │       intent   : "learning_delete",                     │
+  │       goal_ids : [ goal_id ],                           │
+  │       goals    : [{ title, roadmap_key, status,         │
+  │                     completed_topics, total_topics }],  │
+  │       bulk     : false,                                 │
+  │       entities : { ...original entities... }            │
+  │     }                                                   │
+  │   }                                                     │
+  │                                                         │
+  │ EVA: "Found Python basics — active,                     │
+  │       3 of 8 sessions done.                             │
+  │       Delete it, Ali?"                                  │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 2-5 goals found                                         │
+  │                                                         │
+  │ → set Redis:                                            │
+  │   {                                                     │
+  │     expected_response : "number",                       │
+  │     pending_action    : {                               │
+  │       intent   : "learning_delete",                     │
+  │       goal_ids : [ id1, id2, ... ],                     │
+  │       goals    : [{ title, roadmap_key, status,         │
+  │                     completed_topics, total_topics }...],│
+  │       bulk     : false,                                 │
+  │       entities : { ...original entities... }            │
+  │     }                                                   │
+  │   }                                                     │
+  │                                                         │
+  │ EVA: "I found 2 Python goals, Ali. Which one?           │
+  │       1. Python basics — active — 3/8 done              │
+  │       2. Python functions — active — 0/5 done           │
+  │       Or say 'all' to delete all of them."              │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 6+ goals found (too broad)                              │
+  │                                                         │
+  │ → do NOT set Redis pending state                        │
+  │ EVA: "That matches quite a few goals, Ali.              │
+  │       Can you be more specific? Try adding              │
+  │       the level like 'Python basics' or                 │
+  │       'Python functions'."                              │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 6 — PERFORM DELETION
+================================================================
+
+  Reached after user confirms via context manager.
+  goal_ids available from Redis pending state.
+
+  For each goal_id in goal_ids:
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ SOFT DELETE GOAL                                        │
+  │                                                         │
+  │ db.learning_goals.updateOne(                            │
+  │   { _id: goal_id },                                     │
+  │   {                                                     │
+  │     is_deleted : true,                                  │
+  │     deleted_at : now,                                   │
+  │     updated_at : now                                    │
+  │   }                                                     │
+  │ )                                                       │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ SOFT DELETE PENDING TOPICS ONLY                         │
+  │                                                         │
+  │ db.roadmap_topics.updateMany(                           │
+  │   {                                                     │
+  │     goal_id    : goal_id,                               │
+  │     status     : { $in: ["pending", "ongoing"] },       │
+  │     is_deleted : false                                  │
+  │   },                                                    │
+  │   {                                                     │
+  │     is_deleted : true,                                  │
+  │     deleted_at : now,                                   │
+  │     updated_at : now                                    │
+  │   }                                                     │
+  │ )                                                       │
+  │                                                         │
+  │ NOTE: completed topics NOT touched — kept for history   │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ SOFT DELETE PENDING TASKS ONLY                          │
+  │                                                         │
+  │ db.tasks.updateMany(                                    │
+  │   {                                                     │
+  │     learning_plan_id : goal_id,                         │
+  │     status           : { $in: ["pending", "ongoing"] }, │
+  │     is_deleted       : false                            │
+  │   },                                                    │
+  │   {                                                     │
+  │     is_deleted : true,                                  │
+  │     deleted_at : now,                                   │
+  │     updated_at : now                                    │
+  │   }                                                     │
+  │ )                                                       │
+  │                                                         │
+  │ NOTE: completed tasks NOT touched — kept for history    │
+  │ NOTE: ongoing task at time of deletion → also deleted   │
+  │       delete always wins                                │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ GOOGLE CALENDAR SYNC                                    │
+  │                                                         │
+  │ if google_calendar integration active:                  │
+  │   fetch pending tasks for this goal                     │
+  │   for each task with google_calendar_event_id:          │
+  │     call google_calendar.delete_event (non-blocking)    │
+  │     on failure: log silently, do not block              │
+  │                                                         │
+  │ NOTE: completed tasks → calendar events kept            │
+  │ NOTE: entire calendar operation is non-blocking         │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ ACTIVITY LOG                                            │
+  │                                                         │
+  │ db.activity_logs.insertOne({                            │
+  │   user_id          : user_id,                           │
+  │   task_id          : null,                              │
+  │   action_type      : "goal_deleted",                    │
+  │   action_timestamp : now,                               │
+  │   subject          : topic.lower(),                     │
+  │   source           : "learning_module"                  │
+  │ })                                                      │
+  │                                                         │
+  │ NOTE: one log per goal deletion                         │
+  │ NOTE: for bulk delete → one log per goal                │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ COLLABORATOR NOTIFICATION                               │
+  │                                                         │
+  │ check goal.collaborators                                │
+  │                                                         │
+  │ if collaborators not empty:                             │
+  │   for each collaborator with status "accepted":         │
+  │     build notification payload:                         │
+  │     {                                                   │
+  │       user_id         : collaborator.user_id,           │
+  │       sender_id       : user_id,                        │
+  │       type            : "learning_goal_deleted",        │
+  │       reference_type  : "learning_goal",                │
+  │       reference_id    : goal_id,                        │
+  │       title           : "Shared learning plan removed", │
+  │       message         : "[owner name] removed           │
+  │                          [topic] [level] from their     │
+  │                          plan. Your copy is             │
+  │                          unaffected.",                  │
+  │       action_required : false,                          │
+  │       delivery_channel: ["push", "in_app"]              │
+  │     }                                                   │
+  │                                                         │
+  │ NOTE: collaborator's cloned goal is NEVER touched       │
+  │ NOTE: one notification per collaborator per goal        │
+  └─────────────────────────────────────────────────────────┘
+
+
+================================================================
+STEP 7 — GEMINI RESPONSE
+================================================================
+
+  action_context = {
+    action   : "learning_goal_deleted",
+    username : user.name,
+    deleted  : [{ title, roadmap_key, status,
+                  completed_topics, total_topics }...],
+    count    : len(goal_ids),
+    bulk     : bulk flag from Redis
+  }
+
+  Single goal deleted (with progress):
+  "Done Ali — Python basics has been removed.
+   Your 3 completed sessions are still saved."
+
+  Single goal deleted (no progress):
+  "Done Ali — Python functions has been removed
+   from your learning plan."
+
+  Multiple goals deleted (bulk):
+  "All 2 Python goals have been removed, Ali.
+   Any completed sessions you had are still saved."
+
+  Cancelled:
+  "No problem Ali, nothing was deleted."
+
+  Not found:
+  "I couldn't find any Python learning goals, Ali.
+   Double check the topic or subtopic name?"
+
+
+================================================================
+STEP 8 — SAVE MESSAGES AND RETURN
+================================================================
+
+  AI server saves user message → Conversation_History
+  AI server saves EVA reply   → Conversation_History
+  AI server updates Chat_Session (last_message_preview)
+
+  AI server returns to Node.js:
+  {
+    "status"        : "success",
+    "response_text" : "Done Ali — Python basics...",
+    "notifications" : [ ...collaborator payloads if any... ]
+  }
+
+  Node.js:
+  → inserts notifications into DB
+  → dispatches FCM push to collaborator(s)
+  → sends email if enabled
+  → returns response_text to frontend
+
+
+================================================================
+SPECIAL CASES
+================================================================
+
+  No goals exist at all for user:
+  → 0 found path → not found reply
+  "I couldn't find any Python learning goals, Ali."
+
+  Completed goal deleted:
+  → allowed — same flow as active/paused
+  → completed topics and tasks still kept
+  "Done Ali — Python basics (completed) has been removed
+   from your history."
+
+  Paused goal deleted:
+  → allowed — same flow
+  "Done Ali — Python basics has been removed.
+   It was paused with 3 of 8 sessions done."
+
+  Ongoing topic at time of deletion:
+  → soft deleted along with other pending topics
+  → delete always wins
+  → no special message needed
+
+  Google Calendar API failure:
+  → log silently
+  → deletion proceeds regardless
+  → user never sees calendar error
+
+  Bulk delete — activity log:
+  → one goal_deleted log per goal
+  → if 3 goals deleted → 3 activity logs inserted

@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional
 
 from handlers.behavioral import handle_behavioral
 from handlers.learning.create import handle_learning_create
+from handlers.learning.delete import handle_learning_delete
 from handlers.scheduling.add import handle_scheduling_add
 from handlers.scheduling.delete import handle_scheduling_delete
 from handlers.scheduling.show import handle_scheduling_show
@@ -64,9 +65,11 @@ async def route_intent(
     if canonical_intent == "learning_create":
         return await handle_learning_create(entities=entities, context=context)
 
+    if canonical_intent == "learning_delete":
+        return await handle_learning_delete(entities=entities, context=context)
+
     disabled_intents = {
         "learning_update",
-        "learning_delete",
         "learning_show",
         "update_roadmap",
         "delete_roadmap",

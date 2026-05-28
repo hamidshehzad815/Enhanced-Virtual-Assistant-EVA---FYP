@@ -205,3 +205,30 @@ async def get_pending_topic(goal_id: str) -> Optional[Dict[str, Any]]:
         sort=[("order", 1)],
     )
     return _normalize_doc(doc) if doc else None
+
+
+async def soft_delete_pending_topics(goal_id: str) -> int:
+    """
+    Soft-delete pending and ongoing roadmap topics for a goal.
+    Completed/skipped topics are left unchanged. Returns matched count.
+    """
+    db = get_db()
+    gid = _to_object_id(goal_id)
+    now = _now_naive_utc()
+    payload = {
+        "is_deleted": True,
+        "deleted_at": now,
+        "updated_at": now,
+    }
+    query = {
+        "goal_id": gid,
+        "status": {"$in": ["pending", "ongoing"]},
+        "is_deleted": False,
+    }
+    result = await db.roadmap_topics.update_many(query, {"$set": payload})
+
+    if result.matched_count == 0 and gid != goal_id:
+        query["goal_id"] = goal_id
+        result = await db.roadmap_topics.update_many(query, {"$set": payload})
+
+    return int(result.matched_count)

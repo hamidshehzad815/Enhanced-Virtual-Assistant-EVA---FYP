@@ -11,6 +11,7 @@ from pipeline.entity_scoper import scope_entities
 from pipeline.ner import learning_ner_extractor
 from services.duckling import duckling_client
 from utils.learning_utils import (
+    SUPPORTED_TOPICS,
     calculate_available_sessions,
     duration_entity_to_days,
     map_subtopic,
@@ -49,6 +50,9 @@ _NO_KEYWORDS = {
     "nope",
     "nah",
     "reject",
+    "don't",
+    "leave it",
+    "keep it",
 }
 
 _COMMAND_START_HINTS = {
@@ -70,6 +74,7 @@ _ALL_KEYWORDS = {
     "all of them",
     "delete all",
     "every one",
+    "all goals",
     "all tasks",
     "everything",
 }
@@ -194,7 +199,22 @@ def handle_number_delete(text: str, context: Dict[str, Any]) -> Any:
     normalized = _normalize_text(text)
     pending_action = context.get("pending_action") or {}
     task_ids = list(pending_action.get("task_ids") or [])
-    total = len(task_ids)
+    return _parse_pending_number_choice(normalized, task_ids)
+
+
+def handle_number_learning_delete(text: str, context: Dict[str, Any]) -> Any:
+    """
+    Parse learning-delete list choice from pending context.
+    Returns selected goal_id, "all", "invalid_range", or "invalid".
+    """
+    normalized = _normalize_text(text)
+    pending_action = context.get("pending_action") or {}
+    goal_ids = list(pending_action.get("goal_ids") or [])
+    return _parse_pending_number_choice(normalized, goal_ids)
+
+
+def _parse_pending_number_choice(normalized: str, option_ids: List[Any]) -> Any:
+    total = len(option_ids)
     if total == 0:
         return "invalid"
 
@@ -209,7 +229,111 @@ def handle_number_delete(text: str, context: Dict[str, Any]) -> Any:
     if selected_index < 1 or selected_index > total:
         return "invalid_range"
 
-    return task_ids[selected_index - 1]
+    return option_ids[selected_index - 1]
+
+
+def _goal_display_title(goal: Dict[str, Any]) -> str:
+    title = str(goal.get("title") or "").strip()
+    if title:
+        return title
+    topic = str(goal.get("subject") or goal.get("topic") or "").strip()
+    roadmap_key = str(goal.get("roadmap_key") or "").strip()
+    if topic and roadmap_key:
+        return f"{topic} {roadmap_key}"
+    return topic or roadmap_key or "that learning goal"
+
+
+def _goal_progress_label(goal: Dict[str, Any]) -> str:
+    done = int(goal.get("completed_topics") or 0)
+    total = int(goal.get("total_topics") or 0)
+    status = str(goal.get("status") or "active").strip().lower()
+    if total > 0:
+        return f"{status} with {done} of {total} sessions done"
+    return status or "active"
+
+
+def learning_delete_cancel_message(user_name: Optional[str] = None) -> str:
+    if user_name:
+        return f"No problem {user_name}, nothing was deleted."
+    return "No problem, nothing was deleted."
+
+
+def learning_delete_no_message(
+    goals: List[Dict[str, Any]],
+    *,
+    bulk: bool,
+    user_name: Optional[str] = None,
+) -> str:
+    if bulk:
+        if user_name:
+            return f"No problem, I left all those goals as they are, {user_name}."
+        return "No problem, I left all those goals as they are."
+
+    title = _goal_display_title(goals[0] if goals else {})
+    if user_name:
+        return f"No problem, I left {title} as it is, {user_name}."
+    return f"No problem, I left {title} as it is."
+
+
+def learning_delete_blocked_command_message(
+    pending_context: Dict[str, Any],
+    user_name: Optional[str] = None,
+) -> str:
+    expected = str(pending_context.get("expected_response") or "").lower()
+    pending_action = pending_context.get("pending_action") or {}
+    goals = list(pending_action.get("goals") or [])
+
+    if expected == "yes_no":
+        title = _goal_display_title(goals[0] if goals else {})
+        if user_name:
+            return (
+                f"I'm still waiting — want me to delete {title}? "
+                f"Just yes or no, {user_name}."
+            )
+        return f"I'm still waiting — want me to delete {title}? Just yes or no."
+
+    if expected == "number":
+        if user_name:
+            return f"I'm still waiting for your choice. Say cancel to stop, {user_name}."
+        return "I'm still waiting for your choice. Say cancel to stop."
+
+    if user_name:
+        return (
+            f"I'm still waiting for your reply, {user_name}. "
+            "Say cancel if you want to start fresh."
+        )
+    return "I'm still waiting for your reply. Say cancel if you want to start fresh."
+
+
+def learning_delete_single_confirm_message(
+    goal: Dict[str, Any],
+    user_name: Optional[str] = None,
+) -> str:
+    title = _goal_display_title(goal)
+    progress = _goal_progress_label(goal)
+    if user_name:
+        return f"Got it — delete {title}, {progress}?"
+    return f"Got it — delete {title}, {progress}?"
+
+
+def learning_delete_bulk_confirm_message(
+    goals: List[Dict[str, Any]],
+    entities: Optional[Dict[str, Any]] = None,
+    user_name: Optional[str] = None,
+) -> str:
+    total = len(goals)
+    topic = str((entities or {}).get("topic") or "").strip()
+    topic_part = f"{topic} " if topic else ""
+    goal_word = "goal" if total == 1 else "goals"
+    if user_name:
+        return (
+            f"Just to confirm — delete all {total} {topic_part}{goal_word}? "
+            "Completed sessions will be kept."
+        )
+    return (
+        f"Just to confirm — delete all {total} {topic_part}{goal_word}? "
+        "Completed sessions will be kept."
+    )
 
 
 def handle_number_update(text: str, context: Dict[str, Any]) -> Any:
@@ -403,3 +527,75 @@ async def process_learning_create_free_text_reply(
         "outcome": "retry",
         "message": "I'm not sure which step we're on. Try your learning request again from the start.",
     }
+
+
+async def process_learning_delete_free_text_reply(
+    context: Dict[str, Any],
+    reply: str,
+    *,
+    user_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Handle free-text reply when waiting for a learning goal identifier (State 1).
+
+    Returns:
+      - ``{"outcome": "retry", "message": str}`` — keep Redis context
+      - ``{"outcome": "unsupported_topic", "message": str}`` — clear context
+      - ``{"outcome": "merged", "merged_entities": dict}`` — caller clears context and re-runs handler
+    """
+    pending_action = context.get("pending_action") or {}
+    entities = dict(pending_action.get("entities") or {})
+    cleaned = (reply or "").strip()
+
+    if not learning_ner_extractor.loaded:
+        return {
+            "outcome": "retry",
+            "message": "The learning model is not available right now. Please try again shortly.",
+        }
+
+    raw = learning_ner_extractor.extract(cleaned, intent_hint="learning_delete")
+    scoped = scope_entities(raw, "learning_delete")
+    topic_raw = scoped.get("topic")
+    if not topic_raw or not str(topic_raw).strip():
+        if user_name:
+            return {
+                "outcome": "retry",
+                "message": (
+                    "I didn't catch that. Which learning goal would you like to delete? "
+                    f"Try saying something like 'Python' or 'MySQL', {user_name}."
+                ),
+            }
+        return {
+            "outcome": "retry",
+            "message": (
+                "I didn't catch that. Which learning goal would you like to delete? "
+                "Try saying something like 'Python' or 'MySQL'."
+            ),
+        }
+
+    topic_label = str(topic_raw).strip()
+    canonical = normalize_topic(topic_label)
+    if not canonical or canonical not in SUPPORTED_TOPICS:
+        if user_name:
+            return {
+                "outcome": "unsupported_topic",
+                "message": (
+                    f"I couldn't find a learning goal for {topic_label}, {user_name}. "
+                    "Check the topic name and try again."
+                ),
+            }
+        return {
+            "outcome": "unsupported_topic",
+            "message": (
+                f"I couldn't find a learning goal for {topic_label}. "
+                "Check the topic name and try again."
+            ),
+        }
+
+    merged = {**entities, "topic": canonical}
+    subtopic = scoped.get("subtopic")
+    if subtopic and str(subtopic).strip():
+        merged["subtopic"] = str(subtopic).strip()
+        merged["roadmap_key"] = map_subtopic(merged.get("subtopic"), canonical)
+
+    return {"outcome": "merged", "merged_entities": merged}
