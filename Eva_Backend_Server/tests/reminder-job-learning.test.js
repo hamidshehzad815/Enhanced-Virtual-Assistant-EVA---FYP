@@ -20,7 +20,7 @@ jest.mock("../services/notification.service", () => ({
   insert_and_dispatch: jest.fn(),
 }));
 
-const { sendReminderNotifications } = require("../jobs/reminder.job");
+const { sendReminderNotifications, sendLearningOverdueAlerts } = require("../jobs/reminder.job");
 const { Task, User, LearningGoal } = require("../models");
 const { insert_and_dispatch } = require("../services/notification.service");
 
@@ -84,5 +84,45 @@ describe("Reminder job — learning topics", () => {
     expect(batch[0].push_data.learning_goal_id).toBe(PLAN_ID);
     expect(batch[0].push_data.learning_topic_id).toBe(TOPIC_ID);
     expect(batch[0].push_data.suggested_action).toBe("complete_learning_topic");
+  });
+
+  test("overdue learning-linked task emits learning overdue topic_reminder and marks overdue_notified_at", async () => {
+    const now = new Date("2026-05-13T12:00:00.000Z");
+    const due = new Date(now.getTime() - 60 * 1000);
+
+    const leanTasks = jest.fn().mockResolvedValue([
+      {
+        _id: "task1",
+        owner_id: USER_ID,
+        title: "Learn: Session 1",
+        due_datetime: due,
+        learning_plan_id: PLAN_ID,
+        learning_topic_id: TOPIC_ID,
+      },
+    ]);
+    Task.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({ lean: leanTasks }),
+    });
+
+    User.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([{ _id: USER_ID, timezone: "UTC" }]),
+    });
+
+    LearningGoal.find.mockReturnValue({
+      lean: jest.fn().mockResolvedValue([
+        { _id: PLAN_ID, title: "Learn Python — basics", status: "active", is_deleted: false },
+      ]),
+    });
+
+    await sendLearningOverdueAlerts(now);
+
+    expect(insert_and_dispatch).toHaveBeenCalledTimes(1);
+    const batch = insert_and_dispatch.mock.calls[0][0];
+    expect(batch).toHaveLength(1);
+    expect(batch[0].type).toBe("topic_reminder");
+    expect(batch[0].title).toBe("Learning session overdue");
+    expect(batch[0].reference_id).toBe(TOPIC_ID);
+    expect(Task.updateMany).toHaveBeenCalledTimes(1);
+    expect(Task.updateMany.mock.calls[0][0]._id.$in).toEqual(["task1"]);
   });
 });

@@ -1,0 +1,871 @@
+================================================================
+LEARNING — UPDATE COMMAND FLOW (FINAL)
+AI Server handles all DB operations directly
+================================================================
+
+DECISIONS LOCKED
+================================================================
+
+  1. Sub-intents supported:
+       pause, resume, mark complete,
+       skip, reschedule session
+  2. NOT supported via chat:
+       change start_date after goal started
+       change duration after goal started
+       change roadmap level after started
+       change learning days/time (settings only)
+  3. Session locking rules:
+       only ONE session interactable at a time
+       locked until 24h before scheduled time
+       if gap < 24h → unlocks when previous resolved
+  4. Interaction rules per session state:
+       unlocked_future → reschedule + skip only
+       overdue         → reschedule + complete only
+       completed       → no interactions
+       skipped         → no interactions
+       locked          → no interactions
+  5. Auto-complete: scheduled_time + duration + 3h
+     → auto-marked complete
+     → fixed 3 hours, no settings option
+  6. lock_status computed at runtime, never stored
+  7. Goal identification: topic + subtopic only
+  8. Multiple roadmaps → ask language first
+  9. Single roadmap → apply directly
+  10. Pause → saves progress, keeps tasks as-is
+  11. Resume → rebases schedule from next available
+      learning day after resume date
+  12. Skip → marked "skipped", sessions cascade forward
+      end_date recalculates
+  13. Reschedule → new date must be learning schedule day
+      if new date before next session → no cascade
+      if new date after next session → cascade forward
+  14. Schedule settings update → Node.js calls AI server
+      POST /internal/rebuild-schedule
+      AI server rebuilds all active + paused goals
+  15. started_at set when first topic completed
+  16. completed_at + time_taken_days set when goal done
+  17. All EVA replies natural, specific, use user name
+
+
+================================================================
+SESSION STATE COMPUTATION
+================================================================
+
+  lock_status computed at runtime:
+
+  def get_session_state(session, now):
+    if session.status in ["completed", "skipped"]:
+      return session.status
+
+    unlock_time = session.scheduled_date - 24 hours
+
+    if now < unlock_time:
+      return "locked"
+    elif now < session.scheduled_date:
+      return "unlocked_future"
+    else:
+      return "overdue"
+
+  NOTE: if gap between current and next session < 24h:
+    unlock_time = when previous session resolved
+    not 24h before scheduled time
+
+  INTERACTION RULES:
+  ─────────────────────────────────────────────────────────
+  State            │ reschedule │ skip │ complete
+  ─────────────────┼────────────┼──────┼──────────
+  locked           │ ✗          │ ✗    │ ✗
+  unlocked_future  │ ✓          │ ✓    │ ✗
+  overdue          │ ✓          │ ✗    │ ✓
+  completed        │ ✗          │ ✗    │ ✗
+  skipped          │ ✗          │ ✗    │ ✗
+
+
+================================================================
+NER ENTITIES FOR LEARNING UPDATE
+================================================================
+
+  Extracted from original cased text:
+    topic    → language or database name (identifier)
+    subtopic → specific roadmap level or area (narrowing)
+    date     → new date for reschedule only
+
+  Examples:
+    "pause my Python learning"
+      → topic: "Python", sub_intent: pause
+
+    "resume Python basics"
+      → topic: "Python", subtopic: "basics",
+        sub_intent: resume
+
+    "mark next Python session as done"
+      → topic: "Python", sub_intent: complete
+
+    "skip today's Python session"
+      → topic: "Python", sub_intent: skip
+
+    "reschedule my Python session to next Monday"
+      → topic: "Python", date: "next Monday",
+        sub_intent: reschedule
+
+    "mark session done" (no topic)
+      → sub_intent: complete, no topic
+      → if 1 active goal → apply directly
+      → if multiple → ask which language
+
+
+================================================================
+SUB-INTENT DETECTION
+================================================================
+
+  Detected from original message keywords + Model 2:
+
+  pause keywords:
+    pause / stop for now / put on hold /
+    take a break from / halt
+
+  resume keywords:
+    resume / continue / restart / pick up /
+    start again / unpause
+
+  complete keywords:
+    mark done / mark complete / finished /
+    completed / I did / done with /
+    mark next session / mark today's session
+
+  skip keywords:
+    skip / bypass / already know /
+    skip this topic / skip next session
+
+  reschedule keywords:
+    reschedule / move / change date /
+    postpone / shift session to
+
+
+================================================================
+ENTITY SCOPING FOR LEARNING UPDATE
+================================================================
+
+  keep : topic, subtopic, date
+  drop : task_name, time, priority, status,
+         duration, start_date, person,
+         new_date, new_time, new_priority,
+         new_status, new_duration, new_taskname,
+         day, subject
+
+
+================================================================
+PIPELINE (inside AI Server)
+================================================================
+
+  REQUEST RECEIVED FROM NODE.JS
+  { message, user_id, session_id, input_type, timestamp }
+  ↓
+  AI SERVER SELF-FETCH
+  → user info (name, timezone)
+  → user settings (preferred_learning_schedule,
+                   default_topic_reminder_minutes)
+  → conversation history
+  → integrations (google_calendar)
+  → Redis context
+  ↓
+  PREPROCESSING → lowercase + too_short check
+  ↓
+  CONTEXT MANAGER
+  → check Redis for pending state
+  → pending exists? → handle reply → stop or continue
+  → no pending → continue to Model 1
+  ↓
+  MODEL 1 → command → continue
+  ↓
+  MODEL 2 → learning_update → continue
+  ↓
+  NER → original cased text
+  → extracts: topic, subtopic, date
+  ↓
+  ENTITY SCOPING
+  → keep: topic, subtopic, date
+  → drop: everything else
+  ↓
+  SUB-INTENT DETECTION
+  → detect: pause / resume / complete / skip / reschedule
+  ↓
+  HANDLER — handlers/learning/update.py
+  → routes to correct sub-handler based on sub_intent
+
+
+================================================================
+SUB-HANDLER A — PAUSE GOAL
+================================================================
+
+  STEP A1 — IDENTIFY GOAL
+  ─────────────────────────────────────────────────────────
+
+  if no topic extracted:
+    set Redis State 1 (free_text, sub_intent=pause)
+    EVA: "Which learning goal would you like
+          to pause, Ali?"
+    STOP
+
+  normalize topic via TOPIC_ALIAS_MAP
+  map subtopic if present
+
+  query Learning_Goals:
+    user_id    = user_id
+    subject    = topic.lower()
+    status     = "active"          ← only active can be paused
+    is_deleted = false
+    if roadmap_key: add filter
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 0 found                                                 │
+  │ EVA: "I couldn't find any active [topic] learning       │
+  │       goals, Ali."                                      │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 1 found → set Redis State 3 (yes_no, confirm)           │
+  │ EVA: "Pause Python basics, Ali?                         │
+  │       Your progress will be saved."                     │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 2-5 found → set Redis State 2 (number)                  │
+  │ EVA shows numbered list → user picks → State 3          │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 6+ found → too broad                                    │
+  │ EVA: "That matches quite a few goals, Ali.              │
+  │       Can you be more specific?"                        │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  STEP A2 — PERFORM PAUSE (after yes confirmed)
+  ─────────────────────────────────────────────────────────
+
+  db.learning_goals.updateOne(
+    { _id: goal_id },
+    {
+      status     : "paused",
+      paused_at  : now,
+      updated_at : now
+    }
+  )
+
+  → pending tasks stay as-is (not soft deleted)
+  → reminder job will skip paused goal sessions
+  → calendar events stay (will be rescheduled on resume)
+
+  EVA: "Python basics is paused, Ali.
+        Resume whenever you're ready —
+        your progress is saved."
+
+  save messages → update Chat_Session → return
+
+
+================================================================
+SUB-HANDLER B — RESUME GOAL
+================================================================
+
+  STEP B1 — IDENTIFY GOAL
+  ─────────────────────────────────────────────────────────
+
+  Same as pause but query:
+    status = "paused"    ← only paused can be resumed
+
+  If 0 found:
+    EVA: "I couldn't find any paused [topic]
+          learning goals, Ali."
+    STOP
+
+  If 1 found → State 3 (yes_no confirm)
+    EVA: "Resume Python basics, Ali? I'll rebase
+          your schedule starting from today."
+    STOP
+
+  If 2-5 found → State 2 (number) → pick → State 3
+  If 6+ → too broad
+
+  STEP B2 — PERFORM RESUME (after yes confirmed)
+  ─────────────────────────────────────────────────────────
+
+  1. Update goal status:
+  db.learning_goals.updateOne(
+    { _id: goal_id },
+    {
+      status     : "active",
+      paused_at  : null,
+      updated_at : now
+    }
+  )
+
+  2. SCHEDULE REBASE:
+  → find all remaining pending roadmap topics:
+    db.roadmap_topics.find({
+      goal_id    : goal_id,
+      status     : "pending",
+      is_deleted : false
+    }).sort({ order: 1 })
+
+  → find next available learning day after today:
+    learning_days = preferred_learning_schedule
+    current_date  = tomorrow
+    while current_date.weekday() not in learning_days:
+      current_date += 1 day
+    first_available = current_date
+
+  → rebuild schedule sequentially:
+    for each pending topic in order:
+      find next learning day from current_date
+      assign new scheduled_date
+      get time from preferred_learning_schedule[weekday]
+      new_datetime = combine(date, time)
+
+      update roadmap_topic:
+        scheduled_date = new_datetime
+        updated_at     = now
+
+      update linked task:
+        due_datetime = new_datetime
+        updated_at   = now
+
+      if google_calendar_event_id exists:
+        call update_event (non-blocking)
+
+      current_date = next learning day after new_datetime
+
+  3. Update goal end_date:
+  db.learning_goals.updateOne(
+    { _id: goal_id },
+    { end_date: last_session_date, updated_at: now }
+  )
+
+  EVA: "Welcome back Ali! I've rescheduled your
+        remaining [N] Python sessions starting
+        [next session date]. Next up:
+        [next topic title] on [date] at [time]."
+
+  save messages → update Chat_Session → return
+
+
+================================================================
+SUB-HANDLER C — MARK SESSION COMPLETE
+================================================================
+
+  STEP C1 — IDENTIFY WHICH ROADMAP
+  ─────────────────────────────────────────────────────────
+
+  fetch all active learning goals for user:
+    db.learning_goals.find({
+      user_id    : user_id,
+      status     : "active",
+      is_deleted : false
+    })
+
+  if topic extracted:
+    filter to matching goals only
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 0 matching goals                                        │
+  │ EVA: "I couldn't find any active [topic]                │
+  │       learning goals, Ali."                             │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 1 matching goal → proceed to STEP C2                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ 2+ matching goals (multiple roadmaps)                   │
+  │ → set Redis State 4 (number, identify_language)         │
+  │ EVA: "You have multiple active learning goals,          │
+  │       Ali. Which one?                                   │
+  │       1. Python basics — session 3 next                 │
+  │       2. MySQL advanced — session 2 next"               │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  STEP C2 — FIND CURRENT SESSION
+  ─────────────────────────────────────────────────────────
+
+  find current interactable session:
+    db.roadmap_topics.find({
+      goal_id    : goal_id,
+      status     : "pending",
+      is_deleted : false
+    }).sort({ order: 1 }).limit(1)
+
+  current_session = first result
+
+  compute session state:
+    if now < current_session.scheduled_date:
+      state = "unlocked_future"
+    else:
+      state = "overdue"
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ state = "locked" (shouldn't happen but handle)          │
+  │ EVA: "Your next Python session isn't available          │
+  │       yet, Ali. It unlocks closer to its                │
+  │       scheduled time."                                  │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ state = "unlocked_future"                               │
+  │ → session time not yet arrived                          │
+  │ → cannot mark complete                                  │
+  │ EVA: "The session hasn't started yet, Ali.              │
+  │       You can skip or reschedule it but                 │
+  │       not mark it complete before it begins."           │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ state = "overdue"                                       │
+  │ → session time has passed → can mark complete           │
+  │ → proceed to STEP C3                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  STEP C3 — MARK COMPLETE
+  ─────────────────────────────────────────────────────────
+
+  1. Update roadmap topic:
+  db.roadmap_topics.updateOne(
+    { _id: topic_id },
+    {
+      status       : "completed",
+      completed_at : now,
+      updated_at   : now
+    }
+  )
+
+  2. Update linked task:
+  db.tasks.updateOne(
+    { learning_topic_id: topic_id },
+    {
+      status       : "complete",
+      completed_at : now,
+      updated_at   : now
+    }
+  )
+
+  3. Update goal progress:
+  db.learning_goals.updateOne(
+    { _id: goal_id },
+    { $inc: { completed_topics: 1 }, updated_at: now }
+  )
+
+  4. Set started_at if first completion:
+  if goal.completed_topics was 0:
+    db.learning_goals.updateOne(
+      { _id: goal_id },
+      { started_at: now }
+    )
+
+  5. Check if last topic:
+  if completed_topics + 1 == total_topics:
+    db.learning_goals.updateOne(
+      { _id: goal_id },
+      {
+        status          : "completed",
+        completed_at    : now,
+        time_taken_days : (now - goal.started_at).days,
+        updated_at      : now
+      }
+    )
+
+  6. Insert activity log:
+  db.activity_logs.insertOne({
+    user_id          : user_id,
+    task_id          : linked_task_id,
+    action_type      : "task_completed",
+    action_timestamp : now,
+    source           : "learning_module",
+    subject          : topic.lower()
+  })
+
+  EVA (normal completion):
+  "Great work Ali — [topic title] is marked
+   complete. Next up: [next topic] on [date]
+   at [time]."
+
+  EVA (goal completed):
+  "Incredible Ali! You've completed Python basics.
+   It took you [X] days from start to finish.
+   Well done!"
+
+  save messages → update Chat_Session → return
+
+
+================================================================
+SUB-HANDLER D — SKIP SESSION
+================================================================
+
+  STEP D1 — IDENTIFY WHICH ROADMAP
+  ─────────────────────────────────────────────────────────
+
+  Same as mark complete STEP C1.
+  Same multiple roadmap handling → State 4.
+
+  STEP D2 — FIND CURRENT SESSION
+  ─────────────────────────────────────────────────────────
+
+  Same as STEP C2 — find lowest order pending session.
+
+  compute session state:
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ state = "locked"                                        │
+  │ EVA: "Your next Python session isn't available          │
+  │       yet, Ali."                                        │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ state = "overdue"                                       │
+  │ → session time has passed → cannot skip                 │
+  │ EVA: "That session's time has already passed,           │
+  │       Ali. You can mark it complete or                  │
+  │       reschedule it instead."                           │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ state = "unlocked_future"                               │
+  │ → session time not yet arrived → can skip               │
+  │ → proceed to STEP D3                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  STEP D3 — PERFORM SKIP + CASCADE
+  ─────────────────────────────────────────────────────────
+
+  1. Mark current session skipped:
+  db.roadmap_topics.updateOne(
+    { _id: topic_id },
+    {
+      status     : "skipped",
+      updated_at : now
+    }
+  )
+
+  2. Soft delete linked task:
+  db.tasks.updateOne(
+    { learning_topic_id: topic_id },
+    {
+      is_deleted : true,
+      deleted_at : now,
+      updated_at : now
+    }
+  )
+
+  3. Delete calendar event if exists (non-blocking)
+
+  4. CASCADE — shift all subsequent pending sessions:
+  → fetch all pending topics after current:
+    db.roadmap_topics.find({
+      goal_id    : goal_id,
+      order      : { $gt: current_topic.order },
+      status     : "pending",
+      is_deleted : false
+    }).sort({ order: 1 })
+
+  → current_date = current_topic.scheduled_date.date()
+  → for each subsequent topic:
+      assign current_date as new scheduled_date
+      get time from preferred_learning_schedule[weekday]
+      new_datetime = combine(current_date, time)
+
+      update roadmap_topic:
+        scheduled_date = new_datetime
+        updated_at     = now
+
+      update linked task:
+        due_datetime = new_datetime
+        updated_at   = now
+
+      if google_calendar_event_id:
+        call update_event (non-blocking)
+
+      current_date = next learning day after new_datetime
+
+  5. Update goal end_date:
+  db.learning_goals.updateOne(
+    { _id: goal_id },
+    { end_date: last_session_date, updated_at: now }
+  )
+
+  EVA: "Skipped Python session [N], Ali.
+        Session [N+1] has moved to [new date]
+        at [time] — no time wasted."
+
+  save messages → update Chat_Session → return
+
+
+================================================================
+SUB-HANDLER E — RESCHEDULE SESSION
+================================================================
+
+  STEP E1 — IDENTIFY WHICH ROADMAP
+  ─────────────────────────────────────────────────────────
+
+  Same as mark complete STEP C1.
+  Same multiple roadmap handling → State 4.
+
+  STEP E2 — FIND CURRENT SESSION
+  ─────────────────────────────────────────────────────────
+
+  Same as STEP C2.
+  Both unlocked_future and overdue can be rescheduled.
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ state = "locked"                                        │
+  │ → find next unlocked session scheduled date             │
+  │ EVA: "Your next Python session is scheduled             │
+  │       for [date] at [time]. It will be                  │
+  │       available to reschedule from [unlock              │
+  │       date], Ali."                                      │
+  │ STOP                                                    │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ state = "unlocked_future" or "overdue"                  │
+  │ → can reschedule → check for new date                   │
+  └─────────────────────────────────────────────────────────┘
+
+  STEP E3 — GET NEW DATE
+  ─────────────────────────────────────────────────────────
+
+  if date entity extracted from original message:
+    → validate date (Duckling + learning day check)
+    → proceed to STEP E4
+
+  if date not extracted:
+    → set Redis State 5 (free_text, stage=new_date)
+    → EVA: "What date would you like to move your
+            Python session to, Ali? Your learning
+            days are [day list]."
+    → STOP
+    → user replies → State 5 handling → STEP E4
+
+  STEP E4 — VALIDATE NEW DATE
+  ─────────────────────────────────────────────────────────
+
+  Validation 1 — is date in the past?
+    → ask again
+
+  Validation 2 — is date on a learning schedule day?
+    → not a learning day:
+    EVA: "[day] is not one of your learning days, Ali.
+          Your available days are [list].
+          Which one works?"
+    Redis stays → STOP
+
+  Validation 3 — same date as current session?
+    → different time on same day not supported
+    → only learning schedule time used
+    → tell user to pick a different day
+
+  STEP E5 — PERFORM RESCHEDULE + CONDITIONAL CASCADE
+  ─────────────────────────────────────────────────────────
+
+  get time from preferred_learning_schedule[new_date.weekday]
+  new_datetime = combine(new_date, time)
+
+  find next pending session after current:
+    next_session = db.roadmap_topics.find({
+      goal_id : goal_id,
+      order   : { $gt: current_topic.order },
+      status  : "pending"
+    }).sort({ order: 1 }).limit(1)
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ CASE A — new date BEFORE next session date              │
+  │ (or no next session exists)                             │
+  │                                                         │
+  │ → only current session moves                            │
+  │ → no cascade needed                                     │
+  │                                                         │
+  │ update roadmap_topic:                                   │
+  │   scheduled_date = new_datetime                         │
+  │                                                         │
+  │ update linked task:                                     │
+  │   due_datetime = new_datetime                           │
+  │                                                         │
+  │ update calendar event (non-blocking)                    │
+  │                                                         │
+  │ EVA: "Done Ali — Python session [N] moved to            │
+  │       [new date] at [time]."                            │
+  └─────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────┐
+  │ CASE B — new date AFTER next session date               │
+  │                                                         │
+  │ → current session moves to new_datetime                 │
+  │ → all subsequent sessions cascade forward               │
+  │                                                         │
+  │ update current topic:                                   │
+  │   scheduled_date = new_datetime                         │
+  │                                                         │
+  │ CASCADE all subsequent pending topics:                  │
+  │   current_date = new_datetime.date()                    │
+  │   for each subsequent topic in order:                   │
+  │     find next learning day after current_date           │
+  │     assign new scheduled_date                           │
+  │     update roadmap_topic + task + calendar              │
+  │     current_date = next learning day                    │
+  │                                                         │
+  │ update goal end_date                                    │
+  │                                                         │
+  │ EVA: "Done Ali — Python session [N] moved to            │
+  │       [new date]. I've shifted your remaining           │
+  │       sessions forward to keep everything               │
+  │       in order."                                        │
+  └─────────────────────────────────────────────────────────┘
+
+  save messages → update Chat_Session → return
+
+
+================================================================
+INTERNAL ENDPOINT — SCHEDULE SETTINGS REBUILD
+================================================================
+
+  POST /internal/rebuild-schedule
+  Called by Node.js when user updates
+  preferred_learning_schedule in settings
+
+  Payload:
+  {
+    user_id      : user_id,
+    new_schedule : [
+      { day: 0, time: "18:00" },
+      { day: 2, time: "14:00" },
+      { day: 4, time: "09:00" }
+    ]
+  }
+
+  AI Server:
+  1. Find all active + paused goals for user:
+     db.learning_goals.find({
+       user_id    : user_id,
+       status     : { $in: ["active", "paused"] },
+       is_deleted : false
+     })
+
+  2. For each goal:
+     → find all remaining pending topics (sorted by order)
+     → rebuild schedule using new_schedule
+     → start from next available day in new schedule
+       after today
+     → update each topic scheduled_date
+     → update each linked task due_datetime
+     → update each calendar event (non-blocking)
+     → update goal end_date
+
+  3. Return:
+     { status: "success", goals_updated: N }
+
+  Node.js then notifies user:
+  "Your learning schedule has been updated, Ali.
+   [N] goals have been rescheduled automatically."
+
+
+================================================================
+AUTO-COMPLETE JOB
+================================================================
+
+  File: Eva_Backend_Server/jobs/learning_auto_complete.job.js
+  Runs: every 15 minutes
+
+  Query roadmap_topics:
+    status       = "pending"
+    is_deleted   = false
+    scheduled_date + duration_minutes + 180 <= now
+
+  For each found topic:
+    1. Mark topic complete:
+       status = "completed", completed_at = now
+
+    2. Update linked task:
+       status = "complete", completed_at = now
+
+    3. Update goal:
+       completed_topics += 1
+
+    4. Set started_at if first completion:
+       if completed_topics was 0:
+         goal.started_at = now
+
+    5. Check if last topic:
+       if completed == total:
+         goal.status = "completed"
+         goal.completed_at = now
+         goal.time_taken_days = (now - started_at).days
+
+    6. Send notification to user:
+       "Python session [N] was automatically
+        marked complete, Ali. Session [N+1]
+        is now available."
+
+  NOTE: auto-complete calls AI server endpoint
+  POST /internal/auto-complete-topic
+  { topic_id, goal_id, user_id }
+  AI server handles all DB operations
+
+
+================================================================
+OVERDUE NOTIFICATION JOB
+================================================================
+
+  File: Eva_Backend_Server/jobs/reminder.job.js
+  (extend existing reminder job)
+
+  Additional query — overdue learning sessions:
+    roadmap_topics where:
+      status         = "pending"
+      is_deleted     = false
+      scheduled_date < now
+      goal.status    = "active"
+
+  For each overdue topic not yet notified:
+    → send push notification:
+      "Your Python session was scheduled for
+       [date]. Mark it complete or it will
+       be auto-completed after [duration + 3h], Ali."
+
+
+================================================================
+SPECIAL CASES
+================================================================
+
+  No active goals when trying to complete/skip/reschedule:
+  EVA: "You don't have any active learning goals, Ali."
+
+  Goal already completed when trying to pause:
+  EVA: "Python basics is already completed, Ali.
+        Nothing to pause."
+
+  Goal already paused when trying to pause again:
+  EVA: "Python basics is already paused, Ali."
+
+  All sessions completed (no pending session):
+  EVA: "All your Python sessions are done, Ali.
+        Nothing left to skip or reschedule."
+
+  Reschedule to same date as current:
+  EVA: "That's the same day as the current schedule,
+        Ali. Pick a different day."
+
+  Multiple roadmaps, user gives language but still
+  multiple match (e.g. Python basics + Python functions):
+  → show numbered list → user picks
+
+  Google Calendar update fails during cascade:
+  → log silently
+  → DB operations complete regardless
+  → user never sees calendar error

@@ -10,7 +10,7 @@ import math
 import re
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from config.settings import get_roadmaps_json_path, settings
 
@@ -98,6 +98,134 @@ _TOPIC_ALIAS_LOWER = {k.lower(): v for k, v in TOPIC_ALIAS_MAP.items()}
 _SUBTOPIC_ALIAS_LOWER = {k.lower(): v for k, v in SUBTOPIC_ALIAS_MAP.items()}
 
 _ROADMAP_JSON_CACHE: Optional[Dict[str, Any]] = None
+
+# Sub-intent keyword patterns for learning_update (longest phrases first).
+_LEARNING_UPDATE_SUB_INTENT_PATTERNS: Tuple[Tuple[str, str], ...] = tuple(
+    sorted(
+        [
+            ("stop for now", "pause"),
+            ("put on hold", "pause"),
+            ("on hold", "pause"),
+            ("take a break from", "pause"),
+            ("mark next session", "complete"),
+            ("mark today's session", "complete"),
+            ("mark todays session", "complete"),
+            ("mark session as done", "complete"),
+            ("mark session done", "complete"),
+            ("mark done", "complete"),
+            ("mark complete", "complete"),
+            ("done with", "complete"),
+            ("i completed", "complete"),
+            ("i finished", "complete"),
+            ("skip this topic", "skip"),
+            ("skip next session", "skip"),
+            ("already know", "skip"),
+            ("shift session to", "reschedule"),
+            ("change date", "reschedule"),
+            ("start again", "resume"),
+            ("pick up", "resume"),
+            ("unpause", "resume"),
+            ("reschedule", "reschedule"),
+            ("postpone", "reschedule"),
+            ("pause", "pause"),
+            ("halt", "pause"),
+            ("resume", "resume"),
+            ("continue", "resume"),
+            ("restart", "resume"),
+            ("finished", "complete"),
+            ("completed", "complete"),
+            ("i did", "complete"),
+            ("skip", "skip"),
+            ("bypass", "skip"),
+            ("move", "reschedule"),
+        ],
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ),
+)
+
+_SESSION_UNLOCK_WINDOW = timedelta(hours=24)
+
+
+def _coerce_datetime(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return datetime.combine(value, time.min)
+    text = str(value).strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def detect_learning_sub_intent(message: Optional[str]) -> Optional[str]:
+    """
+    Detect learning_update sub-intent from user message keywords.
+
+    Returns one of: pause, resume, complete, skip, reschedule — or None if ambiguous.
+    """
+    text = str(message or "").strip().lower()
+    if not text:
+        return None
+
+    for phrase, sub_intent in _LEARNING_UPDATE_SUB_INTENT_PATTERNS:
+        if phrase in text:
+            return sub_intent
+
+    return None
+
+
+def compute_session_state(
+    session: Dict[str, Any],
+    now: datetime,
+    *,
+    previous_resolved_at: Optional[datetime] = None,
+    previous_scheduled_date: Optional[datetime] = None,
+) -> str:
+    """
+    Runtime session lock state for learning_update interactions.
+
+    Returns: locked | unlocked_future | overdue | completed | skipped
+
+    When the gap to the previous session is under 24 hours, the session unlocks when
+    the previous session is resolved (completed/skipped), not 24h before schedule.
+    """
+    status = str(session.get("status") or "").strip().lower()
+    if status in ("completed", "skipped"):
+        return status
+
+    scheduled = _coerce_datetime(session.get("scheduled_date"))
+    if scheduled is None:
+        return "locked"
+
+    if now.tzinfo is not None and scheduled.tzinfo is None:
+        scheduled = scheduled.replace(tzinfo=now.tzinfo)
+    elif now.tzinfo is None and scheduled.tzinfo is not None:
+        now = now.replace(tzinfo=scheduled.tzinfo)
+
+    unlock_time = scheduled - _SESSION_UNLOCK_WINDOW
+
+    prev_scheduled = _coerce_datetime(previous_scheduled_date)
+    prev_resolved = _coerce_datetime(previous_resolved_at)
+    if prev_scheduled is not None:
+        gap = scheduled - prev_scheduled
+        if gap < _SESSION_UNLOCK_WINDOW:
+            if prev_resolved is not None:
+                unlock_time = prev_resolved
+            else:
+                unlock_time = scheduled
+
+    if now < unlock_time:
+        return "locked"
+    if now < scheduled:
+        return "unlocked_future"
+    return "overdue"
 
 
 def _roadmap_data() -> Dict[str, Any]:

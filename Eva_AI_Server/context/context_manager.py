@@ -14,6 +14,7 @@ from utils.learning_utils import (
     SUPPORTED_TOPICS,
     calculate_available_sessions,
     duration_entity_to_days,
+    level_keys_for_language,
     map_subtopic,
     normalize_topic,
 )
@@ -213,6 +214,27 @@ def handle_number_learning_delete(text: str, context: Dict[str, Any]) -> Any:
     return _parse_pending_number_choice(normalized, goal_ids)
 
 
+def handle_number_learning_update(text: str, context: Dict[str, Any]) -> Any:
+    """
+    Parse learning-update list choice from pending context (no 'all' option).
+    Returns selected goal_id, "invalid_range", or "invalid".
+    """
+    normalized = _normalize_text(text)
+    pending_action = context.get("pending_action") or {}
+    goal_ids = list(pending_action.get("goal_ids") or [])
+    total = len(goal_ids)
+    if total == 0:
+        return "invalid"
+
+    match = re.search(r"\b(\d+)\b", normalized)
+    if not match:
+        return "invalid"
+    selected_index = int(match.group(1))
+    if selected_index < 1 or selected_index > total:
+        return "invalid_range"
+    return goal_ids[selected_index - 1]
+
+
 def _parse_pending_number_choice(normalized: str, option_ids: List[Any]) -> Any:
     total = len(option_ids)
     if total == 0:
@@ -256,6 +278,153 @@ def learning_delete_cancel_message(user_name: Optional[str] = None) -> str:
     if user_name:
         return f"No problem {user_name}, nothing was deleted."
     return "No problem, nothing was deleted."
+
+
+def learning_update_cancel_message(user_name: Optional[str] = None) -> str:
+    if user_name:
+        return f"No problem {user_name}, nothing was changed."
+    return "No problem, nothing was changed."
+
+
+def learning_update_confirm_message(
+    goal: Dict[str, Any],
+    *,
+    sub_intent: str,
+    user_name: Optional[str] = None,
+) -> str:
+    title = _goal_display_title(goal)
+    if sub_intent == "pause":
+        if user_name:
+            return f"Pause {title}, {user_name}? Your progress will be saved."
+        return f"Pause {title}? Your progress will be saved."
+    if sub_intent == "resume":
+        if user_name:
+            return f"Resume {title}, {user_name}? I'll rebase your schedule from today."
+        return f"Resume {title}? I'll rebase your schedule from today."
+    if user_name:
+        return f"Confirm that change for {title}, {user_name}?"
+    return f"Confirm that change for {title}?"
+
+
+_WEEKDAY_NAMES = {
+    0: "Monday",
+    1: "Tuesday",
+    2: "Wednesday",
+    3: "Thursday",
+    4: "Friday",
+    5: "Saturday",
+    6: "Sunday",
+}
+
+
+def _learning_days_from_settings(preferred_learning_schedule: Any) -> Set[int]:
+    out: Set[int] = set()
+    if not isinstance(preferred_learning_schedule, list):
+        return out
+    for slot in preferred_learning_schedule:
+        if not isinstance(slot, dict):
+            continue
+        try:
+            out.add(int(slot.get("day")))
+        except (TypeError, ValueError):
+            continue
+    return out
+
+
+def _learning_days_label(days: Set[int]) -> str:
+    if not days:
+        return "your learning days"
+    labels = [_WEEKDAY_NAMES.get(d, str(d)) for d in sorted(days)]
+    if len(labels) == 1:
+        return labels[0]
+    if len(labels) == 2:
+        return f"{labels[0]} and {labels[1]}"
+    return f"{', '.join(labels[:-1])}, and {labels[-1]}"
+
+
+async def process_learning_update_free_text_reply(
+    pending_context: Dict[str, Any],
+    reply: str,
+    *,
+    user_name: Optional[str] = None,
+    timezone_name: str = "UTC",
+    preferred_learning_schedule: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """
+    Handle learning_update free_text replies for:
+      - State 1 (stage=identify): extract topic/subtopic via learning NER.
+      - State 5 (stage=new_date): resolve date via Duckling and validate learning day.
+    """
+    pending_action = pending_context.get("pending_action") or {}
+    stage = str(pending_action.get("stage") or "").strip().lower()
+    cleaned = str(reply or "").strip()
+    if not cleaned:
+        msg = "I didn't catch that. Can you try again?"
+        if user_name:
+            msg = f"I didn't catch that, {user_name}. Can you try again?"
+        return {"outcome": "retry", "message": msg}
+
+    if stage == "new_date":
+        iso_date = await duckling_client.resolve_date(cleaned, timezone=timezone_name or "UTC")
+        if not iso_date:
+            msg = "I couldn't understand that date. Try something like 'next Monday'."
+            if user_name:
+                msg = f"I couldn't understand that date, {user_name}. Try something like 'next Monday'."
+            return {"outcome": "retry", "message": msg}
+
+        try:
+            parsed = datetime.strptime(iso_date, "%Y-%m-%d").date()
+        except ValueError:
+            return {"outcome": "retry", "message": "That date format looks invalid. Try again."}
+
+        today = datetime.now(get_zoneinfo(timezone_name or "UTC")).date()
+        if parsed < today:
+            msg = "That date is in the past. Pick a future learning day."
+            if user_name:
+                msg = f"That date is in the past, {user_name}. Pick a future learning day."
+            return {"outcome": "retry", "message": msg}
+
+        days = _learning_days_from_settings(preferred_learning_schedule or [])
+        if days and parsed.weekday() not in days:
+            label = _learning_days_label(days)
+            msg = f"That isn't one of your learning days. Your learning days are {label}."
+            if user_name:
+                msg = f"That isn't one of your learning days, {user_name}. Your learning days are {label}."
+            return {"outcome": "retry", "message": msg}
+
+        merged = dict(pending_action.get("entities") or {})
+        merged["date"] = iso_date
+        return {"outcome": "merged", "merged_entities": merged}
+
+    # stage=identify (pause/resume with no identifier)
+    if not learning_ner_extractor.loaded:
+        learning_ner_extractor.load()
+
+    raw = learning_ner_extractor.extract(cleaned, intent_hint="learning_update")
+    scoped = scope_entities(raw or {}, "learning_update")
+    topic_raw = scoped.get("topic")
+    topic = normalize_topic(topic_raw) if topic_raw else None
+    if not topic:
+        msg = "I didn't catch the learning topic. Say something like Python or MySQL."
+        if user_name:
+            msg = f"I didn't catch the learning topic, {user_name}. Say something like Python or MySQL."
+        return {"outcome": "retry", "message": msg}
+
+    subtopic_raw = scoped.get("subtopic")
+    roadmap_key = "general"
+    if subtopic_raw:
+        try:
+            roadmap_key = map_subtopic(subtopic_raw, topic, level_keys=level_keys_for_language(topic))
+        except Exception:
+            roadmap_key = map_subtopic(subtopic_raw, topic)
+
+    merged = dict(pending_action.get("entities") or {})
+    merged.update(scoped)
+    merged["topic"] = topic
+    if subtopic_raw:
+        merged["subtopic"] = str(subtopic_raw)
+    merged["roadmap_key"] = roadmap_key
+    return {"outcome": "merged", "merged_entities": merged}
 
 
 def learning_delete_no_message(
