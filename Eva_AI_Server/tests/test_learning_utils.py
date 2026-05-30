@@ -157,5 +157,106 @@ class BuildScheduleTests(unittest.TestCase):
         )
 
 
+class DetectLearningSubIntentTests(unittest.TestCase):
+    def test_pause_keywords(self):
+        self.assertEqual(lu.detect_learning_sub_intent("pause my Python"), "pause")
+        self.assertEqual(lu.detect_learning_sub_intent("put my plan on hold"), "pause")
+
+    def test_resume_keywords(self):
+        self.assertEqual(lu.detect_learning_sub_intent("resume Python basics"), "resume")
+        self.assertEqual(lu.detect_learning_sub_intent("continue my javascript plan"), "resume")
+
+    def test_complete_keywords(self):
+        self.assertEqual(
+            lu.detect_learning_sub_intent("mark next session done"),
+            "complete",
+        )
+        self.assertEqual(lu.detect_learning_sub_intent("I finished today's session"), "complete")
+
+    def test_skip_keywords(self):
+        self.assertEqual(lu.detect_learning_sub_intent("skip today's topic"), "skip")
+        self.assertEqual(lu.detect_learning_sub_intent("bypass this session"), "skip")
+
+    def test_reschedule_keywords(self):
+        self.assertEqual(
+            lu.detect_learning_sub_intent("reschedule to Monday"),
+            "reschedule",
+        )
+        self.assertEqual(
+            lu.detect_learning_sub_intent("move my session to Friday"),
+            "reschedule",
+        )
+
+    def test_ambiguous_returns_none(self):
+        self.assertIsNone(lu.detect_learning_sub_intent("update my learning plan"))
+        self.assertIsNone(lu.detect_learning_sub_intent(""))
+        self.assertIsNone(lu.detect_learning_sub_intent(None))
+
+
+class ComputeSessionStateTests(unittest.TestCase):
+    def _session(self, scheduled: datetime, status: str = "pending") -> dict:
+        return {"status": status, "scheduled_date": scheduled}
+
+    def test_completed_and_skipped_passthrough(self):
+        now = datetime(2025, 6, 10, 12, 0)
+        self.assertEqual(
+            lu.compute_session_state(
+                self._session(now, status="completed"),
+                now,
+            ),
+            "completed",
+        )
+        self.assertEqual(
+            lu.compute_session_state(
+                self._session(now, status="skipped"),
+                now,
+            ),
+            "skipped",
+        )
+
+    def test_locked_when_more_than_24h_before_schedule(self):
+        scheduled = datetime(2025, 6, 15, 18, 0)
+        now = datetime(2025, 6, 10, 12, 0)
+        state = lu.compute_session_state(self._session(scheduled), now)
+        self.assertEqual(state, "locked")
+
+    def test_unlocked_future_within_24h_before_schedule(self):
+        scheduled = datetime(2025, 6, 10, 18, 0)
+        now = datetime(2025, 6, 10, 10, 0)
+        state = lu.compute_session_state(self._session(scheduled), now)
+        self.assertEqual(state, "unlocked_future")
+
+    def test_overdue_after_scheduled_time(self):
+        scheduled = datetime(2025, 6, 10, 9, 0)
+        now = datetime(2025, 6, 10, 12, 0)
+        state = lu.compute_session_state(self._session(scheduled), now)
+        self.assertEqual(state, "overdue")
+
+    def test_short_gap_unlocks_after_previous_resolved(self):
+        prev_scheduled = datetime(2025, 6, 10, 9, 0)
+        scheduled = datetime(2025, 6, 10, 15, 0)
+        prev_resolved = datetime(2025, 6, 10, 10, 0)
+        now = datetime(2025, 6, 10, 11, 0)
+        state = lu.compute_session_state(
+            self._session(scheduled),
+            now,
+            previous_scheduled_date=prev_scheduled,
+            previous_resolved_at=prev_resolved,
+        )
+        self.assertEqual(state, "unlocked_future")
+
+    def test_short_gap_stays_locked_until_previous_resolved(self):
+        prev_scheduled = datetime(2025, 6, 10, 9, 0)
+        scheduled = datetime(2025, 6, 10, 15, 0)
+        now = datetime(2025, 6, 10, 11, 0)
+        state = lu.compute_session_state(
+            self._session(scheduled),
+            now,
+            previous_scheduled_date=prev_scheduled,
+            previous_resolved_at=None,
+        )
+        self.assertEqual(state, "locked")
+
+
 if __name__ == "__main__":
     unittest.main()

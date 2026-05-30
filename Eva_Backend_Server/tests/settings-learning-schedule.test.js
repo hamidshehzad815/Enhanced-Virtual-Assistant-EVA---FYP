@@ -13,6 +13,12 @@ jest.mock("../jobs/reminder.job", () => ({
   stopReminderJob: jest.fn(),
 }));
 
+jest.mock("../services/ai.service", () => ({
+  callAIServer: jest.fn(),
+  callAIAnalytics: jest.fn(),
+  callAIInternal: jest.fn(),
+}));
+
 jest.mock("../config/logger", () => ({
   info: jest.fn(),
   warn: jest.fn(),

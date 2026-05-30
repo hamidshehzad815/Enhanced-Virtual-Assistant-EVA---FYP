@@ -24,6 +24,7 @@ const {
   assertUniqueLabelAmong,
   applyLearningSchedules,
 } = require("../utils/learningSchedules");
+const { callAIInternal } = require("../services/ai.service");
 
 const TIME_PATTERN = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
 
@@ -279,12 +280,26 @@ const patchLearningSchedule = async (req, res, next) => {
     applyLearningSchedules(settings, schedules);
     await settings.save();
 
+    // Non-blocking: trigger AI schedule rebuild after learning schedule update.
+    let rebuildSummary = null;
+    try {
+      const primarySlots =
+        Array.isArray(schedules) && schedules[0] ? schedules[0].slots : [];
+      rebuildSummary = await callAIInternal("/internal/rebuild-schedule", {
+        user_id: String(req.userId),
+        new_schedule: primarySlots,
+      });
+    } catch (err) {
+      rebuildSummary = { status: "error", message: err.message };
+    }
+
     res.json({
       status: "success",
       message: "Learning schedules updated",
       data: {
         settings,
         preferred_learning_schedules: schedules,
+        rebuild: rebuildSummary,
       },
     });
   } catch (error) {
@@ -481,6 +496,24 @@ const updateSettings = async (req, res, next) => {
       await settings.save();
     }
 
+    // Non-blocking: when preferred_learning_schedules updated, ask AI to rebuild pending sessions.
+    let rebuildSummary = null;
+    if (update.preferred_learning_schedules !== undefined) {
+      try {
+        const primarySlots =
+          Array.isArray(update.preferred_learning_schedules) &&
+          update.preferred_learning_schedules[0]
+            ? update.preferred_learning_schedules[0].slots
+            : [];
+        rebuildSummary = await callAIInternal("/internal/rebuild-schedule", {
+          user_id: String(req.userId),
+          new_schedule: primarySlots,
+        });
+      } catch (err) {
+        rebuildSummary = { status: "error", message: err.message };
+      }
+    }
+
     if (pushToken !== undefined) {
       await User.updateOne(
         { _id: req.userId },
@@ -508,6 +541,7 @@ const updateSettings = async (req, res, next) => {
       message: "Settings updated",
       data: {
         settings,
+        ...(rebuildSummary ? { rebuild: rebuildSummary } : {}),
       },
     });
   } catch (error) {

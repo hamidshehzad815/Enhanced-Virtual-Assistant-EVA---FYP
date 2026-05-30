@@ -80,7 +80,48 @@ const callAIAnalytics = async ({ userId, type = "full", day = null } = {}) => {
   }
 };
 
+const callAIInternal = async (path, payload) => {
+  const safePath = String(path || "").trim();
+  if (!safePath.startsWith("/")) {
+    throw new Error("path must start with /");
+  }
+  try {
+    const response = await axios.post(`${AI_SERVER_URL}${safePath}`, payload, {
+      timeout: AI_SERVER_TIMEOUT_MS,
+    });
+    return response.data;
+  } catch (error) {
+    if (error.response) {
+      logger.error("AI internal request failed", {
+        path: safePath,
+        status: error.response.status,
+        data: error.response.data,
+      });
+      const message =
+        error.response.data?.message ||
+        `AI server error with status ${error.response.status}`;
+      throw new Error(message);
+    }
+
+    if (error.request) {
+      logger.error("AI internal endpoint did not respond", {
+        path: safePath,
+        base_url: AI_SERVER_URL,
+        timeout_ms: AI_SERVER_TIMEOUT_MS,
+      });
+      throw new Error("AI server unavailable");
+    }
+
+    logger.error("AI internal unexpected error", {
+      path: safePath,
+      error: error.message,
+    });
+    throw new Error(error.message || "Unexpected AI internal error");
+  }
+};
+
 module.exports = {
   callAIServer,
   callAIAnalytics,
+  callAIInternal,
 };

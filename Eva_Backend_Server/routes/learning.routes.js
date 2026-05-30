@@ -11,6 +11,7 @@ const {
   getGoal,
   getTopics,
   completeTopic,
+  skipTopic,
   updateStatus,
   deleteGoal,
   respondToLearningCollaborationInvite,
@@ -22,6 +23,7 @@ router.get("/", protect, getAllGoals);
 router.post("/:id/collaborators/respond", protect, respondToLearningCollaborationInvite);
 router.get("/:id/topics", protect, getTopics);
 router.post("/:id/topics/:topicId/complete", protect, completeTopic);
+router.post("/:id/topics/:topicId/skip", protect, skipTopic);
 router.get("/:id", protect, getGoal);
 router.delete("/:id", protect, deleteGoal);
 router.patch("/:id/status", protect, updateStatus);
