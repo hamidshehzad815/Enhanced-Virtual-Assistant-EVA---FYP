@@ -18,7 +18,7 @@ from db.conversation_history import insert_message
 from db.learning_goals import find_conflicting_goal, insert_goal
 from db.roadmap_resources import get_roadmap, get_sessions_required
 from db.roadmap_topics import insert_topics_bulk, update_topic_task_id
-from db.tasks import insert_task, update_task
+from db.tasks import find_overlapping_task_for_user, insert_task, update_task
 from handlers.scheduling.add import (
     _coerce_text,
     _find_and_validate_collaborators,
@@ -30,6 +30,10 @@ from handlers.scheduling.add import (
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
+from utils.collaborator_calendar import (
+    find_user_calendar_conflicts,
+    format_collaborator_conflict_message,
+)
 from utils.learning_schedules import (
     resolve_schedule_for_learning,
     schedules_from_settings,
@@ -40,8 +44,10 @@ from utils.learning_utils import (
     build_schedule,
     calculate_available_sessions,
     duration_entity_to_days,
-    map_subtopic,
+    normalize_subtopic_entity,
     normalize_topic,
+    resolve_subtopic_mapping,
+    subtopic_hint_from_message,
 )
 from utils.timezone_utils import get_zoneinfo, resolve_timezone_name
 
@@ -122,6 +128,20 @@ async def _save_turn(
 
 def _topic_raw(entities: Dict[str, Any]) -> str:
     return _coerce_text(entities.get("topic"))
+
+
+def _subtopic_clarification_message(
+    topic: str,
+    heard: str,
+    user_name: Optional[str],
+) -> str:
+    name_bit = f", {user_name}" if user_name else ""
+    heard_bit = f' "{heard}"' if heard else ""
+    return (
+        f"I couldn't tell which {topic} level you meant from{heard_bit}{name_bit}. "
+        "Reply with something like basics (beginner), intermediate, advanced, "
+        "or a specific focus (e.g. OOP, loops, lists)."
+    )
 
 
 def _start_iso(entities: Dict[str, Any]) -> str:
@@ -213,28 +233,42 @@ async def handle_learning_create(
         return await finish(msg, status="error")
 
     entities["topic"] = canonical_topic
-    roadmap_key = map_subtopic(entities.get("subtopic"), canonical_topic)
+    subtopic_raw = normalize_subtopic_entity(entities.get("subtopic"))
+    if not subtopic_raw:
+        subtopic_raw = subtopic_hint_from_message(user_message)
+    if subtopic_raw:
+        entities["subtopic"] = subtopic_raw
+
+    subtopic_resolution = resolve_subtopic_mapping(subtopic_raw, canonical_topic)
+    if subtopic_raw and not subtopic_resolution.confident:
+        await redis_client.set_context(
+            user_id,
+            _pending_payload(entities, "subtopic"),
+        )
+        return await finish(
+            _subtopic_clarification_message(canonical_topic, subtopic_raw, user_name),
+            status="pending",
+            expected_response="free_text",
+            stage="subtopic",
+        )
+
+    roadmap_key = subtopic_resolution.roadmap_key
 
     conflicting = await find_conflicting_goal(user_id, canonical_topic, roadmap_key)
     if conflicting:
         existing_track = str(conflicting.get("roadmap_key") or "general").replace("_", " ")
         requested_track = roadmap_key.replace("_", " ")
-        if existing_track == requested_track:
-            msg = (
-                f"You already have an active {canonical_topic} plan on the "
-                f"{existing_track} track. Pause or cancel that plan in Learning, "
-                f"then ask me to set up a new one."
-            )
-        elif existing_track == "general":
-            msg = (
-                f"You already have an active general {canonical_topic} learning plan. "
-                f"Pause or cancel it before starting a {requested_track} track."
-            )
-        else:
-            msg = (
-                f"You already have an active {canonical_topic} plan on the "
-                f"{existing_track} track. Pause or cancel it before starting another plan."
-            )
+        track_hint = (
+            f" a {requested_track} roadmap"
+            if requested_track and requested_track != "general"
+            else " another roadmap"
+        )
+        msg = (
+            f"You already have an active {canonical_topic} learning plan"
+            f"{f' ({existing_track})' if existing_track and existing_track != 'general' else ''}. "
+            f"Only one {canonical_topic} roadmap is allowed at a time. "
+            f"Complete that plan first, or delete it, before creating{track_hint}."
+        )
         return await finish(msg, status="error")
 
     start_s = _start_iso(entities)
@@ -378,6 +412,44 @@ async def handle_learning_create(
         schedule_slots,
         default_duration_minutes=default_session_duration,
     )
+    for row in scheduled_rows:
+        session_dt = row.get("scheduled_date")
+        if not isinstance(session_dt, datetime):
+            continue
+        session_dur = int(row.get("duration_minutes") or default_session_duration)
+        overlap_task = await find_overlapping_task_for_user(
+            user_id,
+            session_dt,
+            session_dur,
+        )
+        if overlap_task:
+            conflict_title = _coerce_text(overlap_task.get("title")) or "another task"
+            session_label = _coerce_text(row.get("title")) or "a lesson"
+            msg = (
+                f"I can't create this plan because {session_label} would overlap "
+                f"your existing task “{conflict_title}”. "
+                "Move or delete that task, pick a different learning schedule, or adjust your plan dates."
+            )
+            return await finish(msg, status="error")
+
+        for collab in collab_validated:
+            collab_id = str(collab.get("user_id") or "")
+            if not collab_id:
+                continue
+            collab_name = _coerce_text(collab.get("name")) or "Collaborator"
+            collab_hit = await find_user_calendar_conflicts(
+                collab_id,
+                session_dt,
+                session_dur,
+            )
+            if collab_hit:
+                msg = format_collaborator_conflict_message(
+                    collab_name,
+                    collab_hit,
+                    for_learning_plan=True,
+                )
+                return await finish(msg, status="error")
+
     if len(scheduled_rows) != len(topics_db):
         msg = (
             "I couldn't fit every lesson into that window with your current learning days. "

@@ -160,6 +160,99 @@ class LearningUpdateHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "blocked")
         self.assertIn("can't mark it complete", result["response_text"].lower())
 
+    async def test_reschedule_rejects_past_learning_day(self):
+        gid = str(ObjectId())
+        current = {
+            "_id": str(ObjectId()),
+            "order": 2,
+            "status": "pending",
+            "scheduled_date": datetime(2026, 6, 10, 19, 0, tzinfo=timezone.utc),
+        }
+        goal = {
+            "_id": gid,
+            "title": "Python basics",
+            "subject": "python",
+            "status": "active",
+            "learning_schedule_id": "s1",
+        }
+        fixed_now = datetime(2026, 6, 5, 12, 0, tzinfo=timezone.utc)
+        past_thursday = "2026-06-04"  # valid weekday 3, before today
+
+        with patch(
+            "handlers.learning.update.find_goals_for_update",
+            new=AsyncMock(return_value=[goal]),
+        ), patch(
+            "handlers.learning.update.get_goal_by_id",
+            new=AsyncMock(return_value=goal),
+        ), patch(
+            "handlers.learning.update.get_current_session",
+            new=AsyncMock(return_value=current),
+        ), patch(
+            "handlers.learning.update.get_topics_for_goal",
+            new=AsyncMock(return_value=[current]),
+        ), patch(
+            "handlers.learning.update.compute_session_state",
+            return_value="unlocked_future",
+        ), patch(
+            "handlers.learning.update.resolve_learning_slots",
+            return_value=[{"day": 3, "time": "19:00", "duration_minutes": 90}],
+        ), patch(
+            "handlers.learning.update.datetime"
+        ) as mock_dt, patch(
+            "handlers.learning.update._save_turn",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "handlers.learning.update.rt_reschedule_topic",
+            new=AsyncMock(return_value=True),
+        ) as mock_reschedule:
+            mock_dt.strptime = datetime.strptime
+            mock_dt.combine = datetime.combine
+            mock_dt.now.return_value = fixed_now
+            result = await handle_learning_update(
+                entities={"topic": "Python", "date": past_thursday},
+                context=_base_context(message="reschedule python session to last thursday"),
+            )
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("past", result["response_text"].lower())
+        mock_reschedule.assert_not_called()
+
+    async def test_skip_with_paused_plan_offers_resume_yes_no(self):
+        gid = str(ObjectId())
+        paused_goal = {
+            "_id": gid,
+            "title": "Python basics",
+            "roadmap_key": "basics",
+            "status": "paused",
+            "completed_topics": 1,
+            "total_topics": 8,
+            "subject": "python",
+        }
+        with patch(
+            "handlers.learning.update.get_active_goals_for_user",
+            new=AsyncMock(return_value=[]),
+        ), patch(
+            "handlers.learning.update.get_paused_goals_for_user",
+            new=AsyncMock(return_value=[paused_goal]),
+        ), patch(
+            "handlers.learning.update.redis_client.set_context",
+            new=AsyncMock(return_value=True),
+        ) as mock_set, patch(
+            "handlers.learning.update._save_turn",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await handle_learning_update(
+                entities={},
+                context=_base_context(message="skip next session"),
+            )
+
+        self.assertEqual(result["status"], "pending")
+        self.assertIn("paused", result["response_text"].lower())
+        self.assertIn("reply yes", result["response_text"].lower())
+        payload = mock_set.await_args.args[1]
+        self.assertEqual(payload["pending_action"]["stage"], "resume_confirm")
+        self.assertEqual(payload["pending_action"]["deferred_sub_intent"], "skip")
+
 
 if __name__ == "__main__":
     unittest.main()

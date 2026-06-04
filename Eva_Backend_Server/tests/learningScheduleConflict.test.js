@@ -18,3 +18,17 @@ describe("learningScheduleConflict", () => {
     expect(dueDatetimeMatchesSlot(due, "UTC", 0, "11:00")).toBe(false);
   });
 });
+
+describe("dueDatetimeOverlapsSlot", () => {
+  const { dueDatetimeOverlapsSlot } = require("../utils/learningScheduleConflict");
+
+  test("overlaps when task spans into slot", () => {
+    const due = new Date(Date.UTC(2026, 0, 5, 10, 0, 0));
+    expect(dueDatetimeOverlapsSlot(due, "UTC", 0, "11:00", 60, 120)).toBe(true);
+  });
+
+  test("no overlap on different weekday", () => {
+    const due = new Date(Date.UTC(2026, 0, 6, 10, 0, 0));
+    expect(dueDatetimeOverlapsSlot(due, "UTC", 0, "10:30", 60, 120)).toBe(false);
+  });
+});

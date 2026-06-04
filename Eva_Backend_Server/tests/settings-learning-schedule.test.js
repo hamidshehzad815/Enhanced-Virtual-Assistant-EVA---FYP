@@ -383,6 +383,30 @@ describe("learning-schedules CRUD", () => {
     expect(mockSettings.preferred_learning_schedules).toHaveLength(1);
   });
 
+  test("PATCH slots when active goal uses schedule → 409", async () => {
+    LearningGoal.exists.mockResolvedValue({ _id: "goal1" });
+    UserSetting.findOne.mockResolvedValue({
+      user_id: USER_ID,
+      preferred_learning_schedules: [
+        {
+          id: "s1",
+          label: "Morning",
+          slots: [{ day: 0, time: "09:00", duration_minutes: 60 }],
+        },
+      ],
+      save: jest.fn().mockResolvedValue(),
+    });
+
+    const response = await request(app)
+      .patch("/api/settings/learning-schedules/s1")
+      .set(authHeaders())
+      .send({
+        slots: [{ day: 0, time: "10:00", duration_minutes: 60 }],
+      });
+
+    expect(response.status).toBe(409);
+  });
+
   test("DELETE when active goal uses schedule → 409", async () => {
     LearningGoal.exists.mockResolvedValue({ _id: "goal1" });
     UserSetting.findOne.mockResolvedValue({
@@ -402,6 +426,38 @@ describe("learning-schedules CRUD", () => {
       .set(authHeaders());
 
     expect(response.status).toBe(409);
+    expect(LearningGoal.exists).toHaveBeenCalledWith(
+      expect.objectContaining({
+        learning_schedule_id: "s1",
+        status: "active",
+        is_deleted: false,
+      }),
+    );
+  });
+
+  test("DELETE succeeds when only soft-deleted goals used schedule", async () => {
+    LearningGoal.exists.mockResolvedValue(null);
+    const mockSettings = {
+      user_id: USER_ID,
+      preferred_learning_schedules: [
+        {
+          id: "s1",
+          label: "Morning",
+          slots: [{ day: 0, time: "09:00", duration_minutes: 60 }],
+        },
+      ],
+      save: jest.fn().mockResolvedValue(),
+    };
+    UserSetting.findOne.mockResolvedValue(mockSettings);
+
+    const response = await request(app)
+      .delete("/api/settings/learning-schedules/s1")
+      .set(authHeaders());
+
+    expect(response.status).toBe(200);
+    expect(LearningGoal.exists).toHaveBeenCalledWith(
+      expect.objectContaining({ is_deleted: false }),
+    );
   });
 
   test("GET list → 200", async () => {

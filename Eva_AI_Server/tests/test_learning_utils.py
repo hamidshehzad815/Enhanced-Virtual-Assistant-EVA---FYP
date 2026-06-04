@@ -65,6 +65,65 @@ class MapSubtopicTests(unittest.TestCase):
             "object oriented programming",
         )
 
+    def test_oop_list_with_ma_noise_not_loops(self):
+        keys = (
+            "basics",
+            "loops",
+            "object oriented programming",
+            "lists tuples dictionaries sets",
+        )
+        self.assertEqual(
+            lu.map_subtopic(["oop", "ma"], "Python", level_keys=keys),
+            "object oriented programming",
+        )
+
+    def test_oop_stringified_list_not_loops(self):
+        keys = ("loops", "object oriented programming")
+        self.assertEqual(
+            lu.map_subtopic("['oop', 'ma']", "Python", level_keys=keys),
+            "object oriented programming",
+        )
+
+    def test_list_and_oop_prefers_oop_alias(self):
+        keys = ("lists tuples dictionaries sets", "object oriented programming")
+        self.assertEqual(
+            lu.map_subtopic(["list", "oop", "ma"], "Python", level_keys=keys),
+            "object oriented programming",
+        )
+
+    def test_begginers_typo_maps_to_basics(self):
+        self.assertEqual(lu.map_subtopic("begginers", "Python"), "basics")
+
+    def test_begginers_resolution_confident(self):
+        res = lu.resolve_subtopic_mapping("begginers", "Python")
+        self.assertEqual(res.roadmap_key, "basics")
+        self.assertTrue(res.confident)
+
+    def test_vague_subtopic_not_confident(self):
+        res = lu.resolve_subtopic_mapping("beg", "Python")
+        self.assertEqual(res.roadmap_key, "general")
+        self.assertFalse(res.confident)
+
+    def test_no_subtopic_confident_general(self):
+        res = lu.resolve_subtopic_mapping(None, "Python")
+        self.assertEqual(res.roadmap_key, "general")
+        self.assertTrue(res.confident)
+
+
+class NormalizeSubtopicEntityTests(unittest.TestCase):
+    def test_drops_ma_from_list(self):
+        self.assertEqual(lu.normalize_subtopic_entity(["oop", "ma"]), "oop")
+
+    def test_drops_standalone_ma(self):
+        self.assertIsNone(lu.normalize_subtopic_entity("ma"))
+        self.assertIsNone(lu.normalize_subtopic_entity("MA"))
+
+    def test_subtopic_hint_from_message(self):
+        self.assertEqual(
+            lu.subtopic_hint_from_message("create python oop roadmap"),
+            "oop",
+        )
+
 
 class ParseDurationTests(unittest.TestCase):
     def test_weeks_months_days(self):
@@ -187,6 +246,19 @@ class DetectLearningSubIntentTests(unittest.TestCase):
             "reschedule",
         )
 
+    def test_reschedule_wins_over_finished_in_same_message(self):
+        self.assertEqual(
+            lu.detect_learning_sub_intent(
+                "i finished, reschedule my python session to next monday",
+            ),
+            "reschedule",
+        )
+
+    def test_reschedule_typo_and_session_to_date(self):
+        msg = "reschdule python session to june4"
+        self.assertTrue(lu.message_implies_reschedule(msg))
+        self.assertEqual(lu.detect_learning_sub_intent(msg), "reschedule")
+
     def test_ambiguous_returns_none(self):
         self.assertIsNone(lu.detect_learning_sub_intent("update my learning plan"))
         self.assertIsNone(lu.detect_learning_sub_intent(""))
@@ -256,6 +328,21 @@ class ComputeSessionStateTests(unittest.TestCase):
             previous_resolved_at=None,
         )
         self.assertEqual(state, "locked")
+
+    def test_mixed_naive_and_aware_datetimes_do_not_raise(self):
+        """Mongo often returns naive UTC; now may be timezone-aware from get_zoneinfo."""
+        from zoneinfo import ZoneInfo
+
+        prev_scheduled = datetime(2026, 6, 4, 18, 0)  # naive, session 1 done
+        scheduled = datetime(2026, 6, 5, 8, 0)  # naive, session 2
+        now = datetime(2026, 6, 5, 6, 0, tzinfo=ZoneInfo("Asia/Karachi"))
+        state = lu.compute_session_state(
+            self._session(scheduled),
+            now,
+            previous_scheduled_date=prev_scheduled,
+            previous_resolved_at=datetime(2026, 6, 4, 19, 0),
+        )
+        self.assertEqual(state, "unlocked_future")
 
 
 if __name__ == "__main__":

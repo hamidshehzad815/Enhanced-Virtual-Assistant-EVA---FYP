@@ -79,6 +79,32 @@ const makeToken = () =>
     expiresIn: "15m",
   });
 
+const mockGoalTopicsForValidation = (topics) => {
+  RoadmapTopic.find.mockReturnValue({
+    sort: jest.fn().mockReturnValue({
+      lean: jest.fn().mockResolvedValue(topics),
+    }),
+  });
+};
+
+/** Current session overdue — allowed for POST complete */
+const overdueCurrentTopic = () => ({
+  _id: TOPIC_ID,
+  goal_id: GOAL_ID,
+  order: 1,
+  status: "pending",
+  scheduled_date: new Date(Date.now() - 2 * 60 * 60 * 1000),
+});
+
+/** Current session within unlock window before schedule — allowed for POST skip */
+const skippableCurrentTopic = () => ({
+  _id: TOPIC_ID,
+  goal_id: GOAL_ID,
+  order: 1,
+  status: "pending",
+  scheduled_date: new Date(Date.now() + 2 * 60 * 60 * 1000),
+});
+
 describe("Learning API", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -319,6 +345,8 @@ describe("Learning API", () => {
       }),
     });
 
+    mockGoalTopicsForValidation([overdueCurrentTopic()]);
+
     callAIInternal.mockResolvedValue({ status: "success", goal_completed: false });
 
     RoadmapTopic.findOne.mockReturnValue({
@@ -419,6 +447,8 @@ describe("Learning API", () => {
       }),
     });
 
+    mockGoalTopicsForValidation([overdueCurrentTopic()]);
+
     callAIInternal.mockResolvedValue({ status: "success", goal_completed: false, next_session: null });
 
     RoadmapTopic.findOne.mockReturnValue({
@@ -457,6 +487,8 @@ describe("Learning API", () => {
         status: "active",
       }),
     });
+
+    mockGoalTopicsForValidation([skippableCurrentTopic()]);
 
     callAIInternal.mockResolvedValue({ status: "success" });
 

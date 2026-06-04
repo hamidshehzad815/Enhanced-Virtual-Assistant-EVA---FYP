@@ -101,6 +101,10 @@ class Settings:
 
     # Learning: map user subtopic text to a roadmap track; fuzzy score must reach this (0–1).
     SUBTOPIC_MATCH_THRESHOLD: float = float(os.getenv("SUBTOPIC_MATCH_THRESHOLD", "0.56"))
+    # Learning: typo-tolerant match against SUBTOPIC_ALIAS_MAP keys (e.g. begginers → beginners).
+    SUBTOPIC_ALIAS_FUZZY_THRESHOLD: float = float(
+        os.getenv("SUBTOPIC_ALIAS_FUZZY_THRESHOLD", "0.85"),
+    )
 
     # Model Settings
     CONFIDENCE_THRESHOLD: float = float(os.getenv("CONFIDENCE_THRESHOLD", "0.7"))

@@ -24,7 +24,12 @@ from db.tasks import get_pending_learning_tasks, soft_delete_pending_learning_ta
 from handlers.scheduling.add import _coerce_text, _pick_active_google_integration
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
-from utils.learning_utils import SUPPORTED_TOPICS, map_subtopic, normalize_topic
+from utils.learning_utils import (
+    SUPPORTED_TOPICS,
+    normalize_subtopic_entity,
+    normalize_topic,
+    resolve_subtopic_mapping,
+)
 
 
 def _first_value(value: Any) -> Any:
@@ -158,13 +163,68 @@ def _missing_topic_prompt(
     )
 
 
+def _level_display(value: Optional[str]) -> str:
+    text = _coerce_text(value)
+    if not text or text.lower() == "general":
+        return ""
+    return text.replace("_", " ").strip()
+
+
+def _requested_level_label(
+    entities: Dict[str, Any],
+    roadmap_key: Optional[str],
+) -> str:
+    subtopic = _level_display(_coerce_text(entities.get("subtopic")))
+    if subtopic:
+        return subtopic
+    return _level_display(roadmap_key) or "that level"
+
+
+def _near_miss_prompt(
+    username: Optional[str],
+    goal: Dict[str, Any],
+    *,
+    canonical_topic: str,
+    requested_level: str,
+    history: Optional[List[Dict[str, Any]]] = None,
+) -> str:
+    preview = _goal_preview(goal)
+    existing_level = _level_display(preview.get("roadmap_key")) or preview.get("title") or "your plan"
+    msg = gemini_service.generate_reply(
+        {
+            "action": "learning_delete_near_miss_confirm",
+            "topic": canonical_topic,
+            "requested_level": requested_level,
+            "existing_level": existing_level,
+            "title": preview["title"],
+            "status": preview["status"],
+            "completed_topics": preview["completed_topics"],
+            "total_topics": preview["total_topics"],
+        },
+        username,
+        history or [],
+    )
+    if msg and str(msg).strip():
+        return str(msg).strip()
+
+    name_bit = f", {username}" if username else ""
+    return (
+        f"I couldn't find a {canonical_topic} {requested_level} roadmap{name_bit}. "
+        f"You do have a {canonical_topic} {existing_level} plan "
+        f"({preview['completed_topics']} of {preview['total_topics']} sessions done, "
+        f"{preview['status']}). Do you want me to delete that instead? Reply yes or no."
+    )
+
+
 def _single_confirm_prompt(
     username: Optional[str],
     goal: Dict[str, Any],
     history: Optional[List[Dict[str, Any]]] = None,
+    *,
+    canonical_topic: str = "",
 ) -> str:
     preview = _goal_preview(goal)
-    return gemini_service.generate_reply(
+    msg = gemini_service.generate_reply(
         {
             "action": "learning_delete_single_confirm",
             "title": preview["title"],
@@ -174,6 +234,19 @@ def _single_confirm_prompt(
         },
         username,
         history or [],
+    )
+    if msg and str(msg).strip():
+        return str(msg).strip()
+
+    topic_label = canonical_topic or preview.get("subject") or "learning"
+    track = str(preview.get("roadmap_key") or "").replace("_", " ").strip()
+    track_bit = f" ({track})" if track and track != "general" else ""
+    name_bit = f", {username}" if username else ""
+    return (
+        f"I found your {topic_label} learning plan{track_bit}: "
+        f"\"{preview['title']}\" — {preview['completed_topics']} of "
+        f"{preview['total_topics']} sessions done, status {preview['status']}{name_bit}. "
+        "Do you want me to delete it? Reply yes or no."
     )
 
 
@@ -544,14 +617,21 @@ async def handle_learning_delete(
     resolved_entities = dict(entities)
     resolved_entities["topic"] = canonical_topic
 
-    # Step 3 — subtopic mapping.
+    # Step 3 — subtopic mapping (ignore NER noise like "ma"; only filter when confident).
     roadmap_key = _coerce_text(resolved_entities.get("roadmap_key")) or None
-    subtopic_raw = _coerce_text(_first_value(resolved_entities.get("subtopic")))
-    if subtopic_raw and not roadmap_key:
-        mapped = map_subtopic(subtopic_raw, canonical_topic)
-        roadmap_key = mapped if mapped else None
+    if roadmap_key and str(roadmap_key).lower() == "general":
+        roadmap_key = None
+    subtopic_raw = normalize_subtopic_entity(resolved_entities.get("subtopic"))
+    if subtopic_raw:
+        resolved_entities["subtopic"] = subtopic_raw
+    if not roadmap_key and subtopic_raw:
+        resolution = resolve_subtopic_mapping(subtopic_raw, canonical_topic)
+        if resolution.confident and resolution.roadmap_key != "general":
+            roadmap_key = resolution.roadmap_key
     if roadmap_key:
         resolved_entities["roadmap_key"] = roadmap_key
+    elif "roadmap_key" in resolved_entities:
+        resolved_entities.pop("roadmap_key", None)
 
     # Step 4 — query learning goals.
     matches = await find_goals_for_delete(
@@ -563,6 +643,58 @@ async def handle_learning_delete(
 
     # Step 5 — handle query results.
     if match_count == 0:
+        if roadmap_key:
+            language_matches = await find_goals_for_delete(
+                user_id,
+                canonical_topic,
+                roadmap_key=None,
+            )
+            if len(language_matches) == 1:
+                goal = language_matches[0]
+                goal_id = _coerce_text(goal.get("_id"))
+                if goal_id:
+                    requested_level = _requested_level_label(
+                        resolved_entities,
+                        roadmap_key,
+                    )
+                    goal_preview = _goal_preview(goal)
+                    await redis_client.set_context(
+                        user_id,
+                        _pending_payload(
+                            resolved_entities,
+                            goal_ids=[goal_id],
+                            goals=[goal_preview],
+                            bulk=False,
+                            expected_response="yes_no",
+                        ),
+                    )
+                    response_text = _near_miss_prompt(
+                        user_name,
+                        goal,
+                        canonical_topic=canonical_topic,
+                        requested_level=requested_level,
+                        history=history,
+                    )
+                    await _save_turn(
+                        session_id,
+                        user_message,
+                        response_text,
+                        input_type,
+                        resolved_entities,
+                    )
+                    return {
+                        "status": "pending",
+                        "intent": "learning_delete",
+                        "response_text": response_text,
+                        "notifications": [],
+                        "pending": {
+                            "expected_response": "yes_no",
+                            "bulk": False,
+                            "goal_ids": [goal_id],
+                            "near_miss": True,
+                        },
+                    }
+
         response_text = _not_found_prompt(user_name, resolved_entities, history)
         await _save_turn(
             session_id,
@@ -610,7 +742,12 @@ async def handle_learning_delete(
                 expected_response="yes_no",
             ),
         )
-        response_text = _single_confirm_prompt(user_name, goal, history)
+        response_text = _single_confirm_prompt(
+            user_name,
+            goal,
+            history,
+            canonical_topic=canonical_topic,
+        )
         await _save_turn(
             session_id,
             user_message,

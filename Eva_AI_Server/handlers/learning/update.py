@@ -21,6 +21,7 @@ from db.learning_goals import (
     find_goals_for_update,
     get_active_goals_for_user,
     get_goal_by_id,
+    get_paused_goals_for_user,
     pause_goal,
     resume_goal,
     set_started_at,
@@ -38,6 +39,7 @@ from db.tasks import get_task_by_id, soft_delete_task, update_task
 from handlers.scheduling.add import _coerce_text, _pick_active_google_integration
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
+from utils.learning_schedules import resolve_learning_slots
 from utils.learning_utils import (
     SUPPORTED_TOPICS,
     build_schedule,
@@ -97,6 +99,7 @@ def _pending_payload(
     goals: Optional[List[Dict[str, Any]]] = None,
     goal_id: Optional[str] = None,
     goal: Optional[Dict[str, Any]] = None,
+    deferred_sub_intent: Optional[str] = None,
 ) -> Dict[str, Any]:
     action: Dict[str, Any] = {
         "intent": "learning_update",
@@ -108,7 +111,43 @@ def _pending_payload(
         "goal": goal,
         "entities": dict(entities or {}),
     }
+    if deferred_sub_intent:
+        action["deferred_sub_intent"] = deferred_sub_intent
     return {"expected_response": expected_response, "pending_action": action}
+
+
+_DEFERRED_ACTION_PHRASES: Dict[str, str] = {
+    "skip": "skip the next session",
+    "complete": "mark the next session complete",
+    "reschedule": "reschedule the next session",
+}
+
+
+def _language_label_from_goal(goal: Dict[str, Any]) -> str:
+    subject = _coerce_text(goal.get("subject"))
+    if subject:
+        return subject.replace("_", " ").title()
+    return _goal_preview(goal).get("title") or "that language"
+
+
+def _resume_then_action_prompt(
+    user_name: Optional[str],
+    goal: Dict[str, Any],
+    deferred_sub_intent: str,
+) -> str:
+    language = _language_label_from_goal(goal)
+    action_phrase = _DEFERRED_ACTION_PHRASES.get(
+        deferred_sub_intent,
+        "make that change",
+    )
+    preview = _goal_preview(goal)
+    title = preview.get("title") or language
+    name_bit = f", {user_name}" if user_name else ""
+    return (
+        f"Your {language} learning roadmap ({title}) is paused{name_bit}. "
+        f"If you want me to resume it and {action_phrase}, reply yes. "
+        "Reply no to leave it paused."
+    )
 
 
 async def _save_turn(
@@ -355,6 +394,408 @@ async def _rebuild_pending_schedule(
 from db.roadmap_topics import reschedule_topic as rt_reschedule_topic  # noqa: E402
 
 
+async def skip_session_and_rebalance(
+    *,
+    user_id: str,
+    goal_id: str,
+    topic_id: str,
+    settings: Dict[str, Any],
+    integrations: List[Dict[str, Any]],
+    timezone_name: str,
+    current_topic: Dict[str, Any],
+) -> Tuple[bool, bool]:
+    """
+    Mark topic skipped, remove linked task, rebalance later pending sessions.
+
+    Returns (skip_ok, schedule_shifted).
+    """
+    ok = await skip_topic(str(topic_id))
+    if not ok:
+        return False, False
+
+    google = _pick_active_google_integration(integrations)
+    task_id = str(current_topic.get("task_id") or "").strip()
+    if task_id:
+        try:
+            task_doc = await get_task_by_id(task_id, user_id)
+            await soft_delete_task(task_id)
+            if google and task_doc:
+                event_id = str(task_doc.get("google_calendar_event_id") or "").strip()
+                if event_id:
+                    await google_calendar_client.delete_event(
+                        str(google.get("access_token") or ""),
+                        str(google.get("calendar_id") or ""),
+                        event_id,
+                    )
+        except Exception as error:
+            print(f"[LearningUpdate] skip calendar/task cleanup failed: {error}")
+
+    goal = await get_goal_by_id(goal_id)
+    slots = resolve_learning_slots(settings, goal=goal)
+    if not slots:
+        return True, False
+
+    start_date = (
+        current_topic.get("scheduled_date").date()
+        if isinstance(current_topic.get("scheduled_date"), datetime)
+        else datetime.now(get_zoneinfo(timezone_name)).date()
+    )
+    later = await get_pending_sessions_after(goal_id, int(current_topic.get("order") or 0))
+    if not later:
+        return True, True
+
+    last_dt = await _rebuild_pending_schedule(
+        user_id=user_id,
+        goal_id=goal_id,
+        pending_topics=later,
+        start_from=start_date,
+        preferred_learning_schedule=slots,
+        timezone_name=timezone_name,
+        google_integration=google,
+    )
+    if last_dt:
+        await update_end_date(goal_id, last_dt)
+    return True, bool(last_dt)
+
+
+async def _resume_plan_with_rebase(
+    *,
+    user_id: str,
+    goal_id: str,
+    settings: Dict[str, Any],
+    timezone_name: str,
+    integrations: List[Dict[str, Any]],
+) -> Tuple[bool, Optional[str]]:
+    """Resume a paused goal and rebase pending sessions. Returns (ok, title)."""
+    ok = await resume_goal(goal_id)
+    if not ok:
+        return False, None
+
+    goal = await get_goal_by_id(goal_id)
+    title = _goal_preview(goal or {}).get("title") or "that plan"
+
+    goal = await get_goal_by_id(goal_id)
+    slots = resolve_learning_slots(settings, goal=goal)
+    google = _pick_active_google_integration(integrations)
+    days = _learning_days(slots)
+    today = datetime.now(get_zoneinfo(timezone_name)).date()
+    start_from = _next_learning_date(today + timedelta(days=1), days) if days else today + timedelta(days=1)
+    pending_topics = await get_all_pending_sessions(goal_id)
+    last_dt = await _rebuild_pending_schedule(
+        user_id=user_id,
+        goal_id=goal_id,
+        pending_topics=pending_topics,
+        start_from=start_from,
+        preferred_learning_schedule=slots,
+        timezone_name=timezone_name,
+        google_integration=google,
+    )
+    if last_dt:
+        await update_end_date(goal_id, last_dt)
+    return True, title
+
+
+async def _execute_session_sub_intent(
+    sub_intent: str,
+    goal_id: str,
+    *,
+    user_id: str,
+    entities: Dict[str, Any],
+    canonical_topic: Optional[str],
+    user_name: Optional[str],
+    integrations: List[Dict[str, Any]],
+    tz: str,
+    settings: Dict[str, Any],
+    finish: Any,
+) -> Dict[str, Any]:
+    """Run complete / skip / reschedule on an active goal."""
+    goal_full = await get_goal_by_id(goal_id)
+    if not goal_full:
+        return await finish(
+            "I couldn't load that learning plan right now.",
+            status="error",
+            sub_intent=sub_intent,
+        )
+
+    current = await get_current_session(goal_id)
+    if not current:
+        return await finish(
+            "I couldn't find a pending session for that plan.",
+            status="not_found",
+            sub_intent=sub_intent,
+        )
+
+    all_topics = await get_topics_for_goal(goal_id)
+    prev_scheduled = None
+    prev_resolved = None
+    try:
+        cur_order = int(current.get("order") or 0)
+        prev = next((t for t in all_topics if int(t.get("order") or 0) == cur_order - 1), None)
+        if prev:
+            prev_scheduled = prev.get("scheduled_date")
+            prev_resolved = prev.get("completed_at") or prev.get("updated_at")
+    except Exception:
+        prev_scheduled = None
+        prev_resolved = None
+
+    state = compute_session_state(
+        current,
+        datetime.now(get_zoneinfo(tz)),
+        previous_scheduled_date=prev_scheduled,
+        previous_resolved_at=prev_resolved,
+    )
+
+    learning_slots = resolve_learning_slots(settings, goal=goal_full, entities=entities)
+
+    if sub_intent == "complete":
+        if state != "overdue":
+            if state == "locked":
+                return await finish(
+                    "That session is still locked. It unlocks within 24 hours of its scheduled time.",
+                    status="blocked",
+                    sub_intent=sub_intent,
+                )
+            if state == "unlocked_future":
+                return await finish(
+                    "That session hasn't started yet, so I can't mark it complete. You can reschedule or skip it.",
+                    status="blocked",
+                    sub_intent=sub_intent,
+                )
+            return await finish(
+                "That session can't be completed right now.",
+                status="blocked",
+                sub_intent=sub_intent,
+            )
+
+        ok = await complete_topic(str(current.get("_id")))
+        if not ok:
+            return await finish(
+                "I couldn't mark that session complete right now. Please try again.",
+                status="error",
+                sub_intent=sub_intent,
+            )
+
+        await set_started_at(goal_id)
+        try:
+            task_id = current.get("task_id")
+            await insert_log(
+                {
+                    "user_id": _to_object_id(user_id),
+                    "task_id": _to_object_id(task_id) if task_id else None,
+                    "action_type": "task_completed",
+                    "subject": (canonical_topic or (goal_full.get("subject") or "")).strip().lower(),
+                    "source": "learning_module",
+                }
+            )
+        except Exception as error:
+            print(f"[LearningUpdate] insert_log failed: {error}")
+
+        refreshed_goal = await get_goal_by_id(goal_id)
+        done = int((refreshed_goal or {}).get("completed_topics") or 0)
+        total = int((refreshed_goal or {}).get("total_topics") or 0)
+        title = str((refreshed_goal or {}).get("title") or _goal_preview(goal_full).get("title") or "your plan")
+        if (refreshed_goal or {}).get("status") == "completed":
+            msg = f'Amazing — you finished "{title}"!'
+            if user_name:
+                msg = f"{msg} Great work, {user_name}."
+            return await finish(msg, status="success", sub_intent="complete")
+        msg = f'Nice — I marked the session complete ({done}/{total} in "{title}").'
+        if user_name:
+            msg = f"{msg} Keep going, {user_name}."
+        return await finish(msg, status="success", sub_intent="complete")
+
+    if sub_intent == "skip":
+        if state != "unlocked_future":
+            if state == "locked":
+                return await finish(
+                    "That session is still locked, so it can't be skipped yet.",
+                    status="blocked",
+                    sub_intent=sub_intent,
+                )
+            if state == "overdue":
+                return await finish(
+                    "That session is overdue — you can mark it complete or reschedule it, but not skip it.",
+                    status="blocked",
+                    sub_intent=sub_intent,
+                )
+            return await finish(
+                "That session can't be skipped right now.",
+                status="blocked",
+                sub_intent=sub_intent,
+            )
+
+        skip_ok, shifted = await skip_session_and_rebalance(
+            user_id=user_id,
+            goal_id=goal_id,
+            topic_id=str(current.get("_id")),
+            settings=settings,
+            integrations=integrations,
+            timezone_name=tz,
+            current_topic=current,
+        )
+        if not skip_ok:
+            return await finish(
+                "I couldn't skip that session right now. Please try again.",
+                status="error",
+                sub_intent=sub_intent,
+            )
+
+        if shifted:
+            msg = "Done — I skipped that session and shifted the rest of your schedule forward."
+        else:
+            msg = (
+                "I skipped that session, but I couldn't move the remaining sessions — "
+                "check that your learning schedule is set up in Settings."
+            )
+        if user_name:
+            msg = f"{msg} You're all set, {user_name}."
+        return await finish(msg, status="success", sub_intent="skip")
+
+    if sub_intent == "reschedule":
+        if state == "locked":
+            return await finish(
+                "That session is still locked. It unlocks within 24 hours of its scheduled time.",
+                status="blocked",
+                sub_intent=sub_intent,
+            )
+
+        iso = _coerce_text(entities.get("date"))
+        if not iso:
+            return await finish(
+                "I still need the new date for that session. Try again with a day like next Monday.",
+                status="pending",
+                sub_intent="reschedule",
+            )
+
+        try:
+            new_d = datetime.strptime(iso[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return await finish(
+                "I couldn't understand that date. Try again like 'next Monday'.",
+                status="error",
+                sub_intent=sub_intent,
+            )
+
+        days = _learning_days(learning_slots)
+        if days and new_d.weekday() not in days:
+            return await finish(
+                "That isn't one of your learning days. Pick a valid learning day.",
+                status="error",
+                sub_intent=sub_intent,
+            )
+
+        today_local = datetime.now(get_zoneinfo(tz)).date()
+        if new_d < today_local:
+            return await finish(
+                "That date is in the past. Pick today or a future learning day.",
+                status="error",
+                sub_intent=sub_intent,
+            )
+
+        slot_time, _dur = _schedule_slot_for_day(learning_slots, new_d.weekday())
+        new_dt = datetime.combine(new_d, slot_time)
+
+        later = await get_pending_sessions_after(goal_id, int(current.get("order") or 0))
+        next_dt = None
+        if later and isinstance(later[0].get("scheduled_date"), datetime):
+            next_dt = later[0]["scheduled_date"]
+
+        google = _pick_active_google_integration(integrations)
+
+        if next_dt is None or new_dt < next_dt:
+            ok = await rt_reschedule_topic(str(current.get("_id")), new_dt)
+            if not ok:
+                return await finish(
+                    "I couldn't move that session right now. Please try again.",
+                    status="error",
+                    sub_intent=sub_intent,
+                )
+            task_id = str(current.get("task_id") or "").strip()
+            if task_id:
+                await _update_task_and_calendar(
+                    user_id=user_id,
+                    task_id=task_id,
+                    due_dt=new_dt,
+                    timezone_name=tz,
+                    google_integration=google,
+                )
+            msg = "Done — I moved just your next session."
+            if user_name:
+                msg = f"{msg} All set, {user_name}."
+            return await finish(msg, status="success", sub_intent="reschedule")
+
+        pending_all = [current] + later
+        last_dt = await _rebuild_pending_schedule(
+            user_id=user_id,
+            goal_id=goal_id,
+            pending_topics=pending_all,
+            start_from=new_d,
+            preferred_learning_schedule=learning_slots,
+            timezone_name=tz,
+            google_integration=google,
+        )
+        if last_dt:
+            await update_end_date(goal_id, last_dt)
+        msg = "Done — I moved your next session and rebased the remaining sessions after it."
+        if user_name:
+            msg = f"{msg} You're all set, {user_name}."
+        return await finish(msg, status="success", sub_intent="reschedule")
+
+    return await finish("Ok.", status="ok", sub_intent=sub_intent)
+
+
+async def start_resume_confirm_pending(
+    user_id: str,
+    goal: Dict[str, Any],
+    deferred_sub_intent: str,
+    *,
+    entities: Optional[Dict[str, Any]] = None,
+    user_name: Optional[str] = None,
+) -> str:
+    """Set Redis yes/no context and return the resume-then-action prompt."""
+    goal_id = _coerce_text(goal.get("_id"))
+    preview = _goal_preview(goal)
+    await redis_client.set_context(
+        user_id,
+        _pending_payload(
+            deferred_sub_intent,
+            "resume_confirm",
+            dict(entities or {}),
+            expected_response="yes_no",
+            goal_ids=[goal_id],
+            goals=[preview],
+            goal_id=goal_id,
+            goal=preview,
+            deferred_sub_intent=deferred_sub_intent,
+        ),
+    )
+    return _resume_then_action_prompt(user_name, goal, deferred_sub_intent)
+
+
+async def _offer_resume_then_action(
+    *,
+    user_id: str,
+    goal: Dict[str, Any],
+    deferred_sub_intent: str,
+    entities: Dict[str, Any],
+    user_name: Optional[str],
+    finish: Any,
+) -> Dict[str, Any]:
+    msg = await start_resume_confirm_pending(
+        user_id,
+        goal,
+        deferred_sub_intent,
+        entities=entities,
+        user_name=user_name,
+    )
+    return await finish(
+        msg,
+        status="pending",
+        sub_intent=deferred_sub_intent,
+        pending={"expected_response": "yes_no"},
+    )
+
+
 async def handle_learning_update(
     entities: Optional[Dict[str, Any]] = None,
     context: Optional[Dict[str, Any]] = None,
@@ -372,8 +813,6 @@ async def handle_learning_update(
     input_type = str(context.get("input_type") or "text")
     user_name = user.get("name")
     tz = resolve_timezone_name(user.get("timezone"))
-    preferred_learning_schedule = list(settings.get("preferred_learning_schedule") or [])
-
     pending_reply_type = str(context.get("pending_reply_type") or "").strip().lower()
     pending_reply_value = context.get("pending_reply_value")
     pending_context = context.get("pending_context") or {}
@@ -409,7 +848,7 @@ async def handle_learning_update(
     if sub_intent not in {"pause", "resume", "complete", "skip", "reschedule"}:
         return await finish(_missing_sub_intent_prompt(user_name, history), status="error")
 
-    # Step 1: handle yes/no confirmation for pause/resume
+    # Step 1: handle yes/no confirmation for pause/resume / resume-then-action
     if (
         pending_action.get("intent") == "learning_update"
         and pending_reply_type == "yes_no"
@@ -420,6 +859,49 @@ async def handle_learning_update(
         )
         goal = pending_action.get("goal") or {}
         pending_sub = str(pending_action.get("sub_intent") or sub_intent).strip().lower()
+        pending_stage = str(pending_action.get("stage") or "").strip().lower()
+
+        if pending_stage == "resume_confirm":
+            deferred = str(
+                pending_action.get("deferred_sub_intent") or pending_sub,
+            ).strip().lower()
+            if pending_reply_value == "no":
+                await redis_client.delete_context(user_id)
+                msg = (
+                    f"No problem {user_name}, I left your plan paused."
+                    if user_name
+                    else "No problem, I left your plan paused."
+                )
+                return await finish(msg, status="cancelled", sub_intent=deferred)
+
+            await redis_client.delete_context(user_id)
+            resumed_ok, _title = await _resume_plan_with_rebase(
+                user_id=user_id,
+                goal_id=pending_goal_id,
+                settings=settings,
+                timezone_name=tz,
+                integrations=integrations,
+            )
+            if not resumed_ok:
+                return await finish(
+                    "I couldn't resume that plan right now. Please try again.",
+                    status="error",
+                    sub_intent=deferred,
+                )
+            merged_entities = dict(pending_action.get("entities") or entities)
+            return await _execute_session_sub_intent(
+                deferred,
+                pending_goal_id,
+                user_id=user_id,
+                entities=merged_entities,
+                canonical_topic=normalize_topic(merged_entities.get("topic")),
+                user_name=user_name,
+                integrations=integrations,
+                tz=tz,
+                settings=settings,
+                finish=finish,
+            )
+
         if pending_reply_value == "no":
             await redis_client.delete_context(user_id)
             msg = f"No problem {user_name}, nothing was changed." if user_name else "No problem, nothing was changed."
@@ -440,23 +922,19 @@ async def handle_learning_update(
             if not ok:
                 return await finish("I couldn't resume that plan right now. Please try again.", status="error")
 
-            google = _pick_active_google_integration(integrations)
-            days = _learning_days(preferred_learning_schedule)
-            today = datetime.now(get_zoneinfo(tz)).date()
-            start_from = _next_learning_date(today + timedelta(days=1), days) if days else today + timedelta(days=1)
-            pending_topics = await get_all_pending_sessions(pending_goal_id)
-            last_dt = await _rebuild_pending_schedule(
+            resumed_ok, title = await _resume_plan_with_rebase(
                 user_id=user_id,
                 goal_id=pending_goal_id,
-                pending_topics=pending_topics,
-                start_from=start_from,
-                preferred_learning_schedule=preferred_learning_schedule,
+                settings=settings,
                 timezone_name=tz,
-                google_integration=google,
+                integrations=integrations,
             )
-            if last_dt:
-                await update_end_date(pending_goal_id, last_dt)
-            title = _goal_preview(goal).get("title") or "that plan"
+            if not resumed_ok:
+                return await finish(
+                    "I couldn't resume that plan right now. Please try again.",
+                    status="error",
+                )
+            title = title or _goal_preview(goal).get("title") or "that plan"
             next_session = await get_current_session(pending_goal_id)
             next_dt = next_session.get("scheduled_date") if isinstance(next_session, dict) else None
             next_text = ""
@@ -470,6 +948,37 @@ async def handle_learning_update(
             return await finish(msg, status="success", sub_intent="resume")
 
         return await finish("Got it.", status="ok", sub_intent=pending_sub)
+
+    # Pick which paused plan to resume before skip/complete/reschedule.
+    if (
+        pending_action.get("intent") == "learning_update"
+        and pending_reply_type == "number"
+        and str(pending_action.get("stage") or "") == "identify_paused"
+    ):
+        selected_id = str(pending_reply_value or "").strip()
+        selected_goal: Optional[Dict[str, Any]] = None
+        for row in pending_action.get("goals") or []:
+            if isinstance(row, dict) and str(row.get("_id")) == selected_id:
+                selected_goal = row
+                break
+        deferred = str(
+            pending_action.get("deferred_sub_intent") or sub_intent,
+        ).strip().lower()
+        if not selected_goal:
+            return await finish(
+                "I couldn't match that plan. Pick a number from the list.",
+                status="error",
+                sub_intent=deferred,
+            )
+        await redis_client.delete_context(user_id)
+        return await _offer_resume_then_action(
+            user_id=user_id,
+            goal=selected_goal,
+            deferred_sub_intent=deferred,
+            entities=dict(pending_action.get("entities") or entities),
+            user_name=user_name,
+            finish=finish,
+        )
 
     # Step 2: identify topic/subtopic (when present)
     raw_topic = _coerce_text(entities.get("topic"))
@@ -530,6 +1039,41 @@ async def handle_learning_update(
             matches = active
         else:
             if not active:
+                paused = await get_paused_goals_for_user(user_id)
+                if len(paused) == 1:
+                    return await _offer_resume_then_action(
+                        user_id=user_id,
+                        goal=paused[0],
+                        deferred_sub_intent=sub_intent,
+                        entities=entities,
+                        user_name=user_name,
+                        finish=finish,
+                    )
+                if len(paused) > 1:
+                    previews = [_goal_preview(g) for g in paused][:5]
+                    goal_ids = [p["_id"] for p in previews]
+                    await redis_client.set_context(
+                        user_id,
+                        _pending_payload(
+                            sub_intent,
+                            "identify_paused",
+                            entities,
+                            expected_response="number",
+                            goal_ids=goal_ids,
+                            goals=previews,
+                            deferred_sub_intent=sub_intent,
+                        ),
+                    )
+                    intro = (
+                        f"Your learning plans are paused, {user_name}. Which one should I resume?"
+                        if user_name
+                        else "Your learning plans are paused. Which one should I resume?"
+                    )
+                    return await finish(
+                        _list_prompt(user_name, previews, intro=intro),
+                        status="pending",
+                        sub_intent=sub_intent,
+                    )
                 msg = "I couldn't find any active learning goals to update."
                 return await finish(msg, status="not_found", sub_intent=sub_intent)
             previews = [_goal_preview(g) for g in active][:5]
@@ -554,6 +1098,17 @@ async def handle_learning_update(
 
     # Handle no matches for topic-specific queries
     if canonical_topic and not matches:
+        if sub_intent in {"complete", "skip", "reschedule"}:
+            paused = await get_paused_goals_for_user(user_id, canonical_topic)
+            if len(paused) == 1:
+                return await _offer_resume_then_action(
+                    user_id=user_id,
+                    goal=paused[0],
+                    deferred_sub_intent=sub_intent,
+                    entities=entities,
+                    user_name=user_name,
+                    finish=finish,
+                )
         msg = (
             f"I couldn't find any {status_filter or ''} {canonical_topic} learning goals.".strip()
             if not user_name
@@ -607,142 +1162,20 @@ async def handle_learning_update(
         )
         return await finish(_confirm_prompt(user_name, sub_intent, goal), status="pending", sub_intent=sub_intent)
 
-    # Sub-intents: complete / skip / reschedule execute immediately on identified goal
-    goal_full = await get_goal_by_id(goal_id)
-    if not goal_full:
-        return await finish("I couldn't load that learning plan right now.", status="error", sub_intent=sub_intent)
-
-    # Find current session (pending topic)
-    current = await get_current_session(goal_id)
-    if not current:
-        return await finish("I couldn't find a pending session for that plan.", status="not_found", sub_intent=sub_intent)
-
-    # Gap-aware state computation
-    all_topics = await get_topics_for_goal(goal_id)
-    prev_scheduled = None
-    prev_resolved = None
-    try:
-        cur_order = int(current.get("order") or 0)
-        prev = next((t for t in all_topics if int(t.get("order") or 0) == cur_order - 1), None)
-        if prev:
-            prev_scheduled = prev.get("scheduled_date")
-            prev_resolved = prev.get("completed_at") or prev.get("updated_at")
-    except Exception:
-        prev_scheduled = None
-        prev_resolved = None
-
-    state = compute_session_state(
-        current,
-        datetime.now(get_zoneinfo(tz)),
-        previous_scheduled_date=prev_scheduled,
-        previous_resolved_at=prev_resolved,
-    )
-
-    if sub_intent == "complete":
-        if state != "overdue":
-            if state == "locked":
-                return await finish("That session is still locked. It unlocks within 24 hours of its scheduled time.", status="blocked")
-            if state == "unlocked_future":
-                return await finish("That session hasn't started yet, so I can't mark it complete. You can reschedule or skip it.", status="blocked")
-            return await finish("That session can't be completed right now.", status="blocked")
-
-        ok = await complete_topic(str(current.get("_id")))
-        if not ok:
-            return await finish("I couldn't mark that session complete right now. Please try again.", status="error")
-
-        # Ensure started_at exists once.
-        await set_started_at(goal_id)
-
-        # Activity log (one per completion)
-        try:
-            task_id = current.get("task_id")
-            await insert_log(
-                {
-                    "user_id": _to_object_id(user_id),
-                    "task_id": _to_object_id(task_id) if task_id else None,
-                    "action_type": "task_completed",
-                    "subject": (canonical_topic or (goal_full.get("subject") or "")).strip().lower(),
-                    "source": "learning_module",
-                }
+    if sub_intent in {"complete", "skip", "reschedule"}:
+        goal_status = str(goal.get("status") or "").strip().lower()
+        if goal_status == "paused":
+            return await _offer_resume_then_action(
+                user_id=user_id,
+                goal=goal,
+                deferred_sub_intent=sub_intent,
+                entities=entities,
+                user_name=user_name,
+                finish=finish,
             )
-        except Exception as error:
-            print(f"[LearningUpdate] insert_log failed: {error}")
 
-        refreshed_goal = await get_goal_by_id(goal_id)
-        done = int((refreshed_goal or {}).get("completed_topics") or 0)
-        total = int((refreshed_goal or {}).get("total_topics") or 0)
-        title = str((refreshed_goal or {}).get("title") or _goal_preview(goal_full).get("title") or "your plan")
-        if (refreshed_goal or {}).get("status") == "completed":
-            msg = f'Amazing — you finished "{title}"!'
-            if user_name:
-                msg = f"{msg} Great work, {user_name}."
-            return await finish(msg, status="success", sub_intent="complete")
-        msg = f'Nice — I marked the session complete ({done}/{total} in "{title}").'
-        if user_name:
-            msg = f"{msg} Keep going, {user_name}."
-        return await finish(msg, status="success", sub_intent="complete")
-
-    if sub_intent == "skip":
-        if state != "unlocked_future":
-            if state == "locked":
-                return await finish("That session is still locked, so it can't be skipped yet.", status="blocked")
-            if state == "overdue":
-                return await finish("That session is overdue — you can mark it complete or reschedule it, but not skip it.", status="blocked")
-            return await finish("That session can't be skipped right now.", status="blocked")
-
-        ok = await skip_topic(str(current.get("_id")))
-        if not ok:
-            return await finish("I couldn't skip that session right now. Please try again.", status="error")
-
-        # Soft-delete linked task + delete calendar event best-effort
-        google = _pick_active_google_integration(integrations)
-        task_id = str(current.get("task_id") or "").strip()
-        if task_id:
-            try:
-                task_doc = await get_task_by_id(task_id, user_id)
-                await soft_delete_task(task_id)
-                if google and task_doc:
-                    event_id = str(task_doc.get("google_calendar_event_id") or "").strip()
-                    if event_id:
-                        await google_calendar_client.delete_event(
-                            str(google.get("access_token") or ""),
-                            str(google.get("calendar_id") or ""),
-                            event_id,
-                        )
-            except Exception as error:
-                print(f"[LearningUpdate] skip calendar/task cleanup failed: {error}")
-
-        # Cascade remaining sessions (pending after current) from current scheduled date.
-        start_date = (
-            current.get("scheduled_date").date()
-            if isinstance(current.get("scheduled_date"), datetime)
-            else datetime.now(get_zoneinfo(tz)).date()
-        )
-        later = await get_pending_sessions_after(goal_id, int(current.get("order") or 0))
-        last_dt = await _rebuild_pending_schedule(
-            user_id=user_id,
-            goal_id=goal_id,
-            pending_topics=later,
-            start_from=start_date,
-            preferred_learning_schedule=preferred_learning_schedule,
-            timezone_name=tz,
-            google_integration=google,
-        )
-        if last_dt:
-            await update_end_date(goal_id, last_dt)
-
-        msg = "Done — I skipped that session and shifted the rest of your schedule forward."
-        if user_name:
-            msg = f"{msg} You're all set, {user_name}."
-        return await finish(msg, status="success", sub_intent="skip")
-
-    if sub_intent == "reschedule":
-        if state == "locked":
-            return await finish("That session is still locked. It unlocks within 24 hours of its scheduled time.", status="blocked")
-
-        # Date must be present (from NER or from State 5)
-        iso = _coerce_text(entities.get("date"))
-        if not iso:
+        if sub_intent == "reschedule" and not _coerce_text(entities.get("date")):
+            goal_full = await get_goal_by_id(goal_id)
             await redis_client.set_context(
                 user_id,
                 _pending_payload(
@@ -751,71 +1184,33 @@ async def handle_learning_update(
                     entities,
                     expected_response="free_text",
                     goal_id=goal_id,
-                    goal=_goal_preview(goal_full),
+                    goal=_goal_preview(goal_full or goal),
                 ),
             )
-            days = _learning_days(preferred_learning_schedule)
+            slots = resolve_learning_slots(settings, goal=goal_full or goal, entities=entities)
+            days = _learning_days(slots)
             days_hint = ""
             if days:
                 days_hint = f" Your learning days are {', '.join(str(d) for d in sorted(days))}."
-            ask = f"What date would you like to move your session to, {user_name}?" if user_name else "What date would you like to move your session to?"
+            ask = (
+                f"What date would you like to move your session to, {user_name}?"
+                if user_name
+                else "What date would you like to move your session to?"
+            )
             return await finish(ask + days_hint, status="pending", sub_intent="reschedule")
 
-        try:
-            new_d = datetime.strptime(iso[:10], "%Y-%m-%d").date()
-        except ValueError:
-            return await finish("I couldn't understand that date. Try again like 'next Monday'.", status="error")
-
-        days = _learning_days(preferred_learning_schedule)
-        if days and new_d.weekday() not in days:
-            return await finish("That isn't one of your learning days. Pick a valid learning day.", status="error")
-
-        slot_time, _dur = _schedule_slot_for_day(preferred_learning_schedule, new_d.weekday())
-        new_dt = datetime.combine(new_d, slot_time)
-
-        # Decide cascade vs single move
-        later = await get_pending_sessions_after(goal_id, int(current.get("order") or 0))
-        next_dt = None
-        if later and isinstance(later[0].get("scheduled_date"), datetime):
-            next_dt = later[0]["scheduled_date"]
-
-        google = _pick_active_google_integration(integrations)
-
-        if next_dt is None or new_dt < next_dt:
-            ok = await rt_reschedule_topic(str(current.get("_id")), new_dt)
-            if not ok:
-                return await finish("I couldn't move that session right now. Please try again.", status="error")
-            task_id = str(current.get("task_id") or "").strip()
-            if task_id:
-                await _update_task_and_calendar(
-                    user_id=user_id,
-                    task_id=task_id,
-                    due_dt=new_dt,
-                    timezone_name=tz,
-                    google_integration=google,
-                )
-            msg = "Done — I moved just your next session."
-            if user_name:
-                msg = f"{msg} All set, {user_name}."
-            return await finish(msg, status="success", sub_intent="reschedule")
-
-        # Cascade: rebuild current + later starting from new date
-        pending_all = [current] + later
-        last_dt = await _rebuild_pending_schedule(
+        return await _execute_session_sub_intent(
+            sub_intent,
+            goal_id,
             user_id=user_id,
-            goal_id=goal_id,
-            pending_topics=pending_all,
-            start_from=new_d,
-            preferred_learning_schedule=preferred_learning_schedule,
-            timezone_name=tz,
-            google_integration=google,
+            entities=entities,
+            canonical_topic=canonical_topic,
+            user_name=user_name,
+            integrations=integrations,
+            tz=tz,
+            settings=settings,
+            finish=finish,
         )
-        if last_dt:
-            await update_end_date(goal_id, last_dt)
-        msg = "Done — I moved your next session and rebased the remaining sessions after it."
-        if user_name:
-            msg = f"{msg} You're all set, {user_name}."
-        return await finish(msg, status="success", sub_intent="reschedule")
 
     return await finish("Ok.", status="ok", sub_intent=sub_intent)
 

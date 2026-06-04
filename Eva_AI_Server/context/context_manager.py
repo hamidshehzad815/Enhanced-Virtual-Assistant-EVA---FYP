@@ -16,7 +16,9 @@ from utils.learning_utils import (
     duration_entity_to_days,
     level_keys_for_language,
     map_subtopic,
+    normalize_subtopic_entity,
     normalize_topic,
+    resolve_subtopic_mapping,
 )
 from utils.timezone_utils import get_zoneinfo, resolve_timezone_name
 
@@ -410,7 +412,7 @@ async def process_learning_update_free_text_reply(
             msg = f"I didn't catch the learning topic, {user_name}. Say something like Python or MySQL."
         return {"outcome": "retry", "message": msg}
 
-    subtopic_raw = scoped.get("subtopic")
+    subtopic_raw = normalize_subtopic_entity(scoped.get("subtopic"))
     roadmap_key = "general"
     if subtopic_raw:
         try:
@@ -422,7 +424,7 @@ async def process_learning_update_free_text_reply(
     merged.update(scoped)
     merged["topic"] = topic
     if subtopic_raw:
-        merged["subtopic"] = str(subtopic_raw)
+        merged["subtopic"] = subtopic_raw
     merged["roadmap_key"] = roadmap_key
     return {"outcome": "merged", "merged_entities": merged}
 
@@ -570,7 +572,7 @@ async def process_learning_create_free_text_reply(
     preferred_learning_schedule: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
     """
-    Handle a free-text reply for pending ``learning_create`` (stages: topic, start_date, duration).
+    Handle a free-text reply for pending ``learning_create`` (stages: topic, subtopic, start_date, duration).
 
     Returns:
       - ``{"outcome": "retry", "message": str}`` — keep Redis context
@@ -604,9 +606,38 @@ async def process_learning_create_free_text_reply(
                 "message": "That topic isn't in our roadmaps yet. Pick one of the supported languages or databases (say “Python”, “JavaScript”, “MySQL”, …).",
             }
         merged = {**entities, "topic": canonical}
-        sub = scoped.get("subtopic")
-        if sub and str(sub).strip():
-            merged["subtopic"] = str(sub).strip()
+        sub = normalize_subtopic_entity(scoped.get("subtopic"))
+        if sub:
+            merged["subtopic"] = sub
+        return {"outcome": "merged", "merged_entities": merged}
+
+    if stage == "subtopic":
+        topic = entities.get("topic")
+        if not topic:
+            return {
+                "outcome": "retry",
+                "message": "Something went wrong (missing topic). Start your learning request again.",
+            }
+        sub = normalize_subtopic_entity(cleaned) or cleaned
+        if not str(sub).strip():
+            return {
+                "outcome": "retry",
+                "message": (
+                    "Please tell me which level or focus you want — "
+                    "e.g. basics, intermediate, advanced, or OOP."
+                ),
+            }
+        resolution = resolve_subtopic_mapping(sub, str(topic))
+        if not resolution.confident:
+            heard = str(sub).strip()
+            return {
+                "outcome": "retry",
+                "message": (
+                    f"I still couldn't match \"{heard}\" to a {topic} track. "
+                    "Try basics (beginner), intermediate, advanced, or a clear topic like OOP or loops."
+                ),
+            }
+        merged = {**entities, "subtopic": str(sub).strip()}
         return {"outcome": "merged", "merged_entities": merged}
 
     if stage == "start_date":
@@ -762,9 +793,11 @@ async def process_learning_delete_free_text_reply(
         }
 
     merged = {**entities, "topic": canonical}
-    subtopic = scoped.get("subtopic")
-    if subtopic and str(subtopic).strip():
-        merged["subtopic"] = str(subtopic).strip()
-        merged["roadmap_key"] = map_subtopic(merged.get("subtopic"), canonical)
+    subtopic = normalize_subtopic_entity(scoped.get("subtopic"))
+    if subtopic:
+        merged["subtopic"] = subtopic
+        resolution = resolve_subtopic_mapping(subtopic, canonical)
+        if resolution.confident and resolution.roadmap_key != "general":
+            merged["roadmap_key"] = resolution.roadmap_key
 
     return {"outcome": "merged", "merged_entities": merged}

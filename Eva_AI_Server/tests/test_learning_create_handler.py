@@ -320,7 +320,9 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                 _ctx(),
             )
         self.assertEqual(out["status"], "error")
-        self.assertIn("already have an active Python plan", out["response_text"])
+        self.assertIn("already have an active Python learning plan", out["response_text"])
+        self.assertIn("Complete that plan first, or delete it", out["response_text"])
+        self.assertNotIn("Pause", out["response_text"])
 
     async def test_success_path_creates_goal_and_tasks(self):
         topics = [

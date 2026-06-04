@@ -14,6 +14,7 @@ const { applyLearningCollaborationAction } = require("../services/learningCollab
 const { softDeleteLearningGoalById } = require("../services/learningDelete.service");
 const { insert_and_dispatch } = require("../services/notification.service");
 const { callAIInternal } = require("../services/ai.service");
+const { validateTopicAction } = require("../utils/learningSessionState");
 
 const PATCH_STATUS = new Set(["active", "paused", "cancelled"]);
 
@@ -184,6 +185,22 @@ const completeTopic = async (req, res, next) => {
       throw new BadRequestError("Invalid topic id");
     }
 
+    const goalTopics = await RoadmapTopic.find({
+      goal_id: goalOid,
+      is_deleted: false,
+    })
+      .sort({ order: 1 })
+      .lean();
+
+    const completeBlock = validateTopicAction({
+      topics: goalTopics,
+      topicId: topicOid,
+      action: "complete",
+    });
+    if (completeBlock) {
+      throw new ConflictError(completeBlock.message);
+    }
+
     // AI server performs all DB writes for learning update flows.
     const aiResult = await callAIInternal("/internal/auto-complete-topic", {
       topic_id: String(topicOid),
@@ -239,6 +256,22 @@ const skipTopic = async (req, res, next) => {
     const topicOid = toObjectId(req.params.topicId);
     if (!topicOid) {
       throw new BadRequestError("Invalid topic id");
+    }
+
+    const goalTopics = await RoadmapTopic.find({
+      goal_id: goalOid,
+      is_deleted: false,
+    })
+      .sort({ order: 1 })
+      .lean();
+
+    const skipBlock = validateTopicAction({
+      topics: goalTopics,
+      topicId: topicOid,
+      action: "skip",
+    });
+    if (skipBlock) {
+      throw new ConflictError(skipBlock.message);
     }
 
     const aiResult = await callAIInternal("/internal/skip-topic", {

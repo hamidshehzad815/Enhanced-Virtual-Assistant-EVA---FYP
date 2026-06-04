@@ -551,6 +551,83 @@ class LearningDeleteHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "not_found")
         mock_find.assert_not_awaited()
 
+    async def test_near_miss_wrong_subtopic_offers_existing_plan(self):
+        goal_id = str(ObjectId())
+        basics_goal = {
+            "_id": goal_id,
+            "title": "Python basics",
+            "roadmap_key": "basics",
+            "status": "active",
+            "completed_topics": 2,
+            "total_topics": 8,
+            "collaborators": [],
+        }
+
+        async def _find_side_effect(user_id, topic, roadmap_key=None):
+            if roadmap_key == "advanced":
+                return []
+            return [basics_goal]
+
+        with patch(
+            "handlers.learning.delete.find_goals_for_delete",
+            new=AsyncMock(side_effect=_find_side_effect),
+        ), patch(
+            "handlers.learning.delete.redis_client.set_context",
+            new=AsyncMock(return_value=True),
+        ) as mock_set, patch(
+            "handlers.learning.delete.gemini_service.generate_reply",
+            side_effect=_gemini_stub,
+        ), patch(
+            "handlers.learning.delete._save_turn",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await handle_learning_delete(
+                entities={"topic": "Python", "subtopic": "advance"},
+                context=_base_context(message="delete python advance roadmap"),
+            )
+
+        self.assertEqual(result["status"], "pending")
+        self.assertEqual(result["pending"]["expected_response"], "yes_no")
+        self.assertTrue(result["pending"].get("near_miss"))
+        self.assertIn("learning_delete_near_miss_confirm", result["response_text"])
+        payload = mock_set.await_args.args[1]
+        self.assertEqual(payload["pending_action"]["goal_ids"], [goal_id])
+
+    async def test_ner_noise_subtopic_ma_does_not_filter_roadmap(self):
+        match = [
+            {
+                "_id": str(ObjectId()),
+                "title": "Python basics",
+                "roadmap_key": "basics",
+                "status": "active",
+                "completed_topics": 1,
+                "total_topics": 5,
+                "collaborators": [],
+            }
+        ]
+        with patch(
+            "handlers.learning.delete.find_goals_for_delete",
+            new=AsyncMock(return_value=match),
+        ) as mock_find, patch(
+            "handlers.learning.delete.redis_client.set_context",
+            new=AsyncMock(return_value=True),
+        ), patch(
+            "handlers.learning.delete.gemini_service.generate_reply",
+            side_effect=_gemini_stub,
+        ), patch(
+            "handlers.learning.delete._save_turn",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await handle_learning_delete(
+                entities={"topic": "Python", "subtopic": "ma"},
+                context=_base_context(message="delete python roadmap"),
+            )
+
+        self.assertEqual(result["status"], "pending")
+        self.assertEqual(result["pending"]["expected_response"], "yes_no")
+        call_kwargs = mock_find.await_args.kwargs
+        self.assertIsNone(call_kwargs.get("roadmap_key"))
+
     async def test_topic_alias_normalized_for_query(self):
         with patch(
             "handlers.learning.delete.find_goals_for_delete",

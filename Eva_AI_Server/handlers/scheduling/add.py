@@ -30,6 +30,14 @@ from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
 from services.productivity_scorer import get_scheduling_suggestion
+from utils.collaborator_calendar import (
+    find_user_calendar_conflicts,
+    format_collaborator_conflict_message,
+)
+from utils.learning_schedule_conflicts import (
+    find_task_conflicts_from_settings,
+    format_learning_schedule_conflict_message,
+)
 from utils.task_value_normalizer import canonicalize_priority
 from utils.timezone_utils import (
     local_datetime_to_utc_naive,
@@ -1120,7 +1128,38 @@ async def handle_scheduling_add(
             },
         }
 
-    # Step 4: cancel immediately if the requested window overlaps another task.
+    # Step 4a: block if the window overlaps a learning schedule slot (reserved in Settings).
+    learning_slot_conflicts = find_task_conflicts_from_settings(
+        due_datetime,
+        duration_minutes,
+        settings,
+        timezone_name=timezone,
+    )
+    if learning_slot_conflicts:
+        response_text = format_learning_schedule_conflict_message(
+            learning_slot_conflicts,
+            user_name=user_name,
+        )
+        await _save_turn(
+            session_id,
+            user_message,
+            response_text,
+            input_type,
+            "scheduling_add",
+            entities,
+        )
+        return {
+            "status": "conflict",
+            "intent": "scheduling_add",
+            "response_text": response_text,
+            "notifications": [],
+            "conflict": {
+                "type": "learning_schedule",
+                "conflicts": learning_slot_conflicts,
+            },
+        }
+
+    # Step 4b: cancel immediately if the requested window overlaps another task.
     conflicting_task = await find_overlapping_task_for_user(user_id, due_datetime, duration_minutes)
     if conflicting_task:
         conflicting_title = _coerce_text(conflicting_task.get("title")) or "another task"
@@ -1235,25 +1274,24 @@ async def handle_scheduling_add(
             "notifications": [],
         }
 
-    # Step 6.1: strict collaborator-busy blocking for productivity protection.
+    # Step 6.1: collaborator calendar — tasks + their learning schedule slots.
     for collaborator in collaborators:
         collaborator_user_id = str(collaborator.get("user_id") or "")
         if not collaborator_user_id:
             continue
 
-        collaborator_conflict = await find_overlapping_task_for_user(
+        calendar_conflict = await find_user_calendar_conflicts(
             collaborator_user_id,
             due_datetime,
             duration_minutes,
         )
-        if not collaborator_conflict:
+        if not calendar_conflict:
             continue
 
         collaborator_name = _coerce_text(collaborator.get("name")) or "This collaborator"
-        response_text = (
-            f"{collaborator_name} is busy at {_format_time_display(time_value)} on "
-            f"{_format_date_display(date_value)} and cannot collaborate on this task. "
-            "Please choose a different time."
+        response_text = format_collaborator_conflict_message(
+            collaborator_name,
+            calendar_conflict,
         )
         await _save_turn(
             session_id,
@@ -1263,18 +1301,21 @@ async def handle_scheduling_add(
             "scheduling_add",
             entities,
         )
+        conflict_payload: Dict[str, Any] = {
+            "reason": "collaborator_calendar",
+            "collaborator_name": collaborator_name,
+            "collaborator_user_id": collaborator_user_id,
+            "kind": calendar_conflict.get("kind"),
+        }
+        if calendar_conflict.get("kind") == "task":
+            conflict_payload["task_id"] = calendar_conflict.get("task_id")
+            conflict_payload["title"] = calendar_conflict.get("title")
         return {
             "status": "conflict",
             "intent": "scheduling_add",
             "response_text": response_text,
             "notifications": [],
-            "conflict": {
-                "reason": "collaborator_busy",
-                "collaborator_name": collaborator_name,
-                "collaborator_user_id": collaborator_user_id,
-                "task_id": collaborator_conflict.get("_id"),
-                "title": _coerce_text(collaborator_conflict.get("title")),
-            },
+            "conflict": conflict_payload,
         }
 
     reminder_minutes = int(settings.get("default_reminder_minutes", 30))
