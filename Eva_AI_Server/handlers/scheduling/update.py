@@ -27,6 +27,10 @@ from db.tasks import (
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
+from utils.learning_schedule_conflicts import (
+    find_task_conflicts_from_settings,
+    format_learning_schedule_conflict_message,
+)
 from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
 from utils.timezone_utils import (
     local_datetime_to_utc_naive,
@@ -921,6 +925,7 @@ async def handle_scheduling_update(
     user_id = str(context.get("user_id") or "")
     session_id = str(context.get("session_id") or "")
     user = context.get("user") or {}
+    settings = context.get("settings") or {}
     integrations = context.get("integrations") or []
     history = context.get("history") or []
     user_message = str(context.get("message") or "")
@@ -1523,6 +1528,39 @@ async def handle_scheduling_update(
             }
 
         overlap_duration = int(update_data.get("duration") or current_duration)
+        learning_slot_conflicts = find_task_conflicts_from_settings(
+            candidate_due_utc,
+            overlap_duration,
+            settings,
+            timezone_name=timezone_name,
+        )
+        if learning_slot_conflicts:
+            await _set_what_to_update_context(
+                user_id=user_id,
+                entities={**combined_entities, **normalized_updates_for_entities},
+                task_id=selected_task_id,
+                task_preview=selected_task,
+            )
+            response_text = format_learning_schedule_conflict_message(
+                learning_slot_conflicts,
+                user_name=user_name,
+            )
+            await _save_turn(
+                session_id,
+                user_message,
+                response_text,
+                input_type,
+                "scheduling_update",
+                combined_entities,
+            )
+            return {
+                "status": "conflict",
+                "intent": "scheduling_update",
+                "response_text": response_text,
+                "notifications": [],
+                "pending": {"expected_response": "free_text", "stage": "what_to_update"},
+            }
+
         has_conflict = await check_update_overlap(
             user_id,
             selected_task_id,

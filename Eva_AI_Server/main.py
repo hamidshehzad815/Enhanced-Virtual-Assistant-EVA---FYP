@@ -27,7 +27,7 @@ from db.activity_logs import (
     get_log_count_per_day,
     get_total_completed,
 )
-from db.readers import fetch_user_settings
+from db.readers import fetch_integrations, fetch_user, fetch_user_settings
 from context.context_manager import (
     extract_update_fields,
     handle_free_text_reply,
@@ -81,12 +81,12 @@ from db.roadmap_topics import (
     get_current_session,
     get_topics_for_goal,
     reschedule_topic,
-    skip_topic,
 )
+from handlers.learning.update import skip_session_and_rebalance
 from db.tasks import get_task_by_id, soft_delete_task, update_task
 from handlers.scheduling.add import _pick_active_google_integration
 from services.google_calendar import google_calendar_client
-from utils.learning_utils import build_schedule
+from utils.learning_utils import build_schedule, normalize_subtopic_entity
 
 _COMMAND_VERBS = {
     "add",
@@ -637,7 +637,7 @@ async def internal_auto_complete_topic(payload: AutoCompleteTopicRequest):
 @app.post("/internal/skip-topic")
 async def internal_skip_topic(payload: SkipTopicRequest):
     """
-    Skip a specific topic and cascade schedule forward (UI-triggered later).
+    Skip a specific topic and cascade remaining pending sessions (chat + UI).
     """
     goal_id = str(payload.goal_id or "").strip()
     topic_id = str(payload.topic_id or "").strip()
@@ -645,19 +645,32 @@ async def internal_skip_topic(payload: SkipTopicRequest):
     if not goal_id or not topic_id or not user_id:
         return {"status": "error", "message": "topic_id, goal_id, user_id required"}
 
-    ok = await skip_topic(topic_id)
-    if not ok:
-        return {"status": "error", "message": "topic not updated"}
-
-    # Soft delete linked task
     topics = await get_topics_for_goal(goal_id)
     topic_doc = next((t for t in topics if str(t.get("_id")) == topic_id), None)
-    if topic_doc:
-        task_id = str(topic_doc.get("task_id") or "").strip()
-        if task_id:
-            await soft_delete_task(task_id)
+    if not topic_doc:
+        return {"status": "error", "message": "topic not found"}
 
-    return {"status": "success"}
+    settings_data = await fetch_user_settings(user_id)
+    user_doc = await fetch_user(user_id)
+    integrations = await fetch_integrations(user_id)
+    tz = resolve_timezone_name((user_doc or {}).get("timezone"))
+
+    skip_ok, shifted = await skip_session_and_rebalance(
+        user_id=user_id,
+        goal_id=goal_id,
+        topic_id=topic_id,
+        settings=settings_data,
+        integrations=integrations,
+        timezone_name=tz,
+        current_topic=topic_doc,
+    )
+    if not skip_ok:
+        return {"status": "error", "message": "topic not updated"}
+
+    return {
+        "status": "success",
+        "schedule_shifted": shifted,
+    }
 
 
 @app.post("/process")
@@ -2054,6 +2067,12 @@ async def process_message(payload: ProcessRequest):
                 }
 
             raw_entities = active_ner.extract(nlu_message, intent_hint=canonical_intent)
+            if "subtopic" in raw_entities:
+                subtopic_norm = normalize_subtopic_entity(raw_entities.get("subtopic"))
+                if subtopic_norm:
+                    raw_entities["subtopic"] = subtopic_norm
+                else:
+                    raw_entities.pop("subtopic", None)
             raw_entities = _repair_weekday_fragment_date(raw_entities, nlu_message)
             scoped_entities = scope_entities(raw_entities, canonical_intent)
             user_timezone = resolve_timezone_name((fetched.user or {}).get("timezone"))

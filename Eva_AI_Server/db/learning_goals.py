@@ -50,44 +50,52 @@ async def get_active_goals_for_user(user_id: str) -> List[Dict[str, Any]]:
     return [_normalize_doc(r) for r in rows]
 
 
+async def get_paused_goals_for_user(
+    user_id: str,
+    topic: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Paused, non-deleted goals for a user (optional subject filter)."""
+    db = get_db()
+    uid = _to_object_id(user_id)
+    query: Dict[str, Any] = {
+        "user_id": uid,
+        "status": "paused",
+        "is_deleted": False,
+    }
+    subject = (topic or "").strip().lower()
+    if subject:
+        query["subject"] = subject
+
+    cursor = db.learning_goals.find(query).sort("created_at", -1)
+    rows = await cursor.to_list(length=500)
+    return [_normalize_doc(r) for r in rows]
+
+
 async def find_conflicting_goal(
     user_id: str,
     topic: str,
-    roadmap_key: str,
+    roadmap_key: str = "",
 ) -> Optional[Dict[str, Any]]:
     """
-  Return an active goal that blocks creating this plan, or None.
+    Return an active learning goal for this language/subject if one exists.
 
-  Blocks when:
-    - same subject + same roadmap_key, or
-    - same subject + existing \"general\" (general blocks any new track), or
-    - same subject + new \"general\" while any other active track exists.
-
-  Different subjects may both be active. Different tracks (e.g. basics vs intermediate) may coexist.
+    One active plan per language: a second Python plan is blocked regardless of track
+    (basics vs intermediate). Different languages (Python vs JavaScript) may coexist.
+    ``roadmap_key`` is accepted for API compatibility but not used in the query.
     """
+    _ = roadmap_key
     db = get_db()
     uid = _to_object_id(user_id)
     subject_norm = (topic or "").strip().lower()
-    rk = (roadmap_key or "general").strip().lower()
-
-    base: Dict[str, Any] = {
-        "user_id": uid,
-        "status": "active",
-        "is_deleted": False,
-        "subject": subject_norm,
-    }
-
-    if rk == "general":
-        doc = await db.learning_goals.find_one(base)
-        return _normalize_doc(doc) if doc else None
+    if not subject_norm:
+        return None
 
     doc = await db.learning_goals.find_one(
         {
-            **base,
-            "$or": [
-                {"roadmap_key": rk},
-                {"roadmap_key": "general"},
-            ],
+            "user_id": uid,
+            "status": "active",
+            "is_deleted": False,
+            "subject": subject_norm,
         },
     )
     return _normalize_doc(doc) if doc else None

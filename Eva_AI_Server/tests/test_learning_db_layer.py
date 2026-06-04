@@ -240,7 +240,7 @@ class LearningDbLayerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(rows), 2)
         self.assertEqual(rows[0]["created_at"].isoformat()[:10], "2026-01-03")
 
-    async def test_check_duplicate_exact_match_and_different_level_allowed(self):
+    async def test_check_duplicate_blocks_second_track_same_language(self):
         fake = FakeDB()
         uid = ObjectId()
         fake.learning_goals.docs = [
@@ -260,7 +260,7 @@ class LearningDbLayerTests(unittest.IsolatedAsyncioTestCase):
             )
             dup_rust = await lg.check_duplicate_goal(str(uid), "rust", "basics")
         self.assertTrue(dup_basics)
-        self.assertFalse(dup_intermediate)
+        self.assertTrue(dup_intermediate)
         self.assertFalse(dup_rust)
 
     async def test_check_duplicate_new_general_blocks_existing_track(self):

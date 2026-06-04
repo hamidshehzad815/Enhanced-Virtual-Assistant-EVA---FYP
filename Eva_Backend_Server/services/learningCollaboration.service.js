@@ -3,7 +3,7 @@
  */
 
 const mongoose = require("mongoose");
-const { LearningGoal, RoadmapTopic, Task, Notification } = require("../models");
+const { LearningGoal, RoadmapTopic, Task, User, Notification } = require("../models");
 const {
   BadRequestError,
   ConflictError,
@@ -12,8 +12,57 @@ const {
 const {
   notifyOwnerOfCollaborationResponse,
 } = require("./collaborationNotifications");
+const {
+  findUserCalendarConflicts,
+  formatCollaboratorConflictMessage,
+  resolveUserTimezone,
+} = require("../utils/userCalendarConflicts");
 
 const sameObjectId = (a, b) => String(a) === String(b);
+
+const validateCollaboratorCanAcceptPlan = async (ownerGoal, collaboratorUserId) => {
+  const goalOid = ownerGoal._id;
+  const collabOid = new mongoose.Types.ObjectId(collaboratorUserId);
+  const topics = await RoadmapTopic.find({
+    goal_id: goalOid,
+    is_deleted: false,
+  })
+    .sort({ order: 1 })
+    .lean();
+
+  const collabUser = await User.findById(collabOid).select("name username").lean();
+  const collabName =
+    (collabUser && (collabUser.name || collabUser.username)) || "Collaborator";
+  const tz = await resolveUserTimezone(collabOid);
+
+  for (const topic of topics) {
+    if (!topic.task_id) {
+      continue;
+    }
+    const ownerTask = await Task.findOne({
+      _id: topic.task_id,
+      is_deleted: { $ne: true },
+    }).lean();
+    if (!ownerTask || !ownerTask.due_datetime) {
+      continue;
+    }
+    const duration = ownerTask.duration || 120;
+    const conflict = await findUserCalendarConflicts(
+      collabOid,
+      ownerTask.due_datetime,
+      duration,
+      tz,
+    );
+    if (conflict) {
+      throw new ConflictError(
+        formatCollaboratorConflictMessage(collabName, conflict, {
+          forLearningPlan: true,
+        }),
+        { conflict, collaborator_user_id: String(collaboratorUserId) },
+      );
+    }
+  }
+};
 
 const markLearningCollaborationNotificationHandled = async ({
   userId,
@@ -221,6 +270,7 @@ const applyLearningCollaborationAction = async ({
 
   let collaboratorGoalId = null;
   if (action === "accept") {
+    await validateCollaboratorCanAcceptPlan(updatedGoal, collaboratorUserId);
     const collabGoal = await cloneLearningPlanForCollaborator(
       updatedGoal,
       collaboratorUserId,
