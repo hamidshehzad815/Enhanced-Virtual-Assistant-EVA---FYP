@@ -1,0 +1,797 @@
+================================================================
+EVA — LEARNING UPDATE COMMAND
+Complete TODO List — Parallel Build
+================================================================
+
+WHAT IS ALREADY DONE
+================================================================
+
+  AI Server:
+  ✓ Self-fetch pipeline
+  ✓ Preprocessing (lowercase + too_short)
+  ✓ Model 1 and Model 2 running
+  ✓ NER model trained (topic, subtopic, date entities)
+  ✓ Entity scoper (needs learning_update scope added)
+  ✓ Duckling date resolver (already working)
+  ✓ Context manager (all state types working)
+  ✓ Gemini service with fallback
+  ✓ Conversation history save
+  ✓ Router (learning_update routed to placeholder)
+  ✓ Google Calendar update_event exists
+  ✓ db/learning_goals.py exists
+  ✓ db/roadmap_topics.py exists
+  ✓ db/tasks.py exists
+  ✓ db/activity_logs.py exists
+  ✓ utils/learning_utils.py exists (alias maps)
+  ✓ preferred_learning_schedule in settings
+
+  Node.js:
+  ✓ Chat bridge running
+  ✓ Notification service exists
+  ✓ LearningGoal model exists
+  ✓ RoadmapTopic model exists
+  ✓ Learning routes exist
+  ✓ Reminder job exists (needs update)
+  ✓ Settings controller exists
+
+
+================================================================
+KNOWN GAPS TO ADDRESS
+================================================================
+
+  [ ] Sub-intent detection not yet implemented
+      → needs keyword matching logic
+  [ ] Session state computation not yet implemented
+      → computed at runtime, not stored
+  [ ] Auto-complete job not yet created
+  [ ] Overdue notification not yet in reminder job
+  [ ] Internal rebuild-schedule endpoint not yet created
+  [ ] Node.js settings controller needs to call
+      AI server rebuild endpoint on schedule update
+
+
+================================================================
+PHASE 1 — SCHEMA AND FIELD ADDITIONS
+================================================================
+
+Goal: All required fields exist before any code written.
+
+  AI Server / MongoDB
+  ─────────────────────────────────────────────────────────
+
+  [ ] Verify Roadmap_Topics has all required fields:
+      status         : pending/ongoing/completed/skipped
+      scheduled_date : Date
+      completed_at   : Date, null default
+      is_deleted     : Boolean, default false
+      → confirm all present
+
+  [ ] Verify Learning_Goals has:
+      status          : active/paused/completed
+      paused_at       : Date, null default
+      started_at      : Date, null default
+      completed_at    : Date, null default
+      time_taken_days : Number, null default
+      → confirm all present
+
+  [ ] Verify Activity_Logs accepts:
+      action_type = "task_completed" with
+      source = "learning_module"
+      → confirm works correctly
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] Verify Notification types include:
+      "topic_reminder" → for overdue notifications
+      "goal_progress"  → for auto-complete notifications
+      → add if missing
+
+  PHASE 1 TEST:
+  [ ] Insert roadmap topic with all fields → no errors
+  [ ] Insert learning goal with all fields → no errors
+  [ ] Fetch goal → all new fields returned correctly
+
+
+================================================================
+PHASE 2 — ENTITY SCOPER + SUB-INTENT DETECTION
+================================================================
+
+Goal: Entity scoper handles learning_update.
+      Sub-intent correctly detected from message.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Update pipeline/entity_scoper.py:
+      → add "learning_update" scope:
+        keep: topic, subtopic, date
+        drop: task_name, time, priority, status,
+              duration, start_date, person,
+              new_date, new_time, new_priority,
+              new_status, new_duration, new_taskname,
+              day, subject
+
+  [ ] Add detect_learning_sub_intent(message) to
+      utils/learning_utils.py:
+
+      pause keywords:
+        pause / stop for now / put on hold /
+        take a break from / halt
+
+      resume keywords:
+        resume / continue / restart / pick up /
+        start again / unpause
+
+      complete keywords:
+        mark done / mark complete / finished /
+        completed / I did / done with /
+        mark next session / mark today's session /
+        I completed / I finished
+
+      skip keywords:
+        skip / bypass / already know /
+        skip this topic / skip next session
+
+      reschedule keywords:
+        reschedule / move / change date /
+        postpone / shift session to / move session
+
+      → returns: "pause" | "resume" | "complete" |
+                 "skip" | "reschedule" | None
+
+  [ ] Add compute_session_state(session, now) to
+      utils/learning_utils.py:
+
+      if session.status in ["completed", "skipped"]:
+        return session.status
+
+      unlock_time = session.scheduled_date - 24h
+
+      if now < unlock_time:
+        return "locked"
+      elif now < session.scheduled_date:
+        return "unlocked_future"
+      else:
+        return "overdue"
+
+  [ ] Unit test detect_learning_sub_intent:
+      → "pause my Python" → "pause"
+      → "resume Python basics" → "resume"
+      → "mark next session done" → "complete"
+      → "skip today's topic" → "skip"
+      → "reschedule to Monday" → "reschedule"
+      → ambiguous input → None
+
+  [ ] Unit test compute_session_state:
+      → session in future, > 24h away → "locked"
+      → session in future, < 24h away → "unlocked_future"
+      → session time passed → "overdue"
+      → status = "completed" → "completed"
+      → status = "skipped" → "skipped"
+
+  PHASE 2 TEST:
+  [ ] Entity scoper on learning_update input:
+      → topic + subtopic + date kept
+      → everything else dropped
+  [ ] Sub-intent detection: all 5 keywords work
+  [ ] Session state: all cases return correct state
+
+
+================================================================
+PHASE 3 — DB LAYER FOR LEARNING UPDATE
+================================================================
+
+Goal: All DB functions needed by update handler exist
+      and are independently tested.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Add to db/learning_goals.py:
+
+      find_goals_for_update(user_id, topic,
+                            roadmap_key=None,
+                            status_filter=None) → list
+        → query: user_id, subject, is_deleted=false
+        → optional: roadmap_key filter
+        → optional: status filter (active/paused/etc.)
+        → sort by created_at descending
+
+      pause_goal(goal_id) → bool
+        → status = "paused", paused_at = now
+
+      resume_goal(goal_id) → bool
+        → status = "active", paused_at = null
+
+      complete_goal(goal_id, started_at) → bool
+        → status = "completed"
+        → completed_at = now
+        → time_taken_days = (now - started_at).days
+
+      increment_completed_topics(goal_id) → int
+        → $inc completed_topics by 1
+        → returns new completed_topics count
+
+      set_started_at(goal_id) → bool
+        → started_at = now
+        → only if started_at is null
+
+      update_end_date(goal_id, new_end_date) → bool
+        → end_date = new_end_date
+
+  [ ] Add to db/roadmap_topics.py:
+
+      get_current_session(goal_id) → dict or None
+        → finds lowest order pending topic
+        → returns full topic document
+
+      get_pending_sessions_after(goal_id,
+                                 order) → list
+        → finds all pending topics where
+          order > given order
+        → sorted by order ascending
+
+      get_all_pending_sessions(goal_id) → list
+        → all pending topics sorted by order
+        → used for resume rebase
+
+      complete_topic(topic_id) → bool
+        → status = "completed"
+        → completed_at = now
+
+      skip_topic(topic_id) → bool
+        → status = "skipped"
+        → updated_at = now
+
+      reschedule_topic(topic_id,
+                       new_datetime) → bool
+        → scheduled_date = new_datetime
+
+      bulk_reschedule_topics(updates) → int
+        → accepts list of { topic_id, new_datetime }
+        → bulk updates all topics
+        → returns count updated
+
+  [ ] Unit test all new DB functions:
+      → find_goals_for_update: all filter combinations
+      → pause_goal: status = paused, paused_at set
+      → resume_goal: status = active, paused_at null
+      → complete_goal: all fields set correctly
+      → increment_completed_topics: returns new count
+      → set_started_at: only sets if null
+      → get_current_session: returns lowest pending
+      → get_pending_sessions_after: correct order filter
+      → complete_topic: status + completed_at set
+      → skip_topic: status = skipped
+      → reschedule_topic: scheduled_date updated
+      → bulk_reschedule_topics: all updated correctly
+
+  PHASE 3 TEST:
+  [ ] Insert goal + 5 topics → get_current_session → topic 1
+  [ ] Complete topic 1 → get_current_session → topic 2
+  [ ] pause_goal → status = paused in DB
+  [ ] resume_goal → status = active in DB
+  [ ] bulk_reschedule_topics → all dates updated
+
+
+================================================================
+PHASE 4 — CONTEXT MANAGER UPDATE
+================================================================
+
+Goal: Context manager handles all 5 learning update states.
+
+  AI Server — context/context_manager.py
+  ─────────────────────────────────────────────────────────
+
+  [ ] Add routing for pending intent = "learning_update":
+
+      State 1 (free_text, stage=identify, pause/resume):
+        → SKIP Model 1
+        → pass reply through NER
+        → extract topic + subtopic
+        → not found → ask again
+        → found → clear Redis → re-enter handler
+
+      State 2 (number, stage=identify, pause/resume):
+        → RUN Model 1 first
+        → confirmation → valid number → State 3
+        → out of range → ask again
+        → invalid → ask again
+
+      State 3 (yes_no, stage=confirm, pause/resume):
+        → RUN Model 1 first
+        → yes → execute pause or resume
+        → no → clear Redis, nothing changed
+
+      State 4 (number, stage=identify_language,
+               complete/skip/reschedule):
+        → RUN Model 1 first
+        → confirmation → valid number → execute sub-intent
+        → out of range → ask again
+
+      State 5 (free_text, stage=new_date, reschedule):
+        → SKIP Model 1
+        → pass reply to Duckling
+        → fails → ask again
+        → past date → ask again
+        → not learning day → tell user valid days → ask again
+        → valid → clear Redis → execute reschedule
+
+  [ ] Write unit tests for all 5 states:
+      → State 1: topic reply → merged, Redis cleared
+      → State 1: invalid → ask again
+      → State 1: cancel → Redis cleared
+      → State 2: valid number → moves to State 3
+      → State 2: invalid → ask again
+      → State 3: yes → operation proceeds
+      → State 3: no → Redis cleared
+      → State 4: valid number → sub-intent executes
+      → State 5: valid date + learning day → proceeds
+      → State 5: not learning day → ask again
+      → State 5: past date → ask again
+      → cancel in any state → Redis cleared
+
+  PHASE 4 TEST:
+  [ ] Manually set State 1 → reply "Python" → re-enters
+  [ ] Manually set State 2 → reply "1" → State 3
+  [ ] Manually set State 3 → reply "yes" → executes
+  [ ] Manually set State 3 → reply "no" → cancelled
+  [ ] Manually set State 5 → reply "next Monday" → proceeds
+  [ ] Manually set State 5 → reply "Wednesday" (not
+      learning day) → ask again
+
+
+================================================================
+PHASE 5 — LEARNING UPDATE HANDLER
+================================================================
+
+Goal: Full update handler with all 5 sub-handlers.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Create handlers/learning/update.py
+
+  [ ] Implement sub-intent routing:
+      → detect_learning_sub_intent(message)
+      → route to correct sub-handler
+      → if None detected → EVA: natural not understood reply
+
+  [ ] Implement Sub-handler A — PAUSE:
+      → STEP A1: identify goal (0/1/2-5/6+)
+      → STEP A2: confirm (State 3)
+      → STEP A3: pause_goal(goal_id)
+      → EVA: natural pause confirmation
+
+  [ ] Implement Sub-handler B — RESUME:
+      → STEP B1: identify goal (paused only)
+      → STEP B2: confirm (State 3)
+      → STEP B3: resume_goal(goal_id)
+      → STEP B4: schedule rebase
+          get all pending sessions
+          find next learning day after today
+          rebuild sequentially
+          bulk_reschedule_topics
+          update all linked tasks
+          update goal end_date
+          update calendar events (non-blocking)
+      → EVA: natural resume reply with next session
+
+  [ ] Implement Sub-handler C — MARK COMPLETE:
+      → STEP C1: identify roadmap
+          if 1 active → proceed
+          if multiple → State 4
+      → STEP C2: find current session
+          compute_session_state
+          locked → tell user
+          unlocked_future → cannot complete yet → tell user
+          overdue → proceed
+      → STEP C3: complete_topic
+          update task
+          increment_completed_topics
+          set started_at if first
+          check if last → complete_goal
+          insert activity log
+      → EVA: natural completion reply or goal complete reply
+
+  [ ] Implement Sub-handler D — SKIP:
+      → STEP D1: identify roadmap (same as C1)
+      → STEP D2: find current session
+          locked → tell user
+          overdue → cannot skip → tell user
+          unlocked_future → proceed
+      → STEP D3: skip_topic
+          soft delete linked task
+          delete calendar event (non-blocking)
+          CASCADE all subsequent sessions forward
+          bulk_reschedule_topics
+          update all linked tasks
+          update goal end_date
+      → EVA: natural skip reply with new next session
+
+  [ ] Implement Sub-handler E — RESCHEDULE:
+      → STEP E1: identify roadmap (same as C1)
+      → STEP E2: find current session
+          locked → tell user unlock time
+          unlocked_future or overdue → proceed
+      → STEP E3: get new date
+          if date in entities → validate
+          if no date → State 5 (free_text, new_date)
+      → STEP E4: validate new date
+          past → ask again
+          not learning day → tell user valid days
+      → STEP E5: reschedule
+          compute new datetime
+          compare with next session date
+          Case A (before next) → only current moves
+          Case B (after next) → cascade all subsequent
+          update calendar (non-blocking)
+      → EVA: natural reschedule reply
+
+  [ ] Implement POST /internal/rebuild-schedule endpoint:
+      → accepts { user_id, new_schedule }
+      → finds all active + paused goals
+      → for each goal: rebuild remaining sessions
+      → bulk update topics + tasks + calendar
+      → update end_dates
+      → return { status, goals_updated }
+
+  [ ] Wire learning_update into router.py:
+      → remove learning_update placeholder
+      → import and call update handler
+
+  PHASE 5 TEST:
+  [ ] "pause my Python learning"
+      → EVA asks confirm → "yes"
+      → goal.status = paused in DB
+
+  [ ] "resume my Python basics"
+      → EVA asks confirm → "yes"
+      → goal.status = active
+      → all pending sessions rebased forward
+      → end_date updated
+
+  [ ] "mark next Python session as done"
+      (session time has passed)
+      → topic marked complete
+      → goal.completed_topics incremented
+      → next session unlocked
+
+  [ ] "mark next Python session as done"
+      (session time NOT yet passed)
+      → EVA: session hasn't started yet
+
+  [ ] "skip today's Python session"
+      (before session time)
+      → topic marked skipped
+      → subsequent sessions cascade forward
+      → end_date recalculates
+
+  [ ] "skip today's Python session"
+      (after session time)
+      → EVA: cannot skip, time passed, mark complete
+
+  [ ] "reschedule my Python session to next Monday"
+      (Monday before next session)
+      → only current session moves
+      → no cascade
+
+  [ ] "reschedule my Python session to next Friday"
+      (Friday after next session)
+      → current session moves
+      → all subsequent cascade forward
+
+  [ ] "reschedule my Python session"
+      (no date given)
+      → EVA asks for date → user replies
+      → reschedule executed
+
+  [ ] Complete last topic
+      → goal.status = completed
+      → completed_at set
+      → time_taken_days calculated
+      → EVA: congratulations reply
+
+  [ ] Multiple active goals, no topic mentioned
+      → State 4 → numbered list → user picks
+      → operation executes on selected goal
+
+  [ ] Cancel at any state → nothing changed
+
+
+================================================================
+PHASE 6 — AUTO-COMPLETE JOB
+================================================================
+
+Goal: Sessions auto-complete after duration + 3 hours.
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] Create jobs/learning_auto_complete.job.js:
+      → runs every 15 minutes
+      → query roadmap_topics:
+          status       = "pending"
+          is_deleted   = false
+          scheduled_date + duration_minutes
+            + 180 minutes <= now
+      → for each topic found:
+          POST to AI server:
+          /internal/auto-complete-topic
+          { topic_id, goal_id, user_id }
+      → AI server handles all DB operations
+      → Node.js dispatches notification after
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Add POST /internal/auto-complete-topic endpoint:
+      → accepts { topic_id, goal_id, user_id }
+      → complete_topic(topic_id)
+      → update linked task status
+      → increment_completed_topics(goal_id)
+      → set_started_at if first
+      → check if last → complete_goal
+      → return { status, next_session, goal_completed }
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] After AI server responds:
+      → send notification:
+        "Python session [N] was automatically
+         marked complete, Ali. Session [N+1]
+         is now available."
+
+  [ ] Integrate auto-complete job into app.js:
+      → start alongside reminder job
+
+  PHASE 6 TEST:
+  [ ] Create topic with scheduled_date in the past
+      (duration + 3h already passed)
+  [ ] Run auto-complete job
+      → topic status = completed
+      → goal.completed_topics incremented
+      → notification sent
+  [ ] Run on last topic
+      → goal.status = completed
+      → completed_at + time_taken_days set
+
+
+================================================================
+PHASE 7 — OVERDUE NOTIFICATION + SCHEDULE REBUILD
+================================================================
+
+Goal: Overdue sessions trigger reminders.
+      Settings update triggers roadmap rebuild.
+
+  Node.js — jobs/reminder.job.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] Extend reminder job to detect overdue sessions:
+      → query roadmap_topics:
+          status         = "pending"
+          is_deleted     = false
+          scheduled_date < now
+          (join with learning_goals where status = active)
+      → for each overdue topic not yet notified:
+          send push notification:
+          "Your Python session was scheduled
+           for [date]. Mark it complete or it
+           will be auto-completed in [time], Ali."
+
+  Node.js — controllers/settings.controller.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] After saving preferred_learning_schedule:
+      → call AI server:
+        POST /internal/rebuild-schedule
+        { user_id, new_schedule }
+      → on success: notify user
+        "Your learning schedule has been updated.
+         [N] goals have been rescheduled, Ali."
+      → on failure: log error, do not block settings save
+
+  PHASE 7 TEST:
+  [ ] Create overdue topic → reminder job fires
+      → notification received
+  [ ] Update learning schedule in settings
+      → AI server rebuild called
+      → all pending sessions rescheduled
+      → user notified
+  [ ] Update schedule with no active goals
+      → rebuild called → 0 goals updated → no notification
+
+
+================================================================
+PHASE 8 — NODE.JS LEARNING ROUTES UPDATE
+================================================================
+
+Goal: Frontend can trigger pause/resume via UI too.
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] Update PATCH /api/learning/:id/status:
+      → already handles pause/resume/cancel
+      → confirm pause sets paused_at
+      → confirm resume triggers rebuild:
+          POST to AI server /internal/rebuild-schedule
+          (same as settings update)
+      → confirm cancel = is_deleted: true
+        (consistent with our decision)
+
+  [ ] Add POST /api/learning/:id/topics/:topicId/complete:
+      → UI and push notification action button
+      → calls AI server /internal/auto-complete-topic
+      → returns updated goal progress
+
+  [ ] Add POST /api/learning/:id/topics/:topicId/skip:
+      → UI triggered skip (not chat)
+      → calls AI server /internal/skip-topic
+      → AI server handles cascade
+
+  [ ] Add AI server internal endpoint:
+      POST /internal/skip-topic
+      → accepts { topic_id, goal_id, user_id }
+      → skip_topic(topic_id)
+      → cascade subsequent sessions
+      → update end_date
+      → return { status, next_session }
+
+  PHASE 8 TEST:
+  [ ] PATCH /api/learning/:id/status pause → paused
+  [ ] PATCH /api/learning/:id/status resume → active
+      + sessions rebased
+  [ ] POST topic complete via API → topic completed
+  [ ] POST topic skip via API → topic skipped
+      + cascade applied
+
+
+================================================================
+PHASE 9 — TESTING
+================================================================
+
+Goal: Full learning update test suite.
+
+  AI Server
+  ─────────────────────────────────────────────────────────
+
+  [ ] Create tests/test_learning_update_handler.py
+
+      Pause tests:
+      [ ] no identifier → asked → replied → confirmed → paused
+      [ ] 1 match → confirm → paused
+      [ ] 2-5 matches → pick → confirm → paused
+      [ ] already paused → correct reply
+      [ ] goal completed → cannot pause
+
+      Resume tests:
+      [ ] no identifier → asked → replied → confirmed → resumed
+      [ ] 1 paused match → confirm → resumed + rebased
+      [ ] sessions correctly rebased after resume
+      [ ] end_date recalculated correctly
+      [ ] calendar events updated
+
+      Mark complete tests:
+      [ ] session overdue → marked complete
+      [ ] session not yet started → cannot complete
+      [ ] session locked → cannot complete
+      [ ] first completion → started_at set
+      [ ] last completion → goal completed
+      [ ] multiple roadmaps → asked which one
+      [ ] activity log inserted
+
+      Skip tests:
+      [ ] session unlocked_future → skipped
+      [ ] session overdue → cannot skip
+      [ ] session locked → cannot skip
+      [ ] cascade applied correctly after skip
+      [ ] end_date recalculates after cascade
+      [ ] multiple roadmaps → asked which one
+
+      Reschedule tests:
+      [ ] date before next session → no cascade
+      [ ] date after next session → cascade applied
+      [ ] not a learning day → rejected
+      [ ] past date → rejected
+      [ ] no date in command → asked for date
+      [ ] locked session → tells user unlock time
+      [ ] calendar events updated
+
+      Schedule rebuild tests:
+      [ ] /internal/rebuild-schedule called
+      [ ] all active goals rebuilt
+      [ ] all paused goals rebuilt
+      [ ] completed goals ignored
+      [ ] 0 goals → success, no changes
+
+      Auto-complete tests:
+      [ ] topic past deadline → auto-completed
+      [ ] goal completion triggered correctly
+      [ ] time_taken_days calculated correctly
+
+  [ ] Create tests/test_learning_utils.py additions:
+      [ ] detect_learning_sub_intent all keywords
+      [ ] compute_session_state all cases
+
+  [ ] Run full AI test suite → all tests pass
+
+  Node.js
+  ─────────────────────────────────────────────────────────
+
+  [ ] Update tests/learning.test.js:
+      [ ] PATCH pause → status paused
+      [ ] PATCH resume → status active + rebuild triggered
+      [ ] POST topic complete → topic completed
+      [ ] POST topic skip → topic skipped + cascade
+      [ ] Auto-complete job → correct topics found
+      [ ] Overdue reminder → correct topics found
+      [ ] Settings update → rebuild triggered
+
+  [ ] Run full Node.js test suite → all tests pass
+
+  PHASE 9 END-TO-END TESTS:
+  [ ] Create Python basics goal (8 sessions)
+  [ ] Complete 3 sessions → progress = 3/8
+  [ ] Pause goal → status = paused
+  [ ] Wait (simulate time passing)
+  [ ] Resume → sessions rebased from today
+  [ ] Skip current session → cascade applied
+  [ ] Reschedule next session to valid learning day
+  [ ] Session time passes → auto-complete fires
+  [ ] Complete all remaining → goal completed
+      → completed_at set, time_taken_days calculated
+  [ ] Update learning schedule in settings
+      → active goals rebuild automatically
+
+
+================================================================
+SUMMARY
+================================================================
+
+  Schema changes:
+    No new fields needed (all already added in learning add)
+
+  New AI Server files:
+    handlers/learning/update.py
+
+  New AI Server endpoints:
+    POST /internal/rebuild-schedule
+    POST /internal/auto-complete-topic
+    POST /internal/skip-topic
+
+  Updated AI Server files:
+    pipeline/entity_scoper.py (learning_update scope)
+    context/context_manager.py (5 new states)
+    handlers/router.py (wire learning_update)
+    utils/learning_utils.py (sub-intent detection,
+                             session state computation)
+    db/learning_goals.py (6 new functions)
+    db/roadmap_topics.py (7 new functions)
+
+  New Node.js files:
+    jobs/learning_auto_complete.job.js
+
+  Updated Node.js files:
+    jobs/reminder.job.js (overdue detection)
+    controllers/settings.controller.js (rebuild trigger)
+    controllers/learning.controller.js (new endpoints)
+    routes/learning.routes.js (new routes)
+    tests/learning.test.js (new test cases)
+
+
+================================================================
+BUILD ORDER
+================================================================
+
+  Phase 1  → Schema verification
+  Phase 2  → Entity scoper + sub-intent detection
+  Phase 3  → DB layer (13 new functions)
+  Phase 4  → Context manager (5 new states)
+  Phase 5  → Learning update handler (5 sub-handlers)
+  Phase 6  → Auto-complete job
+  Phase 7  → Overdue notification + schedule rebuild
+  Phase 8  → Node.js routes update
+  Phase 9  → Full test suite

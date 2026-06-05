@@ -61,6 +61,28 @@ const buildLearningTopicReminderPayload = (task, timezoneValue, planTitle) => {
   };
 };
 
+const buildLearningOverduePayload = (task, timezoneValue, planTitle) => {
+  const when = formatDue(task.due_datetime, timezoneValue);
+  const plan = planTitle ? `"${planTitle}"` : "Your learning plan";
+  return {
+    user_id: String(task.owner_id),
+    sender_id: null,
+    type: "topic_reminder",
+    reference_type: "topic",
+    reference_id: String(task.learning_topic_id),
+    title: "Learning session overdue",
+    message: `${plan} — ${task.title} was scheduled for ${when}. Mark it complete or it will be auto-completed soon.`,
+    action_required: true,
+    delivery_channel: ["push", "in_app", "email"],
+    scheduled_at: new Date(),
+    push_data: {
+      learning_goal_id: String(task.learning_plan_id),
+      learning_topic_id: String(task.learning_topic_id),
+      suggested_action: "complete_learning_topic",
+    },
+  };
+};
+
 const buildOverdueNotification = (task, timezoneValue) => ({
   user_id: String(task.owner_id),
   sender_id: null,
@@ -188,6 +210,7 @@ const sendOverdueAlerts = async (now) => {
     status: "pending",
     is_deleted: false,
     overdue_notified_at: null,
+    learning_topic_id: null,
     due_datetime: { $lte: now },
   })
     .select("_id owner_id title due_datetime")
@@ -229,6 +252,64 @@ const sendOverdueAlerts = async (now) => {
   return { sentFor: overdueTasks.length };
 };
 
+const sendLearningOverdueAlerts = async (now) => {
+  const overdueLearningTasks = await Task.find({
+    status: "pending",
+    is_deleted: false,
+    overdue_notified_at: null,
+    learning_plan_id: { $ne: null },
+    learning_topic_id: { $ne: null },
+    due_datetime: { $lte: now },
+  })
+    .select("_id owner_id title due_datetime learning_plan_id learning_topic_id")
+    .lean();
+
+  if (!overdueLearningTasks.length) {
+    return { sentFor: 0 };
+  }
+
+  const planIds = [
+    ...new Set(overdueLearningTasks.map((task) => String(task.learning_plan_id))),
+  ];
+  const plans = await LearningGoal.find(
+    { _id: { $in: planIds }, status: "active", is_deleted: false },
+    { _id: 1, title: 1 },
+  ).lean();
+  const planById = new Map(plans.map((p) => [String(p._id), p]));
+
+  const activeOnly = overdueLearningTasks.filter((t) =>
+    planById.has(String(t.learning_plan_id)),
+  );
+  if (!activeOnly.length) {
+    return { sentFor: 0 };
+  }
+
+  const ownerIds = [...new Set(activeOnly.map((task) => String(task.owner_id)))];
+  const timezoneByUserId = await loadUserTimezones(ownerIds);
+
+  const payloads = activeOnly.map((task) => {
+    const tz = timezoneByUserId.get(String(task.owner_id)) || "UTC";
+    const plan = planById.get(String(task.learning_plan_id));
+    return buildLearningOverduePayload(task, tz, plan?.title || null);
+  });
+
+  const summary = await insert_and_dispatch(payloads);
+
+  await Task.updateMany(
+    { _id: { $in: activeOnly.map((task) => task._id) } },
+    { $set: { overdue_notified_at: now, updated_at: now } },
+  );
+
+  logger.info("Reminder job: learning overdue alerts processed", {
+    overdue_learning_tasks: activeOnly.length,
+    notification_requested: summary.requested,
+    notification_inserted: summary.inserted,
+    notification_failed: summary.failed,
+  });
+
+  return { sentFor: activeOnly.length };
+};
+
 const runReminderCycle = async () => {
   if (isRunning) {
     logger.warn("Reminder job skipped because previous cycle is still running");
@@ -240,6 +321,7 @@ const runReminderCycle = async () => {
   try {
     const now = new Date();
     await sendReminderNotifications(now);
+    await sendLearningOverdueAlerts(now);
     await sendOverdueAlerts(now);
   } catch (error) {
     logger.error("Reminder job cycle failed", { error: error.message });
@@ -277,4 +359,5 @@ module.exports = {
   stopReminderJob,
   sendReminderNotifications,
   sendOverdueAlerts,
+  sendLearningOverdueAlerts,
 };

@@ -205,3 +205,125 @@ async def get_pending_topic(goal_id: str) -> Optional[Dict[str, Any]]:
         sort=[("order", 1)],
     )
     return _normalize_doc(doc) if doc else None
+
+
+async def get_current_session(goal_id: str) -> Optional[Dict[str, Any]]:
+    """Alias for the current interactable session (lowest-order pending topic)."""
+    return await get_pending_topic(goal_id)
+
+
+async def get_pending_sessions_after(goal_id: str, order: int) -> List[Dict[str, Any]]:
+    """All pending sessions with order > given order (sorted ascending)."""
+    db = get_db()
+    gid = _to_object_id(goal_id)
+    cursor = db.roadmap_topics.find(
+        {
+            "goal_id": gid,
+            "status": "pending",
+            "order": {"$gt": int(order)},
+            "is_deleted": False,
+        },
+    ).sort("order", 1)
+    rows = await cursor.to_list(length=2000)
+    return [_normalize_doc(r) for r in rows]
+
+
+async def get_all_pending_sessions(goal_id: str) -> List[Dict[str, Any]]:
+    """All pending sessions sorted by order ascending."""
+    db = get_db()
+    gid = _to_object_id(goal_id)
+    cursor = db.roadmap_topics.find(
+        {"goal_id": gid, "status": "pending", "is_deleted": False},
+    ).sort("order", 1)
+    rows = await cursor.to_list(length=2000)
+    return [_normalize_doc(r) for r in rows]
+
+
+async def complete_topic(topic_id: str) -> bool:
+    """Mark one topic completed and cascade goal/task updates via update_topic_status."""
+    return await update_topic_status(topic_id, "completed")
+
+
+async def skip_topic(topic_id: str) -> bool:
+    """Mark one topic skipped."""
+    db = get_db()
+    tid = _to_object_id(topic_id)
+    now = _now_naive_utc()
+    result = await db.roadmap_topics.update_one(
+        {"_id": tid, "is_deleted": {"$ne": True}},
+        {"$set": {"status": "skipped", "updated_at": now}},
+    )
+    if result.matched_count == 0 and tid != topic_id:
+        result = await db.roadmap_topics.update_one(
+            {"_id": topic_id, "is_deleted": {"$ne": True}},
+            {"$set": {"status": "skipped", "updated_at": now}},
+        )
+    return result.matched_count > 0
+
+
+async def reschedule_topic(topic_id: str, new_datetime: datetime) -> bool:
+    """Update scheduled_date for one topic."""
+    db = get_db()
+    tid = _to_object_id(topic_id)
+    now = _now_naive_utc()
+    result = await db.roadmap_topics.update_one(
+        {"_id": tid, "is_deleted": {"$ne": True}},
+        {"$set": {"scheduled_date": new_datetime, "updated_at": now}},
+    )
+    if result.matched_count == 0 and tid != topic_id:
+        result = await db.roadmap_topics.update_one(
+            {"_id": topic_id, "is_deleted": {"$ne": True}},
+            {"$set": {"scheduled_date": new_datetime, "updated_at": now}},
+        )
+    return result.matched_count > 0
+
+
+async def bulk_reschedule_topics(updates: List[Dict[str, Any]]) -> int:
+    """
+    Bulk update scheduled_date for many topics.
+    `updates`: [{ topic_id, new_datetime }, ...]
+    Returns the number of topics updated.
+    """
+    if not updates:
+        return 0
+    db = get_db()
+    now = _now_naive_utc()
+    updated = 0
+    for row in updates:
+        topic_id = row.get("topic_id")
+        new_dt = row.get("new_datetime")
+        if not topic_id or not isinstance(new_dt, datetime):
+            continue
+        ok = await reschedule_topic(str(topic_id), new_dt)
+        if ok:
+            updated += 1
+    # best-effort: ensure updated_at is touched on all writes (already done in reschedule_topic)
+    _ = now
+    return int(updated)
+
+
+async def soft_delete_pending_topics(goal_id: str) -> int:
+    """
+    Soft-delete pending and ongoing roadmap topics for a goal.
+    Completed/skipped topics are left unchanged. Returns matched count.
+    """
+    db = get_db()
+    gid = _to_object_id(goal_id)
+    now = _now_naive_utc()
+    payload = {
+        "is_deleted": True,
+        "deleted_at": now,
+        "updated_at": now,
+    }
+    query = {
+        "goal_id": gid,
+        "status": {"$in": ["pending", "ongoing"]},
+        "is_deleted": False,
+    }
+    result = await db.roadmap_topics.update_many(query, {"$set": payload})
+
+    if result.matched_count == 0 and gid != goal_id:
+        query["goal_id"] = goal_id
+        result = await db.roadmap_topics.update_many(query, {"$set": payload})
+
+    return int(result.matched_count)

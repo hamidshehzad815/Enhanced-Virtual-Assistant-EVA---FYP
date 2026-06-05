@@ -572,6 +572,55 @@ async def soft_delete_task(task_id: str) -> bool:
     return result.matched_count > 0
 
 
+async def get_pending_learning_tasks(goal_id: str) -> List[Dict[str, Any]]:
+    """
+    Pending and ongoing learning tasks for a goal (for calendar cleanup before delete).
+    """
+    db = get_db()
+    plan_id = _to_object_id(goal_id)
+    query = {
+        "learning_plan_id": plan_id,
+        "status": {"$in": ["pending", "ongoing"]},
+        "is_deleted": False,
+    }
+    cursor = db.tasks.find(query).sort("due_datetime", 1)
+    rows = await cursor.to_list(length=500)
+
+    if not rows and plan_id != goal_id:
+        query["learning_plan_id"] = goal_id
+        cursor = db.tasks.find(query).sort("due_datetime", 1)
+        rows = await cursor.to_list(length=500)
+
+    return [_normalize_doc(row) for row in rows]
+
+
+async def soft_delete_pending_learning_tasks(goal_id: str) -> int:
+    """
+    Soft-delete pending and ongoing tasks linked to a learning goal.
+    Completed tasks are left unchanged. Returns matched count.
+    """
+    db = get_db()
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    plan_id = _to_object_id(goal_id)
+    payload = {
+        "is_deleted": True,
+        "deleted_at": now,
+        "updated_at": now,
+    }
+    query = {
+        "learning_plan_id": plan_id,
+        "status": {"$in": ["pending", "ongoing"]},
+        "is_deleted": False,
+    }
+    result = await db.tasks.update_many(query, {"$set": payload})
+
+    if result.matched_count == 0 and plan_id != goal_id:
+        query["learning_plan_id"] = goal_id
+        result = await db.tasks.update_many(query, {"$set": payload})
+
+    return int(result.matched_count)
+
+
 async def soft_delete_many(task_ids: List[str]) -> int:
     """
     Soft delete many tasks by id list.

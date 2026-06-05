@@ -8,11 +8,13 @@ import difflib
 import json
 import math
 import re
-from datetime import date, datetime, time, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Set
+from dataclasses import dataclass
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from config.settings import get_roadmaps_json_path, settings
+from utils.timezone_utils import local_datetime_to_utc_naive
 
 SUPPORTED_TOPICS: Set[str] = {
     "Python",
@@ -97,7 +99,245 @@ SUBTOPIC_ALIAS_MAP: Dict[str, str] = {
 _TOPIC_ALIAS_LOWER = {k.lower(): v for k, v in TOPIC_ALIAS_MAP.items()}
 _SUBTOPIC_ALIAS_LOWER = {k.lower(): v for k, v in SUBTOPIC_ALIAS_MAP.items()}
 
+# NER noise tokens to drop when subtopic is emitted as a list (e.g. ["oop", "ma"]).
+# Session phrasing words must not become roadmap_key filters (e.g. subtopic "next").
+_SUBTOPIC_NER_NOISE: Set[str] = {
+    "ma",
+    "next",
+    "session",
+    "sessions",
+    "today",
+    "todays",
+    "lesson",
+    "lessons",
+}
+
 _ROADMAP_JSON_CACHE: Optional[Dict[str, Any]] = None
+
+_OOP_MESSAGE_RE = re.compile(
+    r"\b(oop|oops|object[- ]oriented(?:\s+programming)?)\b",
+    flags=re.IGNORECASE,
+)
+
+# Sub-intent keyword patterns for learning_update (longest phrases first).
+_LEARNING_UPDATE_SUB_INTENT_PATTERNS: Tuple[Tuple[str, str], ...] = tuple(
+    sorted(
+        [
+            ("stop for now", "pause"),
+            ("put on hold", "pause"),
+            ("on hold", "pause"),
+            ("take a break from", "pause"),
+            ("mark next session", "complete"),
+            ("mark today's session", "complete"),
+            ("mark todays session", "complete"),
+            ("mark session as done", "complete"),
+            ("mark session done", "complete"),
+            ("mark done", "complete"),
+            ("mark complete", "complete"),
+            ("done with", "complete"),
+            ("i completed", "complete"),
+            ("i finished", "complete"),
+            ("skip this topic", "skip"),
+            ("skip next session", "skip"),
+            ("already know", "skip"),
+            ("shift session to", "reschedule"),
+            ("change date", "reschedule"),
+            ("start again", "resume"),
+            ("pick up", "resume"),
+            ("unpause", "resume"),
+            ("reschedule", "reschedule"),
+            ("postpone", "reschedule"),
+            ("pause", "pause"),
+            ("halt", "pause"),
+            ("resume", "resume"),
+            ("continue", "resume"),
+            ("restart", "resume"),
+            ("finished", "complete"),
+            ("completed", "complete"),
+            ("i did", "complete"),
+            ("skip", "skip"),
+            ("bypass", "skip"),
+            ("move", "reschedule"),
+        ],
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ),
+)
+
+_SESSION_UNLOCK_WINDOW = timedelta(hours=24)
+
+# Typos: reschdule, reshedule, etc.
+_RESCHEDULE_WORD_RE = re.compile(
+    r"\b(?:re?sch[ae]?dul\w*|postpone)\b",
+    re.IGNORECASE,
+)
+# "session to June 4" / "session to june4" — move date, not completion.
+_SESSION_TO_DATE_RE = re.compile(
+    r"\b(?:session|sessions|topic|lesson)\s+to\s+",
+    re.IGNORECASE,
+)
+
+# Optional topic/track tokens between cue words (mark/skip/next/today) and "session".
+# Handles both "mark next python session" and "mark python next session".
+_OPTIONAL_TRACK_WORDS = (
+    r"(?:\s+(?!next\b|today\b|today'?s?\b|session\b|sessions\b|as\b|to\b|done\b|complete\b|finished\b)"
+    r"[\w#+.:-]+)*"
+)
+
+_MARK_NEXT_SESSION_COMPLETE_RE = re.compile(
+    rf"\bmark{_OPTIONAL_TRACK_WORDS}\s+next{_OPTIONAL_TRACK_WORDS}\s+session"
+    rf"(?:\s+as)?\s*(?:done|complete|finished)\b",
+    re.IGNORECASE,
+)
+_MARK_TODAY_SESSION_COMPLETE_RE = re.compile(
+    rf"\bmark{_OPTIONAL_TRACK_WORDS}\s+today'?s?{_OPTIONAL_TRACK_WORDS}\s+session\b",
+    re.IGNORECASE,
+)
+_SKIP_NEXT_SESSION_RE = re.compile(
+    rf"\bskip{_OPTIONAL_TRACK_WORDS}\s+next{_OPTIONAL_TRACK_WORDS}\s+session\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_flexible_session_sub_intent(text: str) -> Optional[str]:
+    """
+    Match natural phrasing where optional language/track words appear around
+    'next'/'today' and 'session' (substring patterns cannot handle this).
+    """
+    if _SKIP_NEXT_SESSION_RE.search(text):
+        return "skip"
+    if _MARK_NEXT_SESSION_COMPLETE_RE.search(text):
+        return "complete"
+    if _MARK_TODAY_SESSION_COMPLETE_RE.search(text):
+        return "complete"
+    return None
+
+
+def message_implies_reschedule(message: Optional[str]) -> bool:
+    """True when user is trying to move a session date (incl. common typos)."""
+    text = str(message or "").strip().lower()
+    if not text:
+        return False
+    if _RESCHEDULE_WORD_RE.search(text):
+        return True
+    if _SESSION_TO_DATE_RE.search(text):
+        return True
+    return any(
+        marker in text
+        for marker in (
+            "reschedule",
+            "postpone",
+            "shift session to",
+            "change date",
+            "change the date",
+        )
+    )
+
+
+def _coerce_datetime(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    if isinstance(value, date) and not isinstance(value, datetime):
+        return datetime.combine(value, time.min)
+    text = str(value).strip()
+    if not text:
+        return None
+    normalized = text.replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(normalized)
+    except ValueError:
+        return None
+
+
+def _as_utc_aware(dt: datetime) -> datetime:
+    """Normalize naive (assumed UTC) and aware datetimes for safe comparison."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
+
+
+def detect_learning_sub_intent(message: Optional[str]) -> Optional[str]:
+    """
+    Detect learning_update sub-intent from user message keywords.
+
+    Returns one of: pause, resume, complete, skip, reschedule — or None if ambiguous.
+    """
+    text = str(message or "").strip().lower()
+    if not text:
+        return None
+
+    # Reschedule/skip/pause/resume win over incidental "finished"/"done" in the same sentence.
+    if message_implies_reschedule(text):
+        return "reschedule"
+    if re.search(r"\bmove\b", text) and re.search(
+        r"\b(session|sessions|lesson|topic|learning|plan|roadmap)\b",
+        text,
+    ):
+        return "reschedule"
+
+    flexible = _detect_flexible_session_sub_intent(text)
+    if flexible:
+        return flexible
+
+    for phrase, sub_intent in _LEARNING_UPDATE_SUB_INTENT_PATTERNS:
+        if phrase not in text:
+            continue
+        if sub_intent == "complete" and any(
+            marker in text
+            for marker in ("reschedule", "postpone", "shift session to", "change date")
+        ):
+            continue
+        return sub_intent
+
+    return None
+
+
+def compute_session_state(
+    session: Dict[str, Any],
+    now: datetime,
+    *,
+    previous_resolved_at: Optional[datetime] = None,
+    previous_scheduled_date: Optional[datetime] = None,
+) -> str:
+    """
+    Runtime session lock state for learning_update interactions.
+
+    Returns: locked | unlocked_future | overdue | completed | skipped
+
+    When the gap to the previous session is under 24 hours, the session unlocks when
+    the previous session is resolved (completed/skipped), not 24h before schedule.
+    """
+    status = str(session.get("status") or "").strip().lower()
+    if status in ("completed", "skipped"):
+        return status
+
+    scheduled = _coerce_datetime(session.get("scheduled_date"))
+    if scheduled is None:
+        return "locked"
+
+    now = _as_utc_aware(now)
+    scheduled = _as_utc_aware(scheduled)
+
+    unlock_time = scheduled - _SESSION_UNLOCK_WINDOW
+
+    prev_scheduled = _coerce_datetime(previous_scheduled_date)
+    prev_resolved = _coerce_datetime(previous_resolved_at)
+    if prev_scheduled is not None:
+        prev_scheduled = _as_utc_aware(prev_scheduled)
+        gap = scheduled - prev_scheduled
+        if gap < _SESSION_UNLOCK_WINDOW:
+            if prev_resolved is not None:
+                unlock_time = _as_utc_aware(prev_resolved)
+            else:
+                unlock_time = scheduled
+
+    if now < unlock_time:
+        return "locked"
+    if now < scheduled:
+        return "unlocked_future"
+    return "overdue"
 
 
 def _roadmap_data() -> Dict[str, Any]:
@@ -161,6 +401,29 @@ def normalize_topic(extracted: Optional[str]) -> Optional[str]:
     return None
 
 
+def _token_in_key(token: str, key: str) -> bool:
+    """True when token matches key as a whole word (avoids oop ⊂ loops false positives)."""
+    if not token or not key:
+        return False
+    kn = key.lower()
+    t = token.lower()
+    if len(t) >= 5 and t in kn:
+        return True
+    try:
+        if re.search(r"(?<![a-z0-9])" + re.escape(t) + r"(?![a-z0-9])", kn):
+            return True
+        # NER often emits singular "list" for roadmap keys like "lists …" (min length 4
+        # so "oop" does not match inside "loops" via an unintended "oops" span).
+        if len(t) >= 4 and re.search(
+            r"(?<![a-z0-9])" + re.escape(t) + r"s(?![a-z0-9])",
+            kn,
+        ):
+            return True
+    except re.error:
+        return False
+    return False
+
+
 def _subtopic_match_score(user_norm: str, key: str) -> float:
     """
     Score how well user subtopic text matches a roadmap track key (0–1).
@@ -175,21 +438,14 @@ def _subtopic_match_score(user_norm: str, key: str) -> float:
     if user_norm == kn:
         return 1.0
 
-    if len(user_norm) >= 3 and user_norm in kn:
-        scores.append(0.86)
+    if _token_in_key(user_norm, kn):
+        scores.append(0.92)
     if len(kn) >= 5 and kn in user_norm:
         scores.append(0.84)
 
-    if len(user_norm) >= 3:
-        try:
-            if re.search(r"(?<![a-z0-9])" + re.escape(user_norm) + r"(?![a-z0-9])", kn):
-                scores.append(0.92)
-        except re.error:
-            pass
-
     tokens = [t for t in re.split(r"[^a-z0-9]+", user_norm) if len(t) >= 2]
     if tokens:
-        hits = sum(1 for t in tokens if t in kn)
+        hits = sum(1 for t in tokens if _token_in_key(t, kn))
         if hits:
             scores.append(0.38 + 0.5 * (hits / len(tokens)))
 
@@ -197,8 +453,176 @@ def _subtopic_match_score(user_norm: str, key: str) -> float:
     return max(scores) if scores else 0.0
 
 
+def _pick_subtopic_from_list(parts: List[str]) -> str:
+    """Choose the best subtopic token when NER returns multiple values."""
+    cleaned = [p for p in parts if p and p.strip()]
+    if not cleaned:
+        return ""
+    if len(cleaned) == 1:
+        return cleaned[0]
+
+    for part in cleaned:
+        if part.lower() in _SUBTOPIC_ALIAS_LOWER:
+            return part
+
+    return max(cleaned, key=lambda p: (len(p), p.lower()))
+
+
+def normalize_subtopic_entity(value: Any) -> Optional[str]:
+    """
+    Coerce NER subtopic output to a single string for ``map_subtopic``.
+
+    - Drops known noise tokens (e.g. ``ma``).
+    - Flattens lists without ``str(list)`` (which caused ``oop`` to fuzzy-match ``loops``).
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, list):
+        parts: List[str] = []
+        for item in value:
+            text = str(item or "").strip()
+            if not text:
+                continue
+            if text.lower() in _SUBTOPIC_NER_NOISE:
+                continue
+            parts.append(text)
+        if not parts:
+            return None
+        return _pick_subtopic_from_list(parts)
+
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.lower() in _SUBTOPIC_NER_NOISE:
+        return None
+    if text.startswith("[") and text.endswith("]"):
+        inner = text[1:-1]
+        split_parts = [
+            p.strip().strip("'\"")
+            for p in inner.split(",")
+            if p.strip().strip("'\"")
+        ]
+        filtered = [
+            p
+            for p in split_parts
+            if p.lower() not in _SUBTOPIC_NER_NOISE
+        ]
+        if filtered:
+            return _pick_subtopic_from_list(filtered)
+    return text
+
+
+def subtopic_hint_from_message(message: Optional[str]) -> Optional[str]:
+    """Recover OOP intent from the user message when NER missed or mangled subtopic."""
+    if not message or not str(message).strip():
+        return None
+    if _OOP_MESSAGE_RE.search(str(message)):
+        return "oop"
+    return None
+
+
+def _fuzzy_subtopic_alias_key(low: str) -> Optional[str]:
+    """Return the closest SUBTOPIC_ALIAS_MAP key when typo similarity is high enough."""
+    if not low or low in _SUBTOPIC_ALIAS_LOWER:
+        return None
+    threshold = max(
+        0.0,
+        min(1.0, float(getattr(settings, "SUBTOPIC_ALIAS_FUZZY_THRESHOLD", 0.85))),
+    )
+    best_key: Optional[str] = None
+    best_score = 0.0
+    for alias_key in _SUBTOPIC_ALIAS_LOWER:
+        score = difflib.SequenceMatcher(None, low, alias_key).ratio()
+        if score > best_score:
+            best_score = score
+            best_key = alias_key
+    if best_key is not None and best_score >= threshold:
+        return best_key
+    return None
+
+
+def _roadmap_key_from_alias(
+    alias_key: str,
+    keys_ci: Dict[str, str],
+) -> Tuple[Optional[str], str]:
+    """Resolve alias key to roadmap level key; return (key, phrase_for_fuzzy)."""
+    alias_target = str(_SUBTOPIC_ALIAS_LOWER[alias_key]).strip()
+    at_low = alias_target.lower()
+    if at_low in keys_ci:
+        return keys_ci[at_low], alias_target
+    return None, alias_target
+
+
+@dataclass(frozen=True)
+class SubtopicResolution:
+    """Result of mapping user subtopic text to a roadmap track."""
+
+    roadmap_key: str
+    confident: bool
+    normalized_subtopic: Optional[str] = None
+
+
+def resolve_subtopic_mapping(
+    extracted: Any,
+    language: str,
+    *,
+    level_keys: Optional[Iterable[str]] = None,
+) -> SubtopicResolution:
+    """
+    Map subtopic text to a roadmap key and whether the match is trustworthy.
+
+    ``confident`` is False when the user supplied subtopic text but nothing matched
+    well (caller should ask for clarification instead of defaulting to general).
+    """
+    normalized = normalize_subtopic_entity(extracted)
+    if not normalized:
+        return SubtopicResolution("general", True, None)
+
+    raw = normalized
+    low = raw.lower()
+    keys = list(level_keys) if level_keys is not None else level_keys_for_language(language)
+    if not keys:
+        return SubtopicResolution("general", False, raw)
+
+    keys_ci: Dict[str, str] = {k.lower(): k for k in keys}
+    if low in keys_ci:
+        return SubtopicResolution(keys_ci[low], True, raw)
+
+    fuzzy_alias = _fuzzy_subtopic_alias_key(low)
+    if fuzzy_alias:
+        low = fuzzy_alias
+
+    if low in _SUBTOPIC_ALIAS_LOWER:
+        mapped, _ = _roadmap_key_from_alias(low, keys_ci)
+        if mapped:
+            return SubtopicResolution(mapped, True, raw)
+        phrase_for_score = str(_SUBTOPIC_ALIAS_LOWER[low]).strip()
+    else:
+        phrase_for_score = raw
+
+    pn = re.sub(r"\s+", " ", phrase_for_score.strip().lower())
+    if not pn:
+        return SubtopicResolution("general", False, raw)
+
+    threshold = max(0.0, min(1.0, float(getattr(settings, "SUBTOPIC_MATCH_THRESHOLD", 0.56))))
+
+    best_key: Optional[str] = None
+    best_score = 0.0
+    for key in keys:
+        s = _subtopic_match_score(pn, key)
+        if s > best_score:
+            best_score = s
+            best_key = key
+
+    if best_key is not None and best_score >= threshold:
+        return SubtopicResolution(best_key, True, raw)
+
+    return SubtopicResolution("general", False, raw)
+
+
 def map_subtopic(
-    extracted: Optional[str],
+    extracted: Any,
     language: str,
     *,
     level_keys: Optional[Iterable[str]] = None,
@@ -215,44 +639,11 @@ def map_subtopic(
 
     ``level_keys`` overrides JSON (used in unit tests).
     """
-    if not extracted or not str(extracted).strip():
-        return "general"
-
-    raw = str(extracted).strip()
-    low = raw.lower()
-    keys = list(level_keys) if level_keys is not None else level_keys_for_language(language)
-    if not keys:
-        return "general"
-
-    keys_ci: Dict[str, str] = {k.lower(): k for k in keys}
-    if low in keys_ci:
-        return keys_ci[low]
-
-    phrase_for_score = raw
-    if low in _SUBTOPIC_ALIAS_LOWER:
-        alias_target = str(_SUBTOPIC_ALIAS_LOWER[low]).strip()
-        at_low = alias_target.lower()
-        if at_low in keys_ci:
-            return keys_ci[at_low]
-        phrase_for_score = alias_target
-
-    pn = re.sub(r"\s+", " ", phrase_for_score.strip().lower())
-    if not pn:
-        return "general"
-
-    threshold = max(0.0, min(1.0, float(getattr(settings, "SUBTOPIC_MATCH_THRESHOLD", 0.56))))
-
-    best_key: Optional[str] = None
-    best_score = 0.0
-    for key in keys:
-        s = _subtopic_match_score(pn, key)
-        if s > best_score:
-            best_score = s
-            best_key = key
-
-    if best_key is not None and best_score >= threshold:
-        return best_key
-    return "general"
+    return resolve_subtopic_mapping(
+        extracted,
+        language,
+        level_keys=level_keys,
+    ).roadmap_key
 
 
 # Whole-string duration (after strip), e.g. "2 weeks", "1 month".
@@ -385,12 +776,16 @@ def build_schedule(
     preferred_learning_schedule: List[Dict[str, Any]],
     *,
     default_duration_minutes: int = 90,
+    timezone_name: Optional[str] = "UTC",
 ) -> List[Dict[str, Any]]:
     """
     Assign each roadmap topic to the next calendar learning slot.
 
     `preferred_learning_schedule`: [{ \"day\": 0-6, \"time\": \"HH:MM\", \"duration_minutes\"? }, ...]
     weekday 0 = Monday (matches Python date.weekday()).
+
+    Slot times are interpreted in ``timezone_name`` (user profile), then stored as UTC-naive
+    datetimes — same convention as ``scheduling_add`` task ``due_datetime``.
 
     Each output row: { order, title, resources, scheduled_date, duration_minutes }.
     """
@@ -431,7 +826,15 @@ def build_schedule(
             order = int(row.get("order", topic_index + 1))
             slot_info = by_day[wd]
             tstr = slot_info["time"]
-            session_dt = datetime.combine(current, _parse_hhmm(tstr))
+            parsed_time = _parse_hhmm(tstr)
+            time_str = f"{parsed_time.hour:02d}:{parsed_time.minute:02d}:00"
+            session_dt = local_datetime_to_utc_naive(
+                current.isoformat(),
+                time_str,
+                timezone_name,
+            )
+            if session_dt is None:
+                session_dt = datetime.combine(current, parsed_time)
             out.append(
                 {
                     "order": order,

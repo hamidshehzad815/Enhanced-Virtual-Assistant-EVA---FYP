@@ -2,6 +2,12 @@ jest.mock("../services/collaborationNotifications", () => ({
   notifyOwnerOfCollaborationResponse: jest.fn().mockResolvedValue({ dispatched: true }),
 }));
 
+jest.mock("../utils/userCalendarConflicts", () => ({
+  findUserCalendarConflicts: jest.fn(),
+  formatCollaboratorConflictMessage: jest.fn(),
+  resolveUserTimezone: jest.fn().mockResolvedValue("UTC"),
+}));
+
 jest.mock("../models", () => ({
   LearningGoal: {
     findOne: jest.fn(),
@@ -17,14 +23,18 @@ jest.mock("../models", () => ({
     findOne: jest.fn(),
     create: jest.fn(),
   },
+  User: {
+    findById: jest.fn(),
+  },
   Notification: {
     findOneAndUpdate: jest.fn().mockResolvedValue({}),
   },
 }));
 
 const mongoose = require("mongoose");
-const { LearningGoal, Notification } = require("../models");
+const { LearningGoal, Notification, User } = require("../models");
 const { notifyOwnerOfCollaborationResponse } = require("../services/collaborationNotifications");
+const { findUserCalendarConflicts } = require("../utils/userCalendarConflicts");
 const { applyLearningCollaborationAction } = require("../services/learningCollaboration.service");
 
 const OWNER_ID = new mongoose.Types.ObjectId();
@@ -34,6 +44,7 @@ const GOAL_ID = new mongoose.Types.ObjectId();
 describe("learningCollaboration service", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    findUserCalendarConflicts.mockResolvedValue(null);
   });
 
   test("notifies owner when collaborator accepts invite", async () => {
@@ -61,6 +72,11 @@ describe("learningCollaboration service", () => {
       }),
     });
     LearningGoal.create.mockResolvedValue({ _id: new mongoose.Types.ObjectId() });
+    User.findById.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue({ name: "Collaborator" }),
+      }),
+    });
 
     const result = await applyLearningCollaborationAction({
       goalId: String(GOAL_ID),

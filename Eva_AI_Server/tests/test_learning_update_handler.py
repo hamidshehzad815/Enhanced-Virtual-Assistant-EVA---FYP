@@ -1,0 +1,288 @@
+"""
+Phase 5 tests for learning_update handler (core paths).
+"""
+
+import sys
+import types
+import unittest
+from datetime import datetime, timezone
+from unittest.mock import AsyncMock, patch
+
+from bson import ObjectId
+
+
+if "pipeline.ner" not in sys.modules:
+    _ner_mod = types.ModuleType("pipeline.ner")
+
+    class _StubExtractor:
+        loaded = True
+
+        def extract(self, *args, **kwargs):
+            return {}
+
+        def load(self):
+            return True
+
+    _stub = _StubExtractor()
+    _ner_mod.learning_ner_extractor = _stub
+    _ner_mod.ner_extractor = _stub
+    _ner_mod.get_ner_extractor_for_intent = lambda _intent: _stub
+    sys.modules["pipeline.ner"] = _ner_mod
+
+
+from handlers.learning.update import handle_learning_update
+
+
+def _base_context(**overrides):
+    ctx = {
+        "user_id": str(ObjectId()),
+        "session_id": str(ObjectId()),
+        "message": "pause my Python",
+        "input_type": "text",
+        "user": {"name": "Ali", "timezone": "UTC"},
+        "history": [],
+        "integrations": [],
+        "settings": {"preferred_learning_schedule": [{"day": 0, "time": "18:00"}]},
+    }
+    ctx.update(overrides)
+    return ctx
+
+
+class LearningUpdateHandlerTests(unittest.IsolatedAsyncioTestCase):
+    async def test_pause_no_topic_sets_free_text_state(self):
+        with patch(
+            "handlers.learning.update.redis_client.set_context",
+            new=AsyncMock(return_value=True),
+        ) as mock_set, patch(
+            "handlers.learning.update._save_turn",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await handle_learning_update(
+                entities={},
+                context=_base_context(message="pause my roadmap"),
+            )
+
+        self.assertEqual(result["status"], "pending")
+        payload = mock_set.await_args.args[1]
+        self.assertEqual(payload["expected_response"], "free_text")
+        self.assertEqual(payload["pending_action"]["sub_intent"], "pause")
+
+    async def test_pause_single_match_sets_yes_no(self):
+        gid = str(ObjectId())
+        match = {
+            "_id": gid,
+            "title": "Python basics",
+            "roadmap_key": "basics",
+            "status": "active",
+            "completed_topics": 2,
+            "total_topics": 8,
+            "subject": "python",
+        }
+        with patch(
+            "handlers.learning.update.find_goals_for_update",
+            new=AsyncMock(return_value=[match]),
+        ), patch(
+            "handlers.learning.update.redis_client.set_context",
+            new=AsyncMock(return_value=True),
+        ) as mock_set, patch(
+            "handlers.learning.update._save_turn",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await handle_learning_update(
+                entities={"topic": "Python"},
+                context=_base_context(message="pause my Python"),
+            )
+
+        self.assertEqual(result["status"], "pending")
+        payload = mock_set.await_args.args[1]
+        self.assertEqual(payload["expected_response"], "yes_no")
+        self.assertEqual(payload["pending_action"]["goal_id"], gid)
+
+    async def test_pause_already_paused_plan_returns_clear_message(self):
+        paused_goal = {
+            "_id": str(ObjectId()),
+            "title": "Learn Python — basics",
+            "roadmap_key": "basics",
+            "status": "paused",
+            "completed_topics": 1,
+            "total_topics": 12,
+            "subject": "python",
+        }
+        with patch(
+            "handlers.learning.update.find_goals_for_update",
+            new=AsyncMock(return_value=[]),
+        ), patch(
+            "handlers.learning.update.get_paused_goals_for_user",
+            new=AsyncMock(return_value=[paused_goal]),
+        ), patch(
+            "handlers.learning.update._save_turn",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await handle_learning_update(
+                entities={"topic": "Python"},
+                context=_base_context(message="pause my Python learning"),
+            )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("already paused", result["response_text"].lower())
+        self.assertIn("resume", result["response_text"].lower())
+
+    async def test_pause_yes_executes_pause_goal(self):
+        gid = str(ObjectId())
+        goal = {"_id": gid, "title": "Python basics", "roadmap_key": "basics", "status": "active"}
+        context = _base_context(
+            message="yes",
+            pending_context={
+                "expected_response": "yes_no",
+                "pending_action": {"intent": "learning_update", "sub_intent": "pause", "goal_id": gid, "goal": goal},
+            },
+            pending_reply_type="yes_no",
+            pending_reply_value="yes",
+        )
+
+        with patch(
+            "handlers.learning.update.pause_goal",
+            new=AsyncMock(return_value=True),
+        ) as mock_pause, patch(
+            "handlers.learning.update.redis_client.delete_context",
+            new=AsyncMock(return_value=True),
+        ), patch(
+            "handlers.learning.update._save_turn",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await handle_learning_update(entities={}, context=context)
+
+        self.assertEqual(result["status"], "success")
+        self.assertEqual(mock_pause.await_count, 1)
+
+    async def test_complete_blocked_when_unlocked_future(self):
+        gid = str(ObjectId())
+        now = datetime(2026, 6, 1, 10, 0, tzinfo=timezone.utc)
+        # Scheduled later same day => within 24h, unlocked_future.
+        current = {"_id": str(ObjectId()), "order": 1, "status": "pending", "scheduled_date": now.replace(hour=18)}
+        goal = {"_id": gid, "title": "Python basics", "subject": "python"}
+
+        with patch(
+            "handlers.learning.update.find_goals_for_update",
+            new=AsyncMock(return_value=[goal]),
+        ), patch(
+            "handlers.learning.update.get_goal_by_id",
+            new=AsyncMock(return_value=goal),
+        ), patch(
+            "handlers.learning.update.get_current_session",
+            new=AsyncMock(return_value=current),
+        ), patch(
+            "handlers.learning.update.get_topics_for_goal",
+            new=AsyncMock(return_value=[current]),
+        ), patch(
+            "handlers.learning.update.compute_session_state",
+            return_value="unlocked_future",
+        ), patch(
+            "handlers.learning.update._save_turn",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await handle_learning_update(
+                entities={"topic": "Python"},
+                context=_base_context(message="mark next session done"),
+            )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertIn("can't mark it complete", result["response_text"].lower())
+
+    async def test_reschedule_rejects_past_learning_day(self):
+        gid = str(ObjectId())
+        current = {
+            "_id": str(ObjectId()),
+            "order": 2,
+            "status": "pending",
+            "scheduled_date": datetime(2026, 6, 10, 19, 0, tzinfo=timezone.utc),
+        }
+        goal = {
+            "_id": gid,
+            "title": "Python basics",
+            "subject": "python",
+            "status": "active",
+            "learning_schedule_id": "s1",
+        }
+        fixed_now = datetime(2026, 6, 5, 12, 0, tzinfo=timezone.utc)
+        past_thursday = "2026-06-04"  # valid weekday 3, before today
+
+        with patch(
+            "handlers.learning.update.find_goals_for_update",
+            new=AsyncMock(return_value=[goal]),
+        ), patch(
+            "handlers.learning.update.get_goal_by_id",
+            new=AsyncMock(return_value=goal),
+        ), patch(
+            "handlers.learning.update.get_current_session",
+            new=AsyncMock(return_value=current),
+        ), patch(
+            "handlers.learning.update.get_topics_for_goal",
+            new=AsyncMock(return_value=[current]),
+        ), patch(
+            "handlers.learning.update.compute_session_state",
+            return_value="unlocked_future",
+        ), patch(
+            "handlers.learning.update.resolve_learning_slots",
+            return_value=[{"day": 3, "time": "19:00", "duration_minutes": 90}],
+        ), patch(
+            "handlers.learning.update.datetime"
+        ) as mock_dt, patch(
+            "handlers.learning.update._save_turn",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "handlers.learning.update.rt_reschedule_topic",
+            new=AsyncMock(return_value=True),
+        ) as mock_reschedule:
+            mock_dt.strptime = datetime.strptime
+            mock_dt.combine = datetime.combine
+            mock_dt.now.return_value = fixed_now
+            result = await handle_learning_update(
+                entities={"topic": "Python", "date": past_thursday},
+                context=_base_context(message="reschedule python session to last thursday"),
+            )
+
+        self.assertEqual(result["status"], "error")
+        self.assertIn("past", result["response_text"].lower())
+        mock_reschedule.assert_not_called()
+
+    async def test_skip_with_paused_plan_offers_resume_yes_no(self):
+        gid = str(ObjectId())
+        paused_goal = {
+            "_id": gid,
+            "title": "Python basics",
+            "roadmap_key": "basics",
+            "status": "paused",
+            "completed_topics": 1,
+            "total_topics": 8,
+            "subject": "python",
+        }
+        with patch(
+            "handlers.learning.update.get_active_goals_for_user",
+            new=AsyncMock(return_value=[]),
+        ), patch(
+            "handlers.learning.update.get_paused_goals_for_user",
+            new=AsyncMock(return_value=[paused_goal]),
+        ), patch(
+            "handlers.learning.update.redis_client.set_context",
+            new=AsyncMock(return_value=True),
+        ) as mock_set, patch(
+            "handlers.learning.update._save_turn",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await handle_learning_update(
+                entities={},
+                context=_base_context(message="skip next session"),
+            )
+
+        self.assertEqual(result["status"], "pending")
+        self.assertIn("paused", result["response_text"].lower())
+        self.assertIn("reply yes", result["response_text"].lower())
+        payload = mock_set.await_args.args[1]
+        self.assertEqual(payload["pending_action"]["stage"], "resume_confirm")
+        self.assertEqual(payload["pending_action"]["deferred_sub_intent"], "skip")
+
+
+if __name__ == "__main__":
+    unittest.main()
+

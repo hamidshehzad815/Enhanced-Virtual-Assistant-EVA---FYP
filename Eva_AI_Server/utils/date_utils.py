@@ -7,6 +7,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from utils.timezone_utils import get_zoneinfo, utc_naive_to_local
+from utils.api_datetime import localize_task_for_api
 
 _WEEKDAY_TO_NUMBER = {
     "monday": 0,
@@ -182,8 +183,8 @@ def convert_tasks_to_local(tasks: List[Dict[str, Any]], user_timezone: str) -> L
     """
     localized: List[Dict[str, Any]] = []
     for task in list(tasks or []):
-        row = dict(task)
-        local_dt = utc_naive_to_local(row.get("due_datetime"), user_timezone)
+        row = localize_task_for_api(dict(task), user_timezone)
+        local_dt = utc_naive_to_local(task.get("due_datetime"), user_timezone)
         if local_dt is not None:
             row["local_datetime_str"] = (
                 local_dt.strftime("%A %I:%M %p").replace(" 0", " ")

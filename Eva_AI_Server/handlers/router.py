@@ -6,11 +6,24 @@ from typing import Any, Dict, Optional
 
 from handlers.behavioral import handle_behavioral
 from handlers.learning.create import handle_learning_create
+from handlers.learning.delete import handle_learning_delete
+from handlers.learning.update import handle_learning_update
 from handlers.scheduling.add import handle_scheduling_add
 from handlers.scheduling.delete import handle_scheduling_delete
 from handlers.scheduling.show import handle_scheduling_show
 from handlers.scheduling.update import handle_scheduling_update
 from services.gemini import gemini_service
+from utils.api_datetime import with_api_timezone
+from utils.timezone_utils import resolve_timezone_name
+
+
+def _localize_handler_response(
+    result: Dict[str, Any],
+    context: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    user = (context or {}).get("user") or {}
+    tz = resolve_timezone_name(user.get("timezone"))
+    return with_api_timezone(result, tz)
 
 
 # Map historical/custom labels to canonical phase-6 intents.
@@ -47,26 +60,54 @@ async def route_intent(
     context = context or {}
 
     if canonical_intent == "scheduling_add":
-        return await handle_scheduling_add(entities=entities, context=context)
+        return _localize_handler_response(
+            await handle_scheduling_add(entities=entities, context=context),
+            context,
+        )
 
     if canonical_intent == "scheduling_delete":
-        return await handle_scheduling_delete(entities=entities, context=context)
+        return _localize_handler_response(
+            await handle_scheduling_delete(entities=entities, context=context),
+            context,
+        )
 
     if canonical_intent == "scheduling_show":
-        return await handle_scheduling_show(entities=entities, context=context)
+        return _localize_handler_response(
+            await handle_scheduling_show(entities=entities, context=context),
+            context,
+        )
 
     if canonical_intent == "scheduling_update":
-        return await handle_scheduling_update(entities=entities, context=context)
+        return _localize_handler_response(
+            await handle_scheduling_update(entities=entities, context=context),
+            context,
+        )
 
     if canonical_intent == "behavioral":
-        return await handle_behavioral(entities=entities, context=context)
+        return _localize_handler_response(
+            await handle_behavioral(entities=entities, context=context),
+            context,
+        )
 
     if canonical_intent == "learning_create":
-        return await handle_learning_create(entities=entities, context=context)
+        return _localize_handler_response(
+            await handle_learning_create(entities=entities, context=context),
+            context,
+        )
+
+    if canonical_intent == "learning_delete":
+        return _localize_handler_response(
+            await handle_learning_delete(entities=entities, context=context),
+            context,
+        )
+
+    if canonical_intent == "learning_update":
+        return _localize_handler_response(
+            await handle_learning_update(entities=entities, context=context),
+            context,
+        )
 
     disabled_intents = {
-        "learning_update",
-        "learning_delete",
         "learning_show",
         "update_roadmap",
         "delete_roadmap",

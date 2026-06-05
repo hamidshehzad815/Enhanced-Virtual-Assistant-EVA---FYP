@@ -568,7 +568,7 @@ async def handle_scheduling_show(
         {
             "task_id": _coerce_text(task.get("_id")),
             "title": _coerce_text(task.get("title")),
-            "due_datetime": _serialize_due_datetime(task.get("due_datetime")),
+            "due_datetime": _coerce_text(task.get("due_datetime")),
             "priority": _coerce_text(task.get("priority")) or "medium",
             "status": _coerce_text(task.get("status")) or "pending",
             "local_datetime_str": _coerce_text(task.get("local_datetime_str")),
