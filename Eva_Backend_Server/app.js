@@ -23,6 +23,7 @@ const {
 
 // Import middleware
 const { notFoundHandler, errorHandler } = require("./middleware/errorHandler");
+const { getBackendPort, buildBackendPublicUrl } = require("./utils/publicUrl");
 
 // Import routes
 const routes = require("./routes");
@@ -105,7 +106,7 @@ app.use(errorHandler);
 // Server Startup
 // ===========================================
 
-const PORT = process.env.BACKEND_PORT || 3000;
+const PORT = getBackendPort();
 let reminderJobHandle = null;
 let learningAutoCompleteJobHandle = null;
 
@@ -134,6 +135,7 @@ const startServer = async () => {
     logger.info(`Server running on port ${PORT}`);
     logger.info(`Environment: ${process.env.NODE_ENV || "development"}`);
     logger.info(`Health check: http://localhost:${PORT}/health`);
+    logger.info(`Email links base: ${buildBackendPublicUrl()}`);
     logger.info("=".repeat(50));
   });
 };

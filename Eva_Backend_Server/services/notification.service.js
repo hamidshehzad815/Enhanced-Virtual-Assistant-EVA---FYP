@@ -11,7 +11,7 @@ const jwt = require("jsonwebtoken");
 
 const logger = require("../config/logger");
 const { Notification, User, UserSetting } = require("../models");
-const { buildBackendPublicUrl } = require("../utils/publicUrl");
+const { buildTokenLink } = require("../utils/publicUrl");
 
 const SMTP_HOST = process.env.SMTP_HOST || process.env.EMAIL_HOST;
 const SMTP_PORT = Number(process.env.SMTP_PORT || process.env.EMAIL_PORT || 587);
@@ -24,7 +24,6 @@ const SMTP_FROM =
   process.env.EMAIL_FROM ||
   process.env.EMAIL_USER ||
   "no-reply@eva.local";
-const BACKEND_PUBLIC_URL = buildBackendPublicUrl();
 
 let cachedTransporter = null;
 let cachedFirebaseAdmin = undefined;
@@ -164,7 +163,7 @@ const buildCollaborationActionLink = ({
       ? "/api/learning/collaboration/respond"
       : "/api/tasks/collaboration/respond";
 
-  return `${BACKEND_PUBLIC_URL}${path}?token=${encodeURIComponent(token)}`;
+  return buildTokenLink(null, path, token);
 };
 
 const buildCollaborationInviteEmail = ({ notification, userDoc }) => {
