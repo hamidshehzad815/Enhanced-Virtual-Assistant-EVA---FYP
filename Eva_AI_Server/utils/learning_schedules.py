@@ -262,6 +262,43 @@ def resolve_schedule_for_learning(
     return None, message, pending
 
 
+def resolve_learning_slots(
+    settings: Dict[str, Any],
+    *,
+    goal: Optional[Dict[str, Any]] = None,
+    entities: Optional[Dict[str, Any]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Slot list [{day, time, duration_minutes}, ...] for schedule building.
+
+    Prefer the goal's ``learning_schedule_id``, then entities, then a single saved schedule,
+    then legacy flat ``preferred_learning_schedule``.
+    """
+    schedules = schedules_from_settings(settings)
+    if goal:
+        sid = str(goal.get("learning_schedule_id") or "").strip()
+        if sid:
+            entry = schedule_by_id(schedules, sid)
+            if entry:
+                return list(entry.get("slots") or [])
+    if entities:
+        slots = slots_for_plan_entities(settings, entities)
+        if slots:
+            return slots
+    if len(schedules) == 1:
+        return list(schedules[0].get("slots") or [])
+    legacy = settings.get("preferred_learning_schedule")
+    if isinstance(legacy, list) and legacy:
+        default_dur = int(settings.get("preferred_learning_duration") or DEFAULT_DURATION_MINUTES)
+        out: List[Dict[str, Any]] = []
+        for raw in legacy:
+            norm = _normalize_slot(raw, default_dur)
+            if norm:
+                out.append(norm)
+        return out
+    return []
+
+
 def slots_for_plan_entities(
     settings: Dict[str, Any],
     entities: Dict[str, Any],

@@ -65,6 +65,65 @@ class MapSubtopicTests(unittest.TestCase):
             "object oriented programming",
         )
 
+    def test_oop_list_with_ma_noise_not_loops(self):
+        keys = (
+            "basics",
+            "loops",
+            "object oriented programming",
+            "lists tuples dictionaries sets",
+        )
+        self.assertEqual(
+            lu.map_subtopic(["oop", "ma"], "Python", level_keys=keys),
+            "object oriented programming",
+        )
+
+    def test_oop_stringified_list_not_loops(self):
+        keys = ("loops", "object oriented programming")
+        self.assertEqual(
+            lu.map_subtopic("['oop', 'ma']", "Python", level_keys=keys),
+            "object oriented programming",
+        )
+
+    def test_list_and_oop_prefers_oop_alias(self):
+        keys = ("lists tuples dictionaries sets", "object oriented programming")
+        self.assertEqual(
+            lu.map_subtopic(["list", "oop", "ma"], "Python", level_keys=keys),
+            "object oriented programming",
+        )
+
+    def test_begginers_typo_maps_to_basics(self):
+        self.assertEqual(lu.map_subtopic("begginers", "Python"), "basics")
+
+    def test_begginers_resolution_confident(self):
+        res = lu.resolve_subtopic_mapping("begginers", "Python")
+        self.assertEqual(res.roadmap_key, "basics")
+        self.assertTrue(res.confident)
+
+    def test_vague_subtopic_not_confident(self):
+        res = lu.resolve_subtopic_mapping("beg", "Python")
+        self.assertEqual(res.roadmap_key, "general")
+        self.assertFalse(res.confident)
+
+    def test_no_subtopic_confident_general(self):
+        res = lu.resolve_subtopic_mapping(None, "Python")
+        self.assertEqual(res.roadmap_key, "general")
+        self.assertTrue(res.confident)
+
+
+class NormalizeSubtopicEntityTests(unittest.TestCase):
+    def test_drops_ma_from_list(self):
+        self.assertEqual(lu.normalize_subtopic_entity(["oop", "ma"]), "oop")
+
+    def test_drops_standalone_ma(self):
+        self.assertIsNone(lu.normalize_subtopic_entity("ma"))
+        self.assertIsNone(lu.normalize_subtopic_entity("MA"))
+
+    def test_subtopic_hint_from_message(self):
+        self.assertEqual(
+            lu.subtopic_hint_from_message("create python oop roadmap"),
+            "oop",
+        )
+
 
 class ParseDurationTests(unittest.TestCase):
     def test_weeks_months_days(self):
@@ -140,7 +199,7 @@ class BuildScheduleTests(unittest.TestCase):
             {"order": 2, "title": "B", "resources": [{"url": "x"}]},
             {"order": 3, "title": "C", "resources": []},
         ]
-        out = lu.build_schedule(start, topics, schedule_slots)
+        out = lu.build_schedule(start, topics, schedule_slots, timezone_name="UTC")
         self.assertEqual(len(out), 3)
         self.assertEqual(out[0]["title"], "A")
         self.assertEqual(out[1]["title"], "B")
@@ -150,11 +209,192 @@ class BuildScheduleTests(unittest.TestCase):
         self.assertEqual(out[2]["scheduled_date"], datetime(2025, 1, 10, 9, 0))
         self.assertEqual(out[1]["resources"], [{"url": "x"}])
 
+    def test_converts_user_local_slot_to_utc_naive(self):
+        """09:40 Asia/Karachi on Friday → 04:40 UTC stored."""
+        start = date(2026, 6, 5)  # Friday
+        schedule_slots = [{"day": 4, "time": "09:40", "duration_minutes": 60}]
+        topics = [{"order": 1, "title": "Intro", "resources": []}]
+        out = lu.build_schedule(
+            start,
+            topics,
+            schedule_slots,
+            timezone_name="Asia/Karachi",
+        )
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["scheduled_date"], datetime(2026, 6, 5, 4, 40))
+
+    def test_monday_6pm_karachi_stored_as_utc(self):
+        start = date(2026, 6, 8)  # Monday
+        schedule_slots = [{"day": 0, "time": "18:00", "duration_minutes": 60}]
+        topics = [{"order": 1, "title": "S1", "resources": []}]
+        out = lu.build_schedule(
+            start,
+            topics,
+            schedule_slots,
+            timezone_name="Asia/Karachi",
+        )
+        self.assertEqual(out[0]["scheduled_date"], datetime(2026, 6, 8, 13, 0))
+
     def test_empty_learning_schedule(self):
         self.assertEqual(
             lu.build_schedule(date(2025, 1, 1), [{"title": "T"}], []),
             [],
         )
+
+
+class DetectLearningSubIntentTests(unittest.TestCase):
+    def test_pause_keywords(self):
+        self.assertEqual(lu.detect_learning_sub_intent("pause my Python"), "pause")
+        self.assertEqual(lu.detect_learning_sub_intent("put my plan on hold"), "pause")
+
+    def test_resume_keywords(self):
+        self.assertEqual(lu.detect_learning_sub_intent("resume Python basics"), "resume")
+        self.assertEqual(lu.detect_learning_sub_intent("continue my javascript plan"), "resume")
+
+    def test_complete_keywords(self):
+        self.assertEqual(
+            lu.detect_learning_sub_intent("mark next session done"),
+            "complete",
+        )
+        self.assertEqual(
+            lu.detect_learning_sub_intent("mark next python session as done"),
+            "complete",
+        )
+        self.assertEqual(
+            lu.detect_learning_sub_intent("mark next Python basics session done"),
+            "complete",
+        )
+        self.assertEqual(
+            lu.detect_learning_sub_intent("mark python next session as done"),
+            "complete",
+        )
+        self.assertEqual(lu.detect_learning_sub_intent("I finished today's session"), "complete")
+        self.assertEqual(
+            lu.detect_learning_sub_intent("mark today's python session as done"),
+            "complete",
+        )
+
+    def test_skip_next_session_with_topic(self):
+        self.assertEqual(
+            lu.detect_learning_sub_intent("skip next python session"),
+            "skip",
+        )
+        self.assertEqual(
+            lu.detect_learning_sub_intent("skip python next session"),
+            "skip",
+        )
+
+    def test_skip_keywords(self):
+        self.assertEqual(lu.detect_learning_sub_intent("skip today's topic"), "skip")
+        self.assertEqual(lu.detect_learning_sub_intent("bypass this session"), "skip")
+
+    def test_reschedule_keywords(self):
+        self.assertEqual(
+            lu.detect_learning_sub_intent("reschedule to Monday"),
+            "reschedule",
+        )
+        self.assertEqual(
+            lu.detect_learning_sub_intent("move my session to Friday"),
+            "reschedule",
+        )
+
+    def test_reschedule_wins_over_finished_in_same_message(self):
+        self.assertEqual(
+            lu.detect_learning_sub_intent(
+                "i finished, reschedule my python session to next monday",
+            ),
+            "reschedule",
+        )
+
+    def test_reschedule_typo_and_session_to_date(self):
+        msg = "reschdule python session to june4"
+        self.assertTrue(lu.message_implies_reschedule(msg))
+        self.assertEqual(lu.detect_learning_sub_intent(msg), "reschedule")
+
+    def test_ambiguous_returns_none(self):
+        self.assertIsNone(lu.detect_learning_sub_intent("update my learning plan"))
+        self.assertIsNone(lu.detect_learning_sub_intent(""))
+        self.assertIsNone(lu.detect_learning_sub_intent(None))
+
+
+class ComputeSessionStateTests(unittest.TestCase):
+    def _session(self, scheduled: datetime, status: str = "pending") -> dict:
+        return {"status": status, "scheduled_date": scheduled}
+
+    def test_completed_and_skipped_passthrough(self):
+        now = datetime(2025, 6, 10, 12, 0)
+        self.assertEqual(
+            lu.compute_session_state(
+                self._session(now, status="completed"),
+                now,
+            ),
+            "completed",
+        )
+        self.assertEqual(
+            lu.compute_session_state(
+                self._session(now, status="skipped"),
+                now,
+            ),
+            "skipped",
+        )
+
+    def test_locked_when_more_than_24h_before_schedule(self):
+        scheduled = datetime(2025, 6, 15, 18, 0)
+        now = datetime(2025, 6, 10, 12, 0)
+        state = lu.compute_session_state(self._session(scheduled), now)
+        self.assertEqual(state, "locked")
+
+    def test_unlocked_future_within_24h_before_schedule(self):
+        scheduled = datetime(2025, 6, 10, 18, 0)
+        now = datetime(2025, 6, 10, 10, 0)
+        state = lu.compute_session_state(self._session(scheduled), now)
+        self.assertEqual(state, "unlocked_future")
+
+    def test_overdue_after_scheduled_time(self):
+        scheduled = datetime(2025, 6, 10, 9, 0)
+        now = datetime(2025, 6, 10, 12, 0)
+        state = lu.compute_session_state(self._session(scheduled), now)
+        self.assertEqual(state, "overdue")
+
+    def test_short_gap_unlocks_after_previous_resolved(self):
+        prev_scheduled = datetime(2025, 6, 10, 9, 0)
+        scheduled = datetime(2025, 6, 10, 15, 0)
+        prev_resolved = datetime(2025, 6, 10, 10, 0)
+        now = datetime(2025, 6, 10, 11, 0)
+        state = lu.compute_session_state(
+            self._session(scheduled),
+            now,
+            previous_scheduled_date=prev_scheduled,
+            previous_resolved_at=prev_resolved,
+        )
+        self.assertEqual(state, "unlocked_future")
+
+    def test_short_gap_stays_locked_until_previous_resolved(self):
+        prev_scheduled = datetime(2025, 6, 10, 9, 0)
+        scheduled = datetime(2025, 6, 10, 15, 0)
+        now = datetime(2025, 6, 10, 11, 0)
+        state = lu.compute_session_state(
+            self._session(scheduled),
+            now,
+            previous_scheduled_date=prev_scheduled,
+            previous_resolved_at=None,
+        )
+        self.assertEqual(state, "locked")
+
+    def test_mixed_naive_and_aware_datetimes_do_not_raise(self):
+        """Mongo often returns naive UTC; now may be timezone-aware from get_zoneinfo."""
+        from zoneinfo import ZoneInfo
+
+        prev_scheduled = datetime(2026, 6, 4, 18, 0)  # naive, session 1 done
+        scheduled = datetime(2026, 6, 5, 8, 0)  # naive, session 2
+        now = datetime(2026, 6, 5, 6, 0, tzinfo=ZoneInfo("Asia/Karachi"))
+        state = lu.compute_session_state(
+            self._session(scheduled),
+            now,
+            previous_scheduled_date=prev_scheduled,
+            previous_resolved_at=datetime(2026, 6, 4, 19, 0),
+        )
+        self.assertEqual(state, "unlocked_future")
 
 
 if __name__ == "__main__":

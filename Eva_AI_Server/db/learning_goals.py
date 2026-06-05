@@ -50,44 +50,52 @@ async def get_active_goals_for_user(user_id: str) -> List[Dict[str, Any]]:
     return [_normalize_doc(r) for r in rows]
 
 
+async def get_paused_goals_for_user(
+    user_id: str,
+    topic: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Paused, non-deleted goals for a user (optional subject filter)."""
+    db = get_db()
+    uid = _to_object_id(user_id)
+    query: Dict[str, Any] = {
+        "user_id": uid,
+        "status": "paused",
+        "is_deleted": False,
+    }
+    subject = (topic or "").strip().lower()
+    if subject:
+        query["subject"] = subject
+
+    cursor = db.learning_goals.find(query).sort("created_at", -1)
+    rows = await cursor.to_list(length=500)
+    return [_normalize_doc(r) for r in rows]
+
+
 async def find_conflicting_goal(
     user_id: str,
     topic: str,
-    roadmap_key: str,
+    roadmap_key: str = "",
 ) -> Optional[Dict[str, Any]]:
     """
-  Return an active goal that blocks creating this plan, or None.
+    Return an active learning goal for this language/subject if one exists.
 
-  Blocks when:
-    - same subject + same roadmap_key, or
-    - same subject + existing \"general\" (general blocks any new track), or
-    - same subject + new \"general\" while any other active track exists.
-
-  Different subjects may both be active. Different tracks (e.g. basics vs intermediate) may coexist.
+    One active plan per language: a second Python plan is blocked regardless of track
+    (basics vs intermediate). Different languages (Python vs JavaScript) may coexist.
+    ``roadmap_key`` is accepted for API compatibility but not used in the query.
     """
+    _ = roadmap_key
     db = get_db()
     uid = _to_object_id(user_id)
     subject_norm = (topic or "").strip().lower()
-    rk = (roadmap_key or "general").strip().lower()
-
-    base: Dict[str, Any] = {
-        "user_id": uid,
-        "status": "active",
-        "is_deleted": False,
-        "subject": subject_norm,
-    }
-
-    if rk == "general":
-        doc = await db.learning_goals.find_one(base)
-        return _normalize_doc(doc) if doc else None
+    if not subject_norm:
+        return None
 
     doc = await db.learning_goals.find_one(
         {
-            **base,
-            "$or": [
-                {"roadmap_key": rk},
-                {"roadmap_key": "general"},
-            ],
+            "user_id": uid,
+            "status": "active",
+            "is_deleted": False,
+            "subject": subject_norm,
         },
     )
     return _normalize_doc(doc) if doc else None
@@ -155,3 +163,193 @@ async def get_goal_by_id(goal_id: str) -> Optional[Dict[str, Any]]:
     db = get_db()
     doc = await db.learning_goals.find_one({"_id": _to_object_id(goal_id)})
     return _normalize_doc(doc) if doc else None
+
+
+async def find_goals_for_update(
+    user_id: str,
+    topic: str,
+    roadmap_key: Optional[str] = None,
+    status_filter: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Non-deleted learning goals for a user matching subject (and optional roadmap_key/status).
+    Sorted newest first.
+    """
+    db = get_db()
+    uid = _to_object_id(user_id)
+    query: Dict[str, Any] = {
+        "user_id": uid,
+        "subject": (topic or "").strip().lower(),
+        "is_deleted": False,
+    }
+    rk = (roadmap_key or "").strip().lower()
+    if rk:
+        query["roadmap_key"] = rk
+    if status_filter:
+        query["status"] = str(status_filter).strip().lower()
+
+    cursor = db.learning_goals.find(query).sort("created_at", -1)
+    rows = await cursor.to_list(length=500)
+    return [_normalize_doc(r) for r in rows]
+
+
+async def pause_goal(goal_id: str) -> bool:
+    """Pause a goal (status=paused, paused_at=now)."""
+    return await update_goal_status(str(goal_id), "paused", {"paused_at": _now_naive_utc()})
+
+
+async def resume_goal(goal_id: str) -> bool:
+    """Resume a goal (status=active, paused_at=null)."""
+    return await update_goal_status(str(goal_id), "active", {"paused_at": None})
+
+
+async def complete_goal(goal_id: str, started_at: Optional[datetime]) -> bool:
+    """
+    Mark goal completed and compute time_taken_days from started_at when provided.
+    Falls back to existing started_at stored in DB when started_at is None.
+    """
+    extra: Dict[str, Any] = {}
+    if started_at is not None:
+        extra["started_at"] = started_at
+    return await update_goal_status(str(goal_id), "completed", extra_fields=extra)
+
+
+async def increment_completed_topics(goal_id: str) -> Optional[int]:
+    """$inc completed_topics by 1 and return the new count, or None when not found."""
+    db = get_db()
+    gid = _to_object_id(goal_id)
+    now = _now_naive_utc()
+    doc = await db.learning_goals.find_one_and_update(
+        {"_id": gid, "is_deleted": False},
+        {"$inc": {"completed_topics": 1}, "$set": {"updated_at": now}},
+        return_document=ReturnDocument.AFTER,
+    )
+    if not doc and gid != goal_id:
+        doc = await db.learning_goals.find_one_and_update(
+            {"_id": goal_id, "is_deleted": False},
+            {"$inc": {"completed_topics": 1}, "$set": {"updated_at": now}},
+            return_document=ReturnDocument.AFTER,
+        )
+    if not doc:
+        return None
+    return int(doc.get("completed_topics") or 0)
+
+
+async def set_started_at(goal_id: str) -> bool:
+    """Set started_at=now only when started_at is currently null."""
+    db = get_db()
+    gid = _to_object_id(goal_id)
+    now = _now_naive_utc()
+    result = await db.learning_goals.update_one(
+        {"_id": gid, "started_at": None},
+        {"$set": {"started_at": now, "updated_at": now}},
+    )
+    if result.matched_count == 0 and gid != goal_id:
+        result = await db.learning_goals.update_one(
+            {"_id": goal_id, "started_at": None},
+            {"$set": {"started_at": now, "updated_at": now}},
+        )
+    return result.matched_count > 0
+
+
+async def update_end_date(goal_id: str, new_end_date: datetime) -> bool:
+    """Update goal end_date."""
+    db = get_db()
+    gid = _to_object_id(goal_id)
+    now = _now_naive_utc()
+    result = await db.learning_goals.update_one(
+        {"_id": gid},
+        {"$set": {"end_date": new_end_date, "updated_at": now}},
+    )
+    if result.matched_count == 0 and gid != goal_id:
+        result = await db.learning_goals.update_one(
+            {"_id": goal_id},
+            {"$set": {"end_date": new_end_date, "updated_at": now}},
+        )
+    return result.matched_count > 0
+
+
+async def find_goals_for_delete(
+    user_id: str,
+    topic: str,
+    roadmap_key: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Non-deleted learning goals for a user matching subject (and optional roadmap_key).
+    All statuses (active, paused, completed) are included. Sorted newest first.
+    """
+    db = get_db()
+    uid = _to_object_id(user_id)
+    query: Dict[str, Any] = {
+        "user_id": uid,
+        "subject": (topic or "").strip().lower(),
+        "is_deleted": False,
+    }
+    rk = (roadmap_key or "").strip().lower()
+    if rk:
+        query["roadmap_key"] = rk
+
+    projection = {
+        "_id": 1,
+        "title": 1,
+        "roadmap_key": 1,
+        "status": 1,
+        "completed_topics": 1,
+        "total_topics": 1,
+        "collaborators": 1,
+    }
+    cursor = db.learning_goals.find(query, projection).sort("created_at", -1)
+    rows = await cursor.to_list(length=500)
+    return [_normalize_doc(r) for r in rows]
+
+
+async def soft_delete_goal(goal_id: str) -> bool:
+    """Soft-delete one learning goal. Returns True when a document matched."""
+    db = get_db()
+    now = _now_naive_utc()
+    payload = {
+        "is_deleted": True,
+        "deleted_at": now,
+        "updated_at": now,
+    }
+    gid = _to_object_id(goal_id)
+    result = await db.learning_goals.update_one(
+        {"_id": gid, "is_deleted": False},
+        {"$set": payload},
+    )
+    if result.matched_count == 0 and gid != goal_id:
+        result = await db.learning_goals.update_one(
+            {"_id": goal_id, "is_deleted": False},
+            {"$set": payload},
+        )
+    return result.matched_count > 0
+
+
+async def soft_delete_goals_bulk(goal_ids: List[str]) -> int:
+    """Soft-delete many learning goals. Returns matched document count."""
+    if not goal_ids:
+        return 0
+
+    db = get_db()
+    now = _now_naive_utc()
+    payload = {
+        "is_deleted": True,
+        "deleted_at": now,
+        "updated_at": now,
+    }
+    object_ids = [_to_object_id(goal_id) for goal_id in goal_ids]
+    query: Dict[str, Any] = {
+        "_id": {"$in": object_ids},
+        "is_deleted": False,
+    }
+    result = await db.learning_goals.update_many(query, {"$set": payload})
+
+    if result.matched_count == 0 and any(
+        obj_id != goal_id for obj_id, goal_id in zip(object_ids, goal_ids)
+    ):
+        result = await db.learning_goals.update_many(
+            {"_id": {"$in": list(goal_ids)}, "is_deleted": False},
+            {"$set": payload},
+        )
+
+    return int(result.matched_count)

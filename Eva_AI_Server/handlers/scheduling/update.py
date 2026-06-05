@@ -27,6 +27,10 @@ from db.tasks import (
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
+from utils.learning_schedule_conflicts import (
+    find_task_conflicts_from_settings,
+    format_learning_schedule_conflict_message,
+)
 from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
 from utils.timezone_utils import (
     local_datetime_to_utc_naive,
@@ -34,6 +38,7 @@ from utils.timezone_utils import (
     resolve_timezone_name,
     utc_naive_to_local,
 )
+from utils.api_datetime import serialize_stored_datetime
 
 
 def _first_value(value: Any) -> Any:
@@ -112,7 +117,11 @@ def _normalize_status(value: Any) -> str:
     return canonicalize_status(value)
 
 
-def _serialize_due_datetime(value: Any) -> str:
+def _serialize_due_datetime(value: Any, timezone_name: Optional[str] = None) -> str:
+    if timezone_name:
+        converted = serialize_stored_datetime(value, timezone_name)
+        if converted:
+            return converted
     if isinstance(value, datetime):
         return value.isoformat()
     return _coerce_text(value)
@@ -137,11 +146,11 @@ def _format_due_display(value: Any, timezone_name: str) -> str:
     return local_dt.strftime("%A, %d %b %Y at %I:%M %p").replace(" 0", " ")
 
 
-def _task_preview(task: Dict[str, Any]) -> Dict[str, Any]:
+def _task_preview(task: Dict[str, Any], timezone_name: Optional[str] = None) -> Dict[str, Any]:
     return {
         "task_id": _coerce_text(task.get("_id")) or _coerce_text(task.get("task_id")),
         "title": _coerce_text(task.get("title")) or "Untitled task",
-        "due_datetime": _serialize_due_datetime(task.get("due_datetime")),
+        "due_datetime": _serialize_due_datetime(task.get("due_datetime"), timezone_name),
         "priority": _normalize_priority(task.get("priority")) or "medium",
         "status": _normalize_status(task.get("status")) or "pending",
         "duration": int(task.get("duration") or 120),
@@ -902,7 +911,7 @@ async def _execute_confirmed_update(
         "task": {
             "task_id": _coerce_text(updated_task.get("_id")) or task_id,
             "title": final_title,
-            "due_datetime": _serialize_due_datetime(updated_task.get("due_datetime")),
+            "due_datetime": _serialize_due_datetime(updated_task.get("due_datetime"), timezone_name),
             "priority": final_priority,
             "status": _normalize_status(updated_task.get("status")) or "pending",
             "duration": int(updated_task.get("duration") or 120),
@@ -921,6 +930,7 @@ async def handle_scheduling_update(
     user_id = str(context.get("user_id") or "")
     session_id = str(context.get("session_id") or "")
     user = context.get("user") or {}
+    settings = context.get("settings") or {}
     integrations = context.get("integrations") or []
     history = context.get("history") or []
     user_message = str(context.get("message") or "")
@@ -1111,7 +1121,7 @@ async def handle_scheduling_update(
             if not task_id:
                 continue
             task_ids.append(task_id)
-            task_list.append(_task_preview(task))
+            task_list.append(_task_preview(task, timezone_name))
 
         if not task_ids:
             response_text = _not_found_prompt(user_name, resolved_filters or combined_entities, history)
@@ -1182,7 +1192,7 @@ async def handle_scheduling_update(
 
     # Single match: proceed.
     matched_task = matches[0]
-    selected_task = _task_preview(matched_task)
+    selected_task = _task_preview(matched_task, timezone_name)
     selected_task_id = _coerce_text(selected_task.get("task_id")) or task_id_direct
     selected_task["task_id"] = selected_task_id
 
@@ -1523,6 +1533,39 @@ async def handle_scheduling_update(
             }
 
         overlap_duration = int(update_data.get("duration") or current_duration)
+        learning_slot_conflicts = find_task_conflicts_from_settings(
+            candidate_due_utc,
+            overlap_duration,
+            settings,
+            timezone_name=timezone_name,
+        )
+        if learning_slot_conflicts:
+            await _set_what_to_update_context(
+                user_id=user_id,
+                entities={**combined_entities, **normalized_updates_for_entities},
+                task_id=selected_task_id,
+                task_preview=selected_task,
+            )
+            response_text = format_learning_schedule_conflict_message(
+                learning_slot_conflicts,
+                user_name=user_name,
+            )
+            await _save_turn(
+                session_id,
+                user_message,
+                response_text,
+                input_type,
+                "scheduling_update",
+                combined_entities,
+            )
+            return {
+                "status": "conflict",
+                "intent": "scheduling_update",
+                "response_text": response_text,
+                "notifications": [],
+                "pending": {"expected_response": "free_text", "stage": "what_to_update"},
+            }
+
         has_conflict = await check_update_overlap(
             user_id,
             selected_task_id,

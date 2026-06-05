@@ -516,12 +516,27 @@ Notes:
 - Owner-only.
 - Returns roadmap topics ordered by `order`.
 
+### `GET /api/roadmaps` and `GET /api/roadmaps/languages`
+- Auth: Yes
+- Returns user learning goals (not static catalog). Each `sessions[]` item includes:
+  - `session_state`: `locked` | `unlocked_future` | `overdue` | `completed` | `skipped` | `upcoming`
+  - `is_current`: `true` only for the lowest-order `pending` session
+  - `unlock_at`: ISO datetime when `session_state` is `locked` and `is_current` (else `null`)
+- `upcoming` = later pending sessions (not yet the active step).
+
+### `POST /api/learning/:id/topics/:topicId/skip`
+- Auth: Yes
+- Owner-only; goal must be `active`.
+- Rules (aligned with chat): current session only; `session_state` must be `unlocked_future`.
+- Returns `409` with message when skip is not allowed (locked, overdue, or not current).
+
 ### `POST /api/learning/:id/topics/:topicId/complete`
 - Auth: Yes
 - Owner-only.
 - Rules:
   - Goal must be `active`.
-  - Topic must exist in goal and be `pending|ongoing`.
+  - Current session only; `session_state` must be `overdue`.
+  - Returns `409` when complete is not allowed (locked, not yet due, or not current).
 - Behavior:
   - Marks topic completed
   - Sets goal `started_at` if first completion

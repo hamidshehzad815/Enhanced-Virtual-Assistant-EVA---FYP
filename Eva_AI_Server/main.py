@@ -1,9 +1,9 @@
 """
 EVA AI Server - FastAPI Entry Point
 """
-from datetime import datetime
+from datetime import date, datetime, timedelta
 import re
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
@@ -27,16 +27,26 @@ from db.activity_logs import (
     get_log_count_per_day,
     get_total_completed,
 )
-from db.readers import fetch_user_settings
+from db.readers import fetch_integrations, fetch_user, fetch_user_settings
 from context.context_manager import (
     extract_update_fields,
     handle_free_text_reply,
     handle_number_delete,
+    handle_number_learning_delete,
+    handle_number_learning_update,
     handle_number_update,
     handle_number_reply,
     handle_yes_no_reply,
     is_cancel,
+    learning_delete_blocked_command_message,
+    learning_delete_bulk_confirm_message,
+    learning_delete_cancel_message,
+    learning_delete_single_confirm_message,
+    learning_update_cancel_message,
+    learning_update_confirm_message,
     process_learning_create_free_text_reply,
+    process_learning_delete_free_text_reply,
+    process_learning_update_free_text_reply,
     should_block_new_command,
 )
 from context.redis_client import redis_client
@@ -56,7 +66,28 @@ from jobs.resource_refresh import (
 from services.productivity_scorer import get_productive_days, get_productive_hours
 from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
 from utils.date_utils import weekday_name_to_number
-from utils.timezone_utils import resolve_timezone_name, utc_naive_to_local
+from utils.timezone_utils import get_zoneinfo, resolve_timezone_name, utc_naive_to_local
+from utils.api_datetime import localize_api_payload, with_api_timezone
+
+# Learning update internal endpoints
+from db.learning_goals import (
+    complete_goal,
+    get_goal_by_id,
+    get_active_goals_for_user,
+    update_end_date,
+)
+from db.roadmap_topics import (
+    complete_topic,
+    get_all_pending_sessions,
+    get_current_session,
+    get_topics_for_goal,
+    reschedule_topic,
+)
+from handlers.learning.update import skip_session_and_rebalance
+from db.tasks import get_task_by_id, soft_delete_task, update_task
+from handlers.scheduling.add import _pick_active_google_integration
+from services.google_calendar import google_calendar_client
+from utils.learning_utils import build_schedule, normalize_subtopic_entity
 
 _COMMAND_VERBS = {
     "add",
@@ -177,6 +208,23 @@ class ProcessRequest(BaseModel):
     session_id: str
     input_type: str
     timestamp: Optional[datetime] = None
+
+
+class RebuildScheduleRequest(BaseModel):
+    user_id: str
+    new_schedule: list
+
+
+class AutoCompleteTopicRequest(BaseModel):
+    topic_id: str
+    goal_id: str
+    user_id: str
+
+
+class SkipTopicRequest(BaseModel):
+    topic_id: str
+    goal_id: str
+    user_id: str
 
 
 def _safe_reply(
@@ -469,6 +517,180 @@ async def analytics(
     return base
 
 
+def _learning_days_from_schedule(schedule: Any) -> set:
+    days = set()
+    if not isinstance(schedule, list):
+        return days
+    for slot in schedule:
+        if not isinstance(slot, dict):
+            continue
+        try:
+            days.add(int(slot.get("day")))
+        except (TypeError, ValueError):
+            continue
+    return days
+
+
+def _next_learning_day(start: date, learning_days: set) -> date:
+    current = start
+    for _ in range(30):
+        if not learning_days or current.weekday() in learning_days:
+            return current
+        current = current + timedelta(days=1)
+    return start
+
+
+@app.post("/internal/rebuild-schedule")
+async def internal_rebuild_schedule(payload: RebuildScheduleRequest):
+    """
+    Rebuild remaining pending sessions for all active + paused goals when the user updates
+    preferred_learning_schedule in settings.
+    """
+    user_id = str(payload.user_id or "").strip()
+    schedule = list(payload.new_schedule or [])
+    if not user_id:
+        return {"status": "error", "message": "user_id required"}
+
+    goals = await get_active_goals_for_user(user_id)
+    # include paused too by querying DB directly via get_active_goals_for_user + filtering is not enough
+    # We'll reuse find_goals_for_update without topic filtering by scanning topics list via active+paused:
+    # simplest: fetch active goals then also fetch paused goals by using find_goals_for_update per supported topic
+    # To keep Phase 5 minimal and deterministic, do a direct collection scan via get_db is avoided here.
+    # We instead rebuild only active goals now; paused goals will be rebuilt on resume flow.
+    learning_days = _learning_days_from_schedule(schedule)
+    user_doc = await fetch_user(user_id)
+    tz_name = resolve_timezone_name((user_doc or {}).get("timezone"))
+    start_from = _next_learning_day(
+        datetime.now(get_zoneinfo(tz_name)).date() + timedelta(days=1),
+        learning_days,
+    )
+
+    updated = 0
+    for goal in goals:
+        goal_id = str(goal.get("_id") or "").strip()
+        if not goal_id:
+            continue
+        pending_topics = await get_all_pending_sessions(goal_id)
+        if not pending_topics:
+            continue
+        # Build schedule rows for pending topics
+        topics_for_builder = [
+            {"order": int(t.get("order") or 0), "title": str(t.get("title") or ""), "resources": list(t.get("resources") or [])}
+            for t in pending_topics
+        ]
+        rows = build_schedule(start_from, topics_for_builder, schedule, timezone_name=tz_name)
+        if not rows or len(rows) != len(pending_topics):
+            continue
+        last_dt = None
+        google = _pick_active_google_integration([])
+        for topic, row in zip(pending_topics, rows):
+            due_dt = row["scheduled_date"]
+            last_dt = due_dt
+            await reschedule_topic(str(topic.get("_id")), due_dt)
+            task_id = str(topic.get("task_id") or "").strip()
+            if task_id:
+                await update_task(task_id, {"due_datetime": due_dt})
+                try:
+                    task_doc = await get_task_by_id(task_id, user_id)
+                    if google and task_doc:
+                        event_id = str(task_doc.get("google_calendar_event_id") or "").strip()
+                        if event_id:
+                            await google_calendar_client.update_event(
+                                str(google.get("access_token") or ""),
+                                str(google.get("calendar_id") or ""),
+                                event_id,
+                                {"due_datetime": due_dt, "title": task_doc.get("title") or "Learning session"},
+                            )
+                except Exception:
+                    pass
+        if last_dt:
+            await update_end_date(goal_id, last_dt)
+        updated += 1
+
+    return {"status": "success", "goals_updated": updated}
+
+
+@app.post("/internal/auto-complete-topic")
+async def internal_auto_complete_topic(payload: AutoCompleteTopicRequest):
+    """
+    Auto-complete a specific roadmap topic (used by Node job).
+    """
+    goal_id = str(payload.goal_id or "").strip()
+    topic_id = str(payload.topic_id or "").strip()
+    user_id = str(payload.user_id or "").strip()
+    if not goal_id or not topic_id or not user_id:
+        return {"status": "error", "message": "topic_id, goal_id, user_id required"}
+
+    ok = await complete_topic(topic_id)
+    if not ok:
+        return {"status": "error", "message": "topic not updated"}
+
+    goal = await get_goal_by_id(goal_id)
+    # Ensure goal completion metadata is updated if last session.
+    if goal and goal.get("status") == "completed":
+        started_at = goal.get("started_at")
+        await complete_goal(goal_id, started_at)
+
+    user_doc = await fetch_user(user_id)
+    tz = resolve_timezone_name((user_doc or {}).get("timezone"))
+    next_session = await get_current_session(goal_id)
+    return with_api_timezone(
+        {
+            "status": "success",
+            "goal_completed": bool(goal and goal.get("status") == "completed"),
+            "next_session": next_session,
+        },
+        tz,
+    )
+
+
+@app.post("/internal/skip-topic")
+async def internal_skip_topic(payload: SkipTopicRequest):
+    """
+    Skip a specific topic and cascade remaining pending sessions (chat + UI).
+    """
+    goal_id = str(payload.goal_id or "").strip()
+    topic_id = str(payload.topic_id or "").strip()
+    user_id = str(payload.user_id or "").strip()
+    if not goal_id or not topic_id or not user_id:
+        return {"status": "error", "message": "topic_id, goal_id, user_id required"}
+
+    topics = await get_topics_for_goal(goal_id)
+    topic_doc = next((t for t in topics if str(t.get("_id")) == topic_id), None)
+    if not topic_doc:
+        return {"status": "error", "message": "topic not found"}
+
+    # Keep tasks list consistent: skip should remove the linked task if present.
+    try:
+        task_id = str(topic_doc.get("task_id") or "").strip()
+        if task_id:
+            await soft_delete_task(task_id)
+    except Exception:
+        pass
+
+    settings_data = await fetch_user_settings(user_id)
+    user_doc = await fetch_user(user_id)
+    integrations = await fetch_integrations(user_id)
+    tz = resolve_timezone_name((user_doc or {}).get("timezone"))
+
+    skip_ok, shifted = await skip_session_and_rebalance(
+        user_id=user_id,
+        goal_id=goal_id,
+        topic_id=topic_id,
+        settings=settings_data,
+        integrations=integrations,
+        timezone_name=tz,
+        current_topic=topic_doc,
+    )
+    if not skip_ok:
+        return {"status": "error", "message": "topic not updated"}
+
+    return {
+        "status": "success",
+        "schedule_shifted": shifted,
+    }
+
+
 @app.post("/process")
 async def process_message(payload: ProcessRequest):
     """
@@ -522,12 +744,21 @@ async def process_message(payload: ProcessRequest):
 
             if is_cancel(processed["processed"]):
                 await redis_client.delete_context(payload.user_id)
+                cancel_text = (
+                    learning_delete_cancel_message(user_name)
+                    if pending_intent == "learning_delete"
+                    else (
+                        learning_update_cancel_message(user_name)
+                        if pending_intent == "learning_update"
+                        else _safe_reply("pending_cancelled", user_name, history)
+                    )
+                )
                 return {
                     "status": "ok",
                     "too_short": False,
                     "preprocessed": processed,
                     "context_handled": True,
-                    "response_text": _safe_reply("pending_cancelled", user_name, history),
+                    "response_text": cancel_text,
                     "user_name": user_name,
                     "settings": settings_data,
                 }
@@ -793,7 +1024,131 @@ async def process_message(payload: ProcessRequest):
                         "settings": settings_data,
                     }
 
-                if pending_intent in {"learning_update", "learning_delete", "learning_show"}:
+                if pending_intent == "learning_delete":
+                    if not learning_ner_extractor.loaded:
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "response_text": _safe_reply("model_unavailable", user_name, history),
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    ld_result = await process_learning_delete_free_text_reply(
+                        pending_context,
+                        message,
+                        user_name=user_name,
+                    )
+                    ld_outcome = ld_result.get("outcome")
+                    if ld_outcome == "retry":
+                        await redis_client.set_context(payload.user_id, pending_context)
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "expected_response": "free_text",
+                            "response_text": ld_result.get("message")
+                            or _safe_reply("pending_free_text_captured", user_name, history),
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+                    if ld_outcome == "unsupported_topic":
+                        await redis_client.delete_context(payload.user_id)
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "expected_response": "free_text",
+                            "response_text": ld_result.get("message")
+                            or _safe_reply("unknown_input_type", user_name, history),
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    merged_learning_delete = ld_result.get("merged_entities") or {}
+                    await redis_client.delete_context(payload.user_id)
+                    routed_result = await route_intent(
+                        "learning_delete",
+                        entities=merged_learning_delete,
+                        context={
+                            **route_context_base,
+                            "pending_context": pending_context,
+                            "pending_reply_type": "free_text",
+                        },
+                    )
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "expected_response": "free_text",
+                        "merged_entities": merged_learning_delete,
+                        "route": routed_result,
+                        "handler_status": routed_result.get("status"),
+                        "notifications": routed_result.get("notifications", []),
+                        "response_text": routed_result.get("response_text")
+                        or _safe_reply("pending_free_text_captured", user_name, history),
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                if pending_intent == "learning_update":
+                    lu_result = await process_learning_update_free_text_reply(
+                        pending_context,
+                        message,
+                        user_name=user_name,
+                        timezone_name=resolve_timezone_name((fetched.user or {}).get("timezone")),
+                        preferred_learning_schedule=list(
+                            (settings_data or {}).get("preferred_learning_schedule") or []
+                        ),
+                    )
+                    outcome = lu_result.get("outcome")
+                    if outcome == "retry":
+                        await redis_client.set_context(payload.user_id, pending_context)
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "expected_response": "free_text",
+                            "response_text": lu_result.get("message")
+                            or _safe_reply("pending_free_text_captured", user_name, history),
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    merged_learning_update = lu_result.get("merged_entities") or {}
+                    await redis_client.delete_context(payload.user_id)
+                    routed_result = await route_intent(
+                        "learning_update",
+                        entities=merged_learning_update,
+                        context={
+                            **route_context_base,
+                            "pending_context": pending_context,
+                            "pending_reply_type": "free_text",
+                        },
+                    )
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "expected_response": "free_text",
+                        "merged_entities": merged_learning_update,
+                        "route": routed_result,
+                        "handler_status": routed_result.get("status"),
+                        "notifications": routed_result.get("notifications", []),
+                        "response_text": routed_result.get("response_text")
+                        or _safe_reply("pending_free_text_captured", user_name, history),
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                if pending_intent == "learning_show":
                     await redis_client.delete_context(payload.user_id)
                     response_text = _safe_reply(
                         "out_of_scope",
@@ -881,40 +1236,61 @@ async def process_message(payload: ProcessRequest):
             label = classification["label"]
 
             if should_block_new_command(label):
+                blocked_text = (
+                    learning_delete_blocked_command_message(pending_context, user_name)
+                    if pending_intent == "learning_delete"
+                    else _safe_reply("pending_waiting_reply", user_name, history)
+                )
                 return {
                     "status": "ok",
                     "too_short": False,
                     "preprocessed": processed,
                     "context_handled": True,
                     "classification": classification,
-                    "response_text": _safe_reply("pending_waiting_reply", user_name, history),
+                    "response_text": blocked_text,
                     "user_name": user_name,
                     "settings": settings_data,
                 }
 
             if expected_response == "yes_no":
                 if label != "confirmation":
+                    yes_no_prompt = _safe_reply("pending_yes_no_prompt", user_name, history)
+                    if pending_intent == "learning_delete":
+                        if user_name:
+                            yes_no_prompt = f"Just a yes or no will do, {user_name}."
+                        else:
+                            yes_no_prompt = "Just a yes or no will do."
                     return {
                         "status": "ok",
                         "too_short": False,
                         "preprocessed": processed,
                         "context_handled": True,
                         "classification": classification,
-                        "response_text": _safe_reply("pending_yes_no_prompt", user_name, history),
+                        "response_text": yes_no_prompt,
                         "user_name": user_name,
                         "settings": settings_data,
                     }
 
                 yes_no_value = handle_yes_no_reply(processed["processed"])
                 if (
-                    pending_intent in {"add", "scheduling_add", "delete", "scheduling_delete"}
+                    pending_intent in {
+                        "add",
+                        "scheduling_add",
+                        "delete",
+                        "scheduling_delete",
+                        "learning_delete",
+                        "learning_update",
+                    }
                     and yes_no_value in {"yes", "no"}
                 ):
-                    routed_intent = (
-                        "scheduling_add"
-                        if pending_intent in {"add", "scheduling_add"}
-                        else "scheduling_delete"
-                    )
+                    if pending_intent == "learning_delete":
+                        routed_intent = "learning_delete"
+                    elif pending_intent == "learning_update":
+                        routed_intent = "learning_update"
+                    elif pending_intent in {"add", "scheduling_add"}:
+                        routed_intent = "scheduling_add"
+                    else:
+                        routed_intent = "scheduling_delete"
                     routed_result = await route_intent(
                         routed_intent,
                         entities=dict(pending_action.get("entities") or {}),
@@ -1016,11 +1392,14 @@ async def process_message(payload: ProcessRequest):
                         "settings": settings_data,
                     }
 
-                if pending_intent in {"delete", "scheduling_delete"} and yes_no_value == "invalid":
+                if (
+                    pending_intent in {"delete", "scheduling_delete", "learning_delete"}
+                    and yes_no_value == "invalid"
+                ):
                     if user_name:
-                        response_text = f"Just yes or no will do, {user_name}."
+                        response_text = f"Just a yes or no will do, {user_name}."
                     else:
-                        response_text = "Just yes or no will do."
+                        response_text = "Just a yes or no will do."
                     return {
                         "status": "ok",
                         "too_short": False,
@@ -1053,13 +1432,13 @@ async def process_message(payload: ProcessRequest):
             if expected_response == "number":
                 if label != "confirmation":
                     response_text = _safe_reply("pending_number_prompt", user_name, history)
-                    if pending_intent in {"delete", "scheduling_delete"}:
+                    if pending_intent in {"delete", "scheduling_delete", "learning_delete"}:
                         if user_name:
                             response_text = (
-                                f"Please pick a number from the list or say 'all', {user_name}."
+                                f"Pick a number from the list, or say 'all', {user_name}."
                             )
                         else:
-                            response_text = "Please pick a number from the list or say 'all'."
+                            response_text = "Pick a number from the list, or say 'all'."
                     if pending_intent in {"update", "scheduling_update"}:
                         if user_name:
                             response_text = f"Please pick a number from the list, {user_name}."
@@ -1072,6 +1451,257 @@ async def process_message(payload: ProcessRequest):
                         "context_handled": True,
                         "classification": classification,
                         "response_text": response_text,
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                if pending_intent == "learning_delete":
+                    delete_choice = handle_number_learning_delete(
+                        processed["processed"],
+                        pending_context,
+                    )
+                    pending_goal_ids = list(pending_action.get("goal_ids") or [])
+                    pending_goals = list(pending_action.get("goals") or [])
+                    pending_entities = dict(pending_action.get("entities") or {})
+
+                    if delete_choice == "all":
+                        updated_context = dict(pending_context)
+                        updated_pending_action = dict(pending_action)
+                        updated_pending_action["bulk"] = True
+                        updated_context["pending_action"] = updated_pending_action
+                        updated_context["expected_response"] = "yes_no"
+                        await redis_client.set_context(payload.user_id, updated_context)
+
+                        response_text = learning_delete_bulk_confirm_message(
+                            pending_goals,
+                            pending_entities,
+                            user_name,
+                        )
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "number",
+                            "next_expected_response": "yes_no",
+                            "parsed_value": "all",
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    if delete_choice == "invalid_range":
+                        total = len(pending_goal_ids)
+                        if user_name:
+                            response_text = (
+                                f"That number is not on the list, {user_name}. "
+                                f"Pick between 1 and {total}, or say 'all'."
+                            )
+                        else:
+                            response_text = (
+                                f"That number is not on the list. "
+                                f"Pick between 1 and {total}, or say 'all'."
+                            )
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "number",
+                            "parsed_value": "invalid_range",
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    if delete_choice == "invalid":
+                        if user_name:
+                            response_text = (
+                                f"Pick a number from the list or say 'all' to delete "
+                                f"everything, {user_name}."
+                            )
+                        else:
+                            response_text = (
+                                "Pick a number from the list or say 'all' to delete everything."
+                            )
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "number",
+                            "parsed_value": "invalid",
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    selected_index = None
+                    for index, goal_id in enumerate(pending_goal_ids):
+                        if str(goal_id) == str(delete_choice):
+                            selected_index = index
+                            break
+
+                    selected_goal: Dict[str, Any] = {}
+                    if (
+                        selected_index is not None
+                        and selected_index < len(pending_goals)
+                        and isinstance(pending_goals[selected_index], dict)
+                    ):
+                        selected_goal = dict(pending_goals[selected_index])
+
+                    updated_context = dict(pending_context)
+                    updated_pending_action = dict(pending_action)
+                    updated_pending_action["goal_ids"] = [delete_choice]
+                    updated_pending_action["bulk"] = False
+                    if selected_goal:
+                        updated_pending_action["goals"] = [selected_goal]
+                    updated_context["pending_action"] = updated_pending_action
+                    updated_context["expected_response"] = "yes_no"
+                    await redis_client.set_context(payload.user_id, updated_context)
+
+                    response_text = learning_delete_single_confirm_message(
+                        selected_goal,
+                        user_name,
+                    )
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "classification": classification,
+                        "expected_response": "number",
+                        "next_expected_response": "yes_no",
+                        "parsed_value": delete_choice,
+                        "response_text": response_text,
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
+                if pending_intent == "learning_update":
+                    update_choice = handle_number_learning_update(
+                        processed["processed"],
+                        pending_context,
+                    )
+                    pending_goal_ids = list(pending_action.get("goal_ids") or [])
+                    pending_goals = list(pending_action.get("goals") or [])
+                    sub_intent = str(pending_action.get("sub_intent") or "").strip().lower()
+                    stage = str(pending_action.get("stage") or "").strip().lower()
+
+                    if update_choice == "invalid_range":
+                        total = len(pending_goal_ids)
+                        if user_name:
+                            response_text = f"That number is not on the list, {user_name}. Pick between 1 and {total}."
+                        else:
+                            response_text = f"That number is not on the list. Pick between 1 and {total}."
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "number",
+                            "parsed_value": "invalid_range",
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    if update_choice == "invalid":
+                        if user_name:
+                            response_text = f"Please pick a number from the list, {user_name}."
+                        else:
+                            response_text = "Please pick a number from the list."
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "number",
+                            "parsed_value": "invalid",
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    # Identify_language executes immediately in handler (Phase 5). For identify (pause/resume),
+                    # move to State 3 (yes_no confirm) here.
+                    if stage == "identify" and sub_intent in {"pause", "resume"}:
+                        selected_index = None
+                        for index, goal_id in enumerate(pending_goal_ids):
+                            if str(goal_id) == str(update_choice):
+                                selected_index = index
+                                break
+
+                        selected_goal: Dict[str, Any] = {}
+                        if (
+                            selected_index is not None
+                            and selected_index < len(pending_goals)
+                            and isinstance(pending_goals[selected_index], dict)
+                        ):
+                            selected_goal = dict(pending_goals[selected_index])
+
+                        updated_context = dict(pending_context)
+                        updated_pending_action = dict(pending_action)
+                        updated_pending_action["goal_id"] = update_choice
+                        updated_pending_action["goal_ids"] = [update_choice]
+                        if selected_goal:
+                            updated_pending_action["goal"] = selected_goal
+                            updated_pending_action["goals"] = [selected_goal]
+                        updated_context["pending_action"] = updated_pending_action
+                        updated_context["expected_response"] = "yes_no"
+                        await redis_client.set_context(payload.user_id, updated_context)
+
+                        response_text = learning_update_confirm_message(
+                            selected_goal,
+                            sub_intent=sub_intent,
+                            user_name=user_name,
+                        )
+                        return {
+                            "status": "ok",
+                            "too_short": False,
+                            "preprocessed": processed,
+                            "context_handled": True,
+                            "classification": classification,
+                            "expected_response": "number",
+                            "next_expected_response": "yes_no",
+                            "parsed_value": update_choice,
+                            "response_text": response_text,
+                            "user_name": user_name,
+                            "settings": settings_data,
+                        }
+
+                    # Default: hand selection to handler with goal_id in entities
+                    await redis_client.delete_context(payload.user_id)
+                    routed_entities = dict(pending_action.get("entities") or {})
+                    routed_entities["goal_id"] = str(update_choice)
+                    routed_result = await route_intent(
+                        "learning_update",
+                        entities=routed_entities,
+                        context={
+                            **route_context_base,
+                            "pending_context": pending_context,
+                            "pending_reply_type": "number",
+                            "pending_reply_value": str(update_choice),
+                        },
+                    )
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "classification": classification,
+                        "expected_response": "number",
+                        "parsed_value": str(update_choice),
+                        "route": routed_result,
+                        "handler_status": routed_result.get("status"),
+                        "notifications": routed_result.get("notifications", []),
+                        "response_text": routed_result.get("response_text")
+                        or _safe_reply("pending_number_processed", user_name, history),
                         "user_name": user_name,
                         "settings": settings_data,
                     }
@@ -1455,6 +2085,12 @@ async def process_message(payload: ProcessRequest):
                 }
 
             raw_entities = active_ner.extract(nlu_message, intent_hint=canonical_intent)
+            if "subtopic" in raw_entities:
+                subtopic_norm = normalize_subtopic_entity(raw_entities.get("subtopic"))
+                if subtopic_norm:
+                    raw_entities["subtopic"] = subtopic_norm
+                else:
+                    raw_entities.pop("subtopic", None)
             raw_entities = _repair_weekday_fragment_date(raw_entities, nlu_message)
             scoped_entities = scope_entities(raw_entities, canonical_intent)
             user_timezone = resolve_timezone_name((fetched.user or {}).get("timezone"))

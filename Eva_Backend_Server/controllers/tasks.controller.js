@@ -13,6 +13,7 @@ const {
   ConflictError,
 } = require("../middleware/errorHandler");
 const { enrichTaskForApi } = require("../utils/taskDisplayStatus");
+const { withApiTimezone } = require("../utils/apiDateTime");
 const {
   notifyOwnerOfCollaborationResponse,
 } = require("../services/collaborationNotifications");
@@ -24,6 +25,8 @@ const STORED_STATUS_FILTER = {
 };
 const PRIORITY_VALUES = new Set(["low", "medium", "high"]);
 const COLLAB_ACTIONS = new Set(["accept", "reject"]);
+
+const resolveUserTimezone = (req) => req.user?.timezone || "UTC";
 
 const PRIORITY_ALIASES = new Map([
   ["high", "high"],
@@ -394,10 +397,12 @@ const getTasks = async (req, res, next) => {
     ]);
 
     const now = new Date();
+    const timezone = resolveUserTimezone(req);
     res.json({
       status: "success",
-      data: {
-        tasks: tasks.map((task) => enrichTaskForApi(task, now)),
+      data: withApiTimezone(
+        {
+        tasks: tasks.map((task) => enrichTaskForApi(task, now, timezone)),
         pagination: {
           page,
           limit,
@@ -411,6 +416,8 @@ const getTasks = async (req, res, next) => {
           subject: req.query.subject || null,
         },
       },
+        timezone,
+      ),
     });
   } catch (error) {
     next(error);
@@ -438,9 +445,13 @@ const getTaskById = async (req, res, next) => {
       throw new NotFoundError("Task not found");
     }
 
+    const timezone = resolveUserTimezone(req);
     res.json({
       status: "success",
-      data: { task: enrichTaskForApi(task) },
+      data: withApiTimezone(
+        { task: enrichTaskForApi(task, new Date(), timezone) },
+        timezone,
+      ),
     });
   } catch (error) {
     next(error);
@@ -513,10 +524,14 @@ const updateTaskStatus = async (req, res, next) => {
       }
     }
 
+    const timezone = resolveUserTimezone(req);
     res.json({
       status: "success",
       message: "Task status updated",
-      data: { task: enrichTaskForApi(task) },
+      data: withApiTimezone(
+        { task: enrichTaskForApi(task, new Date(), timezone) },
+        timezone,
+      ),
     });
   } catch (error) {
     next(error);

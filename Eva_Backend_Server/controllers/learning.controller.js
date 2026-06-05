@@ -4,13 +4,23 @@
 
 const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
-const { LearningGoal, RoadmapTopic, Task } = require("../models");
+const { LearningGoal, RoadmapTopic, Task, UserSetting } = require("../models");
 const {
   BadRequestError,
   ConflictError,
   NotFoundError,
 } = require("../middleware/errorHandler");
 const { applyLearningCollaborationAction } = require("../services/learningCollaboration.service");
+const { softDeleteLearningGoalById } = require("../services/learningDelete.service");
+const { insert_and_dispatch } = require("../services/notification.service");
+const { callAIInternal } = require("../services/ai.service");
+const { validateTopicAction } = require("../utils/learningSessionState");
+const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
+
+const buildApiData = (req, payload) => {
+  const timezone = req.user?.timezone || "UTC";
+  return withApiTimezone(localizeApiPayload(payload, timezone), timezone);
+};
 
 const PATCH_STATUS = new Set(["active", "paused", "cancelled"]);
 
@@ -105,7 +115,7 @@ const getAllGoals = async (req, res, next) => {
 
     res.json({
       status: "success",
-      data: { goals },
+      data: buildApiData(req, { goals }),
     });
   } catch (error) {
     next(error);
@@ -125,12 +135,12 @@ const getGoal = async (req, res, next) => {
 
     res.json({
       status: "success",
-      data: {
+      data: buildApiData(req, {
         goal: {
           ...goal,
           progress_percent: progress,
         },
-      },
+      }),
     });
   } catch (error) {
     next(error);
@@ -153,7 +163,7 @@ const getTopics = async (req, res, next) => {
 
     res.json({
       status: "success",
-      data: { topics },
+      data: buildApiData(req, { topics }),
     });
   } catch (error) {
     next(error);
@@ -172,7 +182,6 @@ const getTopics = async (req, res, next) => {
 const completeTopic = async (req, res, next) => {
   try {
     const { oid: goalOid, goal } = await loadOwnedGoal(req.params.id, req.userId);
-
     if (goal.status !== "active") {
       throw new BadRequestError("Only active learning plans accept topic completion.");
     }
@@ -182,104 +191,116 @@ const completeTopic = async (req, res, next) => {
       throw new BadRequestError("Invalid topic id");
     }
 
+    const goalTopics = await RoadmapTopic.find({
+      goal_id: goalOid,
+      is_deleted: false,
+    })
+      .sort({ order: 1 })
+      .lean();
+
+    const completeBlock = validateTopicAction({
+      topics: goalTopics,
+      topicId: topicOid,
+      action: "complete",
+    });
+    if (completeBlock) {
+      throw new ConflictError(completeBlock.message);
+    }
+
+    // AI server performs all DB writes for learning update flows.
+    const aiResult = await callAIInternal("/internal/auto-complete-topic", {
+      topic_id: String(topicOid),
+      goal_id: String(goalOid),
+      user_id: String(req.userId),
+    });
+
     const topic = await RoadmapTopic.findOne({
       _id: topicOid,
       goal_id: goalOid,
       is_deleted: false,
     }).lean();
+    const savedGoal = await LearningGoal.findOne({
+      _id: goalOid,
+      user_id: req.userId,
+      is_deleted: false,
+    }).lean();
 
-    if (!topic) {
-      throw new NotFoundError("Roadmap topic not found");
-    }
-    if (topic.status === "completed") {
-      throw new BadRequestError("This topic is already completed.");
-    }
-    if (!["pending", "ongoing"].includes(topic.status)) {
-      throw new BadRequestError("This topic cannot be marked complete from its current status.");
-    }
-
-    const now = new Date();
-
-    await RoadmapTopic.findOneAndUpdate(
-      { _id: topicOid, goal_id: goalOid, is_deleted: false },
-      { $set: { status: "completed", completed_at: now, updated_at: now } },
-    );
-
-    if (!goal.started_at) {
-      await LearningGoal.updateOne(
-        { _id: goalOid, user_id: req.userId, started_at: null, is_deleted: false },
-        { $set: { started_at: now, updated_at: now } },
-      );
-    }
-
-    const afterInc = await LearningGoal.findOneAndUpdate(
-      { _id: goalOid, user_id: req.userId, is_deleted: false },
-      { $inc: { completed_topics: 1 }, $set: { updated_at: now } },
-      { new: true },
-    ).lean();
-
-    let savedGoal = afterInc;
-    const total = Number(savedGoal.total_topics || 0);
-    const done = Number(savedGoal.completed_topics || 0);
-
-    if (total > 0 && done >= total) {
-      const completedAt = now;
-      const started = savedGoal.started_at ? new Date(savedGoal.started_at) : null;
-      const timeTaken =
-        started && !Number.isNaN(started.getTime())
-          ? Math.max(0, Math.floor((completedAt - started) / 86400000))
-          : null;
-
-      savedGoal = await LearningGoal.findOneAndUpdate(
-        { _id: goalOid, user_id: req.userId },
-        {
-          $set: {
-            status: "completed",
-            completed_at: completedAt,
-            time_taken_days: timeTaken,
-            updated_at: now,
-          },
-        },
-        { new: true },
-      ).lean();
-    }
-
-    if (topic.task_id) {
-      await Task.updateOne(
-        {
-          _id: topic.task_id,
-          owner_id: req.userId,
-          is_deleted: { $ne: true },
-        },
-        {
-          $set: {
-            status: "complete",
-            completed_at: now,
-            updated_at: now,
-          },
-        },
-      );
-    }
-
+    const total = Number(savedGoal?.total_topics || 0);
     const progressPct =
       total > 0
-        ? Math.min(100, Math.round((Number(savedGoal.completed_topics || 0) / total) * 100))
+        ? Math.min(
+            100,
+            Math.round((Number(savedGoal?.completed_topics || 0) / total) * 100),
+          )
         : 0;
 
     res.json({
       status: "success",
       message: "Topic marked complete",
-      data: {
-        topic: {
-          ...topic,
-          status: "completed",
-          completed_at: now,
-        },
-        goal: {
-          ...savedGoal,
-          progress_percent: progressPct,
-        },
-      },
+      data: buildApiData(req, {
+        ai: aiResult || null,
+        topic,
+        goal: savedGoal ? { ...savedGoal, progress_percent: progressPct } : null,
+      }),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * POST /api/learning/:id/topics/:topicId/skip
+ * Skips a roadmap topic via AI internal endpoint (cascades future sessions).
+ */
+const skipTopic = async (req, res, next) => {
+  try {
+    const { oid: goalOid, goal } = await loadOwnedGoal(req.params.id, req.userId);
+    if (goal.status !== "active") {
+      throw new BadRequestError("Only active learning plans accept skipping topics.");
+    }
+
+    const topicOid = toObjectId(req.params.topicId);
+    if (!topicOid) {
+      throw new BadRequestError("Invalid topic id");
+    }
+
+    const goalTopics = await RoadmapTopic.find({
+      goal_id: goalOid,
+      is_deleted: false,
+    })
+      .sort({ order: 1 })
+      .lean();
+
+    const skipBlock = validateTopicAction({
+      topics: goalTopics,
+      topicId: topicOid,
+      action: "skip",
+    });
+    if (skipBlock) {
+      throw new ConflictError(skipBlock.message);
+    }
+
+    const aiResult = await callAIInternal("/internal/skip-topic", {
+      topic_id: String(topicOid),
+      goal_id: String(goalOid),
+      user_id: String(req.userId),
+    });
+
+    const topic = await RoadmapTopic.findOne({
+      _id: topicOid,
+      goal_id: goalOid,
+      is_deleted: false,
+    }).lean();
+    const savedGoal = await LearningGoal.findOne({
+      _id: goalOid,
+      user_id: req.userId,
+      is_deleted: false,
+    }).lean();
+
+    res.json({
+      status: "success",
+      message: "Topic skipped",
+      data: buildApiData(req, { ai: aiResult || null, topic, goal: savedGoal }),
     });
   } catch (error) {
     next(error);
@@ -321,8 +342,28 @@ const updateStatus = async (req, res, next) => {
       update.status = "active";
       update.paused_at = null;
     } else if (raw === "cancelled") {
-      update.status = "cancelled";
-      update.paused_at = null;
+      const { goal, notifications } = await softDeleteLearningGoalById(
+        req.params.id,
+        req.userId,
+      );
+
+      let notificationSummary = {
+        requested: 0,
+        inserted: 0,
+        dispatched_push: 0,
+        dispatched_email: 0,
+        failed: 0,
+        results: [],
+      };
+      if (notifications.length > 0) {
+        notificationSummary = await insert_and_dispatch(notifications);
+      }
+
+      return res.json({
+        status: "success",
+        message: "Learning goal removed",
+        data: buildApiData(req, { goal, notifications: notificationSummary }),
+      });
     }
 
     const saved = await LearningGoal.findOneAndUpdate(
@@ -331,27 +372,69 @@ const updateStatus = async (req, res, next) => {
       { new: true },
     ).lean();
 
-    if (raw === "cancelled") {
-      await Task.updateMany(
-        {
-          owner_id: req.userId,
-          learning_plan_id: oid,
-          is_deleted: { $ne: true },
-        },
-        {
-          $set: {
-            is_deleted: true,
-            deleted_at: now,
-            updated_at: now,
-          },
-        },
-      );
+    // On resume, ask AI to rebase sessions (non-blocking).
+    let rebuildSummary = null;
+    if (raw === "active") {
+      try {
+        const query = UserSetting.findOne({ user_id: req.userId });
+        const settingsDoc = query && typeof query.lean === "function"
+          ? await query.lean()
+          : await query;
+        const schedules = Array.isArray(settingsDoc?.preferred_learning_schedules)
+          ? settingsDoc.preferred_learning_schedules
+          : [];
+        const primarySlots = schedules[0]?.slots || [];
+        rebuildSummary = await callAIInternal("/internal/rebuild-schedule", {
+          user_id: String(req.userId),
+          new_schedule: primarySlots,
+        });
+      } catch (err) {
+        rebuildSummary = { status: "error", message: err.message };
+      }
     }
 
     res.json({
       status: "success",
       message: "Learning goal updated",
-      data: { goal: saved },
+      data: buildApiData(req, {
+        goal: saved,
+        ...(rebuildSummary ? { rebuild: rebuildSummary } : {}),
+      }),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * DELETE /api/learning/:id — soft-delete goal (UI); same rules as chat learning_delete.
+ */
+const deleteGoal = async (req, res, next) => {
+  try {
+    const { goal, notifications } = await softDeleteLearningGoalById(
+      req.params.id,
+      req.userId,
+    );
+
+    let notificationSummary = {
+      requested: 0,
+      inserted: 0,
+      dispatched_push: 0,
+      dispatched_email: 0,
+      failed: 0,
+      results: [],
+    };
+    if (notifications.length > 0) {
+      notificationSummary = await insert_and_dispatch(notifications);
+    }
+
+    res.json({
+      status: "success",
+      message: "Learning goal removed",
+      data: buildApiData(req, {
+        goal,
+        notifications: notificationSummary,
+      }),
     });
   } catch (error) {
     next(error);
@@ -464,7 +547,9 @@ module.exports = {
   getGoal,
   getTopics,
   completeTopic,
+  skipTopic,
   updateStatus,
+  deleteGoal,
   respondToLearningCollaborationInvite,
   respondToLearningCollaborationInviteViaLink,
 };

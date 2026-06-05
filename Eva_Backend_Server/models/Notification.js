@@ -30,6 +30,7 @@ const notificationSchema = new mongoose.Schema(
         "collaboration_response",
         "learning_collaboration_invite",
         "learning_collaboration_response",
+        "learning_goal_deleted",
         "learning_plan_created",
         "friend_request",
         "friend_accepted",
