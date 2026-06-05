@@ -24,6 +24,7 @@ from utils.timezone_utils import (
     resolve_timezone_name,
     utc_naive_to_local,
 )
+from utils.api_datetime import serialize_stored_datetime
 
 
 def _first_value(value: Any) -> Any:
@@ -74,7 +75,11 @@ def _format_due_display(value: Any, timezone_name: str) -> str:
     return local_dt.strftime("%A, %d %b %Y at %I:%M %p").replace(" 0", " ")
 
 
-def _serialize_due_datetime(value: Any) -> str:
+def _serialize_due_datetime(value: Any, timezone_name: Optional[str] = None) -> str:
+    if timezone_name:
+        converted = serialize_stored_datetime(value, timezone_name)
+        if converted:
+            return converted
     if isinstance(value, datetime):
         return value.isoformat()
     return _coerce_text(value)
@@ -94,10 +99,10 @@ def _coerce_datetime(value: Any) -> Optional[datetime]:
         return None
 
 
-def _task_preview(task: Dict[str, Any]) -> Dict[str, Any]:
+def _task_preview(task: Dict[str, Any], timezone_name: Optional[str] = None) -> Dict[str, Any]:
     return {
         "title": _coerce_text(task.get("title")) or "Untitled task",
-        "due_datetime": _serialize_due_datetime(task.get("due_datetime")),
+        "due_datetime": _serialize_due_datetime(task.get("due_datetime"), timezone_name),
         "priority": _normalize_priority(task.get("priority")) or "medium",
     }
 
@@ -487,7 +492,7 @@ async def handle_scheduling_delete(
                     {
                         "_id": _coerce_text(task.get("_id")) or str(task_id),
                         "title": task_title,
-                        "due_datetime": _serialize_due_datetime(task_due_datetime),
+                        "due_datetime": _serialize_due_datetime(task_due_datetime, timezone),
                         "priority": task_priority,
                     }
                 )
@@ -735,7 +740,7 @@ async def handle_scheduling_delete(
                 "match_count": 0,
             }
 
-        task_info = _task_preview(task)
+        task_info = _task_preview(task, timezone)
         await redis_client.set_context(
             user_id,
             _pending_payload(
@@ -776,7 +781,7 @@ async def handle_scheduling_delete(
             if not task_id:
                 continue
             task_ids.append(task_id)
-            task_list.append(_task_preview(task))
+            task_list.append(_task_preview(task, timezone))
 
         if not task_ids:
             response_text = not_found_prompt(user_name, resolved_filters, history)

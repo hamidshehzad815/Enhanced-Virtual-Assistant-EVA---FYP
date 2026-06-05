@@ -44,6 +44,32 @@ class WeeklySlotOverlapTests(unittest.TestCase):
         self.assertEqual(conflicts[0]["schedule_label"], "Study")
 
 
+    def test_karachi_task_and_slot_use_utc_naive_storage(self):
+        """Mon 5 PM PKT task (12:00 UTC) vs Mon 6 PM learning slot."""
+        due = datetime(2026, 6, 8, 12, 0)  # UTC-naive, same as tasks.due_datetime
+        self.assertTrue(
+            lsc.weekly_slot_overlaps_task(
+                due,
+                120,
+                0,
+                "18:00",
+                60,
+                timezone_name="Asia/Karachi",
+            ),
+        )
+        # Fri 9:40 AM PKT slot should not match Monday task
+        self.assertFalse(
+            lsc.weekly_slot_overlaps_task(
+                due,
+                120,
+                4,
+                "09:40",
+                60,
+                timezone_name="Asia/Karachi",
+            ),
+        )
+
+
 class MapBegginersStyleTests(unittest.TestCase):
     def test_unused_schedule_blocks_task(self):
         settings = {

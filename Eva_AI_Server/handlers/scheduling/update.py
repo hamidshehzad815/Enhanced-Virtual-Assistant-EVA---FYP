@@ -38,6 +38,7 @@ from utils.timezone_utils import (
     resolve_timezone_name,
     utc_naive_to_local,
 )
+from utils.api_datetime import serialize_stored_datetime
 
 
 def _first_value(value: Any) -> Any:
@@ -116,7 +117,11 @@ def _normalize_status(value: Any) -> str:
     return canonicalize_status(value)
 
 
-def _serialize_due_datetime(value: Any) -> str:
+def _serialize_due_datetime(value: Any, timezone_name: Optional[str] = None) -> str:
+    if timezone_name:
+        converted = serialize_stored_datetime(value, timezone_name)
+        if converted:
+            return converted
     if isinstance(value, datetime):
         return value.isoformat()
     return _coerce_text(value)
@@ -141,11 +146,11 @@ def _format_due_display(value: Any, timezone_name: str) -> str:
     return local_dt.strftime("%A, %d %b %Y at %I:%M %p").replace(" 0", " ")
 
 
-def _task_preview(task: Dict[str, Any]) -> Dict[str, Any]:
+def _task_preview(task: Dict[str, Any], timezone_name: Optional[str] = None) -> Dict[str, Any]:
     return {
         "task_id": _coerce_text(task.get("_id")) or _coerce_text(task.get("task_id")),
         "title": _coerce_text(task.get("title")) or "Untitled task",
-        "due_datetime": _serialize_due_datetime(task.get("due_datetime")),
+        "due_datetime": _serialize_due_datetime(task.get("due_datetime"), timezone_name),
         "priority": _normalize_priority(task.get("priority")) or "medium",
         "status": _normalize_status(task.get("status")) or "pending",
         "duration": int(task.get("duration") or 120),
@@ -906,7 +911,7 @@ async def _execute_confirmed_update(
         "task": {
             "task_id": _coerce_text(updated_task.get("_id")) or task_id,
             "title": final_title,
-            "due_datetime": _serialize_due_datetime(updated_task.get("due_datetime")),
+            "due_datetime": _serialize_due_datetime(updated_task.get("due_datetime"), timezone_name),
             "priority": final_priority,
             "status": _normalize_status(updated_task.get("status")) or "pending",
             "duration": int(updated_task.get("duration") or 120),
@@ -1116,7 +1121,7 @@ async def handle_scheduling_update(
             if not task_id:
                 continue
             task_ids.append(task_id)
-            task_list.append(_task_preview(task))
+            task_list.append(_task_preview(task, timezone_name))
 
         if not task_ids:
             response_text = _not_found_prompt(user_name, resolved_filters or combined_entities, history)
@@ -1187,7 +1192,7 @@ async def handle_scheduling_update(
 
     # Single match: proceed.
     matched_task = matches[0]
-    selected_task = _task_preview(matched_task)
+    selected_task = _task_preview(matched_task, timezone_name)
     selected_task_id = _coerce_text(selected_task.get("task_id")) or task_id_direct
     selected_task["task_id"] = selected_task_id
 

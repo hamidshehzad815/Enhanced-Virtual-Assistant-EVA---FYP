@@ -46,10 +46,11 @@ from utils.learning_utils import (
     compute_session_state,
     detect_learning_sub_intent,
     level_keys_for_language,
-    map_subtopic,
+    normalize_subtopic_entity,
     normalize_topic,
+    resolve_subtopic_mapping,
 )
-from utils.timezone_utils import get_zoneinfo, resolve_timezone_name
+from utils.timezone_utils import get_zoneinfo, local_datetime_to_utc_naive, resolve_timezone_name, utc_naive_to_local
 
 
 def _to_object_id(value: Any) -> Any:
@@ -241,6 +242,26 @@ def _list_prompt(
     return "\n".join(lines)
 
 
+def _already_paused_prompt(user_name: Optional[str], goal: Dict[str, Any]) -> str:
+    language = _language_label_from_goal(goal)
+    title = _goal_preview(goal).get("title") or language
+    name_bit = f", {user_name}" if user_name else ""
+    return (
+        f"Your {language} learning plan ({title}) is already paused{name_bit}. "
+        f"Say resume {language} when you want to continue."
+    )
+
+
+def _already_active_prompt(user_name: Optional[str], goal: Dict[str, Any]) -> str:
+    language = _language_label_from_goal(goal)
+    title = _goal_preview(goal).get("title") or language
+    name_bit = f", {user_name}" if user_name else ""
+    return (
+        f"Your {language} learning plan ({title}) is already active{name_bit}. "
+        "Nothing to resume."
+    )
+
+
 def _confirm_prompt(user_name: Optional[str], sub_intent: str, goal: Dict[str, Any]) -> str:
     p = _goal_preview(goal)
     title = p["title"]
@@ -368,7 +389,12 @@ async def _rebuild_pending_schedule(
             }
         )
 
-    schedule_rows = build_schedule(start_from, topics_for_builder, preferred_learning_schedule)
+    schedule_rows = build_schedule(
+        start_from,
+        topics_for_builder,
+        preferred_learning_schedule,
+        timezone_name=timezone_name,
+    )
     if not schedule_rows or len(schedule_rows) != len(pending_topics):
         return None
 
@@ -435,11 +461,12 @@ async def skip_session_and_rebalance(
     if not slots:
         return True, False
 
-    start_date = (
-        current_topic.get("scheduled_date").date()
-        if isinstance(current_topic.get("scheduled_date"), datetime)
-        else datetime.now(get_zoneinfo(timezone_name)).date()
-    )
+    sd = current_topic.get("scheduled_date")
+    if isinstance(sd, datetime):
+        local_sd = utc_naive_to_local(sd, timezone_name)
+        start_date = local_sd.date() if local_sd else sd.date()
+    else:
+        start_date = datetime.now(get_zoneinfo(timezone_name)).date()
     later = await get_pending_sessions_after(goal_id, int(current_topic.get("order") or 0))
     if not later:
         return True, True
@@ -693,7 +720,17 @@ async def _execute_session_sub_intent(
             )
 
         slot_time, _dur = _schedule_slot_for_day(learning_slots, new_d.weekday())
-        new_dt = datetime.combine(new_d, slot_time)
+        new_dt = local_datetime_to_utc_naive(
+            new_d.isoformat(),
+            slot_time.strftime("%H:%M:%S"),
+            tz,
+        )
+        if new_dt is None:
+            return await finish(
+                "I couldn't understand that date. Try again like 'next Monday'.",
+                status="error",
+                sub_intent=sub_intent,
+            )
 
         later = await get_pending_sessions_after(goal_id, int(current.get("order") or 0))
         next_dt = None
@@ -939,7 +976,9 @@ async def handle_learning_update(
             next_dt = next_session.get("scheduled_date") if isinstance(next_session, dict) else None
             next_text = ""
             if isinstance(next_dt, datetime):
-                next_text = f" Next session: {next_dt.strftime('%Y-%m-%d %H:%M')}."
+                local_next = utc_naive_to_local(next_dt, tz)
+                if local_next:
+                    next_text = f" Next session: {local_next.strftime('%A, %d %b %Y at %I:%M %p').replace(' 0', ' ')}."
             msg = (
                 f"{title} is active again, {user_name}. I rebased your schedule from today.{next_text}"
                 if user_name
@@ -987,15 +1026,25 @@ async def handle_learning_update(
         return await finish(_unsupported_topic_prompt(user_name, raw_topic), status="error", sub_intent=sub_intent)
     if canonical_topic:
         entities["topic"] = canonical_topic
-    if entities.get("subtopic") and canonical_topic:
-        try:
-            entities["roadmap_key"] = map_subtopic(
-                entities.get("subtopic"),
-                canonical_topic,
-                level_keys=level_keys_for_language(canonical_topic),
-            )
-        except Exception:
-            entities["roadmap_key"] = map_subtopic(entities.get("subtopic"), canonical_topic)
+
+    roadmap_key = _coerce_text(entities.get("roadmap_key")) or None
+    if roadmap_key and str(roadmap_key).lower() == "general":
+        roadmap_key = None
+    subtopic_raw = normalize_subtopic_entity(entities.get("subtopic"))
+    if subtopic_raw:
+        entities["subtopic"] = subtopic_raw
+    if not roadmap_key and subtopic_raw and canonical_topic:
+        resolution = resolve_subtopic_mapping(
+            subtopic_raw,
+            canonical_topic,
+            level_keys=level_keys_for_language(canonical_topic),
+        )
+        if resolution.confident and resolution.roadmap_key != "general":
+            roadmap_key = resolution.roadmap_key
+    if roadmap_key:
+        entities["roadmap_key"] = roadmap_key
+    elif "roadmap_key" in entities:
+        entities.pop("roadmap_key", None)
 
     # Pause/resume: require topic (or free_text State 1)
     if sub_intent in {"pause", "resume"} and not canonical_topic:
@@ -1109,11 +1158,59 @@ async def handle_learning_update(
                     user_name=user_name,
                     finish=finish,
                 )
-        msg = (
-            f"I couldn't find any {status_filter or ''} {canonical_topic} learning goals.".strip()
-            if not user_name
-            else f"I couldn't find any {status_filter or ''} {canonical_topic} learning goals, {user_name}.".strip()
-        )
+        if sub_intent == "pause":
+            paused = await get_paused_goals_for_user(user_id, canonical_topic)
+            if len(paused) == 1:
+                return await finish(
+                    _already_paused_prompt(user_name, paused[0]),
+                    status="ok",
+                    sub_intent=sub_intent,
+                )
+            if len(paused) > 1:
+                previews = [_goal_preview(g) for g in paused][:5]
+                language = _topic_label(entities)
+                intro = (
+                    f"Your {language} learning plans are already paused, {user_name}."
+                    if user_name
+                    else f"Your {language} learning plans are already paused."
+                )
+                return await finish(
+                    _list_prompt(user_name, previews, intro=intro),
+                    status="ok",
+                    sub_intent=sub_intent,
+                )
+        if sub_intent == "resume":
+            active_matches = await find_goals_for_update(
+                user_id,
+                canonical_topic,
+                roadmap_key=roadmap_key,
+                status_filter="active",
+            )
+            if len(active_matches) == 1:
+                return await finish(
+                    _already_active_prompt(user_name, active_matches[0]),
+                    status="ok",
+                    sub_intent=sub_intent,
+                )
+        language = _topic_label(entities)
+        if sub_intent == "pause":
+            msg = (
+                f"I couldn't find an active {language} learning plan, {user_name}."
+                if user_name
+                else f"I couldn't find an active {language} learning plan."
+            )
+        elif sub_intent == "resume":
+            msg = (
+                f"I couldn't find a paused {language} learning plan, {user_name}."
+                if user_name
+                else f"I couldn't find a paused {language} learning plan."
+            )
+        else:
+            msg = (
+                f"I couldn't find any {language} learning goals, {user_name}."
+                if user_name
+                else f"I couldn't find any {language} learning goals."
+            )
         return await finish(msg, status="not_found", sub_intent=sub_intent)
 
     if len(matches) >= 6:

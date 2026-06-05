@@ -56,7 +56,7 @@ const getUserRoadmaps = async (req, res, next) => {
       statusInput,
       roadmapKeyInput: req.query.roadmap_key || req.query.track || req.query.level || "",
       includeSessions,
-    });
+    }, req.user?.timezone || "UTC");
 
     res.json({
       status: "success",

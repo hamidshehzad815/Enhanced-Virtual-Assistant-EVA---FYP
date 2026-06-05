@@ -3,6 +3,7 @@
  */
 
 const logger = require("../config/logger");
+const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
 
 /**
  * Custom API Error class
@@ -164,7 +165,11 @@ const errorHandler = (err, req, res, next) => {
   };
 
   if (error.payload !== undefined) {
-    response.data = error.payload;
+    const timezone = (req.user && req.user.timezone) || "UTC";
+    response.data = withApiTimezone(
+      localizeApiPayload(error.payload, timezone),
+      timezone,
+    );
   }
 
   // Add validation errors if present

@@ -13,6 +13,12 @@ const {
   NotFoundError,
   InternalError,
 } = require("../middleware/errorHandler");
+const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
+
+const buildApiData = (req, payload) => {
+  const timezone = req.user?.timezone || "UTC";
+  return withApiTimezone(localizeApiPayload(payload, timezone), timezone);
+};
 
 /**
  * POST /api/chat/session
@@ -30,10 +36,10 @@ const createSession = async (req, res, next) => {
     res.status(201).json({
       status: "success",
       message: "Chat session created",
-      data: {
+      data: buildApiData(req, {
         session_id: chatSession._id,
-        session: chatSession,
-      },
+        session: chatSession.toObject ? chatSession.toObject() : chatSession,
+      }),
     });
   } catch (error) {
     next(error);
@@ -113,6 +119,8 @@ const processChat = async (req, res, next) => {
       aiResponse?.intent_classification?.label ||
       null;
 
+    const localizedAiResponse = buildApiData(req, aiResponse || {});
+
     res.json({
       status: "success",
       response_text: responseText,
@@ -120,7 +128,7 @@ const processChat = async (req, res, next) => {
       intent: routeIntent,
       ai_status: aiResponse?.handler_status || aiResponse?.status || null,
       notifications: notificationSummary,
-      data: aiResponse,
+      data: localizedAiResponse,
     });
   } catch (error) {
     next(error);

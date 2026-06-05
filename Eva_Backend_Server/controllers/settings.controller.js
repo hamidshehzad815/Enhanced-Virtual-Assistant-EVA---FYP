@@ -25,6 +25,12 @@ const {
   applyLearningSchedules,
 } = require("../utils/learningSchedules");
 const { callAIInternal } = require("../services/ai.service");
+const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
+
+const buildApiData = (req, payload) => {
+  const timezone = userTimeZone(req);
+  return withApiTimezone(localizeApiPayload(payload, timezone), timezone);
+};
 
 const TIME_PATTERN = /^([01]?[0-9]|2[0-3]):[0-5][0-9]$/;
 
@@ -228,10 +234,10 @@ const getSettings = async (req, res, next) => {
 
     res.json({
       status: "success",
-      data: {
+      data: buildApiData(req, {
         settings,
         preferred_learning_schedules: schedulesView,
-      },
+      }),
     });
   } catch (error) {
     next(error);
@@ -308,11 +314,11 @@ const patchLearningSchedule = async (req, res, next) => {
     res.json({
       status: "success",
       message: "Learning schedules updated",
-      data: {
+      data: buildApiData(req, {
         settings,
         preferred_learning_schedules: schedules,
         rebuild: rebuildSummary,
-      },
+      }),
     });
   } catch (error) {
     next(error);
@@ -551,10 +557,10 @@ const updateSettings = async (req, res, next) => {
     res.json({
       status: "success",
       message: "Settings updated",
-      data: {
+      data: buildApiData(req, {
         settings,
         ...(rebuildSummary ? { rebuild: rebuildSummary } : {}),
-      },
+      }),
     });
   } catch (error) {
     next(error);
@@ -570,7 +576,7 @@ const listLearningSchedules = async (req, res, next) => {
     const schedules = schedulesArrayFromDoc(settings);
     res.json({
       status: "success",
-      data: { preferred_learning_schedules: schedules },
+      data: buildApiData(req, { preferred_learning_schedules: schedules }),
     });
   } catch (error) {
     next(error);
@@ -622,7 +628,7 @@ const createLearningSchedule = async (req, res, next) => {
     res.status(201).json({
       status: "success",
       message: "Learning schedule created",
-      data: { schedule: entry, preferred_learning_schedules: updated },
+      data: buildApiData(req, { schedule: entry, preferred_learning_schedules: updated }),
     });
   } catch (error) {
     next(error);
@@ -695,7 +701,7 @@ const updateLearningSchedule = async (req, res, next) => {
     res.json({
       status: "success",
       message: "Learning schedule updated",
-      data: { schedule: entry, preferred_learning_schedules: updated },
+      data: buildApiData(req, { schedule: entry, preferred_learning_schedules: updated }),
     });
   } catch (error) {
     next(error);
@@ -739,7 +745,7 @@ const deleteLearningSchedule = async (req, res, next) => {
     res.json({
       status: "success",
       message: "Learning schedule deleted",
-      data: { preferred_learning_schedules: updated },
+      data: buildApiData(req, { preferred_learning_schedules: updated }),
     });
   } catch (error) {
     next(error);

@@ -5,6 +5,29 @@
 
 const { Integration } = require("../models");
 const { BadRequestError } = require("../middleware/errorHandler");
+const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
+
+const buildApiData = (req, payload) => {
+  const timezone = (req.user && req.user.timezone) || "UTC";
+  return withApiTimezone(localizeApiPayload(payload, timezone), timezone);
+};
+
+const sanitizeIntegration = (integration, timezone) =>
+  localizeApiPayload(
+    {
+      _id: integration._id,
+      user_id: integration.user_id,
+      provider: integration.provider,
+      calendar_id: integration.calendar_id,
+      token_expires: integration.token_expires,
+      scope: integration.scope,
+      is_active: integration.is_active,
+      last_synced_at: integration.last_synced_at,
+      created_at: integration.created_at,
+      updated_at: integration.updated_at,
+    },
+    timezone,
+  );
 
 /**
  * POST /api/integrations/google/connect
@@ -66,20 +89,9 @@ const connectGoogleCalendar = async (req, res, next) => {
     res.status(200).json({
       status: "success",
       message: "Google Calendar connected",
-      data: {
-        integration: {
-          _id: integration._id,
-          user_id: integration.user_id,
-          provider: integration.provider,
-          calendar_id: integration.calendar_id,
-          token_expires: integration.token_expires,
-          scope: integration.scope,
-          is_active: integration.is_active,
-          last_synced_at: integration.last_synced_at,
-          created_at: integration.created_at,
-          updated_at: integration.updated_at,
-        },
-      },
+      data: buildApiData(req, {
+        integration: sanitizeIntegration(integration, (req.user && req.user.timezone) || "UTC"),
+      }),
     });
   } catch (error) {
     next(error);
@@ -102,11 +114,12 @@ const getIntegrations = async (req, res, next) => {
       .sort({ updated_at: -1 })
       .lean();
 
+    const timezone = (req.user && req.user.timezone) || "UTC";
     res.status(200).json({
       status: "success",
-      data: {
-        integrations,
-      },
+      data: buildApiData(req, {
+        integrations: integrations.map((row) => sanitizeIntegration(row, timezone)),
+      }),
     });
   } catch (error) {
     next(error);

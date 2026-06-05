@@ -59,15 +59,18 @@ const computeTaskDisplayStatus = (task, now = new Date()) => {
   return "overdue";
 };
 
-const enrichTaskForApi = (task, now = new Date()) => {
+const { localizeApiPayload } = require("./apiDateTime");
+
+const enrichTaskForApi = (task, now = new Date(), timezone = "UTC") => {
   if (!task || typeof task !== "object") {
     return task;
   }
-  return {
+  const enriched = {
     ...task,
     status: normalizeStoredStatus(task.status),
     display_status: computeTaskDisplayStatus(task, now),
   };
+  return localizeApiPayload(enriched, timezone);
 };
 
 module.exports = {

@@ -35,6 +35,9 @@ def _ctx(**kwargs):
 
 
 class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
+    # Keep dates safely in the future relative to real execution time.
+    _FUTURE_START = "2026-06-10"
+
     async def test_topic_missing_sets_redis_and_pending(self):
         mock_redis = AsyncMock(return_value=True)
         with (
@@ -99,7 +102,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
             out = await handle_learning_create(
                 {
                     "topic": "Python",
-                    "start_date": "2026-06-01",
+                    "start_date": self._FUTURE_START,
                     "learning_schedule_id": "default",
                 },
                 _ctx(),
@@ -133,7 +136,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
             out = await handle_learning_create(
                 {
                     "topic": "Python",
-                    "start_date": "2026-06-01",
+                    "start_date": self._FUTURE_START,
                     "duration_days": 14,
                     "learning_schedule_id": "default",
                 },
@@ -169,7 +172,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
             out = await handle_learning_create(
                 {
                     "topic": "Python",
-                    "start_date": "2026-06-01",
+                    "start_date": self._FUTURE_START,
                     "duration_days": 14,
                     "learning_schedule_id": "default",
                     "person": "ghost_user",
@@ -213,6 +216,10 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                 ],
             ),
             patch(
+                "handlers.learning.create.find_overlapping_task_for_user",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
                 "handlers.learning.create.gemini_service.generate_reply",
                 return_value="",
             ),
@@ -220,7 +227,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
             out = await handle_learning_create(
                 {
                     "topic": "Python",
-                    "start_date": "2026-06-01",
+                    "start_date": self._FUTURE_START,
                     "duration_days": 14,
                     "learning_schedule_id": "default",
                 },
@@ -231,7 +238,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_requires_learning_schedule(self):
         out = await handle_learning_create(
-            {"topic": "Python", "start_date": "2026-06-01", "duration_days": 14},
+            {"topic": "Python", "start_date": self._FUTURE_START, "duration_days": 14},
             _ctx(settings={}),
         )
         self.assertEqual(out["status"], "pending")
@@ -256,7 +263,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
             out = await handle_learning_create(
                 {
                     "topic": "Python",
-                    "start_date": "2026-06-01",
+                    "start_date": self._FUTURE_START,
                     "duration_days": 14,
                 },
                 _ctx(),
@@ -273,7 +280,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_unsupported_topic_stops(self):
         out = await handle_learning_create(
-            {"topic": "Klingon", "start_date": "2026-06-01", "duration_days": 14},
+            {"topic": "Klingon", "start_date": self._FUTURE_START, "duration_days": 14},
             _ctx(),
         )
         self.assertEqual(out["status"], "error")
@@ -292,7 +299,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
             out = await handle_learning_create(
                 {
                     "topic": "Python",
-                    "start_date": "2026-06-01",
+                    "start_date": self._FUTURE_START,
                     "duration_days": 3,
                     "learning_schedule_id": "default",
                 },
@@ -314,7 +321,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
             out = await handle_learning_create(
                 {
                     "topic": "Python",
-                    "start_date": "2026-06-01",
+                    "start_date": self._FUTURE_START,
                     "duration_days": 14,
                 },
                 _ctx(),
@@ -366,6 +373,10 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                 return_value=scheduled,
             ),
             patch(
+                "handlers.learning.create.find_overlapping_task_for_user",
+                new=AsyncMock(return_value=None),
+            ),
+            patch(
                 "handlers.learning.create.insert_goal",
                 new=AsyncMock(return_value="goalid1"),
             ),
@@ -410,7 +421,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                 {
                     "topic": "Python",
                     "subtopic": "basics",
-                    "start_date": "2026-06-01",
+                    "start_date": self._FUTURE_START,
                     "duration_days": 14,
                     "learning_schedule_id": "default",
                 },
@@ -455,6 +466,10 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
             patch(
                 "handlers.learning.create.build_schedule",
                 return_value=scheduled,
+            ),
+            patch(
+                "handlers.learning.create.find_overlapping_task_for_user",
+                new=AsyncMock(return_value=None),
             ),
             patch(
                 "handlers.learning.create.insert_goal",
@@ -508,7 +523,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
             out = await handle_learning_create(
                 {
                     "topic": "Python",
-                    "start_date": "2026-06-01",
+                    "start_date": self._FUTURE_START,
                     "duration_days": 14,
                     "learning_schedule_id": "default",
                 },
@@ -518,6 +533,18 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
         mock_log.assert_awaited()
         self.assertGreaterEqual(mock_insert_msg.await_count, 2)
         mock_cal.assert_awaited()
+
+    def test_session_preview_label_uses_user_timezone(self):
+        from datetime import datetime
+
+        from handlers.learning.create import _session_preview_label
+
+        # Fri 10:50 Asia/Karachi stored as 05:50 UTC-naive
+        stored = datetime(2026, 6, 5, 5, 50, 0)
+        label = _session_preview_label(stored, "Asia/Karachi")
+        self.assertIn("10:50 AM", label)
+        self.assertNotIn("5:50 AM", label)
+        self.assertIn("Friday", label)
 
 
 if __name__ == "__main__":

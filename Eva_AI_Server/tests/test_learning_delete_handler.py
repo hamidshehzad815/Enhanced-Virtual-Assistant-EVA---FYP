@@ -644,7 +644,8 @@ class LearningDeleteHandlerTests(unittest.IsolatedAsyncioTestCase):
                 context=_base_context(),
             )
 
-        call_args = mock_find.await_args
+        # First call should use the mapped roadmap_key; second call may fall back to topic-only.
+        call_args = mock_find.await_args_list[0]
         self.assertEqual(call_args.args[1], "Python")
         self.assertEqual(call_args.kwargs.get("roadmap_key"), "basics")
 

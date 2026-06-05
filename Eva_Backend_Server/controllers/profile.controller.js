@@ -5,6 +5,12 @@
 
 const { User } = require("../models");
 const { BadRequestError, ConflictError } = require("../middleware/errorHandler");
+const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
+
+const buildApiData = (req, payload) => {
+  const timezone = (req.user && req.user.timezone) || "UTC";
+  return withApiTimezone(localizeApiPayload(payload, timezone), timezone);
+};
 
 const ALLOWED_UPDATES = new Set([
   "name",
@@ -56,9 +62,9 @@ const getProfile = async (req, res, next) => {
   try {
     res.json({
       status: "success",
-      data: {
+      data: buildApiData(req, {
         user: req.user.toPublicProfile(),
-      },
+      }),
     });
   } catch (error) {
     next(error);
@@ -158,9 +164,9 @@ const updateProfile = async (req, res, next) => {
     res.json({
       status: "success",
       message: "Profile updated",
-      data: {
+      data: buildApiData(req, {
         user: updatedUser.toPublicProfile(),
-      },
+      }),
     });
   } catch (error) {
     next(error);

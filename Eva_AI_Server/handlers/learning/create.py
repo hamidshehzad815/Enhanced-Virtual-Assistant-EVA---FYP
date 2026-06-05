@@ -49,7 +49,7 @@ from utils.learning_utils import (
     resolve_subtopic_mapping,
     subtopic_hint_from_message,
 )
-from utils.timezone_utils import get_zoneinfo, resolve_timezone_name
+from utils.timezone_utils import get_zoneinfo, resolve_timezone_name, utc_naive_to_local
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +124,17 @@ async def _save_turn(
         await update_last_message(session_id, eva_reply, now)
     except Exception as error:
         print(f"[LearningCreate] conversation save failed: {error}")
+
+
+def _session_preview_label(stored_dt: datetime, timezone_name: str) -> str:
+    """Format UTC-naive stored instant as local date/time for chat display."""
+    local_dt = utc_naive_to_local(stored_dt, timezone_name)
+    if local_dt is None:
+        return ""
+    return (
+        f"{_format_date_display(local_dt.date().isoformat())} at "
+        f"{_format_time_display(local_dt.strftime('%H:%M:%S'))}"
+    )
 
 
 def _topic_raw(entities: Dict[str, Any]) -> str:
@@ -411,6 +422,7 @@ async def handle_learning_create(
         topics_db,
         schedule_slots,
         default_duration_minutes=default_session_duration,
+        timezone_name=tz,
     )
     for row in scheduled_rows:
         session_dt = row.get("scheduled_date")
@@ -580,10 +592,9 @@ async def handle_learning_create(
     for sch in scheduled_rows[:3]:
         dt = sch.get("scheduled_date")
         if isinstance(dt, datetime):
-            preview.append(
-                f"{_format_date_display(dt.date().isoformat())} at "
-                f"{_format_time_display(dt.strftime('%H:%M:%S'))}"
-            )
+            label = _session_preview_label(dt, tz)
+            if label:
+                preview.append(label)
 
     preview_text = "; ".join(preview) if preview else "your first sessions"
 

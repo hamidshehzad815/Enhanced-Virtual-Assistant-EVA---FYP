@@ -4,7 +4,7 @@ Learning schedule slot vs task time conflicts (recurring weekly slots vs concret
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone as dt_timezone
 from typing import Any, Dict, List, Optional, Sequence
 
 from utils.learning_schedules import schedules_from_settings
@@ -34,7 +34,8 @@ def _parse_hhmm(value: str) -> int:
 def _weekday_and_minutes(due: datetime, tz_name: str) -> tuple[Optional[int], int]:
     tz = get_zoneinfo(tz_name or "UTC")
     if due.tzinfo is None:
-        local = due.replace(tzinfo=tz)
+        # Stored datetimes are UTC-naive (same as tasks.due_datetime).
+        local = due.replace(tzinfo=dt_timezone.utc).astimezone(tz)
     else:
         local = due.astimezone(tz)
     wd = local.weekday()

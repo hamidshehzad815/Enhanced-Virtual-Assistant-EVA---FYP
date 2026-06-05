@@ -98,6 +98,35 @@ class LearningUpdateHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(payload["expected_response"], "yes_no")
         self.assertEqual(payload["pending_action"]["goal_id"], gid)
 
+    async def test_pause_already_paused_plan_returns_clear_message(self):
+        paused_goal = {
+            "_id": str(ObjectId()),
+            "title": "Learn Python — basics",
+            "roadmap_key": "basics",
+            "status": "paused",
+            "completed_topics": 1,
+            "total_topics": 12,
+            "subject": "python",
+        }
+        with patch(
+            "handlers.learning.update.find_goals_for_update",
+            new=AsyncMock(return_value=[]),
+        ), patch(
+            "handlers.learning.update.get_paused_goals_for_user",
+            new=AsyncMock(return_value=[paused_goal]),
+        ), patch(
+            "handlers.learning.update._save_turn",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await handle_learning_update(
+                entities={"topic": "Python"},
+                context=_base_context(message="pause my Python learning"),
+            )
+
+        self.assertEqual(result["status"], "ok")
+        self.assertIn("already paused", result["response_text"].lower())
+        self.assertIn("resume", result["response_text"].lower())
+
     async def test_pause_yes_executes_pause_goal(self):
         gid = str(ObjectId())
         goal = {"_id": gid, "title": "Python basics", "roadmap_key": "basics", "status": "active"}
