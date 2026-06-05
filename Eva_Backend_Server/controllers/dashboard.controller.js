@@ -5,6 +5,7 @@
 
 const { Task, LearningGoal, RoadmapTopic } = require("../models");
 const { normalizeTimezone, toLocalDayRangeUtc } = require("../utils/timezone");
+const { serializeInstantForApi, withApiTimezone } = require("../utils/apiDateTime");
 const {
   isStoredComplete,
   computeTaskDisplayStatus,
@@ -59,7 +60,7 @@ const buildDashboardTask = (task, timeZone, nowUtc = new Date()) => {
     priority: task.priority,
     day: formatted.day,
     time: formatted.time,
-    due_datetime: due ? due.toISOString() : null,
+    due_datetime: due ? serializeInstantForApi(due, timeZone) : null,
     is_learning_task: Boolean(task.learning_plan_id),
     learning_goal_id: task.learning_plan_id ? String(task.learning_plan_id) : null,
   };
@@ -77,7 +78,7 @@ const buildLearningTopic = (topic, timeZone) => {
     status: topic.status,
     day: formatted.day,
     time: formatted.time,
-    scheduled_datetime: due ? due.toISOString() : null,
+    scheduled_datetime: due ? serializeInstantForApi(due, timeZone) : null,
   };
 };
 
@@ -170,18 +171,21 @@ const getDashboard = async (req, res, next) => {
 
     return res.json({
       status: "success",
-      data: {
-        up_next: upNextTask ? buildDashboardTask(upNextTask, timeZone, nowUtc) : null,
-        daily_progress: {
-          date: todayLocal,
-          timezone: timeZone,
-          completed_tasks: completedCount,
-          total_tasks: totalCount,
-          completion_percentage: completionPercentage,
+      data: withApiTimezone(
+        {
+          up_next: upNextTask ? buildDashboardTask(upNextTask, timeZone, nowUtc) : null,
+          daily_progress: {
+            date: todayLocal,
+            timezone: timeZone,
+            completed_tasks: completedCount,
+            total_tasks: totalCount,
+            completion_percentage: completionPercentage,
+          },
+          learning,
+          today_schedule: todayTasks.map((task) => buildDashboardTask(task, timeZone, nowUtc)),
         },
-        learning,
-        today_schedule: todayTasks.map((task) => buildDashboardTask(task, timeZone, nowUtc)),
-      },
+        timeZone,
+      ),
     });
   } catch (error) {
     return next(error);

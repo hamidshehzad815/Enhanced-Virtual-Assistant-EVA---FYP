@@ -15,6 +15,12 @@ const { softDeleteLearningGoalById } = require("../services/learningDelete.servi
 const { insert_and_dispatch } = require("../services/notification.service");
 const { callAIInternal } = require("../services/ai.service");
 const { validateTopicAction } = require("../utils/learningSessionState");
+const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
+
+const buildApiData = (req, payload) => {
+  const timezone = req.user?.timezone || "UTC";
+  return withApiTimezone(localizeApiPayload(payload, timezone), timezone);
+};
 
 const PATCH_STATUS = new Set(["active", "paused", "cancelled"]);
 
@@ -109,7 +115,7 @@ const getAllGoals = async (req, res, next) => {
 
     res.json({
       status: "success",
-      data: { goals },
+      data: buildApiData(req, { goals }),
     });
   } catch (error) {
     next(error);
@@ -129,12 +135,12 @@ const getGoal = async (req, res, next) => {
 
     res.json({
       status: "success",
-      data: {
+      data: buildApiData(req, {
         goal: {
           ...goal,
           progress_percent: progress,
         },
-      },
+      }),
     });
   } catch (error) {
     next(error);
@@ -157,7 +163,7 @@ const getTopics = async (req, res, next) => {
 
     res.json({
       status: "success",
-      data: { topics },
+      data: buildApiData(req, { topics }),
     });
   } catch (error) {
     next(error);
@@ -231,11 +237,11 @@ const completeTopic = async (req, res, next) => {
     res.json({
       status: "success",
       message: "Topic marked complete",
-      data: {
+      data: buildApiData(req, {
         ai: aiResult || null,
         topic,
         goal: savedGoal ? { ...savedGoal, progress_percent: progressPct } : null,
-      },
+      }),
     });
   } catch (error) {
     next(error);
@@ -294,7 +300,7 @@ const skipTopic = async (req, res, next) => {
     res.json({
       status: "success",
       message: "Topic skipped",
-      data: { ai: aiResult || null, topic, goal: savedGoal },
+      data: buildApiData(req, { ai: aiResult || null, topic, goal: savedGoal }),
     });
   } catch (error) {
     next(error);
@@ -356,7 +362,7 @@ const updateStatus = async (req, res, next) => {
       return res.json({
         status: "success",
         message: "Learning goal removed",
-        data: { goal, notifications: notificationSummary },
+        data: buildApiData(req, { goal, notifications: notificationSummary }),
       });
     }
 
@@ -390,7 +396,10 @@ const updateStatus = async (req, res, next) => {
     res.json({
       status: "success",
       message: "Learning goal updated",
-      data: { goal: saved, ...(rebuildSummary ? { rebuild: rebuildSummary } : {}) },
+      data: buildApiData(req, {
+        goal: saved,
+        ...(rebuildSummary ? { rebuild: rebuildSummary } : {}),
+      }),
     });
   } catch (error) {
     next(error);
@@ -422,10 +431,10 @@ const deleteGoal = async (req, res, next) => {
     res.json({
       status: "success",
       message: "Learning goal removed",
-      data: {
+      data: buildApiData(req, {
         goal,
         notifications: notificationSummary,
-      },
+      }),
     });
   } catch (error) {
     next(error);

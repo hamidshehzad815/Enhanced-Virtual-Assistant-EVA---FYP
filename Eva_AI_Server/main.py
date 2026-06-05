@@ -67,6 +67,7 @@ from services.productivity_scorer import get_productive_days, get_productive_hou
 from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
 from utils.date_utils import weekday_name_to_number
 from utils.timezone_utils import get_zoneinfo, resolve_timezone_name, utc_naive_to_local
+from utils.api_datetime import localize_api_payload, with_api_timezone
 
 # Learning update internal endpoints
 from db.learning_goals import (
@@ -557,8 +558,12 @@ async def internal_rebuild_schedule(payload: RebuildScheduleRequest):
     # To keep Phase 5 minimal and deterministic, do a direct collection scan via get_db is avoided here.
     # We instead rebuild only active goals now; paused goals will be rebuilt on resume flow.
     learning_days = _learning_days_from_schedule(schedule)
-    tz_name = "UTC"
-    start_from = _next_learning_day(datetime.now(get_zoneinfo(tz_name)).date() + timedelta(days=1), learning_days)
+    user_doc = await fetch_user(user_id)
+    tz_name = resolve_timezone_name((user_doc or {}).get("timezone"))
+    start_from = _next_learning_day(
+        datetime.now(get_zoneinfo(tz_name)).date() + timedelta(days=1),
+        learning_days,
+    )
 
     updated = 0
     for goal in goals:
@@ -573,7 +578,7 @@ async def internal_rebuild_schedule(payload: RebuildScheduleRequest):
             {"order": int(t.get("order") or 0), "title": str(t.get("title") or ""), "resources": list(t.get("resources") or [])}
             for t in pending_topics
         ]
-        rows = build_schedule(start_from, topics_for_builder, schedule)
+        rows = build_schedule(start_from, topics_for_builder, schedule, timezone_name=tz_name)
         if not rows or len(rows) != len(pending_topics):
             continue
         last_dt = None
@@ -626,12 +631,17 @@ async def internal_auto_complete_topic(payload: AutoCompleteTopicRequest):
         started_at = goal.get("started_at")
         await complete_goal(goal_id, started_at)
 
+    user_doc = await fetch_user(user_id)
+    tz = resolve_timezone_name((user_doc or {}).get("timezone"))
     next_session = await get_current_session(goal_id)
-    return {
-        "status": "success",
-        "goal_completed": bool(goal and goal.get("status") == "completed"),
-        "next_session": next_session,
-    }
+    return with_api_timezone(
+        {
+            "status": "success",
+            "goal_completed": bool(goal and goal.get("status") == "completed"),
+            "next_session": next_session,
+        },
+        tz,
+    )
 
 
 @app.post("/internal/skip-topic")
@@ -649,6 +659,14 @@ async def internal_skip_topic(payload: SkipTopicRequest):
     topic_doc = next((t for t in topics if str(t.get("_id")) == topic_id), None)
     if not topic_doc:
         return {"status": "error", "message": "topic not found"}
+
+    # Keep tasks list consistent: skip should remove the linked task if present.
+    try:
+        task_id = str(topic_doc.get("task_id") or "").strip()
+        if task_id:
+            await soft_delete_task(task_id)
+    except Exception:
+        pass
 
     settings_data = await fetch_user_settings(user_id)
     user_doc = await fetch_user(user_id)
@@ -1083,7 +1101,7 @@ async def process_message(payload: ProcessRequest):
                         pending_context,
                         message,
                         user_name=user_name,
-                        timezone_name=str(user.get("timezone") or "UTC"),
+                        timezone_name=resolve_timezone_name((fetched.user or {}).get("timezone")),
                         preferred_learning_schedule=list(
                             (settings_data or {}).get("preferred_learning_schedule") or []
                         ),

@@ -89,11 +89,11 @@ class LearningUpdateContextManagerTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_state5_new_date_valid_learning_day_merges(self):
         ctx = _update_ctx("new_date", "reschedule", entities={"topic": "Python"})
-        # 2026-06-01 is Monday
+        # Use a stable future Monday so the handler doesn't reject it as past.
         with patch.object(
             cm.duckling_client,
             "resolve_date",
-            new=AsyncMock(return_value="2026-06-01"),
+            new=AsyncMock(return_value="2026-06-15"),
         ):
             out = await cm.process_learning_update_free_text_reply(
                 ctx,
@@ -103,15 +103,15 @@ class LearningUpdateContextManagerTests(unittest.IsolatedAsyncioTestCase):
                 preferred_learning_schedule=[{"day": 0, "time": "18:00"}],
             )
         self.assertEqual(out["outcome"], "merged")
-        self.assertEqual(out["merged_entities"]["date"], "2026-06-01")
+        self.assertEqual(out["merged_entities"]["date"], "2026-06-15")
 
     async def test_state5_new_date_not_learning_day_retries(self):
         ctx = _update_ctx("new_date", "reschedule")
-        # 2026-06-02 is Tuesday
+        # Use a stable future Tuesday so the handler reaches the learning-day validation.
         with patch.object(
             cm.duckling_client,
             "resolve_date",
-            new=AsyncMock(return_value="2026-06-02"),
+            new=AsyncMock(return_value="2026-06-16"),
         ):
             out = await cm.process_learning_update_free_text_reply(
                 ctx,

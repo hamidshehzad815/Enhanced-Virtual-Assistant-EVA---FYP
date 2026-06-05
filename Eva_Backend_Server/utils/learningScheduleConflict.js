@@ -1,8 +1,3 @@
-/**
- * Detect conflicts between learning schedule slots and existing tasks.
- * Schedule weekday: 0 = Monday … 6 = Sunday (matches Python date.weekday() / EVA schemas).
- */
-
 const WEEKDAY_LONG_TO_MON0 = {
   Monday: 0,
   Tuesday: 1,

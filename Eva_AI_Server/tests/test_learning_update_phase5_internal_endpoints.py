@@ -75,6 +75,10 @@ class LearningUpdateInternalEndpointsTests(unittest.IsolatedAsyncioTestCase):
             ai_main,
             "get_current_session",
             new=AsyncMock(return_value={"_id": str(ObjectId()), "order": 2}),
+        ), patch.object(
+            ai_main,
+            "fetch_user",
+            new=AsyncMock(return_value={"timezone": "UTC"}),
         ):
             req = ai_main.AutoCompleteTopicRequest(topic_id=tid, goal_id=gid, user_id=uid)
             out = await ai_main.internal_auto_complete_topic(req)
@@ -89,11 +93,31 @@ class LearningUpdateInternalEndpointsTests(unittest.IsolatedAsyncioTestCase):
         tid = str(ObjectId())
         task_id = str(ObjectId())
 
-        with patch.object(ai_main, "skip_topic", new=AsyncMock(return_value=True)), patch.object(
+        with patch.object(
+            ai_main,
+            "skip_session_and_rebalance",
+            new=AsyncMock(return_value=(True, True)),
+        ), patch.object(
             ai_main,
             "get_topics_for_goal",
             new=AsyncMock(return_value=[{"_id": tid, "task_id": task_id}]),
-        ), patch.object(ai_main, "soft_delete_task", new=AsyncMock(return_value=True)) as mock_soft:
+        ), patch.object(
+            ai_main,
+            "soft_delete_task",
+            new=AsyncMock(return_value=True),
+        ) as mock_soft, patch.object(
+            ai_main,
+            "fetch_user_settings",
+            new=AsyncMock(return_value={}),
+        ), patch.object(
+            ai_main,
+            "fetch_user",
+            new=AsyncMock(return_value={"timezone": "UTC"}),
+        ), patch.object(
+            ai_main,
+            "fetch_integrations",
+            new=AsyncMock(return_value=[]),
+        ):
             req = ai_main.SkipTopicRequest(topic_id=tid, goal_id=gid, user_id=uid)
             out = await ai_main.internal_skip_topic(req)
 
@@ -120,11 +144,31 @@ class LearningUpdateInternalEndpointsTests(unittest.IsolatedAsyncioTestCase):
                 {"scheduled_date": datetime(2026, 6, 1, 18, 0, tzinfo=timezone.utc).replace(tzinfo=None)},
                 {"scheduled_date": datetime(2026, 6, 8, 18, 0, tzinfo=timezone.utc).replace(tzinfo=None)},
             ],
-        ), patch.object(ai_main, "reschedule_topic", new=AsyncMock(return_value=True)), patch.object(
+        ), patch.object(
+            ai_main,
+            "reschedule_topic",
+            new=AsyncMock(return_value=True),
+        ), patch.object(
             ai_main,
             "update_task",
             new=AsyncMock(return_value=True),
-        ), patch.object(ai_main, "update_end_date", new=AsyncMock(return_value=True)):
+        ), patch.object(
+            ai_main,
+            "update_end_date",
+            new=AsyncMock(return_value=True),
+        ), patch.object(
+            ai_main,
+            "fetch_user_settings",
+            new=AsyncMock(return_value={}),
+        ), patch.object(
+            ai_main,
+            "fetch_integrations",
+            new=AsyncMock(return_value=[]),
+        ), patch.object(
+            ai_main,
+            "fetch_user",
+            new=AsyncMock(return_value={"timezone": "UTC"}),
+        ):
             req = ai_main.RebuildScheduleRequest(user_id=uid, new_schedule=schedule)
             out = await ai_main.internal_rebuild_schedule(req)
 

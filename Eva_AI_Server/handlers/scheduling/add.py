@@ -44,6 +44,7 @@ from utils.timezone_utils import (
     resolve_timezone_name,
     utc_naive_to_local,
 )
+from utils.api_datetime import serialize_stored_datetime
 
 
 def _to_object_id(value: Any) -> Any:
@@ -1196,10 +1197,9 @@ async def handle_scheduling_add(
             "conflict": {
                 "task_id": conflicting_task.get("_id"),
                 "title": conflicting_title,
-                "due_datetime": (
-                    conflicting_task["due_datetime"].isoformat()
-                    if isinstance(conflicting_task.get("due_datetime"), datetime)
-                    else conflicting_task.get("due_datetime")
+                "due_datetime": serialize_stored_datetime(
+                    conflicting_task.get("due_datetime"),
+                    timezone,
                 ),
                 "duration": conflicting_task.get("duration", 120),
             },
@@ -1475,7 +1475,7 @@ async def handle_scheduling_add(
         "task": {
             "task_id": task_id,
             "title": task_name,
-            "due_datetime": due_datetime.isoformat(),
+            "due_datetime": serialize_stored_datetime(due_datetime, timezone),
             "priority": priority,
             "duration": duration_minutes,
             "scheduled_by": scheduled_by,

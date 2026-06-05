@@ -199,7 +199,7 @@ class BuildScheduleTests(unittest.TestCase):
             {"order": 2, "title": "B", "resources": [{"url": "x"}]},
             {"order": 3, "title": "C", "resources": []},
         ]
-        out = lu.build_schedule(start, topics, schedule_slots)
+        out = lu.build_schedule(start, topics, schedule_slots, timezone_name="UTC")
         self.assertEqual(len(out), 3)
         self.assertEqual(out[0]["title"], "A")
         self.assertEqual(out[1]["title"], "B")
@@ -208,6 +208,32 @@ class BuildScheduleTests(unittest.TestCase):
         self.assertEqual(out[1]["scheduled_date"], datetime(2025, 1, 8, 14, 0))
         self.assertEqual(out[2]["scheduled_date"], datetime(2025, 1, 10, 9, 0))
         self.assertEqual(out[1]["resources"], [{"url": "x"}])
+
+    def test_converts_user_local_slot_to_utc_naive(self):
+        """09:40 Asia/Karachi on Friday → 04:40 UTC stored."""
+        start = date(2026, 6, 5)  # Friday
+        schedule_slots = [{"day": 4, "time": "09:40", "duration_minutes": 60}]
+        topics = [{"order": 1, "title": "Intro", "resources": []}]
+        out = lu.build_schedule(
+            start,
+            topics,
+            schedule_slots,
+            timezone_name="Asia/Karachi",
+        )
+        self.assertEqual(len(out), 1)
+        self.assertEqual(out[0]["scheduled_date"], datetime(2026, 6, 5, 4, 40))
+
+    def test_monday_6pm_karachi_stored_as_utc(self):
+        start = date(2026, 6, 8)  # Monday
+        schedule_slots = [{"day": 0, "time": "18:00", "duration_minutes": 60}]
+        topics = [{"order": 1, "title": "S1", "resources": []}]
+        out = lu.build_schedule(
+            start,
+            topics,
+            schedule_slots,
+            timezone_name="Asia/Karachi",
+        )
+        self.assertEqual(out[0]["scheduled_date"], datetime(2026, 6, 8, 13, 0))
 
     def test_empty_learning_schedule(self):
         self.assertEqual(
@@ -230,7 +256,33 @@ class DetectLearningSubIntentTests(unittest.TestCase):
             lu.detect_learning_sub_intent("mark next session done"),
             "complete",
         )
+        self.assertEqual(
+            lu.detect_learning_sub_intent("mark next python session as done"),
+            "complete",
+        )
+        self.assertEqual(
+            lu.detect_learning_sub_intent("mark next Python basics session done"),
+            "complete",
+        )
+        self.assertEqual(
+            lu.detect_learning_sub_intent("mark python next session as done"),
+            "complete",
+        )
         self.assertEqual(lu.detect_learning_sub_intent("I finished today's session"), "complete")
+        self.assertEqual(
+            lu.detect_learning_sub_intent("mark today's python session as done"),
+            "complete",
+        )
+
+    def test_skip_next_session_with_topic(self):
+        self.assertEqual(
+            lu.detect_learning_sub_intent("skip next python session"),
+            "skip",
+        )
+        self.assertEqual(
+            lu.detect_learning_sub_intent("skip python next session"),
+            "skip",
+        )
 
     def test_skip_keywords(self):
         self.assertEqual(lu.detect_learning_sub_intent("skip today's topic"), "skip")

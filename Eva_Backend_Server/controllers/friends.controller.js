@@ -11,6 +11,16 @@ const {
   ConflictError,
   ForbiddenError,
 } = require("../middleware/errorHandler");
+const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
+
+const buildApiData = (req, payload) => {
+  const timezone = (req.user && req.user.timezone) || "UTC";
+  return withApiTimezone(localizeApiPayload(payload, timezone), timezone);
+};
+
+const userTz = (req) => (req.user && req.user.timezone) || "UTC";
+const mapForRequest = (req, friendship) =>
+  mapRelationship(friendship, req.userId, userTz(req));
 
 const ALLOWED_RESPONSES = new Set(["accept", "reject"]);
 const ALLOWED_REQUEST_FILTERS = new Set(["incoming", "outgoing", "all"]);
@@ -43,12 +53,12 @@ const isParticipant = (friendship, userId) =>
   idString(friendship.requester_id) === String(userId)
   || idString(friendship.recipient_id) === String(userId);
 
-const mapRelationship = (friendship, currentUserId) => {
+const mapRelationship = (friendship, currentUserId, timezone = "UTC") => {
   const requester = sanitizeUser(friendship.requester_id);
   const recipient = sanitizeUser(friendship.recipient_id);
   const isRequester = idString(requester?._id) === String(currentUserId);
 
-  return {
+  const row = {
     _id: friendship._id,
     status: friendship.status,
     responded_at: friendship.responded_at,
@@ -60,6 +70,8 @@ const mapRelationship = (friendship, currentUserId) => {
     direction: isRequester ? "outgoing" : "incoming",
     friend: isRequester ? recipient : requester,
   };
+
+  return localizeApiPayload(row, timezone);
 };
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -165,7 +177,7 @@ const sendFriendRequest = async (req, res, next) => {
         status: "success",
         message: "Friend request sent",
         data: {
-          friendship: mapRelationship(hydrated, req.userId),
+          friendship: mapForRequest(req, hydrated),
         },
       });
     }
@@ -202,7 +214,7 @@ const sendFriendRequest = async (req, res, next) => {
       status: "success",
       message: "Friend request sent",
       data: {
-        friendship: mapRelationship(refreshed, req.userId),
+        friendship: mapForRequest(req, refreshed),
       },
     });
   } catch (error) {
@@ -229,7 +241,7 @@ const listFriends = async (req, res, next) => {
       .lean();
 
     const friends = relationships.map((relationship) => {
-      const mapped = mapRelationship(relationship, req.userId);
+      const mapped = mapForRequest(req, relationship);
       return {
         friendship_id: mapped._id,
         since: mapped.responded_at || mapped.created_at,
@@ -280,7 +292,7 @@ const listFriendRequests = async (req, res, next) => {
     res.json({
       status: "success",
       data: {
-        requests: requests.map((request) => mapRelationship(request, req.userId)),
+        requests: requests.map((request) => mapForRequest(req, request)),
       },
     });
   } catch (error) {
@@ -308,7 +320,7 @@ const listBlockedUsers = async (req, res, next) => {
       .lean();
 
     const blocked = relationships.map((relationship) => {
-      const mapped = mapRelationship(relationship, req.userId);
+      const mapped = mapForRequest(req, relationship);
       return {
         friendship_id: mapped._id,
         blocked_at: mapped.responded_at || mapped.updated_at,
@@ -451,7 +463,7 @@ const respondToFriendRequest = async (req, res, next) => {
       status: "success",
       message: `Friend request ${status}`,
       data: {
-        friendship: mapRelationship(updated, req.userId),
+        friendship: mapForRequest(req, updated),
       },
     });
   } catch (error) {
@@ -506,7 +518,7 @@ const blockFriend = async (req, res, next) => {
       status: "success",
       message: "User blocked",
       data: {
-        friendship: mapRelationship(updated, req.userId),
+        friendship: mapForRequest(req, updated),
       },
     });
   } catch (error) {
@@ -562,7 +574,7 @@ const unblockFriend = async (req, res, next) => {
       status: "success",
       message: "User blocked",
       data: {
-        friendship: mapRelationship(updated, req.userId),
+        friendship: mapForRequest(req, updated),
       },
     });
   } catch (error) {

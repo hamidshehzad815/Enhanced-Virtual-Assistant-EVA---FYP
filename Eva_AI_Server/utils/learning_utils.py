@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from config.settings import get_roadmaps_json_path, settings
+from utils.timezone_utils import local_datetime_to_utc_naive
 
 SUPPORTED_TOPICS: Set[str] = {
     "Python",
@@ -99,7 +100,17 @@ _TOPIC_ALIAS_LOWER = {k.lower(): v for k, v in TOPIC_ALIAS_MAP.items()}
 _SUBTOPIC_ALIAS_LOWER = {k.lower(): v for k, v in SUBTOPIC_ALIAS_MAP.items()}
 
 # NER noise tokens to drop when subtopic is emitted as a list (e.g. ["oop", "ma"]).
-_SUBTOPIC_NER_NOISE: Set[str] = {"ma"}
+# Session phrasing words must not become roadmap_key filters (e.g. subtopic "next").
+_SUBTOPIC_NER_NOISE: Set[str] = {
+    "ma",
+    "next",
+    "session",
+    "sessions",
+    "today",
+    "todays",
+    "lesson",
+    "lessons",
+}
 
 _ROADMAP_JSON_CACHE: Optional[Dict[str, Any]] = None
 
@@ -166,6 +177,41 @@ _SESSION_TO_DATE_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Optional topic/track tokens between cue words (mark/skip/next/today) and "session".
+# Handles both "mark next python session" and "mark python next session".
+_OPTIONAL_TRACK_WORDS = (
+    r"(?:\s+(?!next\b|today\b|today'?s?\b|session\b|sessions\b|as\b|to\b|done\b|complete\b|finished\b)"
+    r"[\w#+.:-]+)*"
+)
+
+_MARK_NEXT_SESSION_COMPLETE_RE = re.compile(
+    rf"\bmark{_OPTIONAL_TRACK_WORDS}\s+next{_OPTIONAL_TRACK_WORDS}\s+session"
+    rf"(?:\s+as)?\s*(?:done|complete|finished)\b",
+    re.IGNORECASE,
+)
+_MARK_TODAY_SESSION_COMPLETE_RE = re.compile(
+    rf"\bmark{_OPTIONAL_TRACK_WORDS}\s+today'?s?{_OPTIONAL_TRACK_WORDS}\s+session\b",
+    re.IGNORECASE,
+)
+_SKIP_NEXT_SESSION_RE = re.compile(
+    rf"\bskip{_OPTIONAL_TRACK_WORDS}\s+next{_OPTIONAL_TRACK_WORDS}\s+session\b",
+    re.IGNORECASE,
+)
+
+
+def _detect_flexible_session_sub_intent(text: str) -> Optional[str]:
+    """
+    Match natural phrasing where optional language/track words appear around
+    'next'/'today' and 'session' (substring patterns cannot handle this).
+    """
+    if _SKIP_NEXT_SESSION_RE.search(text):
+        return "skip"
+    if _MARK_NEXT_SESSION_COMPLETE_RE.search(text):
+        return "complete"
+    if _MARK_TODAY_SESSION_COMPLETE_RE.search(text):
+        return "complete"
+    return None
+
 
 def message_implies_reschedule(message: Optional[str]) -> bool:
     """True when user is trying to move a session date (incl. common typos)."""
@@ -230,6 +276,10 @@ def detect_learning_sub_intent(message: Optional[str]) -> Optional[str]:
         text,
     ):
         return "reschedule"
+
+    flexible = _detect_flexible_session_sub_intent(text)
+    if flexible:
+        return flexible
 
     for phrase, sub_intent in _LEARNING_UPDATE_SUB_INTENT_PATTERNS:
         if phrase not in text:
@@ -726,12 +776,16 @@ def build_schedule(
     preferred_learning_schedule: List[Dict[str, Any]],
     *,
     default_duration_minutes: int = 90,
+    timezone_name: Optional[str] = "UTC",
 ) -> List[Dict[str, Any]]:
     """
     Assign each roadmap topic to the next calendar learning slot.
 
     `preferred_learning_schedule`: [{ \"day\": 0-6, \"time\": \"HH:MM\", \"duration_minutes\"? }, ...]
     weekday 0 = Monday (matches Python date.weekday()).
+
+    Slot times are interpreted in ``timezone_name`` (user profile), then stored as UTC-naive
+    datetimes — same convention as ``scheduling_add`` task ``due_datetime``.
 
     Each output row: { order, title, resources, scheduled_date, duration_minutes }.
     """
@@ -772,7 +826,15 @@ def build_schedule(
             order = int(row.get("order", topic_index + 1))
             slot_info = by_day[wd]
             tstr = slot_info["time"]
-            session_dt = datetime.combine(current, _parse_hhmm(tstr))
+            parsed_time = _parse_hhmm(tstr)
+            time_str = f"{parsed_time.hour:02d}:{parsed_time.minute:02d}:00"
+            session_dt = local_datetime_to_utc_naive(
+                current.isoformat(),
+                time_str,
+                timezone_name,
+            )
+            if session_dt is None:
+                session_dt = datetime.combine(current, parsed_time)
             out.append(
                 {
                     "order": order,
