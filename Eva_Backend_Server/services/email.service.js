@@ -5,26 +5,10 @@
 
 const nodemailer = require("nodemailer");
 const logger = require("../config/logger");
-const { buildBackendPublicUrl } = require("../utils/publicUrl");
+const { buildTokenLink } = require("../utils/publicUrl");
 
 // Create reusable transporter
 let transporter = null;
-
-const buildPublicApiBaseUrl = () => {
-  return buildBackendPublicUrl();
-};
-
-const buildTokenLink = (template, fallbackPath, token) => {
-  const normalizedTemplate = String(template || "").trim();
-  if (normalizedTemplate) {
-    if (normalizedTemplate.includes("{token}")) {
-      return normalizedTemplate.replace("{token}", encodeURIComponent(token));
-    }
-    const separator = normalizedTemplate.includes("?") ? "&" : "?";
-    return `${normalizedTemplate}${separator}token=${encodeURIComponent(token)}`;
-  }
-  return `${buildPublicApiBaseUrl()}${fallbackPath}?token=${encodeURIComponent(token)}`;
-};
 
 /**
  * Initialize email transporter
