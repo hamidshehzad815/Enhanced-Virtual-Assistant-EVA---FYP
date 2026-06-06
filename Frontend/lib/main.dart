@@ -39,7 +39,7 @@ class MyApp extends StatelessWidget {
       title: 'EVA',
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.light,
+      themeMode: ThemeMode.system,
       routerConfig: appRouter,
       builder: (context, child) {
         return GradientBackground(child: child ?? const SizedBox());

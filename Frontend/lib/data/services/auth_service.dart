@@ -8,7 +8,7 @@ class AuthService {
     String email,
     String password,
   ) async {
-    final url = Uri.parse("http://10.56.22.176:4500/api/auth/login");
+    final url = Uri.parse("http://192.168.100.7:4500/api/auth/login");
 
     try {
       final response = await http
@@ -25,13 +25,9 @@ class AuthService {
       if (response.statusCode == 200) {
         return {
           "success": true, // ✅ added for UI check
-          ...data, // spread original data if needed
+          ...data,
         };
       }
-
-      // print("Status code: ${response.statusCode}");
-      // print("Response body: ${response.body}");
-
       // ERROR RESPONSE – backend may send { "status": "fail", "message": ... }
       return {
         "success": false,
@@ -45,7 +41,7 @@ class AuthService {
 
   /// Signup API
   static Future<Map<String, dynamic>> signupUser(UserModel user) async {
-    final url = Uri.parse("http://10.56.22.176:4500/api/auth/register");
+    final url = Uri.parse("http://192.168.100.7:4500/api/auth/register");
 
     try {
       final response = await http
@@ -60,15 +56,8 @@ class AuthService {
 
       // SUCCESS – backend returns status 200 or 201
       if (response.statusCode == 200 || response.statusCode == 201) {
-        return {
-          "success": true, // ✅ added for UI check
-          ...data,
-        };
+        return {"success": true, ...data};
       }
-
-      // print("Status code: ${response.statusCode}");
-      // print("Response body: ${response.body}");
-
       // ERROR RESPONSE
       return {
         "success": false,

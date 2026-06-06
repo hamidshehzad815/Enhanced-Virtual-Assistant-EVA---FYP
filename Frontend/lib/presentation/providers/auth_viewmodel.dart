@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import '../../data/models/user_model.dart';
 import '../../data/services/auth_service.dart';
+import '../../data/services/storage_service.dart';
 
 class AuthResult {
   final bool success;
@@ -18,7 +19,7 @@ class AuthResult {
   factory AuthResult.fromMap(Map<String, dynamic> data) {
     return AuthResult(
       success: data['success'] == true,
-      isVerified: data['is_verified'] == true,
+      isVerified: data['data']?['user']?['is_verified'] == true,
       field: data['field'] as String?,
       message: data['msg'] ?? data['message'] ?? '',
     );
@@ -42,11 +43,24 @@ class AuthViewModel extends ChangeNotifier {
   String? get generalError => _generalError;
   AuthResult? get lastResult => _lastResult;
 
-  Future<AuthResult> login(String email, String password) async {
-    _clearErrors();
-    _setLoading(true);
+Future<AuthResult> login(String email, String password) async {
+  _clearErrors();
+  _setLoading(true);
 
+  try {
     final response = await AuthService.loginUser(email, password);
+
+    if (response['success'] == true) {
+      final accessToken =
+          response['data']['tokens']['access_token'];
+
+      final refreshToken =
+          response['data']['tokens']['refresh_token'];
+
+      await StorageService.saveAccessToken(accessToken);
+      await StorageService.saveRefreshToken(refreshToken);
+    }
+
     final result = AuthResult.fromMap(response);
     _lastResult = result;
 
@@ -54,9 +68,19 @@ class AuthViewModel extends ChangeNotifier {
       _applyFieldError(result);
     }
 
-    _setLoading(false);
     return result;
+  } catch (e) {
+    _generalError = e.toString();
+    notifyListeners();
+
+    return AuthResult(
+      success: false,
+      message: "Something went wrong",
+    );
+  } finally {
+    _setLoading(false); 
   }
+}
 
   Future<AuthResult> signup(UserModel user) async {
     _clearErrors();

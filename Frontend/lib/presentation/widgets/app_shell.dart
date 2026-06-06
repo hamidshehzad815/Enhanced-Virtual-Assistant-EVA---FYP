@@ -115,6 +115,9 @@ class _AppShellState extends State<AppShell>
         return 3;
       case '/analytics':
         return 4;
+      case '/settings':
+      case '/collaboration':
+        return 5; // More tab
       default:
         return 0;
     }

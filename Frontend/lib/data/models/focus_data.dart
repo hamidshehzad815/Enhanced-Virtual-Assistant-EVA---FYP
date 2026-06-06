@@ -1,4 +1,3 @@
-/// Focus/Roadmap data model - ready for API integration
 class FocusData {
   final String title;
   final String nextTopic;
@@ -10,20 +9,17 @@ class FocusData {
     required this.nextTopicTime,
   });
 
-  /// Convert to JSON for API calls
-  Map<String, dynamic> toJson() {
-    return {
-      'title': title,
-      'nextTopic': nextTopic,
-    };
-  }
-
-  /// Create from JSON API response
-  factory FocusData.fromJson(Map<String, dynamic> json) {
+  factory FocusData.fromJson(
+    Map<String, dynamic> json,
+  ) {
     return FocusData(
-      title: json['title'] as String,
-      nextTopic: json['nextTopic'] as String,
-      nextTopicTime: DateTime.parse(json['nextTopicTime'] as String),
+      title: json['title'] ?? '',
+      nextTopic:
+          json['next_topic']['title'] ?? '',
+      nextTopicTime: DateTime.parse(
+        json['next_topic']
+            ['scheduled_datetime'],
+      ),
     );
   }
 }

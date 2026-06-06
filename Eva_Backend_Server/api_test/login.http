@@ -1,7 +1,7 @@
-POST http://192.168.100.11:4500/api/auth/login
+POST http://192.168.100.7:4500/api/auth/login
 Content-Type: application/json
 
 {
-  "email": "areejfatima2954@gmail.com",
+  "email": "f2022266861@umt.edu.pk",
   "password": "Areej@1234"
 }

@@ -1,10 +1,10 @@
-POST http://192.168.100.11:4500/api/auth/register
+POST http://192.168.100.7:3000/api/auth/register
 Content-Type: application/json
 
 {
-  "name": "Areej",
-  "username": "reeejjooo",
-  "email": "f2022266673@umt.edu.pk",
+  "name": "Areej Fatima",
+  "username": "reejaaaa",
+  "email": "f2022266861@umt.edu.pk",
   "password": "Areej@1234",
   "timezone": "Asia/Karachi"
 }

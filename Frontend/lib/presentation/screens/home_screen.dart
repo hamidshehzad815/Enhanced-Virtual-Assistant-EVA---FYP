@@ -39,10 +39,8 @@ class _HomeScreenState extends State<HomeScreen>
 
   final _upcomingTask = TaskData(
     title: 'NLP Mid Exam',
-    subtitle: 'Monday   5:00 PM ',
-    icon: Icons.edit_note_rounded.codePoint,
-    cardColor: const Color(0xFFDBEAFE).value,
-    iconColor: const Color(0xFF3B82F6).value,
+    day: 'Thursday',
+    taskTime: '3:00 PM',
   );
 
   final List<FocusData> _fallbackFocusList = [
@@ -342,12 +340,12 @@ class _HomeScreenState extends State<HomeScreen>
                 width: 44,
                 height: 44,
                 decoration: BoxDecoration(
-                  color: Color(t.cardColor).withOpacity(isDark ? 0.2 : 1.0),
+                  color: Color(0xFFDBEAFE).withOpacity(isDark ? 0.2 : 1.0),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Icon(
-                  IconData(t.icon, fontFamily: 'MaterialIcons'),
-                  color: Color(t.iconColor),
+                  Icons.edit_calendar_rounded,
+                  color: Color(0xFF3B82F6),
                   size: 22,
                 ),
               ),
@@ -368,7 +366,16 @@ class _HomeScreenState extends State<HomeScreen>
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      t.subtitle,
+                      t.day, // Display the day
+                      style: AppTextStyles.subtitleSmall.copyWith(
+                        fontSize: 11,
+                        color: isDark
+                            ? AppColors.secondaryTextDark
+                            : AppColors.secondaryTextLight,
+                      ),
+                    ),
+                    Text(
+                      t.taskTime, // Display the task time
                       style: AppTextStyles.subtitleSmall.copyWith(
                         fontSize: 11,
                         color: isDark

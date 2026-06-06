@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-// Fonts centralized in AppTextStyles
 import '../../core/theme/app_colours.dart';
 import '../../core/theme/app_text_style.dart';
 import '../../data/models/setting_model.dart';
@@ -13,7 +12,6 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  // Load from API — using placeholder defaults for now
   late SettingsModel _settings;
 
   final TextEditingController _searchController = TextEditingController();
@@ -22,8 +20,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   @override
   void initState() {
     super.initState();
-    // TODO: replace with real API call
-    // e.g. _settings = SettingsModel.fromJson(apiResponse);
     _settings = SettingsModel();
     _searchController.addListener(() {
       setState(() => _searchQuery = _searchController.text.toLowerCase());
@@ -36,9 +32,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.dispose();
   }
 
-  // Called after every toggle/change — hook up PATCH API call here
   void _save() {
-    // TODO: await ApiService.patchSettings(_settings.toJson());
     debugPrint('Settings saved: ${_settings.toJson()}');
   }
 
@@ -133,14 +127,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  //  HEADER
-  // ─────────────────────────────────────────────────────────────────────────
+  // ========================= HEADER =========================
   Widget _buildHeader(bool isDark) {
     final primary = isDark
         ? AppColors.primaryTextDark
         : AppColors.primaryTextLight;
-
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 4),
       child: Row(
@@ -154,9 +145,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  //  TILES — App Preferences
-  // ─────────────────────────────────────────────────────────────────────────
+  // ========================= APP PREFERENCES =========================
   List<SettingTileData> _appPreferenceTiles(bool isDark) => [
     SettingTileData(
       icon: Icons.palette_outlined,
@@ -215,9 +204,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ),
   ];
 
-  // ─────────────────────────────────────────────────────────────────────────
-  //  TILES — Notifications
-  // ─────────────────────────────────────────────────────────────────────────
+  // ========================= NOTIFICATIONS =========================
   List<SettingTileData> _notificationTiles(bool isDark) => [
     SettingTileData(
       icon: Icons.notifications_active_outlined,
@@ -256,12 +243,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       icon: Icons.bedtime_outlined,
       iconColor: const Color(0xFFF59E0B),
       label: 'Quiet Hours',
-      subtitle: 'Silence notifications at night',
-      toggleValue: _settings.quietHoursEnabled,
-      onToggle: (v) => setState(() {
-        _settings.quietHoursEnabled = v;
-        _save();
-      }),
+      subtitle: 'Silence notifications during defined intervals',
+      valueBadge: '${_settings.quietHours.length} intervals',
+      onTap: () => _showQuietHoursManager(),
     ),
     SettingTileData(
       icon: Icons.alarm_rounded,
@@ -299,9 +283,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ),
   ];
 
-  // ─────────────────────────────────────────────────────────────────────────
-  //  TILES — Learning & Tasks
-  // ─────────────────────────────────────────────────────────────────────────
+  // ========================= TASKS SCHEDULING =========================
   List<SettingTileData> _learningTiles(bool isDark) => [
     SettingTileData(
       icon: Icons.flag_outlined,
@@ -368,252 +350,19 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ),
   ];
 
-  String _getLearningScheduleSummary() {
-    final days = _settings.preferredLearningDaysList;
-    if (days.isEmpty) return 'Not set';
-    final dayNames = days.map((d) => _dayAbbreviation(d)).toList();
-    final time = _settings.learningStartTime;
-    final timeStr = time != null ? _formatTimeOfDay(time) : 'No time';
-    return '${dayNames.join(', ')} at $timeStr';
-  }
-
-  String _dayAbbreviation(String day) {
-    switch (day.toLowerCase()) {
-      case 'monday':
-        return 'Mon';
-      case 'tuesday':
-        return 'Tue';
-      case 'wednesday':
-        return 'Wed';
-      case 'thursday':
-        return 'Thu';
-      case 'friday':
-        return 'Fri';
-      case 'saturday':
-        return 'Sat';
-      case 'sunday':
-        return 'Sun';
-      default:
-        return day;
-    }
-  }
-
-  String _formatTimeOfDay(TimeOfDay time) {
-    final hour = time.hourOfPeriod;
-    final minute = time.minute.toString().padLeft(2, '0');
-    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
-    return '$hour:$minute $period';
-  }
-
-  void _showDayTimePicker() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final allDays = [
-      'monday',
-      'tuesday',
-      'wednesday',
-      'thursday',
-      'friday',
-      'saturday',
-      'sunday',
-    ];
-    final dayLabels = {
-      'monday': 'Monday',
-      'tuesday': 'Tuesday',
-      'wednesday': 'Wednesday',
-      'thursday': 'Thursday',
-      'friday': 'Friday',
-      'saturday': 'Saturday',
-      'sunday': 'Sunday',
-    };
-
-    // Local copies to modify during the flow
-    List<String> tempSelectedDays = List.from(
-      _settings.preferredLearningDaysList,
-    );
-    TimeOfDay? tempTime = _settings.learningStartTime;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            return Container(
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.cardDark : Colors.white,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
-              ),
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Drag handle
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: isDark
-                            ? AppColors.borderDark
-                            : AppColors.borderLight,
-                        borderRadius: BorderRadius.circular(2),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  Text(
-                    'Select Learning Days & Time',
-                    style: AppTextStyles.logo.copyWith(fontSize: 18),
-                  ),
-                  const SizedBox(height: 20),
-
-                  // Day multi‑selection (scrollable)
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 300),
-                    child: ListView.separated(
-                      shrinkWrap: true,
-                      itemCount: allDays.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (_, idx) {
-                        final day = allDays[idx];
-                        final isSelected = tempSelectedDays.contains(day);
-                        return CheckboxListTile(
-                          title: Text(dayLabels[day]!),
-                          value: isSelected,
-                          onChanged: (selected) {
-                            setSheetState(() {
-                              if (selected == true) {
-                                tempSelectedDays.add(day);
-                              } else {
-                                tempSelectedDays.remove(day);
-                              }
-                            });
-                          },
-                          activeColor: AppColors.primary,
-                          contentPadding: EdgeInsets.zero,
-                          controlAffinity: ListTileControlAffinity.leading,
-                        );
-                      },
-                    ),
-                  ),
-
-                  const SizedBox(height: 20),
-
-                  // Time picker button (clock style)
-                  ListTile(
-                    onTap: () async {
-                      final picked = await showTimePicker(
-                        context: ctx,
-                        initialTime:
-                            tempTime ?? const TimeOfDay(hour: 17, minute: 0),
-                        builder: (context, child) {
-                          return Theme(
-                            data: Theme.of(context).copyWith(
-                              timePickerTheme: TimePickerThemeData(
-                                backgroundColor: isDark
-                                    ? AppColors.cardDark
-                                    : Colors.white,
-                                hourMinuteColor: MaterialStateColor.resolveWith(
-                                  (states) =>
-                                      AppColors.primary.withOpacity(0.1),
-                                ),
-                                dayPeriodColor: MaterialStateColor.resolveWith(
-                                  (states) => AppColors.primary,
-                                ),
-                              ),
-                            ),
-                            child: child!,
-                          );
-                        },
-                      );
-                      if (picked != null) {
-                        setSheetState(() {
-                          tempTime = picked;
-                        });
-                      }
-                    },
-                    leading: Icon(
-                      Icons.access_time_rounded,
-                      color: AppColors.primary,
-                    ),
-                    title: const Text('Learning start time'),
-                    subtitle: Text(
-                      tempTime != null
-                          ? _formatTimeOfDay(tempTime!)
-                          : 'Not set',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.primary,
-                      ),
-                    ),
-                    trailing: const Icon(Icons.chevron_right_rounded),
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Save button
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => Navigator.pop(ctx),
-                          style: OutlinedButton.styleFrom(
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text('Cancel'),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: () {
-                            setState(() {
-                              _settings.preferredLearningDaysList =
-                                  tempSelectedDays;
-                              _settings.learningStartTime = tempTime;
-                              _save(); // persist via API
-                            });
-                            Navigator.pop(ctx);
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AppColors.primary,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                          ),
-                          child: const Text('Save'),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
+  // ========================= LEARNING SCHEDULING (MULTI-SLOT) =========================
   List<SettingTileData> _scheduleTiles(bool isDark) => [
     SettingTileData(
-      icon: Icons.calendar_today_rounded,
+      icon: Icons.schedule_rounded,
       iconColor: const Color.fromARGB(255, 187, 91, 104),
-      label: 'Preferred Learning Days & Time',
-      valueBadge: _getLearningScheduleSummary(),
-      onTap: () => _showDayTimePicker(),
+      label: 'Learning Schedules',
+      subtitle: 'Define multiple study slots',
+      valueBadge: '${_settings.learningSchedules.length} learning schedule',
+      onTap: () => _showLearningSchedulesManager(),
     ),
   ];
 
-  // ─────────────────────────────────────────────────────────────────────────
-  //  TILES — Privacy & Social
-  // ─────────────────────────────────────────────────────────────────────────
+  // ========================= PRIVACY & SOCIAL =========================
   List<SettingTileData> _privacyTiles(bool isDark) => [
     SettingTileData(
       icon: Icons.people_outline_rounded,
@@ -663,9 +412,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ),
   ];
 
-  // ─────────────────────────────────────────────────────────────────────────
-  //  TILES — About
-  // ─────────────────────────────────────────────────────────────────────────
+  // ========================= ABOUT =========================
   List<SettingTileData> _aboutTiles(bool isDark) => [
     SettingTileData(
       icon: Icons.info_outline_rounded,
@@ -695,14 +442,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
     ),
   ];
 
-  // ─────────────────────────────────────────────────────────────────────────
-  //  DANGER ZONE
-  // ─────────────────────────────────────────────────────────────────────────
+  // ========================= DANGER ZONE =========================
   Widget _buildDangerZone(bool isDark) {
     if (_searchQuery.isNotEmpty) return const SizedBox.shrink();
 
     final bg = isDark ? AppColors.cardDark : Colors.white;
-    // final border = isDark ? AppColors.borderDark : AppColors.borderLight;
     final divider = isDark ? AppColors.borderDark : const Color(0xFFF3F4F6);
 
     return Column(
@@ -753,17 +497,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
           ),
           child: Column(
             children: [
-              // Log out
               InkWell(
                 onTap: () => _showConfirmDialog(
                   title: 'Log Out',
                   message: 'Are you sure you want to log out?',
                   confirmLabel: 'Log Out',
                   confirmColor: const Color(0xFFEF4444),
-                  onConfirm: () {
-                    // TODO: clear auth and navigate to welcome
-                    // context.go('/welcome');
-                  },
+                  onConfirm: () {},
                 ),
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(18),
@@ -803,10 +543,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ),
-
               Divider(height: 1, color: divider, indent: 16, endIndent: 16),
-
-              // Delete account
               InkWell(
                 onTap: () => _showConfirmDialog(
                   title: 'Delete Account',
@@ -814,9 +551,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       'This will permanently delete your account and all data. This cannot be undone.',
                   confirmLabel: 'Delete Forever',
                   confirmColor: const Color(0xFFEF4444),
-                  onConfirm: () {
-                    // TODO: call delete API
-                  },
+                  onConfirm: () {},
                 ),
                 borderRadius: const BorderRadius.vertical(
                   bottom: Radius.circular(18),
@@ -876,11 +611,667 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  //  BOTTOM SHEETS
-  // ─────────────────────────────────────────────────────────────────────────
+  // ========================= HELPER WIDGETS =========================
+  Widget _buildSheetHandle(bool isDark) {
+    return Center(
+      child: Container(
+        margin: const EdgeInsets.only(top: 12),
+        width: 40,
+        height: 4,
+        decoration: BoxDecoration(
+          color: isDark ? AppColors.borderDark : AppColors.borderLight,
+          borderRadius: BorderRadius.circular(2),
+        ),
+      ),
+    );
+  }
 
-  // Options picker (theme, language, priority etc.)
+  Widget _buildSaveCancelButtons(
+    BuildContext ctx, {
+    required VoidCallback onSave,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
+      child: Row(
+        children: [
+          Expanded(
+            child: OutlinedButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: ElevatedButton(
+              onPressed: onSave,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.primary,
+              ),
+              child: const Text('Save'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTimePickerTile({
+    required String label,
+    required TimeOfDay time,
+    required Function(TimeOfDay) onChanged,
+  }) {
+    return InkWell(
+      onTap: () async {
+        final picked = await showTimePicker(
+          context: context,
+          initialTime: time,
+          builder: (context, child) => Theme(
+            data: Theme.of(context).copyWith(
+              timePickerTheme: TimePickerThemeData(
+                backgroundColor: Theme.of(context).brightness == Brightness.dark
+                    ? AppColors.cardDark
+                    : Colors.white,
+              ),
+            ),
+            child: child!,
+          ),
+        );
+        if (picked != null) onChanged(picked);
+      },
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.access_time, size: 18, color: AppColors.primary),
+            const SizedBox(width: 8),
+            Text(label),
+            const Spacer(),
+            Text(
+              _formatTimeOfDay(time),
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDurationPickerTile({
+    required int minutes,
+    required ValueChanged<int> onChanged,
+  }) {
+    return InkWell(
+      onTap: () => _showDurationPickerForSchedule(
+        title: 'Duration',
+        currentValue: minutes,
+        onSelect: onChanged,
+      ),
+      borderRadius: BorderRadius.circular(12),
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
+        decoration: BoxDecoration(
+          border: Border.all(color: Colors.grey.shade300),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.timer_outlined, size: 18, color: AppColors.primary),
+            const SizedBox(width: 8),
+            const Text('Duration'),
+            const Spacer(),
+            Text(
+              '$minutes min',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ========================= QUIET HOURS MANAGER =========================
+  void _showQuietHoursManager() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final List<QuietHourInterval> tempList = List.from(_settings.quietHours);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Container(
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.cardDark : Colors.white,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildSheetHandle(isDark),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Quiet Hours',
+                          style: AppTextStyles.logo.copyWith(fontSize: 18),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline),
+                          onPressed: () =>
+                              _addQuietHour(ctx, setSheetState, tempList),
+                          color: AppColors.primary,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (tempList.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 40),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.bedtime_outlined,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No quiet hours defined',
+                            style: TextStyle(color: Colors.grey.shade500),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Tap + to add an interval',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade400,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(ctx).size.height * 0.6,
+                      ),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: tempList.length,
+                        itemBuilder: (_, idx) => _buildQuietHourTile(
+                          ctx,
+                          idx,
+                          tempList,
+                          setSheetState,
+                        ),
+                      ),
+                    ),
+                  _buildSaveCancelButtons(
+                    ctx,
+                    onSave: () {
+                      setState(() {
+                        _settings.quietHours = tempList;
+                        _save();
+                      });
+                      Navigator.pop(ctx);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _addQuietHour(
+    BuildContext ctx,
+    StateSetter setSheetState,
+    List<QuietHourInterval> list,
+  ) {
+    setSheetState(() {
+      list.add(
+        QuietHourInterval(
+          label: 'New Interval',
+          startTime: const TimeOfDay(hour: 22, minute: 0),
+          endTime: const TimeOfDay(hour: 7, minute: 0),
+        ),
+      );
+    });
+  }
+
+  Widget _buildQuietHourTile(
+    BuildContext ctx,
+    int index,
+    List<QuietHourInterval> list,
+    StateSetter setSheetState,
+  ) {
+    final interval = list[index];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final controller = TextEditingController(text: interval.label);
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      color: isDark ? AppColors.cardElevatedDark : Colors.grey.shade50,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    textDirection: TextDirection.ltr,
+                    textAlign: TextAlign.start,
+                    decoration: const InputDecoration(
+                      hintText: 'Label (e.g., Sleeping)',
+                      hintTextDirection: TextDirection.ltr,
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                    onChanged: (value) {
+                      // Update model directly without rebuilding the tile
+                      interval.label = value;
+                    },
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  onPressed: () {
+                    setSheetState(() {
+                      list.removeAt(index);
+                    });
+                    controller.dispose();
+                  },
+                  color: Colors.red.shade400,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildTimePickerTile(
+                    label: 'From',
+                    time: interval.startTime,
+                    onChanged: (t) =>
+                        setSheetState(() => interval.startTime = t),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildTimePickerTile(
+                    label: 'To',
+                    time: interval.endTime,
+                    onChanged: (t) => setSheetState(() => interval.endTime = t),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ========================= LEARNING SCHEDULES MANAGER =========================
+  void _showLearningSchedulesManager() {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final List<LearningSchedule> tempList = List.from(
+      _settings.learningSchedules,
+    );
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Container(
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.cardDark : Colors.white,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildSheetHandle(isDark),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Learning Schedules',
+                          style: AppTextStyles.logo.copyWith(fontSize: 18),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline),
+                          onPressed: () => _addLearningSchedule(
+                            ctx,
+                            setSheetState,
+                            tempList,
+                          ),
+                          color: AppColors.primary,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (tempList.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 40),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.schedule_rounded,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No learning schedules defined',
+                            style: TextStyle(color: Colors.grey.shade500),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Tap + to add a schedule',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade400,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(ctx).size.height * 0.6,
+                      ),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: tempList.length,
+                        itemBuilder: (_, idx) => _buildLearningScheduleTile(
+                          ctx,
+                          idx,
+                          tempList,
+                          setSheetState,
+                        ),
+                      ),
+                    ),
+                  _buildSaveCancelButtons(
+                    ctx,
+                    onSave: () {
+                      setState(() {
+                        _settings.learningSchedules = tempList;
+                        _save();
+                      });
+                      Navigator.pop(ctx);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _addLearningSchedule(
+    BuildContext ctx,
+    StateSetter setSheetState,
+    List<LearningSchedule> list,
+  ) {
+    setSheetState(() {
+      list.add(
+        LearningSchedule(
+          label: 'New Schedule',
+          days: ['monday', 'wednesday', 'friday'],
+          startTime: const TimeOfDay(hour: 9, minute: 0),
+          durationMinutes: 60,
+        ),
+      );
+    });
+  }
+
+  Widget _buildLearningScheduleTile(
+    BuildContext ctx,
+    int index,
+    List<LearningSchedule> list,
+    StateSetter setSheetState,
+  ) {
+    final schedule = list[index];
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final allDays = [
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+      'sunday',
+    ];
+    final Map<String, String> dayLabels = {
+      'monday': 'Monday',
+      'tuesday': 'Tuesday',
+      'wednesday': 'Wednesday',
+      'thursday': 'Thursday',
+      'friday': 'Friday',
+      'saturday': 'Saturday',
+      'sunday': 'Sunday',
+    };
+
+    final controller = TextEditingController(text: schedule.label);
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      color: isDark ? AppColors.cardElevatedDark : Colors.grey.shade50,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    textDirection: TextDirection.ltr,
+                    textAlign: TextAlign.start,
+                    decoration: const InputDecoration(
+                      hintText: 'Slot label (e.g., Morning Study)',
+                      hintTextDirection: TextDirection.ltr,
+                      border: InputBorder.none,
+                    ),
+                    onChanged: (value) {
+                      schedule.label = value;
+                    },
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline),
+                  onPressed: () {
+                    setSheetState(() {
+                      list.removeAt(index);
+                    });
+                    controller.dispose();
+                  },
+                  color: Colors.red.shade400,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Days',
+              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: allDays.map((day) {
+                final isSelected = schedule.days.contains(day);
+                return FilterChip(
+                  label: Text(dayLabels[day]!),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    setSheetState(() {
+                      if (selected) {
+                        schedule.days.add(day);
+                      } else {
+                        schedule.days.remove(day);
+                      }
+                    });
+                  },
+                  backgroundColor: Colors.transparent,
+                  selectedColor: AppColors.primary.withOpacity(0.2),
+                  checkmarkColor: AppColors.primary,
+                );
+              }).toList(),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildTimePickerTile(
+                    label: 'Start',
+                    time: schedule.startTime,
+                    onChanged: (t) =>
+                        setSheetState(() => schedule.startTime = t),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildDurationPickerTile(
+                    minutes: schedule.durationMinutes,
+                    onChanged: (mins) =>
+                        setSheetState(() => schedule.durationMinutes = mins),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ends at: ${_computeEndTime(schedule.startTime, schedule.durationMinutes)}',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showDurationPickerForSchedule({
+    required String title,
+    required int currentValue,
+    required ValueChanged<int> onSelect,
+  }) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    int tempValue = currentValue;
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setSheetState) => Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: isDark ? AppColors.cardDark : Colors.white,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.remove_circle_outline),
+                    onPressed: () => setSheetState(
+                      () => tempValue = (tempValue - 15).clamp(15, 480),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                      vertical: 10,
+                    ),
+                    child: Text(
+                      '$tempValue min',
+                      style: const TextStyle(fontSize: 20),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.add_circle_outline),
+                    onPressed: () => setSheetState(
+                      () => tempValue = (tempValue + 15).clamp(15, 480),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  onSelect(tempValue);
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Set'),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ========================= UTILITIES =========================
+  String _formatTimeOfDay(TimeOfDay time) {
+    final hour = time.hourOfPeriod;
+    final minute = time.minute.toString().padLeft(2, '0');
+    final period = time.period == DayPeriod.am ? 'AM' : 'PM';
+    return '$hour:$minute $period';
+  }
+
+  String _computeEndTime(TimeOfDay start, int minutes) {
+    final totalMinutes = start.hour * 60 + start.minute + minutes;
+    final endHour = (totalMinutes ~/ 60) % 24;
+    final endMinute = totalMinutes % 60;
+    final period = endHour >= 12 ? 'PM' : 'AM';
+    final displayHour = endHour > 12
+        ? endHour - 12
+        : (endHour == 0 ? 12 : endHour);
+    return '$displayHour:${endMinute.toString().padLeft(2, '0')} $period';
+  }
+
+  // ========================= GENERIC BOTTOM SHEETS =========================
   void _showOptionsSheet({
     required String title,
     required List<String> options,
@@ -912,7 +1303,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Handle
             Center(
               child: Container(
                 width: 40,
@@ -924,7 +1314,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
-
             Text(
               title,
               style: AppTextStyles.logo.copyWith(
@@ -933,7 +1322,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
-
             ...List.generate(options.length, (i) {
               final isSelected = options[i] == selected;
               return InkWell(
@@ -997,7 +1385,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // Duration / number picker
   void _showDurationPicker({
     required String title,
     required int currentValue,
@@ -1044,7 +1431,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ),
             ),
             const SizedBox(height: 16),
-
             Wrap(
               spacing: 10,
               runSpacing: 10,
@@ -1091,7 +1477,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // Confirm dialog (logout / delete)
   void _showConfirmDialog({
     required String title,
     required String message,
@@ -1199,7 +1584,3 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 }
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  SETTING TILE DATA CLASS
-// ═════════════════════════════════════════════════════════════════════════════
