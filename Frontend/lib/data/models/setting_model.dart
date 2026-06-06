@@ -4,7 +4,7 @@ class SettingsModel {
   bool notificationsEnabled;
   bool pushNotificationsEnabled;
   bool emailNotificationsEnabled;
-  bool quietHoursEnabled;
+  List<QuietHourInterval> quietHours = [];
   int defaultReminderMinutes;
   int defaultTopicReminderMinutes;
 
@@ -18,7 +18,7 @@ class SettingsModel {
 
 
   // ── Learning Scheduling ───────────────────────────────────────────────────
-  List<String> preferredLearningDaysList = ['monday', 'wednesday', 'friday'];
+ List<LearningSchedule> learningSchedules = [];
   TimeOfDay? learningStartTime; // e.g. TimeOfDay(hour: 17, minute: 0)
 
   // ── Integrations ──────────────────────────────────────────────────────────
@@ -38,7 +38,7 @@ class SettingsModel {
     this.notificationsEnabled = true,
     this.pushNotificationsEnabled = true,
     this.emailNotificationsEnabled = false,
-    this.quietHoursEnabled = false,
+    this.quietHours = const [],
     this.defaultReminderMinutes = 30,
     this.defaultTopicReminderMinutes = 15,
     this.defaultTaskPriority = 'medium',
@@ -62,7 +62,9 @@ class SettingsModel {
       notificationsEnabled: s['notifications_enabled'] ?? true,
       pushNotificationsEnabled: s['push_notifications_enabled'] ?? true,
       emailNotificationsEnabled: s['email_notifications_enabled'] ?? false,
-      quietHoursEnabled: s['quiet_hours_enabled'] ?? false,
+      quietHours: (s['quiet_hours'] as List<dynamic>?)
+          ?.map((qh) => QuietHourInterval.fromJson(qh))
+          .toList() ?? [],
       defaultReminderMinutes: s['default_reminder_minutes'] ?? 30,
       defaultTopicReminderMinutes: s['default_topic_reminder_minutes'] ?? 15,
       defaultTaskPriority: s['default_task_priority'] ?? 'medium',
@@ -83,7 +85,6 @@ class SettingsModel {
     'notifications_enabled': notificationsEnabled,
     'push_notifications_enabled': pushNotificationsEnabled,
     'email_notifications_enabled': emailNotificationsEnabled,
-    'quiet_hours_enabled': quietHoursEnabled,
     'default_reminder_minutes': defaultReminderMinutes,
     'default_topic_reminder_minutes': defaultTopicReminderMinutes,
     'default_task_priority': defaultTaskPriority,
@@ -99,3 +100,59 @@ class SettingsModel {
     'language': language,
   };
 }
+class QuietHourInterval {
+  String label;
+  TimeOfDay startTime;
+  TimeOfDay endTime;
+
+  QuietHourInterval({
+    required this.label,
+    required this.startTime,
+    required this.endTime,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'label': label,
+    'startHour': startTime.hour,
+    'startMinute': startTime.minute,
+    'endHour': endTime.hour,
+    'endMinute': endTime.minute,
+  };
+
+  factory QuietHourInterval.fromJson(Map<String, dynamic> json) => QuietHourInterval(
+    label: json['label'],
+    startTime: TimeOfDay(hour: json['startHour'], minute: json['startMinute']),
+    endTime: TimeOfDay(hour: json['endHour'], minute: json['endMinute']),
+  );
+}
+
+class LearningSchedule {
+  String label;
+  List<String> days; // 'monday', 'tuesday', ...
+  TimeOfDay startTime;
+  int durationMinutes; // can be > 60
+
+  LearningSchedule({
+    required this.label,
+    required this.days,
+    required this.startTime,
+    required this.durationMinutes,
+  });
+
+  Map<String, dynamic> toJson() => {
+    'label': label,
+    'days': days,
+    'startHour': startTime.hour,
+    'startMinute': startTime.minute,
+    'durationMinutes': durationMinutes,
+  };
+
+  factory LearningSchedule.fromJson(Map<String, dynamic> json) => LearningSchedule(
+    label: json['label'],
+    days: List<String>.from(json['days']),
+    startTime: TimeOfDay(hour: json['startHour'], minute: json['startMinute']),
+    durationMinutes: json['durationMinutes'],
+  );
+}
+
+

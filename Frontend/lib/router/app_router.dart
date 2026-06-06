@@ -13,6 +13,7 @@ import '../presentation/screens/settings_screen.dart';
 import '../presentation/widgets/app_shell.dart';
 import '../presentation/screens/analytics_screen.dart';
 import '../presentation/screens/collaboration_screen.dart';
+import '../presentation/screens/splash_screen.dart';
 
 // ── Route path constants ──────────────────────────────────────────────────────
 class AppRoutes {
@@ -23,6 +24,7 @@ class AppRoutes {
   static const auth = '/auth';
 
   // Main app (inside shell — show nav bar)
+  static const splash = '/splash';
   static const home = '/';
   static const calendar = '/calendar';
   static const roadmap = '/roadmap';
@@ -35,12 +37,16 @@ class AppRoutes {
 }
 
 final appRouter = GoRouter(
-  // Start at welcome for first launch
+  // Start at splash for first launch
   // Change to AppRoutes.home after you wire up auth persistence
-  initialLocation: AppRoutes.welcome,
+  initialLocation: AppRoutes.splash,
 
   routes: [
     // ── Pre-auth screens (standalone, no shell) ───────────────────────────────
+    GoRoute(
+      path: AppRoutes.splash,
+      pageBuilder: (context, state) => MaterialPage(child: SplashScreen()),
+    ),
     GoRoute(
       path: AppRoutes.welcome,
       pageBuilder: (context, state) => MaterialPage(child: WelcomeScreen()),

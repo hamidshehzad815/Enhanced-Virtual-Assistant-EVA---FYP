@@ -3,6 +3,7 @@ import '../../core/theme/app_text_style.dart';
 import '../../core/theme/app_colours.dart';
 import '../widgets/demo_chat_bubble.dart';
 import 'package:go_router/go_router.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class GetStartedScreen extends StatefulWidget {
   const GetStartedScreen({super.key});
@@ -39,6 +40,12 @@ class _GetStartedScreenState extends State<GetStartedScreen>
   void initState() {
     super.initState();
     _startTypewriter();
+    _markOnboardingDone();
+  }
+
+  Future<void> _markOnboardingDone() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('onboarding_completed', true);
   }
 
   void _startTypewriter() async {
