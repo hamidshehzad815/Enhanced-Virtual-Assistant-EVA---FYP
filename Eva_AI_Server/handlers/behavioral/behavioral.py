@@ -500,6 +500,7 @@ async def handle_behavioral(
                 "day_filter": _WEEKDAY_NAMES.get(day_num, "that day"),
                 "best_hour_text": best_range,
                 "conflict_note": conflict_note,
+                "conflict_free": bool(best.get("conflict_free")),
             },
             user_name,
             history,
