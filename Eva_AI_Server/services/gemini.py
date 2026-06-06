@@ -615,11 +615,15 @@ class GeminiService:
             on_time_rate = float(action_context.get("on_time_rate") or 0.0)
         except (TypeError, ValueError):
             on_time_rate = 0.0
-        conflict_note = (
-            "That hour currently looks free."
-            if bool(action_context.get("conflict_free"))
-            else "That hour overlaps your existing schedule, but it is still your strongest historical slot."
-        )
+        existing_conflict_note = str(action_context.get("conflict_note") or "").strip()
+        if existing_conflict_note:
+            conflict_note = existing_conflict_note
+        else:
+            conflict_note = (
+                "That hour currently looks free."
+                if bool(action_context.get("conflict_free"))
+                else "That hour overlaps your existing schedule, but it is still your strongest historical slot."
+            )
 
         topic = str(action_context.get("topic") or "that topic")
         rk = str(action_context.get("roadmap_key") or "").strip()
