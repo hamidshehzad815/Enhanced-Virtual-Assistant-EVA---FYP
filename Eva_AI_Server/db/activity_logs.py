@@ -28,8 +28,25 @@ def _to_object_id(value: Any) -> Any:
         return value
 
 
-async def insert_log(log_data: Dict[str, Any]) -> str:
-    """Insert an activity log and return inserted id as string."""
+async def insert_log(
+    log_data: Dict[str, Any],
+    settings: Optional[Dict[str, Any]] = None,
+    *,
+    force: bool = False,
+) -> Optional[str]:
+    """Insert an activity log and return inserted id as string, or None when tracking is disabled."""
+    if not force:
+        from db.readers import fetch_user_settings
+        from utils.behavioral_settings import is_behavioral_analytics_enabled
+
+        user_ref = log_data.get("user_id")
+        if user_ref is not None:
+            effective_settings = settings
+            if effective_settings is None:
+                effective_settings = await fetch_user_settings(str(user_ref))
+            if not is_behavioral_analytics_enabled(effective_settings):
+                return None
+
     db = get_db()
     payload = dict(log_data)
     action_type = str(payload.get("action_type") or "").strip()
@@ -45,11 +62,25 @@ async def insert_log(log_data: Dict[str, Any]) -> str:
     return str(result.inserted_id)
 
 
-async def increment_reschedule_count(task_id: str) -> bool:
+async def increment_reschedule_count(
+    task_id: str,
+    settings: Optional[Dict[str, Any]] = None,
+    *,
+    user_id: Optional[str] = None,
+) -> bool:
     """
     Increment reschedule_count on the task_created activity log for a task.
     Returns True when a matching log is found (and increment attempted), else False.
     """
+    from db.readers import fetch_user_settings
+    from utils.behavioral_settings import is_behavioral_analytics_enabled
+
+    effective_settings = settings
+    if effective_settings is None and user_id:
+        effective_settings = await fetch_user_settings(str(user_id))
+    if effective_settings is not None and not is_behavioral_analytics_enabled(effective_settings):
+        return False
+
     db = get_db()
     task_object_id = _to_object_id(task_id)
     task_variants = [task_object_id]

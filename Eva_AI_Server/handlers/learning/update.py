@@ -35,11 +35,21 @@ from db.roadmap_topics import (
     get_topics_for_goal,
     skip_topic,
 )
-from db.tasks import get_task_by_id, soft_delete_task, update_task
+from db.tasks import (
+    check_update_overlap,
+    find_overlapping_task_for_user,
+    get_task_by_id,
+    soft_delete_task,
+    update_task,
+)
 from handlers.scheduling.add import _coerce_text, _pick_active_google_integration
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
 from utils.learning_schedules import resolve_learning_slots
+from utils.quiet_hours import (
+    find_quiet_hour_matches_for_datetime,
+    format_quiet_hours_learning_block_message,
+)
 from utils.learning_utils import (
     SUPPORTED_TOPICS,
     build_schedule,
@@ -612,7 +622,8 @@ async def _execute_session_sub_intent(
                     "action_type": "task_completed",
                     "subject": (canonical_topic or (goal_full.get("subject") or "")).strip().lower(),
                     "source": "learning_module",
-                }
+                },
+                settings=settings,
             )
         except Exception as error:
             print(f"[LearningUpdate] insert_log failed: {error}")
@@ -625,7 +636,24 @@ async def _execute_session_sub_intent(
             msg = f'Amazing — you finished "{title}"!'
             if user_name:
                 msg = f"{msg} Great work, {user_name}."
-            return await finish(msg, status="success", sub_intent="complete")
+            return await finish(
+                msg,
+                status="success",
+                sub_intent="complete",
+                notifications=[
+                    {
+                        "user_id": str(user_id),
+                        "sender_id": None,
+                        "type": "goal_progress",
+                        "reference_type": "learning_goal",
+                        "reference_id": str(goal_id),
+                        "title": "Learning goal completed",
+                        "message": msg[:500],
+                        "action_required": False,
+                        "delivery_channel": ["push", "in_app"],
+                    }
+                ],
+            )
         msg = f'Nice — I marked the session complete ({done}/{total} in "{title}").'
         if user_name:
             msg = f"{msg} Keep going, {user_name}."
@@ -728,6 +756,54 @@ async def _execute_session_sub_intent(
         if new_dt is None:
             return await finish(
                 "I couldn't understand that date. Try again like 'next Monday'.",
+                status="error",
+                sub_intent=sub_intent,
+            )
+
+        session_dur = int(
+            current.get("estimated_duration")
+            or current.get("duration")
+            or 90,
+        )
+        quiet_matches = find_quiet_hour_matches_for_datetime(
+            settings,
+            new_dt,
+            session_dur,
+            timezone_name=tz,
+        )
+        if quiet_matches:
+            topic_title = _coerce_text(current.get("title")) or "That session"
+            return await finish(
+                format_quiet_hours_learning_block_message(
+                    quiet_matches,
+                    session_label=f'"{topic_title}"',
+                    user_name=user_name,
+                ),
+                status="error",
+                sub_intent=sub_intent,
+            )
+
+        linked_task_id = str(current.get("task_id") or "").strip()
+        has_task_conflict = False
+        if linked_task_id:
+            has_task_conflict = await check_update_overlap(
+                user_id,
+                linked_task_id,
+                new_dt,
+                session_dur,
+            )
+        else:
+            overlap_task = await find_overlapping_task_for_user(
+                user_id,
+                new_dt,
+                session_dur,
+            )
+            has_task_conflict = bool(overlap_task)
+
+        if has_task_conflict:
+            return await finish(
+                "That time overlaps another task on your calendar. "
+                "Pick a different learning day or free up that time first.",
                 status="error",
                 sub_intent=sub_intent,
             )

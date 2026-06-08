@@ -38,6 +38,7 @@ from utils.learning_schedule_conflicts import (
     find_task_conflicts_from_settings,
     format_learning_schedule_conflict_message,
 )
+from utils.quiet_hours import find_quiet_hour_matches, format_quiet_hour_labels
 from utils.task_value_normalizer import canonicalize_priority
 from utils.timezone_utils import (
     local_datetime_to_utc_naive,
@@ -246,117 +247,6 @@ def _parse_duration_minutes(value: Any, default_minutes: int) -> int:
     if "hour" in raw:
         return max(5, int(amount * 60))
     return max(5, int(amount))
-
-
-def _parse_clock_minutes(value: Any) -> Optional[int]:
-    raw = _coerce_text(value)
-    if not raw:
-        return None
-
-    match = re.match(r"^(\d{1,2}):(\d{2})(?::\d{2})?$", raw)
-    if not match:
-        return None
-
-    hour = int(match.group(1))
-    minute = int(match.group(2))
-    if not (0 <= hour <= 23 and 0 <= minute <= 59):
-        return None
-
-    return hour * 60 + minute
-
-
-def _normalize_quiet_hour_blocks(settings: Dict[str, Any]) -> List[Dict[str, str]]:
-    has_quiet_hours = bool(
-        settings.get("has_quiet_hours")
-        or settings.get("quiet_hours_enabled")
-    )
-    if not has_quiet_hours:
-        return []
-
-    blocks: List[Dict[str, str]] = []
-    for block in settings.get("quiet_hours") or []:
-        if not isinstance(block, dict):
-            continue
-
-        if block.get("enabled") is False:
-            continue
-
-        start = _coerce_text(block.get("start"))
-        end = _coerce_text(block.get("end"))
-        if _parse_clock_minutes(start) is None or _parse_clock_minutes(end) is None:
-            continue
-
-        label = _coerce_text(block.get("label")) or "quiet hours"
-        blocks.append(
-            {
-                "label": label,
-                "start": start,
-                "end": end,
-            }
-        )
-
-    if blocks:
-        return blocks
-
-    legacy_start = _coerce_text(settings.get("quiet_hours_start"))
-    legacy_end = _coerce_text(settings.get("quiet_hours_end"))
-    if (
-        _parse_clock_minutes(legacy_start) is not None
-        and _parse_clock_minutes(legacy_end) is not None
-    ):
-        return [
-            {
-                "label": "quiet hours",
-                "start": legacy_start,
-                "end": legacy_end,
-            }
-        ]
-
-    return []
-
-
-def _find_quiet_hour_matches(
-    settings: Dict[str, Any],
-    time_value: str,
-) -> List[Dict[str, str]]:
-    task_minutes = _parse_clock_minutes(time_value)
-    if task_minutes is None:
-        return []
-
-    matches: List[Dict[str, str]] = []
-    for block in _normalize_quiet_hour_blocks(settings):
-        start_minutes = _parse_clock_minutes(block.get("start"))
-        end_minutes = _parse_clock_minutes(block.get("end"))
-        if start_minutes is None or end_minutes is None:
-            continue
-
-        if start_minutes == end_minutes:
-            in_block = True
-        elif start_minutes < end_minutes:
-            in_block = start_minutes <= task_minutes < end_minutes
-        else:
-            in_block = task_minutes >= start_minutes or task_minutes < end_minutes
-
-        if in_block:
-            matches.append(block)
-
-    return matches
-
-
-def _format_quiet_hour_labels(blocks: List[Dict[str, str]]) -> str:
-    labels = []
-    for block in blocks:
-        label = _coerce_text(block.get("label")).replace("_", " ")
-        if label:
-            labels.append(label)
-
-    if not labels:
-        return "quiet hours"
-    if len(labels) == 1:
-        return labels[0]
-    if len(labels) == 2:
-        return f"{labels[0]} and {labels[1]}"
-    return f"{', '.join(labels[:-1])}, and {labels[-1]}"
 
 
 def _split_collaborators(value: Any) -> List[str]:
@@ -867,11 +757,21 @@ async def handle_scheduling_add(
         suggested_range = ""
         suggested_time = ""
 
-        threshold_global = int(settings.get("analytics_min_tasks_threshold", 20) or 20)
-        threshold_per_day = int(settings.get("analytics_min_tasks_per_day", 5) or 5)
+        from utils.analytics_constants import (
+            ANALYTICS_MIN_TASKS_PER_DAY,
+            ANALYTICS_MIN_TASKS_THRESHOLD,
+        )
+        from utils.behavioral_settings import is_behavioral_analytics_enabled
+
+        threshold_global = ANALYTICS_MIN_TASKS_THRESHOLD
+        threshold_per_day = ANALYTICS_MIN_TASKS_PER_DAY
         task_weekday = _weekday_from_date_text(date_value)
 
-        if task_weekday is not None and user_id:
+        if (
+            task_weekday is not None
+            and user_id
+            and is_behavioral_analytics_enabled(settings)
+        ):
             try:
                 total_completed = int(await get_total_completed(user_id))
                 if total_completed >= threshold_global:
@@ -1085,50 +985,6 @@ async def handle_scheduling_add(
             },
         }
 
-    quiet_hour_matches = []
-    if not allow_quiet_hours_override:
-        quiet_hour_matches = _find_quiet_hour_matches(settings, time_value)
-
-    if quiet_hour_matches:
-        await redis_client.set_context(
-            user_id,
-            _pending_payload(
-                "add",
-                {
-                    **entities,
-                    "task_name": task_name,
-                    "date": date_value,
-                    "time": time_value,
-                },
-                expected_response="yes_no",
-                pending_reason="quiet_hours",
-                quiet_hour_matches=quiet_hour_matches,
-            ),
-        )
-        response_text = gemini_service.generate_reply(
-            {
-                "action": "quiet_hours_conflict",
-                "task_name": task_name,
-                "date": _format_date_display(date_value),
-                "time": _format_time_display(time_value),
-                "quiet_hours": _format_quiet_hour_labels(quiet_hour_matches),
-            },
-            user_name,
-            history,
-        )
-        await _save_turn(session_id, user_message, response_text, input_type, "scheduling_add", entities)
-        return {
-            "status": "pending",
-            "intent": "scheduling_add",
-            "response_text": response_text,
-            "notifications": [],
-            "pending": {
-                "expected_response": "yes_no",
-                "reason": "quiet_hours",
-                "quiet_hour_matches": quiet_hour_matches,
-            },
-        }
-
     # Step 4a: block if the window overlaps a learning schedule slot (reserved in Settings).
     learning_slot_conflicts = find_task_conflicts_from_settings(
         due_datetime,
@@ -1157,6 +1013,54 @@ async def handle_scheduling_add(
             "conflict": {
                 "type": "learning_schedule",
                 "conflicts": learning_slot_conflicts,
+            },
+        }
+
+    quiet_hour_matches = []
+    if not allow_quiet_hours_override:
+        quiet_hour_matches = find_quiet_hour_matches(
+            settings,
+            time_value,
+            duration_minutes,
+        )
+
+    if quiet_hour_matches:
+        await redis_client.set_context(
+            user_id,
+            _pending_payload(
+                "add",
+                {
+                    **entities,
+                    "task_name": task_name,
+                    "date": date_value,
+                    "time": time_value,
+                },
+                expected_response="yes_no",
+                pending_reason="quiet_hours",
+                quiet_hour_matches=quiet_hour_matches,
+            ),
+        )
+        response_text = gemini_service.generate_reply(
+            {
+                "action": "quiet_hours_conflict",
+                "task_name": task_name,
+                "date": _format_date_display(date_value),
+                "time": _format_time_display(time_value),
+                "quiet_hours": format_quiet_hour_labels(quiet_hour_matches),
+            },
+            user_name,
+            history,
+        )
+        await _save_turn(session_id, user_message, response_text, input_type, "scheduling_add", entities)
+        return {
+            "status": "pending",
+            "intent": "scheduling_add",
+            "response_text": response_text,
+            "notifications": [],
+            "pending": {
+                "expected_response": "yes_no",
+                "reason": "quiet_hours",
+                "quiet_hour_matches": quiet_hour_matches,
             },
         }
 
@@ -1362,7 +1266,8 @@ async def handle_scheduling_add(
             "source": "scheduling_module",
             "scheduled_hour": due_datetime.hour,
             "scheduled_day": due_datetime.weekday(),
-        }
+        },
+        settings=settings,
     )
 
     # Step 9: Google Calendar sync (non-blocking).
@@ -1449,7 +1354,7 @@ async def handle_scheduling_add(
                 f"{scheduled_time_display}."
             ),
             "action_required": False,
-            "delivery_channel": ["in_app", "email"],
+            "delivery_channel": ["push", "in_app", "email"],
         }
     ]
 

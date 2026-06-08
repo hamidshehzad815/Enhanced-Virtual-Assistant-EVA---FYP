@@ -31,6 +31,7 @@ from utils.learning_schedule_conflicts import (
     find_task_conflicts_from_settings,
     format_learning_schedule_conflict_message,
 )
+from utils.quiet_hours import find_quiet_hour_matches, format_quiet_hour_labels
 from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
 from utils.timezone_utils import (
     local_datetime_to_utc_naive,
@@ -731,6 +732,7 @@ async def _execute_confirmed_update(
     timezone_name: str,
     pending_action: Dict[str, Any],
     entities: Dict[str, Any],
+    settings: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     task_id = _coerce_text(pending_action.get("task_id") or entities.get("task_id"))
     if not task_id:
@@ -843,13 +845,13 @@ async def _execute_confirmed_update(
     else:
         log_payload["action_type"] = "task_updated"
     try:
-        await insert_log(log_payload)
+        await insert_log(log_payload, settings=settings)
     except Exception as error:
         print(f"[UpdateHandler] Activity log insert failed for task_id={task_id}: {error}")
 
     if "due_datetime" in update_data:
         try:
-            await increment_reschedule_count(task_id)
+            await increment_reschedule_count(task_id, settings=settings, user_id=user_id)
         except Exception as error:
             print(f"[UpdateHandler] Reschedule count increment failed for task_id={task_id}: {error}")
 
@@ -941,6 +943,7 @@ async def handle_scheduling_update(
 
     pending_context = context.get("pending_context") or {}
     pending_action = pending_context.get("pending_action") or {}
+    pending_reason = _coerce_text(pending_context.get("pending_reason"))
     pending_reply_type = _coerce_text(context.get("pending_reply_type"))
     pending_reply_value = _coerce_text(context.get("pending_reply_value")).lower()
 
@@ -957,11 +960,109 @@ async def handle_scheduling_update(
             "notifications": [],
         }
 
+    # Quiet-hours override confirmation (before final update confirm).
+    if (
+        pending_action.get("intent") in {"update", "scheduling_update"}
+        and pending_reply_type == "yes_no"
+        and pending_reason == "quiet_hours"
+    ):
+        if pending_reply_value == "no":
+            await redis_client.delete_context(user_id)
+            await _set_what_to_update_context(
+                user_id=user_id,
+                entities=dict(pending_action.get("entities") or {}),
+                task_id=str(pending_action.get("task_id") or ""),
+                task_preview=pending_action.get("task") or {},
+                remove_keys=["new_time"],
+            )
+            response_text = gemini_service.generate_reply(
+                {
+                    "action": "quiet_hours_alternative_time",
+                    "task_name": _coerce_text(
+                        (pending_action.get("task") or {}).get("title"),
+                    ),
+                    "date": _to_date_text(
+                        _first_value(
+                            (pending_action.get("entities") or {}).get("new_date"),
+                        ),
+                    ),
+                },
+                user_name,
+                history,
+            )
+            await _save_turn(
+                session_id,
+                user_message,
+                response_text,
+                input_type,
+                "scheduling_update",
+                entities,
+            )
+            return {
+                "status": "pending",
+                "intent": "scheduling_update",
+                "response_text": response_text,
+                "notifications": [],
+                "pending": {
+                    "expected_response": "free_text",
+                    "stage": "what_to_update",
+                    "reason": "quiet_hours",
+                },
+            }
+
+        if pending_reply_value == "yes":
+            task_id = str(pending_action.get("task_id") or "")
+            task_preview = pending_action.get("task") or {}
+            final_entities = dict(pending_action.get("entities") or {})
+            updates = dict(pending_action.get("updates") or {})
+            change_summary = str(pending_action.get("change_summary") or "")
+            await redis_client.set_context(
+                user_id,
+                _pending_payload(
+                    entities=final_entities,
+                    stage="confirm",
+                    expected_response="yes_no",
+                    task_id=task_id,
+                    task=task_preview,
+                    updates=updates,
+                    change_summary=change_summary,
+                    allow_quiet_hours_override=True,
+                ),
+            )
+            response_text = _confirm_update_prompt(
+                user_name,
+                _coerce_text(task_preview.get("title")),
+                change_summary,
+                history,
+            )
+            await _save_turn(
+                session_id,
+                user_message,
+                response_text,
+                input_type,
+                "scheduling_update",
+                final_entities,
+            )
+            return {
+                "status": "pending",
+                "intent": "scheduling_update",
+                "response_text": response_text,
+                "notifications": [],
+                "pending": {
+                    "expected_response": "yes_no",
+                    "stage": "confirm",
+                    "task_id": task_id,
+                    "change_summary": change_summary,
+                },
+                "updates": updates,
+            }
+
     # STEP 8+ entry point from context-manager confirmation flow.
     if (
         pending_action.get("intent") in {"update", "scheduling_update"}
         and pending_reply_type == "yes_no"
         and pending_reply_value == "yes"
+        and pending_action.get("stage") == "confirm"
     ):
         return await _execute_confirmed_update(
             user_id=user_id,
@@ -974,6 +1075,7 @@ async def handle_scheduling_update(
             timezone_name=timezone_name,
             pending_action=pending_action,
             entities=entities,
+            settings=settings,
         )
 
     # STEP 1: identifier entity check.
@@ -1564,6 +1666,75 @@ async def handle_scheduling_update(
                 "response_text": response_text,
                 "notifications": [],
                 "pending": {"expected_response": "free_text", "stage": "what_to_update"},
+            }
+
+        allow_quiet_hours_override = bool(
+            pending_context.get("allow_quiet_hours_override")
+            or pending_action.get("allow_quiet_hours_override"),
+        )
+        quiet_hour_matches: List[Dict[str, str]] = []
+        if not allow_quiet_hours_override:
+            quiet_hour_matches = find_quiet_hour_matches(
+                settings,
+                resolved_new_time,
+                overlap_duration,
+            )
+
+        if quiet_hour_matches:
+            update_data_with_due = dict(update_data)
+            update_data_with_due["due_datetime"] = candidate_due_utc
+            change_summary = _build_change_summary(
+                matched_task,
+                update_data_with_due,
+                timezone_name,
+            )
+            final_entities_for_quiet = dict(combined_entities)
+            final_entities_for_quiet.update(normalized_updates_for_entities)
+            final_entities_for_quiet["task_id"] = selected_task_id
+            await redis_client.set_context(
+                user_id,
+                _pending_payload(
+                    entities=final_entities_for_quiet,
+                    stage="quiet_hours",
+                    expected_response="yes_no",
+                    task_id=selected_task_id,
+                    task=selected_task,
+                    updates=_serialize_updates_for_context(update_data_with_due),
+                    change_summary=change_summary,
+                    pending_reason="quiet_hours",
+                    quiet_hour_matches=quiet_hour_matches,
+                ),
+            )
+            response_text = gemini_service.generate_reply(
+                {
+                    "action": "quiet_hours_conflict",
+                    "task_name": _coerce_text(matched_task.get("title")),
+                    "date": resolved_new_date,
+                    "time": resolved_new_time,
+                    "quiet_hours": format_quiet_hour_labels(quiet_hour_matches),
+                },
+                user_name,
+                history,
+            )
+            await _save_turn(
+                session_id,
+                user_message,
+                response_text,
+                input_type,
+                "scheduling_update",
+                combined_entities,
+            )
+            return {
+                "status": "pending",
+                "intent": "scheduling_update",
+                "response_text": response_text,
+                "notifications": [],
+                "pending": {
+                    "expected_response": "yes_no",
+                    "stage": "quiet_hours",
+                    "reason": "quiet_hours",
+                    "quiet_hour_matches": quiet_hour_matches,
+                },
             }
 
         has_conflict = await check_update_overlap(

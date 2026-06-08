@@ -426,6 +426,7 @@ async def _perform_deletions(
     entities: Dict[str, Any],
     integrations: List[Dict[str, Any]],
     owner_name: Optional[str],
+    settings: Optional[Dict[str, Any]] = None,
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     deleted_goals: List[Dict[str, Any]] = []
     notifications: List[Dict[str, Any]] = []
@@ -462,7 +463,8 @@ async def _perform_deletions(
                     "action_type": "goal_deleted",
                     "subject": subject_for_log,
                     "source": "learning_module",
-                }
+                },
+                settings=settings,
             )
         except Exception as error:
             print(f"[LearningDelete] Activity log insert failed for goal_id={goal_id}: {error}")
@@ -485,6 +487,7 @@ async def handle_learning_delete(
     user_id = str(context.get("user_id") or "")
     session_id = str(context.get("session_id") or "")
     user = context.get("user") or {}
+    settings = context.get("settings") or {}
     integrations = context.get("integrations") or []
     history = context.get("history") or []
     user_message = str(context.get("message") or "")
@@ -536,6 +539,7 @@ async def handle_learning_delete(
                 entities=pending_entities,
                 integrations=integrations,
                 owner_name=user_name,
+                settings=settings,
             )
             await redis_client.delete_context(user_id)
 

@@ -133,11 +133,11 @@ const userSettingSchema = new mongoose.Schema(
       min: [5, "Reminder must be at least 5 minutes"],
       max: [1440, "Reminder cannot exceed 24 hours"],
     },
-    default_topic_reminder_minutes: {
+    default_learning_reminder_minutes: {
       type: Number,
       default: 15,
-      min: [5, "Reminder must be at least 5 minutes"],
-      max: [1440, "Reminder cannot exceed 24 hours"],
+      min: [5, "Learning reminder must be at least 5 minutes"],
+      max: [1440, "Learning reminder cannot exceed 24 hours"],
     },
     default_task_priority: {
       type: String,
@@ -153,24 +153,6 @@ const userSettingSchema = new mongoose.Schema(
     behavioral_analytics_enabled: {
       type: Boolean,
       default: true,
-    },
-    analytics_min_tasks_threshold: {
-      type: Number,
-      default: 20,
-      min: [1, "Threshold must be at least 1"],
-      max: [100, "Threshold cannot exceed 100"],
-    },
-    analytics_min_tasks_per_day: {
-      type: Number,
-      default: 5,
-      min: [1, "Per-day threshold must be at least 1"],
-      max: [100, "Per-day threshold cannot exceed 100"],
-    },
-    preferred_learning_duration: {
-      type: Number,
-      default: 90,
-      min: [15, "Learning duration must be at least 15 minutes"],
-      max: [240, "Learning duration cannot exceed 4 hours"],
     },
     // Labeled schedules: [{ id, label, slots: [{ day, time, duration_minutes }] }]
     preferred_learning_schedules: {

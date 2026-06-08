@@ -226,6 +226,29 @@ const buildCollaborationInviteEmail = ({ notification, userDoc }) => {
   };
 };
 
+const isMasterNotificationsEnabled = (userSettings) =>
+  userSettings?.notifications_enabled !== false;
+
+const isPushEnabled = (userSettings) =>
+  isMasterNotificationsEnabled(userSettings)
+  && userSettings?.push_notifications_enabled !== false;
+
+const isEmailEnabled = (userSettings, notificationType) => {
+  if (!isMasterNotificationsEnabled(userSettings)) {
+    return false;
+  }
+
+  const forceEmailForInvite = (
+    notificationType === "collaboration_invite"
+    || notificationType === "learning_collaboration_invite"
+  );
+  if (forceEmailForInvite) {
+    return true;
+  }
+
+  return userSettings?.email_notifications_enabled === true;
+};
+
 const normalizeChannels = (channels) => {
   if (!Array.isArray(channels) || channels.length === 0) {
     return ["in_app"];
@@ -451,16 +474,19 @@ const dispatch_email = async (userId, notification, userDoc) => {
   }
 };
 
+const emptySummary = () => ({
+  requested: 0,
+  inserted: 0,
+  dispatched_push: 0,
+  dispatched_email: 0,
+  skipped: 0,
+  failed: 0,
+  results: [],
+});
+
 const insert_and_dispatch = async (notifications = []) => {
   if (!Array.isArray(notifications) || notifications.length === 0) {
-    return {
-      requested: 0,
-      inserted: 0,
-      dispatched_push: 0,
-      dispatched_email: 0,
-      failed: 0,
-      results: [],
-    };
+    return emptySummary();
   }
 
   const summary = {
@@ -468,6 +494,7 @@ const insert_and_dispatch = async (notifications = []) => {
     inserted: 0,
     dispatched_push: 0,
     dispatched_email: 0,
+    skipped: 0,
     failed: 0,
     results: [],
   };
@@ -475,22 +502,34 @@ const insert_and_dispatch = async (notifications = []) => {
   for (const payload of notifications) {
     try {
       const doc = buildNotificationDoc(payload);
-      const saved = await Notification.create(doc);
-      summary.inserted += 1;
 
       const userSettings = await UserSetting.findOne({
         user_id: doc.user_id,
       }).lean();
+
+      if (!isMasterNotificationsEnabled(userSettings)) {
+        summary.skipped += 1;
+        summary.results.push({
+          user_id: String(doc.user_id),
+          skipped: true,
+          reason: "User notifications disabled",
+        });
+        continue;
+      }
+
+      const saved = await Notification.create(doc);
+      summary.inserted += 1;
+
       const userDoc = await User.findById(doc.user_id)
         .select("email name username push_tokens")
         .lean();
 
       const channels = saved.delivery_channel || ["in_app"];
       const channelResults = [];
+      let anyChannelDispatched = channels.includes("in_app");
 
       if (channels.includes("push")) {
-        const pushEnabled = userSettings?.push_notifications_enabled !== false;
-        if (pushEnabled) {
+        if (isPushEnabled(userSettings)) {
           const result = await dispatch_push(
             doc.user_id,
             saved,
@@ -500,6 +539,7 @@ const insert_and_dispatch = async (notifications = []) => {
           channelResults.push(result);
           if (result.dispatched) {
             summary.dispatched_push += 1;
+            anyChannelDispatched = true;
           }
         } else {
           channelResults.push({
@@ -511,16 +551,12 @@ const insert_and_dispatch = async (notifications = []) => {
       }
 
       if (channels.includes("email")) {
-        const emailEnabled = userSettings?.email_notifications_enabled === true;
-        const forceEmailForInvite = (
-          saved.type === "collaboration_invite"
-          || saved.type === "learning_collaboration_invite"
-        );
-        if (emailEnabled || forceEmailForInvite) {
+        if (isEmailEnabled(userSettings, saved.type)) {
           const result = await dispatch_email(doc.user_id, saved, userDoc);
           channelResults.push(result);
           if (result.dispatched) {
             summary.dispatched_email += 1;
+            anyChannelDispatched = true;
           }
         } else {
           channelResults.push({
@@ -531,8 +567,10 @@ const insert_and_dispatch = async (notifications = []) => {
         }
       }
 
-      saved.sent_at = new Date();
-      await saved.save();
+      if (anyChannelDispatched) {
+        saved.sent_at = new Date();
+        await saved.save();
+      }
 
       summary.results.push({
         notification_id: String(saved._id),
@@ -559,4 +597,7 @@ module.exports = {
   dispatch_push,
   dispatch_email,
   insert_and_dispatch,
+  isMasterNotificationsEnabled,
+  isPushEnabled,
+  isEmailEnabled,
 };

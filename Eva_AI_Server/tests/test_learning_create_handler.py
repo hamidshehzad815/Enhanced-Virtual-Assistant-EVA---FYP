@@ -23,7 +23,7 @@ def _ctx(**kwargs):
                 },
             ],
             "default_reminder_minutes": 30,
-            "preferred_learning_duration": 60,
+            "default_learning_reminder_minutes": 15,
         },
         "history": [],
         "integrations": [],

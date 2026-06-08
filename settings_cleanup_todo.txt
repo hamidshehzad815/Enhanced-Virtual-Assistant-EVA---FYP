@@ -1,0 +1,31 @@
+# Settings cleanup + behavioral analytics — implementation checklist
+
+## 1. Remove preferred_learning_duration
+- [x] Remove field from UserSetting model (API no longer exposes or accepts it)
+- [x] Require duration_minutes on every learning schedule slot (PATCH/POST)
+- [x] Legacy DB reads: fill missing slot duration with hardcoded 90 min (read-only migration)
+- [x] Remove preferred_learning_duration fallbacks in Eva_AI_Server learning_schedules.py + create.py
+- [x] Update learning schedule tests
+
+## 2. Lock analytics thresholds (system-only)
+- [x] Constants: ANALYTICS_MIN_TASKS_THRESHOLD=20, ANALYTICS_MIN_TASKS_PER_DAY=5 (Py + JS)
+- [x] Reject analytics_min_tasks_threshold / analytics_min_tasks_per_day on Settings PATCH
+- [x] Strip internal fields from Settings GET responses
+- [x] Use constants in behavioral.py, add.py, main.py (not user settings)
+- [x] Remove setdefault in readers.py
+
+## 3. behavioral_analytics_enabled — tracking gate
+- [x] Central gate in activity_logs.insert_log (+ increment_reschedule_count)
+- [x] Pass settings from AI handlers where available
+- [x] Gate ActivityLog.create in tasks.controller.js + learningDelete.service.js
+
+## 4. behavioral_analytics_enabled — read / command paths
+- [x] handle_behavioral: early exit with behavioral_analytics_disabled prompt
+- [x] add.py: skip behavioral time suggestions when disabled
+- [x] main.py /analytics: return analytics_disabled when flag is false
+- [x] Gemini templates for behavioral_analytics_disabled
+
+## 5. Tests
+- [x] Update behavioral, add, learning schedule, settings tests
+- [x] Add test: settings PATCH rejects analytics thresholds
+- [x] Add test: behavioral handler when analytics disabled
