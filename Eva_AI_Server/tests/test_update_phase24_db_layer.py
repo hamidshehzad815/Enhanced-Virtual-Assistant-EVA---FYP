@@ -281,7 +281,8 @@ class TestUpdatePhase24DbLayer(unittest.IsolatedAsyncioTestCase):
                     "task_id": self.task1_id,
                     "action_type": "task_updated",
                     "subject": "Physics exam",
-                }
+                },
+                force=True,
             )
 
         self.assertTrue(inserted_id)
@@ -300,7 +301,8 @@ class TestUpdatePhase24DbLayer(unittest.IsolatedAsyncioTestCase):
                     "action_type": "task_created",
                     "subject": "Physics exam",
                     "reschedule_count": 0,
-                }
+                },
+                force=True,
             )
 
             ok_first = await increment_reschedule_count(str(task_id))

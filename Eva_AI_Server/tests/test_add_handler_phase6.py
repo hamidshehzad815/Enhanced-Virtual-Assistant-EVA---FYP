@@ -28,8 +28,7 @@ def _base_context(message: str) -> dict:
             "default_task_duration": 120,
             "default_task_priority": "medium",
             "default_reminder_minutes": 30,
-            "analytics_min_tasks_threshold": 20,
-            "analytics_min_tasks_per_day": 5,
+            "behavioral_analytics_enabled": True,
         },
     }
 
@@ -77,6 +76,34 @@ class TestAddHandlerPhase6(unittest.IsolatedAsyncioTestCase):
         self.assertIn("best window", result["response_text"].lower())
         self.assertIn("6PM-9PM", result["response_text"])
         self.assertTrue(mock_set_context.awaited)
+
+    async def test_time_missing_with_analytics_disabled_skips_suggestion(self):
+        context = _base_context("add physics exam on 2099-01-05")
+        context["settings"]["behavioral_analytics_enabled"] = False
+
+        with patch(
+            "handlers.scheduling.add.get_total_completed",
+            new=AsyncMock(return_value=25),
+        ) as mock_total, patch(
+            "handlers.scheduling.add.redis_client.set_context",
+            new=AsyncMock(return_value=True),
+        ), patch(
+            "handlers.scheduling.add.gemini_service.generate_reply",
+            side_effect=_gemini_stub,
+        ), patch(
+            "handlers.scheduling.add._save_turn",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await handle_scheduling_add(
+                entities={"task_name": "physics exam", "date": "2099-01-05"},
+                context=context,
+            )
+
+        mock_total.assert_not_awaited()
+        self.assertEqual(result["status"], "pending")
+        self.assertEqual(result["pending"]["expected_response"], "free_text")
+        self.assertEqual(result["pending"]["missing_entity"], "time")
+        self.assertEqual(result["response_text"], "ACTION:missing_time")
 
     async def test_time_missing_with_insufficient_data_falls_back_to_manual_time(self):
         context = _base_context("add physics exam on 2099-01-05")

@@ -397,5 +397,28 @@ class ComputeSessionStateTests(unittest.TestCase):
         self.assertEqual(state, "unlocked_future")
 
 
+class ResolveLearningReminderMinutesTests(unittest.TestCase):
+    def test_uses_learning_setting(self):
+        self.assertEqual(
+            lu.resolve_learning_reminder_minutes({"default_learning_reminder_minutes": 20}),
+            20,
+        )
+
+    def test_legacy_topic_setting_fallback(self):
+        self.assertEqual(
+            lu.resolve_learning_reminder_minutes({"default_topic_reminder_minutes": 25}),
+            25,
+        )
+
+    def test_default_when_missing(self):
+        self.assertEqual(lu.resolve_learning_reminder_minutes({}), 15)
+
+    def test_ignores_task_reminder_setting(self):
+        self.assertEqual(
+            lu.resolve_learning_reminder_minutes({"default_reminder_minutes": 30}),
+            15,
+        )
+
+
 if __name__ == "__main__":
     unittest.main()

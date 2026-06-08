@@ -593,7 +593,7 @@ Notes:
   - `quiet_hours_enabled`, `quiet_hours`
   - `push_token`, `remove_push_token`
   - `theme`, `language`
-  - `default_reminder_minutes`, `default_topic_reminder_minutes`
+  - `default_reminder_minutes` (tasks), `default_learning_reminder_minutes` (learning sessions; legacy alias `default_topic_reminder_minutes` accepted on PATCH)
   - `default_task_priority`, `default_task_duration`
   - `behavioral_analytics_enabled`
   - `analytics_min_tasks_threshold`, `analytics_min_tasks_per_day`

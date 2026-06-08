@@ -427,6 +427,7 @@ async def handle_scheduling_delete(
     user_id = str(context.get("user_id") or "")
     session_id = str(context.get("session_id") or "")
     user = context.get("user") or {}
+    settings = context.get("settings") or {}
     integrations = context.get("integrations") or []
     history = context.get("history") or []
     user_message = str(context.get("message") or "")
@@ -517,7 +518,7 @@ async def handle_scheduling_delete(
                         }
                     )
                 try:
-                    await insert_log(log_payload)
+                    await insert_log(log_payload, settings=settings)
                 except Exception as error:
                     print(f"[DeleteHandler] Activity log insert failed for task_id={task_id}: {error}")
 

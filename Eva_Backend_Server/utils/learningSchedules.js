@@ -9,6 +9,8 @@ const MIN_DURATION = 15;
 const MAX_DURATION = 240;
 const MAX_LABEL_LEN = 80;
 const MAX_SCHEDULES = 20;
+/** Read-only fallback for slots saved before duration_minutes was required. */
+const LEGACY_SLOT_DURATION_MINUTES = 90;
 
 const DAY_LABELS = [
   "Monday",
@@ -45,7 +47,12 @@ const normalizeInteger = (value, fieldName) => {
 /**
  * Normalize slots array for a schedule.
  */
-const normalizeScheduleSlots = (value, pathPrefix, defaultDurationMinutes = 90) => {
+const normalizeScheduleSlots = (value, pathPrefix, options = {}) => {
+  const legacyDefaultDuration =
+    options.legacyDefaultDuration !== undefined
+      ? options.legacyDefaultDuration
+      : null;
+
   if (!Array.isArray(value)) {
     throw new Error(`${pathPrefix} must be an array`);
   }
@@ -70,8 +77,13 @@ const normalizeScheduleSlots = (value, pathPrefix, defaultDurationMinutes = 90) 
     seenDays.add(day);
 
     const time = normalizeTime(slot.time, `${base}.time`);
-    let durationMinutes = defaultDurationMinutes;
-    if (slot.duration_minutes !== undefined && slot.duration_minutes !== null) {
+    let durationMinutes;
+    if (slot.duration_minutes === undefined || slot.duration_minutes === null) {
+      if (legacyDefaultDuration === null) {
+        throw new Error(`${base}.duration_minutes is required`);
+      }
+      durationMinutes = legacyDefaultDuration;
+    } else {
       durationMinutes = normalizeInteger(
         slot.duration_minutes,
         `${base}.duration_minutes`,
@@ -92,7 +104,7 @@ const normalizeScheduleSlots = (value, pathPrefix, defaultDurationMinutes = 90) 
  * @param {number} defaultDurationMinutes
  * @returns {{ id: string, label: string, slots: object[] }[]}
  */
-const normalizePreferredLearningSchedules = (value, defaultDurationMinutes = 90) => {
+const normalizePreferredLearningSchedules = (value) => {
   if (value === undefined) {
     return undefined;
   }
@@ -137,11 +149,7 @@ const normalizePreferredLearningSchedules = (value, defaultDurationMinutes = 90)
     }
     seenIds.add(id);
 
-    const slots = normalizeScheduleSlots(
-      entry.slots,
-      `${base}.slots`,
-      defaultDurationMinutes,
-    );
+    const slots = normalizeScheduleSlots(entry.slots, `${base}.slots`);
 
     return { id, label, slots };
   });
@@ -151,7 +159,7 @@ const normalizePreferredLearningSchedules = (value, defaultDurationMinutes = 90)
 };
 
 /** One-time read: old Mongo docs may still have a flat slot array under this key. */
-const migrateFlatSlotsFromDoc = (flatSlots, defaultDurationMinutes = 90) => {
+const migrateFlatSlotsFromDoc = (flatSlots) => {
   if (!Array.isArray(flatSlots) || flatSlots.length === 0) {
     return [];
   }
@@ -162,7 +170,7 @@ const migrateFlatSlotsFromDoc = (flatSlots, defaultDurationMinutes = 90) => {
       duration_minutes: s.duration_minutes,
     })),
     "slots",
-    defaultDurationMinutes,
+    { legacyDefaultDuration: LEGACY_SLOT_DURATION_MINUTES },
   );
   return [
     {
@@ -173,7 +181,7 @@ const migrateFlatSlotsFromDoc = (flatSlots, defaultDurationMinutes = 90) => {
   ];
 };
 
-const toPlainSchedule = (entry, defaultDur) => {
+const toPlainSchedule = (entry) => {
   if (!entry || typeof entry !== "object") {
     return null;
   }
@@ -184,18 +192,16 @@ const toPlainSchedule = (entry, defaultDur) => {
     return null;
   }
   try {
-    const slots = normalizeScheduleSlots(rawSlots, "slots", defaultDur);
+    const slots = normalizeScheduleSlots(rawSlots, "slots", {
+      legacyDefaultDuration: LEGACY_SLOT_DURATION_MINUTES,
+    });
     return { id, label, slots };
   } catch {
     return null;
   }
 };
 
-const normalizeSingleLearningSchedule = (
-  entry,
-  defaultDurationMinutes = 90,
-  options = {},
-) => {
+const normalizeSingleLearningSchedule = (entry, options = {}) => {
   const pathPrefix = options.pathPrefix || "schedule";
   if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
     throw new Error(`${pathPrefix} must be an object with label and slots`);
@@ -217,11 +223,7 @@ const normalizeSingleLearningSchedule = (
     id = crypto.randomUUID();
   }
 
-  const slots = normalizeScheduleSlots(
-    entry.slots,
-    `${pathPrefix}.slots`,
-    defaultDurationMinutes,
-  );
+  const slots = normalizeScheduleSlots(entry.slots, `${pathPrefix}.slots`);
 
   return { id, label, slots };
 };
@@ -339,32 +341,26 @@ const applyLearningSchedules = (settings, schedules) => {
  * Read schedules from settings (supports old flat slot array still in Mongo).
  */
 const getSchedulesFromSettingsDoc = (settings) => {
-  const defaultDur = Number(settings?.preferred_learning_duration) || 90;
   const modern = settings?.preferred_learning_schedules;
   if (Array.isArray(modern) && modern.length > 0) {
-    const out = modern
-      .map((entry) => toPlainSchedule(entry, defaultDur))
-      .filter(Boolean);
+    const out = modern.map((entry) => toPlainSchedule(entry)).filter(Boolean);
     if (out.length > 0) {
       return out;
     }
   }
   const orphanFlat = settings?.preferred_learning_schedule;
   if (Array.isArray(orphanFlat) && orphanFlat.length > 0) {
-    return migrateFlatSlotsFromDoc(orphanFlat, defaultDur);
+    return migrateFlatSlotsFromDoc(orphanFlat);
   }
   return [];
 };
 
 const listSchedulesFromSettings = (settings) => {
-  const defaultDur = Number(settings?.preferred_learning_duration) || 90;
   const stored = Array.isArray(settings?.preferred_learning_schedules)
     ? settings.preferred_learning_schedules
     : [];
   if (stored.length > 0) {
-    return stored
-      .map((entry) => toPlainSchedule(entry, defaultDur))
-      .filter(Boolean);
+    return stored.map((entry) => toPlainSchedule(entry)).filter(Boolean);
   }
   return getSchedulesFromSettingsDoc(settings);
 };

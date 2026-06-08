@@ -429,13 +429,25 @@ async def analytics(
             "data": {},
         }
 
+    from utils.analytics_constants import (
+        ANALYTICS_MIN_TASKS_PER_DAY,
+        ANALYTICS_MIN_TASKS_THRESHOLD,
+    )
+    from utils.behavioral_settings import is_behavioral_analytics_enabled
+
     settings_data = await fetch_user_settings(user_id)
-    global_threshold = int(settings_data.get("analytics_min_tasks_threshold", 20) or 20)
-    per_day_threshold = int(settings_data.get("analytics_min_tasks_per_day", 5) or 5)
-    if global_threshold <= 0:
-        global_threshold = 20
-    if per_day_threshold <= 0:
-        per_day_threshold = 5
+    if not is_behavioral_analytics_enabled(settings_data):
+        return {
+            "status": "analytics_disabled",
+            "message": "Behavioral analytics is disabled. Enable it in Settings to track and view productivity insights.",
+            "data": {
+                "type": analytics_type,
+                "behavioral_analytics_enabled": False,
+            },
+        }
+
+    global_threshold = ANALYTICS_MIN_TASKS_THRESHOLD
+    per_day_threshold = ANALYTICS_MIN_TASKS_PER_DAY
 
     total_completed = await get_total_completed(user_id)
     day_counts = await get_log_count_per_day(user_id)

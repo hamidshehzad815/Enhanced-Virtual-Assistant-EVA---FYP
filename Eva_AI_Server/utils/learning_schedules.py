@@ -11,6 +11,8 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from db.learning_goals import get_active_goals_for_user
 
 DEFAULT_DURATION_MINUTES = 90
+# Read-only fallback for slots saved before duration_minutes was required.
+LEGACY_SLOT_DURATION_MINUTES = DEFAULT_DURATION_MINUTES
 
 _WEEKDAY_NAMES = (
     "Monday",
@@ -26,7 +28,12 @@ _WEEKDAY_NAMES = (
 CHOICE_NEW_SCHEDULE_IN_SETTINGS = "__new_schedule_in_settings__"
 
 
-def _normalize_slot(slot: Any, default_duration: int) -> Optional[Dict[str, Any]]:
+def _normalize_slot(
+    slot: Any,
+    *,
+    require_duration: bool = False,
+    legacy_default_duration: int = LEGACY_SLOT_DURATION_MINUTES,
+) -> Optional[Dict[str, Any]]:
     if not isinstance(slot, dict):
         return None
     try:
@@ -38,10 +45,14 @@ def _normalize_slot(slot: Any, default_duration: int) -> Optional[Dict[str, Any]
     time_raw = str(slot.get("time") or "").strip()
     if not re.match(r"^([01]?[0-9]|2[0-3]):[0-5][0-9]$", time_raw):
         return None
-    dur = default_duration
-    if slot.get("duration_minutes") is not None:
+    raw_dur = slot.get("duration_minutes")
+    if raw_dur is None:
+        if require_duration:
+            return None
+        dur = int(legacy_default_duration)
+    else:
         try:
-            dur = int(slot["duration_minutes"])
+            dur = int(raw_dur)
         except (TypeError, ValueError):
             return None
         if dur < 15 or dur > 240:
@@ -56,7 +67,6 @@ def schedules_from_settings(settings: Dict[str, Any]) -> List[Dict[str, Any]]:
     Each entry: ``{ "id", "label", "slots": [{ "day", "time", "duration_minutes" }, ...] }``.
     Old Mongo docs may still store a flat slot array; that is migrated on read only.
     """
-    default_dur = int(settings.get("preferred_learning_duration") or DEFAULT_DURATION_MINUTES)
     modern = settings.get("preferred_learning_schedules")
     if isinstance(modern, list) and modern:
         out: List[Dict[str, Any]] = []
@@ -70,7 +80,7 @@ def schedules_from_settings(settings: Dict[str, Any]) -> List[Dict[str, Any]]:
                 continue
             slots: List[Dict[str, Any]] = []
             for raw in slots_in:
-                norm = _normalize_slot(raw, default_dur)
+                norm = _normalize_slot(raw)
                 if norm:
                     slots.append(norm)
             if slots:
@@ -81,7 +91,7 @@ def schedules_from_settings(settings: Dict[str, Any]) -> List[Dict[str, Any]]:
     if isinstance(legacy, list) and legacy:
         slots: List[Dict[str, Any]] = []
         for raw in legacy:
-            norm = _normalize_slot(raw, default_dur)
+            norm = _normalize_slot(raw)
             if norm:
                 slots.append(norm)
         if slots:
@@ -289,10 +299,9 @@ def resolve_learning_slots(
         return list(schedules[0].get("slots") or [])
     legacy = settings.get("preferred_learning_schedule")
     if isinstance(legacy, list) and legacy:
-        default_dur = int(settings.get("preferred_learning_duration") or DEFAULT_DURATION_MINUTES)
         out: List[Dict[str, Any]] = []
         for raw in legacy:
-            norm = _normalize_slot(raw, default_dur)
+            norm = _normalize_slot(raw)
             if norm:
                 out.append(norm)
         return out

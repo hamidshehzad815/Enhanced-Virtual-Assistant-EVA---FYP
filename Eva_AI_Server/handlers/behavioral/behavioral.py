@@ -22,6 +22,11 @@ from services.productivity_scorer import (
     get_best_time_for_day,
     get_productive_days,
 )
+from utils.analytics_constants import (
+    ANALYTICS_MIN_TASKS_PER_DAY,
+    ANALYTICS_MIN_TASKS_THRESHOLD,
+)
+from utils.behavioral_settings import is_behavioral_analytics_enabled
 from utils.date_utils import weekday_name_to_number
 
 
@@ -206,12 +211,24 @@ async def handle_behavioral(
     }:
         sub_intent = "productive_hours"
 
-    global_threshold = _safe_int(settings.get("analytics_min_tasks_threshold"), 20)
-    if global_threshold <= 0:
-        global_threshold = 20
-    per_day_threshold = _safe_int(settings.get("analytics_min_tasks_per_day"), 5)
-    if per_day_threshold <= 0:
-        per_day_threshold = 5
+    if not is_behavioral_analytics_enabled(settings):
+        response_text = gemini_service.generate_reply(
+            {"action": "behavioral_analytics_disabled"},
+            user_name,
+            history,
+        )
+        await _save_turn(session_id, message, response_text, input_type, "behavioral", entities)
+        return {
+            "status": "analytics_disabled",
+            "intent": "behavioral",
+            "sub_intent": sub_intent,
+            "response_text": response_text,
+            "analytics": {},
+            "notifications": [],
+        }
+
+    global_threshold = ANALYTICS_MIN_TASKS_THRESHOLD
+    per_day_threshold = ANALYTICS_MIN_TASKS_PER_DAY
 
     total_completed = await get_total_completed(user_id)
     if total_completed < global_threshold:

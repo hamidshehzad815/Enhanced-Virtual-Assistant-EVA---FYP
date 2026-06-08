@@ -19,6 +19,9 @@ jest.mock("../models", () => ({
   ActivityLog: {
     create: jest.fn(),
   },
+  UserSetting: {
+    findOne: jest.fn(),
+  },
 }));
 
 const {
@@ -27,6 +30,7 @@ const {
   Task,
   User,
   ActivityLog,
+  UserSetting,
 } = require("../models");
 const {
   softDeleteLearningGoalById,
@@ -81,6 +85,9 @@ describe("learningDelete.service", () => {
     RoadmapTopic.updateMany.mockResolvedValue({ modifiedCount: 2 });
     Task.updateMany.mockResolvedValue({ modifiedCount: 3 });
     ActivityLog.create.mockResolvedValue({ _id: new mongoose.Types.ObjectId() });
+    UserSetting.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ behavioral_analytics_enabled: true }),
+    });
     User.findById.mockReturnValue({
       select: jest.fn().mockReturnValue({
         lean: jest.fn().mockResolvedValue({ name: "Ali" }),
