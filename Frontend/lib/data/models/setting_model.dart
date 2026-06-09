@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+
 class SettingsModel {
   // ── Notifications ──────────────────────────────────────────────────────────
   bool notificationsEnabled;
@@ -16,23 +17,21 @@ class SettingsModel {
   int preferredLearningDuration; // minutes
   String preferredLearningTime; // 'morning' | 'afternoon' | 'evening' | 'night'
 
-
   // ── Learning Scheduling ───────────────────────────────────────────────────
- List<LearningSchedule> learningSchedules = [];
+  List<LearningSchedule> learningSchedules = [];
   TimeOfDay? learningStartTime; // e.g. TimeOfDay(hour: 17, minute: 0)
 
   // ── Integrations ──────────────────────────────────────────────────────────
   bool googleCalendarSyncEnabled;
 
   // ── Privacy & Social ───────────────────────────────────────────────────────
-  String allowFriendRequests; // 'everyone' | 'friends' | 'nobody'
+  bool allowFriendRequests; 
   bool showLastActive;
-  bool behavioralAnalyticsEnabled;
   int analyticsMinTasksThreshold;
 
   // ── App ────────────────────────────────────────────────────────────────────
   String theme; // 'light' | 'dark' | 'system'
-  String language; // 'en' | 'ar' | etc.
+  bool behavioralAnalyticsEnabled;
 
   SettingsModel({
     this.notificationsEnabled = true,
@@ -47,12 +46,11 @@ class SettingsModel {
     this.preferredLearningTime = 'afternoon',
 
     this.googleCalendarSyncEnabled = false,
-    this.allowFriendRequests = 'everyone',
+    this.allowFriendRequests = true,
     this.showLastActive = true,
-    this.behavioralAnalyticsEnabled = true,
+    this.behavioralAnalyticsEnabled = false,
     this.analyticsMinTasksThreshold = 10,
     this.theme = 'light',
-    this.language = 'en',
   });
 
   // Populate from API JSON map
@@ -62,9 +60,11 @@ class SettingsModel {
       notificationsEnabled: s['notifications_enabled'] ?? true,
       pushNotificationsEnabled: s['push_notifications_enabled'] ?? true,
       emailNotificationsEnabled: s['email_notifications_enabled'] ?? false,
-      quietHours: (s['quiet_hours'] as List<dynamic>?)
-          ?.map((qh) => QuietHourInterval.fromJson(qh))
-          .toList() ?? [],
+      quietHours:
+          (s['quiet_hours'] as List<dynamic>?)
+              ?.map((qh) => QuietHourInterval.fromJson(qh))
+              .toList() ??
+          [],
       defaultReminderMinutes: s['default_reminder_minutes'] ?? 30,
       defaultTopicReminderMinutes: s['default_topic_reminder_minutes'] ?? 15,
       defaultTaskPriority: s['default_task_priority'] ?? 'medium',
@@ -72,12 +72,11 @@ class SettingsModel {
       preferredLearningDuration: s['preferred_learning_duration'] ?? 90,
       preferredLearningTime: s['preferred_learning_time'] ?? 'afternoon',
       googleCalendarSyncEnabled: s['google_calendar_sync_enabled'] ?? false,
-      allowFriendRequests: s['allow_friend_requests'] ?? 'everyone',
+      allowFriendRequests: s['allow_friend_requests'] ?? true,
       showLastActive: s['show_last_active'] ?? true,
-      behavioralAnalyticsEnabled: s['behavioral_analytics_enabled'] ?? true,
+      behavioralAnalyticsEnabled: s['behavioral_analytics_enabled'] ?? false,
       analyticsMinTasksThreshold: s['analytics_min_tasks_threshold'] ?? 10,
       theme: s['theme'] ?? 'light',
-      language: s['language'] ?? 'en',
     );
   }
 
@@ -97,9 +96,10 @@ class SettingsModel {
     'behavioral_analytics_enabled': behavioralAnalyticsEnabled,
     'analytics_min_tasks_threshold': analyticsMinTasksThreshold,
     'theme': theme,
-    'language': language,
+    //  'language': language,
   };
 }
+
 class QuietHourInterval {
   String label;
   TimeOfDay startTime;
@@ -119,11 +119,15 @@ class QuietHourInterval {
     'endMinute': endTime.minute,
   };
 
-  factory QuietHourInterval.fromJson(Map<String, dynamic> json) => QuietHourInterval(
-    label: json['label'],
-    startTime: TimeOfDay(hour: json['startHour'], minute: json['startMinute']),
-    endTime: TimeOfDay(hour: json['endHour'], minute: json['endMinute']),
-  );
+  factory QuietHourInterval.fromJson(Map<String, dynamic> json) =>
+      QuietHourInterval(
+        label: json['label'],
+        startTime: TimeOfDay(
+          hour: json['startHour'],
+          minute: json['startMinute'],
+        ),
+        endTime: TimeOfDay(hour: json['endHour'], minute: json['endMinute']),
+      );
 }
 
 class LearningSchedule {
@@ -147,12 +151,14 @@ class LearningSchedule {
     'durationMinutes': durationMinutes,
   };
 
-  factory LearningSchedule.fromJson(Map<String, dynamic> json) => LearningSchedule(
-    label: json['label'],
-    days: List<String>.from(json['days']),
-    startTime: TimeOfDay(hour: json['startHour'], minute: json['startMinute']),
-    durationMinutes: json['durationMinutes'],
-  );
+  factory LearningSchedule.fromJson(Map<String, dynamic> json) =>
+      LearningSchedule(
+        label: json['label'],
+        days: List<String>.from(json['days']),
+        startTime: TimeOfDay(
+          hour: json['startHour'],
+          minute: json['startMinute'],
+        ),
+        durationMinutes: json['durationMinutes'],
+      );
 }
-
-

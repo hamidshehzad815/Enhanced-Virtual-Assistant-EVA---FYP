@@ -170,27 +170,27 @@ class _SettingsScreenState extends State<SettingsScreen> {
         }),
       ),
     ),
-    SettingTileData(
-      icon: Icons.language_rounded,
-      iconColor: const Color(0xFF3B82F6),
-      label: 'Language',
-      valueBadge: _settings.language.toUpperCase(),
-      onTap: () => _showOptionsSheet(
-        title: 'Language',
-        options: const ['en', 'ar', 'ur'],
-        selected: _settings.language,
-        labels: const ['English', 'العربية', 'اردو'],
-        icons: const [
-          Icons.language_rounded,
-          Icons.language_rounded,
-          Icons.language_rounded,
-        ],
-        onSelect: (v) => setState(() {
-          _settings.language = v;
-          _save();
-        }),
-      ),
-    ),
+    // SettingTileData(
+    //   icon: Icons.language_rounded,
+    //   iconColor: const Color(0xFF3B82F6),
+    //   label: 'Language',
+    //   valueBadge: _settings.language.toUpperCase(),
+    //   onTap: () => _showOptionsSheet(
+    //     title: 'Language',
+    //     options: const ['en', 'ar', 'ur'],
+    //     selected: _settings.language,
+    //     labels: const ['English', 'العربية', 'اردو'],
+    //     icons: const [
+    //       Icons.language_rounded,
+    //       Icons.language_rounded,
+    //       Icons.language_rounded,
+    //     ],
+    //     onSelect: (v) => setState(() {
+    //       _settings.language = v;
+    //       _save();
+    //     }),
+    //   ),
+    // ),
     SettingTileData(
       icon: Icons.sync_rounded,
       iconColor: const Color(0xFF3B82F6),
@@ -199,6 +199,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       toggleValue: _settings.googleCalendarSyncEnabled,
       onToggle: (v) => setState(() {
         _settings.googleCalendarSyncEnabled = v;
+        _save();
+      }),
+    ),
+    SettingTileData(
+      icon: Icons.show_chart_outlined,
+      iconColor: const Color(0xFF3B82F6),
+      label: 'Allow Behavioural Insights',
+      subtitle: 'Let Eva analyze your learning patterns',
+      toggleValue: _settings.behavioralAnalyticsEnabled,
+      onToggle: (v) => setState(() {
+        _settings.behavioralAnalyticsEnabled = v;
         _save();
       }),
     ),
@@ -247,9 +258,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       valueBadge: '${_settings.quietHours.length} intervals',
       onTap: () => _showQuietHoursManager(),
     ),
+  ];
+
+  // ========================= TASKS SCHEDULING =========================
+  List<SettingTileData> _learningTiles(bool isDark) => [
     SettingTileData(
       icon: Icons.alarm_rounded,
-      iconColor: const Color(0xFFF59E0B),
+      iconColor: const Color(0xFF8B5CF6),
       label: 'Default Reminder',
       subtitle: 'Before tasks & exams',
       valueBadge: '${_settings.defaultReminderMinutes} min',
@@ -260,50 +275,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         unit: 'min',
         onSelect: (v) => setState(() {
           _settings.defaultReminderMinutes = v;
-          _save();
-        }),
-      ),
-    ),
-    SettingTileData(
-      icon: Icons.menu_book_rounded,
-      iconColor: const Color(0xFFF59E0B),
-      label: 'Learning Reminder Time',
-      subtitle: 'Before study sessions',
-      valueBadge: '${_settings.defaultTopicReminderMinutes} min',
-      onTap: () => _showDurationPicker(
-        title: 'Reminder Time',
-        currentValue: _settings.defaultTopicReminderMinutes,
-        options: const [5, 10, 15, 30, 60],
-        unit: 'min',
-        onSelect: (v) => setState(() {
-          _settings.defaultTopicReminderMinutes = v;
-          _save();
-        }),
-      ),
-    ),
-  ];
-
-  // ========================= TASKS SCHEDULING =========================
-  List<SettingTileData> _learningTiles(bool isDark) => [
-    SettingTileData(
-      icon: Icons.flag_outlined,
-      iconColor: const Color(0xFF8B5CF6),
-      label: 'Default Task Priority',
-      valueBadge:
-          _settings.defaultTaskPriority[0].toUpperCase() +
-          _settings.defaultTaskPriority.substring(1),
-      onTap: () => _showOptionsSheet(
-        title: 'Default Priority',
-        options: const ['low', 'medium', 'high'],
-        selected: _settings.defaultTaskPriority,
-        labels: const ['Low', 'Medium', 'High'],
-        icons: const [
-          Icons.keyboard_arrow_down_rounded,
-          Icons.remove_rounded,
-          Icons.keyboard_arrow_up_rounded,
-        ],
-        onSelect: (v) => setState(() {
-          _settings.defaultTaskPriority = v;
           _save();
         }),
       ),
@@ -360,44 +331,48 @@ class _SettingsScreenState extends State<SettingsScreen> {
       valueBadge: '${_settings.learningSchedules.length} learning schedule',
       onTap: () => _showLearningSchedulesManager(),
     ),
+    SettingTileData(
+      icon: Icons.menu_book_rounded,
+      iconColor: const Color.fromARGB(255, 187, 91, 104),
+      label: 'Learning Reminder Time',
+      subtitle: 'Before study sessions',
+      valueBadge: '${_settings.defaultTopicReminderMinutes} min',
+      onTap: () => _showDurationPicker(
+        title: 'Reminder Time',
+        currentValue: _settings.defaultTopicReminderMinutes,
+        options: const [5, 10, 15, 30, 60],
+        unit: 'min',
+        onSelect: (v) => setState(() {
+          _settings.defaultTopicReminderMinutes = v;
+          _save();
+        }),
+      ),
+    ),
   ];
 
   // ========================= PRIVACY & SOCIAL =========================
   List<SettingTileData> _privacyTiles(bool isDark) => [
     SettingTileData(
-      icon: Icons.people_outline_rounded,
+      icon: Icons.group,
       iconColor: const Color(0xFF22C55E),
-      label: 'Allow Friend Requests',
-      valueBadge:
-          _settings.allowFriendRequests[0].toUpperCase() +
-          _settings.allowFriendRequests.substring(1),
-      onTap: () => _showOptionsSheet(
-        title: 'Who Can Send Friend Requests',
-        options: const ['everyone', 'friends', 'nobody'],
-        selected: _settings.allowFriendRequests,
-        labels: const ['Everyone', 'Friends of friends', 'Nobody'],
-        icons: const [
-          Icons.public_rounded,
-          Icons.people_rounded,
-          Icons.lock_rounded,
-        ],
-        onSelect: (v) => setState(() {
-          _settings.allowFriendRequests = v;
-          _save();
-        }),
-      ),
-    ),
-    SettingTileData(
-      icon: Icons.access_time_rounded,
-      iconColor: const Color(0xFF22C55E),
-      label: 'Show Last Active',
-      subtitle: 'Let others see when you were online',
-      toggleValue: _settings.showLastActive,
+      label: 'Allow Friends Request',
+      toggleValue: _settings.allowFriendRequests,
       onToggle: (v) => setState(() {
-        _settings.showLastActive = v;
+        _settings.allowFriendRequests = v;
         _save();
       }),
     ),
+    // SettingTileData(
+    //   icon: Icons.access_time_rounded,
+    //   iconColor: const Color(0xFF22C55E),
+    //   label: 'Show Last Active',
+    //   subtitle: 'Let others see when you were online',
+    //   toggleValue: _settings.showLastActive,
+    //   onToggle: (v) => setState(() {
+    //     _settings.showLastActive = v;
+    //     _save();
+    //   }),
+    // ),
     SettingTileData(
       icon: Icons.shield_outlined,
       iconColor: const Color(0xFF22C55E),
