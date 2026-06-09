@@ -29,6 +29,7 @@ from db.tasks import (
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
+from utils.google_calendar_sync import resolve_google_calendar_sync
 from services.productivity_scorer import get_scheduling_suggestion
 from utils.collaborator_calendar import (
     find_user_calendar_conflicts,
@@ -423,19 +424,6 @@ def _pending_payload(intent: str, entities: Dict[str, Any], **extra: Any) -> Dic
     }
     payload.update(extra)
     return payload
-
-
-def _pick_active_google_integration(integrations: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    for integration in integrations:
-        if not isinstance(integration, dict):
-            continue
-
-        provider = str(integration.get("provider") or "").lower()
-        is_active = integration.get("is_active") is True
-        if provider == "google_calendar" and is_active:
-            return integration
-
-    return None
 
 
 async def handle_scheduling_add(
@@ -1272,7 +1260,7 @@ async def handle_scheduling_add(
 
     # Step 9: Google Calendar sync (non-blocking).
     calendar_synced = False
-    google_integration = _pick_active_google_integration(integrations)
+    google_integration = await resolve_google_calendar_sync(user_id, integrations, settings)
     if google_integration:
         access_token = _coerce_text(google_integration.get("access_token"))
         calendar_id = _coerce_text(google_integration.get("calendar_id")) or "primary"

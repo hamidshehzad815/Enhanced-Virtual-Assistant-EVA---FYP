@@ -404,6 +404,7 @@ class LearningDeleteHandlerTests(unittest.IsolatedAsyncioTestCase):
 
         context = _base_context(
             message="yes",
+            settings={"google_calendar_sync_enabled": True},
             integrations=[
                 {
                     "provider": "google_calendar",

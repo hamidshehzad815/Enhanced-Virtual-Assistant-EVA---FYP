@@ -86,6 +86,10 @@ class Settings:
         True,
     )
 
+    # Google Calendar OAuth (token refresh for calendar sync)
+    GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
+    GOOGLE_CLIENT_SECRET: str = os.getenv("GOOGLE_CLIENT_SECRET", "")
+
     # YouTube API
     YOUTUBE_API_KEY: str = os.getenv("YOUTUBE_API_KEY", "")
     RESOURCE_FETCH_DELAY_SECONDS: float = float(

@@ -34,7 +34,8 @@ COLLECTION OWNERSHIP
   username                    String, unique, req     Collaboration NER matching
   email                       String, unique, req     Login + friend requests
   password_hash               String, select:false    Null for OAuth-only users
-  profile_picture             String                  URL, default null
+  profile_picture             String                  Cloudinary URL, default null
+  profile_picture_public_id   String                  Internal Cloudinary id (not in API)
   bio                         String, max 300         Optional bio
   university                  String                  Academic context
   department                  String                  Academic context
@@ -293,7 +294,6 @@ COLLECTION OWNERSHIP
   setting_id                      ObjectId, PK    Unique identifier
   user_id                         ObjectId, FK, unique  One settings doc per user
   theme                           Enum            "light" / "dark", default "light"
-  language                        String          Default "en"
   notifications_enabled           Boolean         Master notification switch, default true
   push_notifications_enabled      Boolean         Default true
   email_notifications_enabled     Boolean         Default false
@@ -314,8 +314,7 @@ COLLECTION OWNERSHIP
   preferred_learning_schedule     Array           Learning slots [{ day: 0-6, time: "HH:mm" }],
                                                   0=Monday … 6=Sunday, default [] until user sets
   google_calendar_sync_enabled    Boolean         Default false until connected
-  allow_friend_requests           Enum            "everyone" / "nobody", default "everyone"
-  show_last_active                Boolean         Default true
+  allow_friend_requests           Boolean         Default true
   created_at                      Date            Auto timestamp
   updated_at                      Date            Auto timestamp
 
@@ -425,4 +424,4 @@ ENUM REFERENCE
   Integration provider : google_calendar
   Theme                : light / dark
   Learning time        : morning / afternoon / evening
-  Friend requests      : everyone / nobody
+  Friend requests      : true / false (allow friend requests)

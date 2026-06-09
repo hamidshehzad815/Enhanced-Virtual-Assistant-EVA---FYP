@@ -103,10 +103,6 @@ const userSettingSchema = new mongoose.Schema(
       enum: ["light", "dark"],
       default: "light",
     },
-    language: {
-      type: String,
-      default: "en",
-    },
     notifications_enabled: {
       type: Boolean,
       default: true,
@@ -170,11 +166,6 @@ const userSettingSchema = new mongoose.Schema(
       default: false,
     },
     allow_friend_requests: {
-      type: String,
-      enum: ["everyone", "nobody"],
-      default: "everyone",
-    },
-    show_last_active: {
       type: Boolean,
       default: true,
     },

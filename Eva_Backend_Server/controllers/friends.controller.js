@@ -13,7 +13,7 @@ const {
 } = require("../middleware/errorHandler");
 const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
 const { insert_and_dispatch } = require("../services/notification.service");
-const { isAcceptingFriendRequests } = require("../utils/friendSettings");
+const { isAcceptingFriendRequests, closedToFriendRequestsFilter } = require("../utils/friendSettings");
 
 const buildApiData = (req, payload) => {
   const timezone = (req.user && req.user.timezone) || "UTC";
@@ -463,7 +463,7 @@ const searchUsers = async (req, res, next) => {
     if (candidateIds.length > 0) {
       const closedSettings = await UserSetting.find({
         user_id: { $in: candidateIds },
-        allow_friend_requests: "nobody",
+        ...closedToFriendRequestsFilter(),
       })
         .select("user_id")
         .lean();

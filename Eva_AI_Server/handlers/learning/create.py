@@ -24,9 +24,9 @@ from handlers.scheduling.add import (
     _find_and_validate_collaborators,
     _format_date_display,
     _format_time_display,
-    _pick_active_google_integration,
     _split_collaborators,
 )
+from utils.google_calendar_sync import resolve_google_calendar_sync
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
@@ -541,7 +541,7 @@ async def handle_learning_create(
         )
     topic_ids = await insert_topics_bulk(bulk_topics)
 
-    google_integration = _pick_active_google_integration(integrations)
+    google_integration = await resolve_google_calendar_sync(user_id, integrations, settings)
     access_token = _coerce_text((google_integration or {}).get("access_token"))
     calendar_id = _coerce_text((google_integration or {}).get("calendar_id")) or "primary"
     calendar_any = False

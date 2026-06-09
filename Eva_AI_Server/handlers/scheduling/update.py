@@ -27,6 +27,7 @@ from db.tasks import (
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
+from utils.google_calendar_sync import resolve_google_calendar_sync
 from utils.learning_schedule_conflicts import (
     find_task_conflicts_from_settings,
     format_learning_schedule_conflict_message,
@@ -684,17 +685,6 @@ def _remove_noop_updates(
     return cleaned
 
 
-def _pick_active_google_integration(integrations: List[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    for integration in integrations:
-        if not isinstance(integration, dict):
-            continue
-        provider = _coerce_text(integration.get("provider")).lower()
-        is_active = integration.get("is_active") is True
-        if provider == "google_calendar" and is_active:
-            return integration
-    return None
-
-
 async def _set_what_to_update_context(
     user_id: str,
     entities: Dict[str, Any],
@@ -862,7 +852,7 @@ async def _execute_confirmed_update(
         for key in ("due_datetime", "title", "duration")
     )
     if old_event_id and calendar_change_requested:
-        integration = _pick_active_google_integration(integrations)
+        integration = await resolve_google_calendar_sync(user_id, integrations, settings)
         access_token = _coerce_text((integration or {}).get("access_token"))
         calendar_id = _coerce_text((integration or {}).get("calendar_id")) or "primary"
         if access_token:
