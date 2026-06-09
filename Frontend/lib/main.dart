@@ -9,6 +9,7 @@ import 'package:provider/provider.dart';
 import 'presentation/providers/auth_viewmodel.dart';
 import 'presentation/providers/calendar_viewmodel.dart';
 import 'presentation/providers/settings_viewmodel.dart';
+import 'presentation/providers/theme_provider.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -22,7 +23,7 @@ void main() {
         ChangeNotifierProvider(create: (_) => CalendarViewModel()),
         ChangeNotifierProvider(create: (_) => AuthViewModel()),
         ChangeNotifierProvider(create: (_) => SettingsViewModel()),
-        // ... other ViewModels
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
       child: const MyApp(),
     ),
@@ -39,7 +40,7 @@ class MyApp extends StatelessWidget {
       title: 'EVA',
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.system,
+      themeMode: context.watch<ThemeProvider>().themeMode,
       routerConfig: appRouter,
       builder: (context, child) {
         return GradientBackground(child: child ?? const SizedBox());
