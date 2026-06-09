@@ -5,6 +5,7 @@ class SettingsModel {
   bool notificationsEnabled;
   bool pushNotificationsEnabled;
   bool emailNotificationsEnabled;
+  bool quietHoursEnabled;
   List<QuietHourInterval> quietHours = [];
   int defaultReminderMinutes;
   int defaultTopicReminderMinutes;
@@ -15,7 +16,6 @@ class SettingsModel {
 
   // ── Task Scheduling ───────────────────────────────────────────────────
   int preferredLearningDuration; // minutes
-  String preferredLearningTime; // 'morning' | 'afternoon' | 'evening' | 'night'
 
   // ── Learning Scheduling ───────────────────────────────────────────────────
   List<LearningSchedule> learningSchedules = [];
@@ -25,7 +25,7 @@ class SettingsModel {
   bool googleCalendarSyncEnabled;
 
   // ── Privacy & Social ───────────────────────────────────────────────────────
-  bool allowFriendRequests; 
+  bool allowFriendRequests;
   bool showLastActive;
   int analyticsMinTasksThreshold;
 
@@ -37,13 +37,13 @@ class SettingsModel {
     this.notificationsEnabled = true,
     this.pushNotificationsEnabled = true,
     this.emailNotificationsEnabled = false,
+    this.quietHoursEnabled = false,
     this.quietHours = const [],
     this.defaultReminderMinutes = 30,
     this.defaultTopicReminderMinutes = 15,
     this.defaultTaskPriority = 'medium',
     this.defaultTaskDuration = 120,
     this.preferredLearningDuration = 90,
-    this.preferredLearningTime = 'afternoon',
 
     this.googleCalendarSyncEnabled = false,
     this.allowFriendRequests = true,
@@ -70,10 +70,10 @@ class SettingsModel {
       defaultTaskPriority: s['default_task_priority'] ?? 'medium',
       defaultTaskDuration: s['default_task_duration'] ?? 120,
       preferredLearningDuration: s['preferred_learning_duration'] ?? 90,
-      preferredLearningTime: s['preferred_learning_time'] ?? 'afternoon',
       googleCalendarSyncEnabled: s['google_calendar_sync_enabled'] ?? false,
       allowFriendRequests: s['allow_friend_requests'] ?? true,
       showLastActive: s['show_last_active'] ?? true,
+      quietHoursEnabled: s['quiet_hours_enabled'] ?? false,
       behavioralAnalyticsEnabled: s['behavioral_analytics_enabled'] ?? false,
       analyticsMinTasksThreshold: s['analytics_min_tasks_threshold'] ?? 10,
       theme: s['theme'] ?? 'light',
@@ -89,10 +89,11 @@ class SettingsModel {
     'default_task_priority': defaultTaskPriority,
     'default_task_duration': defaultTaskDuration,
     'preferred_learning_duration': preferredLearningDuration,
-    'preferred_learning_time': preferredLearningTime,
     'google_calendar_sync_enabled': googleCalendarSyncEnabled,
     'allow_friend_requests': allowFriendRequests,
     'show_last_active': showLastActive,
+    'quiet_hours_enabled': quietHoursEnabled,
+    'quiet_hours': quietHours.map((qh) => qh.toJson()).toList(),
     'behavioral_analytics_enabled': behavioralAnalyticsEnabled,
     'analytics_min_tasks_threshold': analyticsMinTasksThreshold,
     'theme': theme,

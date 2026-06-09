@@ -3,6 +3,8 @@ import '../../core/theme/app_colours.dart';
 import '../../core/theme/app_text_style.dart';
 import '../../data/models/setting_model.dart';
 import '../widgets/settings_widgets.dart';
+import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -164,33 +166,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
           Icons.dark_mode_rounded,
           Icons.phone_android_rounded,
         ],
-        onSelect: (v) => setState(() {
-          _settings.theme = v;
+        onSelect: (v) {
+          setState(() {
+            _settings.theme = v;
+          });
+
           _save();
-        }),
+
+          Provider.of<ThemeProvider>(context, listen: false).setTheme(v);
+        },
       ),
     ),
-    // SettingTileData(
-    //   icon: Icons.language_rounded,
-    //   iconColor: const Color(0xFF3B82F6),
-    //   label: 'Language',
-    //   valueBadge: _settings.language.toUpperCase(),
-    //   onTap: () => _showOptionsSheet(
-    //     title: 'Language',
-    //     options: const ['en', 'ar', 'ur'],
-    //     selected: _settings.language,
-    //     labels: const ['English', 'العربية', 'اردو'],
-    //     icons: const [
-    //       Icons.language_rounded,
-    //       Icons.language_rounded,
-    //       Icons.language_rounded,
-    //     ],
-    //     onSelect: (v) => setState(() {
-    //       _settings.language = v;
-    //       _save();
-    //     }),
-    //   ),
-    // ),
     SettingTileData(
       icon: Icons.sync_rounded,
       iconColor: const Color(0xFF3B82F6),
@@ -216,49 +202,71 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ];
 
   // ========================= NOTIFICATIONS =========================
-  List<SettingTileData> _notificationTiles(bool isDark) => [
-    SettingTileData(
-      icon: Icons.notifications_active_outlined,
-      iconColor: const Color(0xFFF59E0B),
-      label: 'All Notifications',
-      subtitle: 'Master toggle for all alerts',
-      toggleValue: _settings.notificationsEnabled,
-      onToggle: (v) => setState(() {
-        _settings.notificationsEnabled = v;
-        _save();
-      }),
-    ),
-    SettingTileData(
-      icon: Icons.phone_android_rounded,
-      iconColor: const Color(0xFFF59E0B),
-      label: 'Push Notifications',
-      subtitle: 'Alerts on your device',
-      toggleValue: _settings.pushNotificationsEnabled,
-      onToggle: (v) => setState(() {
-        _settings.pushNotificationsEnabled = v;
-        _save();
-      }),
-    ),
-    SettingTileData(
-      icon: Icons.email_outlined,
-      iconColor: const Color(0xFFF59E0B),
-      label: 'Email Notifications',
-      subtitle: 'Summaries sent to your email',
-      toggleValue: _settings.emailNotificationsEnabled,
-      onToggle: (v) => setState(() {
-        _settings.emailNotificationsEnabled = v;
-        _save();
-      }),
-    ),
-    SettingTileData(
-      icon: Icons.bedtime_outlined,
-      iconColor: const Color(0xFFF59E0B),
-      label: 'Quiet Hours',
-      subtitle: 'Silence notifications during defined intervals',
-      valueBadge: '${_settings.quietHours.length} intervals',
-      onTap: () => _showQuietHoursManager(),
-    ),
-  ];
+  List<SettingTileData> _notificationTiles(bool isDark) {
+    final tiles = [
+      SettingTileData(
+        icon: Icons.notifications_active_outlined,
+        iconColor: const Color(0xFFF59E0B),
+        label: 'All Notifications',
+        subtitle: 'Master toggle for all alerts',
+        toggleValue: _settings.notificationsEnabled,
+        onToggle: (v) => setState(() {
+          _settings.notificationsEnabled = v;
+          _save();
+        }),
+      ),
+      SettingTileData(
+        icon: Icons.phone_android_rounded,
+        iconColor: const Color(0xFFF59E0B),
+        label: 'Push Notifications',
+        subtitle: 'Alerts on your device',
+        toggleValue: _settings.pushNotificationsEnabled,
+        onToggle: (v) => setState(() {
+          _settings.pushNotificationsEnabled = v;
+          _save();
+        }),
+      ),
+      SettingTileData(
+        icon: Icons.email_outlined,
+        iconColor: const Color(0xFFF59E0B),
+        label: 'Email Notifications',
+        subtitle: 'Summaries sent to your email',
+        toggleValue: _settings.emailNotificationsEnabled,
+        onToggle: (v) => setState(() {
+          _settings.emailNotificationsEnabled = v;
+          _save();
+        }),
+      ),
+      // Master toggle for Quiet Hours
+      SettingTileData(
+        icon: Icons.bedtime_outlined,
+        iconColor: const Color(0xFFF59E0B),
+        label: 'Quiet Hours',
+        subtitle: 'Silence notifications during defined intervals',
+        toggleValue: _settings.quietHoursEnabled,
+        onToggle: (v) => setState(() {
+          _settings.quietHoursEnabled = v;
+          _save();
+        }),
+      ),
+    ];
+
+    // Show management tile only if quiet hours are enabled
+    if (_settings.quietHoursEnabled) {
+      tiles.add(
+        SettingTileData(
+          icon: Icons.edit_calendar_rounded,
+          iconColor: const Color(0xFFF59E0B),
+          label: 'Manage Quiet Hours',
+          subtitle: 'Add or remove intervals',
+          valueBadge: '${_settings.quietHours.length} interval(s)',
+          onTap: () => _showQuietHoursManager(),
+        ),
+      );
+    }
+
+    return tiles;
+  }
 
   // ========================= TASKS SCHEDULING =========================
   List<SettingTileData> _learningTiles(bool isDark) => [
@@ -291,30 +299,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
         unit: 'min',
         onSelect: (v) => setState(() {
           _settings.defaultTaskDuration = v;
-          _save();
-        }),
-      ),
-    ),
-    SettingTileData(
-      icon: Icons.wb_sunny_outlined,
-      iconColor: const Color(0xFF8B5CF6),
-      label: 'Preferred Learning Time',
-      valueBadge:
-          _settings.preferredLearningTime[0].toUpperCase() +
-          _settings.preferredLearningTime.substring(1),
-      onTap: () => _showOptionsSheet(
-        title: 'Best Learning Time',
-        options: const ['morning', 'afternoon', 'evening', 'night'],
-        selected: _settings.preferredLearningTime,
-        labels: const ['Morning', 'Afternoon', 'Evening', 'Night'],
-        icons: const [
-          Icons.wb_sunny_rounded,
-          Icons.light_mode_rounded,
-          Icons.wb_twilight_rounded,
-          Icons.nightlight_round,
-        ],
-        onSelect: (v) => setState(() {
-          _settings.preferredLearningTime = v;
           _save();
         }),
       ),
