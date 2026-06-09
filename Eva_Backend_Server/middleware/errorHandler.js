@@ -118,6 +118,20 @@ const normalizeError = (err) => {
     return new UnauthorizedError("Token expired");
   }
 
+  if (err.name === "MulterError") {
+    if (err.code === "LIMIT_FILE_SIZE") {
+      return new BadRequestError("Avatar file is too large");
+    }
+    if (err.code === "LIMIT_UNEXPECTED_FILE") {
+      return new BadRequestError('Use form field "avatar" for the image file');
+    }
+    return new BadRequestError(err.message);
+  }
+
+  if (err.statusCode === 503 || err.statusCode === 502) {
+    return new ApiError(err.statusCode, err.message, true);
+  }
+
   // Return original if already ApiError
   if (err instanceof ApiError) {
     return err;

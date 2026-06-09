@@ -1,0 +1,43 @@
+Google Calendar Sync — implementation checklist
+================================================
+
+Toggle: UserSetting.google_calendar_sync_enabled (frontend switch)
+Integration: Integration document with OAuth tokens (connect flow)
+
+[x] 1. Shared Python helper (utils/google_calendar_sync.py)
+    - is_google_calendar_sync_enabled(settings)
+    - pick_active_google_integration(integrations)
+    - resolve_google_calendar_sync(user_id, integrations, settings) — gates on toggle + refresh token
+
+[x] 2. Shared Node helper (utils/googleCalendarSync.js + services/googleCalendar.service.js)
+    - Same gating + token refresh for tasks UI
+
+[x] 3. Token refresh (both servers)
+    - POST https://oauth2.googleapis.com/token
+    - Env: GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET
+    - Persist new access_token + token_expires on integrations collection
+
+[x] 4. Integrations API
+    - POST /api/integrations/google/connect — auto-enable sync toggle
+    - DELETE /api/integrations/google — disconnect + disable toggle
+
+[x] 5. Gate AI sync paths (toggle OFF = no API calls)
+    - handlers/scheduling add, update, delete
+    - handlers/learning create, update, delete
+    - main.py rebuild-schedule internal endpoint
+
+[x] 6. Node tasks UI sync
+    - DELETE /api/tasks/:id — delete Google event when toggle ON
+    - PATCH status — no calendar change (event stays)
+
+[x] 7. Tests
+    - Python: test_google_calendar_sync.py
+    - Node: googleCalendarSync.test.js, integrations.controller.test.js
+
+Behavior summary
+----------------
+- Toggle OFF: skip all Google Calendar API calls; integration may stay connected
+- Toggle ON + no integration: skip sync silently until user connects
+- Disconnect: is_active=false, google_calendar_sync_enabled=false
+- Connect: stores tokens, is_active=true, google_calendar_sync_enabled=true
+- Existing Google events are NOT bulk-deleted when toggle turns off

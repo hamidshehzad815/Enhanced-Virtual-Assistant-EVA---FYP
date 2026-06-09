@@ -42,7 +42,8 @@ from db.tasks import (
     soft_delete_task,
     update_task,
 )
-from handlers.scheduling.add import _coerce_text, _pick_active_google_integration
+from handlers.scheduling.add import _coerce_text
+from utils.google_calendar_sync import resolve_google_calendar_sync
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
 from utils.learning_schedules import resolve_learning_slots
@@ -449,7 +450,7 @@ async def skip_session_and_rebalance(
     if not ok:
         return False, False
 
-    google = _pick_active_google_integration(integrations)
+    google = await resolve_google_calendar_sync(user_id, integrations, settings)
     task_id = str(current_topic.get("task_id") or "").strip()
     if task_id:
         try:
@@ -513,7 +514,7 @@ async def _resume_plan_with_rebase(
 
     goal = await get_goal_by_id(goal_id)
     slots = resolve_learning_slots(settings, goal=goal)
-    google = _pick_active_google_integration(integrations)
+    google = await resolve_google_calendar_sync(user_id, integrations, settings)
     days = _learning_days(slots)
     today = datetime.now(get_zoneinfo(timezone_name)).date()
     start_from = _next_learning_date(today + timedelta(days=1), days) if days else today + timedelta(days=1)
@@ -813,7 +814,7 @@ async def _execute_session_sub_intent(
         if later and isinstance(later[0].get("scheduled_date"), datetime):
             next_dt = later[0]["scheduled_date"]
 
-        google = _pick_active_google_integration(integrations)
+        google = await resolve_google_calendar_sync(user_id, integrations, settings)
 
         if next_dt is None or new_dt < next_dt:
             ok = await rt_reschedule_topic(str(current.get("_id")), new_dt)

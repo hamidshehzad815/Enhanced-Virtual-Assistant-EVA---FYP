@@ -1,27 +1,22 @@
 const {
-  normalizeAllowFriendRequests,
   isAcceptingFriendRequests,
+  allowFriendRequestsToBoolean,
+  closedToFriendRequestsFilter,
 } = require("../utils/friendSettings");
 
 describe("friendSettings utils", () => {
-  test("normalizeAllowFriendRequests accepts everyone and nobody", () => {
-    expect(normalizeAllowFriendRequests("everyone")).toBe("everyone");
-    expect(normalizeAllowFriendRequests("NOBODY")).toBe("nobody");
-  });
-
-  test("normalizeAllowFriendRequests rejects invalid values", () => {
-    expect(() => normalizeAllowFriendRequests("friends_only")).toThrow(
-      /allow_friend_requests must be/i,
-    );
-  });
-
   test("isAcceptingFriendRequests defaults to true when settings missing", () => {
     expect(isAcceptingFriendRequests(null)).toBe(true);
     expect(isAcceptingFriendRequests(undefined)).toBe(true);
     expect(isAcceptingFriendRequests({})).toBe(true);
   });
 
-  test("isAcceptingFriendRequests respects nobody", () => {
+  test("isAcceptingFriendRequests respects boolean values", () => {
+    expect(isAcceptingFriendRequests({ allow_friend_requests: true })).toBe(true);
+    expect(isAcceptingFriendRequests({ allow_friend_requests: false })).toBe(false);
+  });
+
+  test("isAcceptingFriendRequests maps legacy everyone/nobody strings", () => {
     expect(isAcceptingFriendRequests({ allow_friend_requests: "nobody" })).toBe(
       false,
     );
@@ -31,5 +26,18 @@ describe("friendSettings utils", () => {
     expect(
       isAcceptingFriendRequests({ allow_friend_requests: "everyone" }),
     ).toBe(true);
+  });
+
+  test("allowFriendRequestsToBoolean normalizes stored values", () => {
+    expect(allowFriendRequestsToBoolean("nobody")).toBe(false);
+    expect(allowFriendRequestsToBoolean("everyone")).toBe(true);
+    expect(allowFriendRequestsToBoolean(false)).toBe(false);
+    expect(allowFriendRequestsToBoolean(true)).toBe(true);
+  });
+
+  test("closedToFriendRequestsFilter includes legacy nobody", () => {
+    expect(closedToFriendRequestsFilter()).toEqual({
+      allow_friend_requests: { $in: [false, "nobody"] },
+    });
   });
 });

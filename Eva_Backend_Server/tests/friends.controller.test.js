@@ -84,10 +84,10 @@ describe("POST /api/friends/request allow_friend_requests", () => {
     Friend.findOne.mockResolvedValue(null);
   });
 
-  test("returns 403 when target has allow_friend_requests nobody", async () => {
+  test("returns 403 when target has allow_friend_requests disabled", async () => {
     UserSetting.findOne.mockReturnValue({
       select: jest.fn().mockReturnValue({
-        lean: jest.fn().mockResolvedValue({ allow_friend_requests: "nobody" }),
+        lean: jest.fn().mockResolvedValue({ allow_friend_requests: false }),
       }),
     });
 
@@ -101,10 +101,10 @@ describe("POST /api/friends/request allow_friend_requests", () => {
     expect(Friend.create).not.toHaveBeenCalled();
   });
 
-  test("allows request when target accepts everyone", async () => {
+  test("allows request when target accepts friend requests", async () => {
     UserSetting.findOne.mockReturnValue({
       select: jest.fn().mockReturnValue({
-        lean: jest.fn().mockResolvedValue({ allow_friend_requests: "everyone" }),
+        lean: jest.fn().mockResolvedValue({ allow_friend_requests: true }),
       }),
     });
     Friend.create.mockResolvedValue({
@@ -156,7 +156,7 @@ describe("GET /api/friends/search allow_friend_requests", () => {
     });
   });
 
-  test("hides users with allow_friend_requests nobody", async () => {
+  test("hides users with allow_friend_requests disabled", async () => {
     User.find.mockReturnValue({
       select: jest.fn().mockReturnValue({
         sort: jest.fn().mockReturnValue({

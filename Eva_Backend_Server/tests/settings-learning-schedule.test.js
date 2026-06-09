@@ -422,13 +422,36 @@ describe("learning-schedules CRUD", () => {
       .set(authHeaders());
 
     expect(response.status).toBe(409);
+    expect(response.body.message).toMatch(/active or paused/i);
     expect(LearningGoal.exists).toHaveBeenCalledWith(
       expect.objectContaining({
         learning_schedule_id: "s1",
-        status: "active",
+        status: { $in: ["active", "paused"] },
         is_deleted: false,
       }),
     );
+  });
+
+  test("DELETE when paused goal uses schedule → 409", async () => {
+    LearningGoal.exists.mockResolvedValue({ _id: "goal1" });
+    UserSetting.findOne.mockResolvedValue({
+      user_id: USER_ID,
+      preferred_learning_schedules: [
+        {
+          id: "s1",
+          label: "Morning",
+          slots: [{ day: 0, time: "09:00", duration_minutes: 60 }],
+        },
+      ],
+      save: jest.fn().mockResolvedValue(),
+    });
+
+    const response = await request(app)
+      .delete("/api/settings/learning-schedules/s1")
+      .set(authHeaders());
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toMatch(/active or paused/i);
   });
 
   test("DELETE succeeds when only soft-deleted goals used schedule", async () => {
@@ -452,7 +475,10 @@ describe("learning-schedules CRUD", () => {
 
     expect(response.status).toBe(200);
     expect(LearningGoal.exists).toHaveBeenCalledWith(
-      expect.objectContaining({ is_deleted: false }),
+      expect.objectContaining({
+        status: { $in: ["active", "paused"] },
+        is_deleted: false,
+      }),
     );
   });
 
@@ -508,8 +534,11 @@ describe("GET /api/settings", () => {
     const response = await request(app).get("/api/settings").set(authHeaders());
 
     expect(response.status).toBe(200);
-    expect(response.body.data.preferred_learning_schedules).toHaveLength(1);
-    expect(response.body.data.preferred_learning_schedules[0].label).toBe("Study");
+    expect(response.body.data.settings.preferred_learning_schedules).toHaveLength(1);
+    expect(response.body.data.settings.preferred_learning_schedules[0].label).toBe(
+      "Study",
+    );
+    expect(response.body.data.preferred_learning_schedules).toBeUndefined();
   });
 
   test("migrates orphan flat slots from old Mongo docs on read", async () => {
@@ -522,8 +551,11 @@ describe("GET /api/settings", () => {
     const response = await request(app).get("/api/settings").set(authHeaders());
 
     expect(response.status).toBe(200);
-    expect(response.body.data.preferred_learning_schedules).toHaveLength(1);
-    expect(response.body.data.preferred_learning_schedules[0].label).toBe("Default");
+    expect(response.body.data.settings.preferred_learning_schedules).toHaveLength(1);
+    expect(response.body.data.settings.preferred_learning_schedules[0].label).toBe(
+      "Default",
+    );
+    expect(response.body.data.preferred_learning_schedules).toBeUndefined();
   });
 });
 
@@ -561,6 +593,26 @@ describe("PATCH /api/settings internal fields", () => {
     expect(response.body.message).toMatch(/system setting/i);
   });
 
+  test("rejects removed language setting", async () => {
+    const response = await request(app)
+      .patch("/api/settings")
+      .set(authHeaders())
+      .send({ language: "en" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/language is no longer supported/i);
+  });
+
+  test("rejects removed show_last_active setting", async () => {
+    const response = await request(app)
+      .patch("/api/settings")
+      .set(authHeaders())
+      .send({ show_last_active: false });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/show_last_active is no longer supported/i);
+  });
+
   test("rejects invalid allow_friend_requests", async () => {
     const response = await request(app)
       .patch("/api/settings")
@@ -568,10 +620,10 @@ describe("PATCH /api/settings internal fields", () => {
       .send({ allow_friend_requests: "friends_only" });
 
     expect(response.status).toBe(400);
-    expect(response.body.message).toMatch(/allow_friend_requests must be/i);
+    expect(response.body.message).toMatch(/allow_friend_requests must be boolean/i);
   });
 
-  test("accepts allow_friend_requests nobody", async () => {
+  test("accepts allow_friend_requests false", async () => {
     const mockSettings = {
       user_id: USER_ID,
       save: jest.fn().mockResolvedValue(),
@@ -581,10 +633,10 @@ describe("PATCH /api/settings internal fields", () => {
     const response = await request(app)
       .patch("/api/settings")
       .set(authHeaders())
-      .send({ allow_friend_requests: "NOBODY" });
+      .send({ allow_friend_requests: false });
 
     expect(response.status).toBe(200);
-    expect(mockSettings.allow_friend_requests).toBe("nobody");
+    expect(mockSettings.allow_friend_requests).toBe(false);
     expect(mockSettings.save).toHaveBeenCalled();
   });
 });

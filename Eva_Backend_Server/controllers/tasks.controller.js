@@ -18,6 +18,8 @@ const { withApiTimezone } = require("../utils/apiDateTime");
 const {
   notifyOwnerOfCollaborationResponse,
 } = require("../services/collaborationNotifications");
+const { resolveGoogleCalendarSync } = require("../utils/googleCalendarSync");
+const { deleteEvent } = require("../services/googleCalendar.service");
 
 const STATUS_VALUES = new Set(["pending", "complete"]);
 const STORED_STATUS_FILTER = {
@@ -572,6 +574,21 @@ const deleteTask = async (req, res, next) => {
 
     if (!task) {
       throw new NotFoundError("Task not found");
+    }
+
+    try {
+      const userSettings = await UserSetting.findOne({ user_id: req.userId }).lean();
+      const googleIntegration = await resolveGoogleCalendarSync(req.userId, userSettings);
+      const eventId = String(task.google_calendar_event_id || "").trim();
+      if (googleIntegration && eventId) {
+        await deleteEvent(
+          googleIntegration.access_token,
+          googleIntegration.calendar_id || "primary",
+          eventId,
+        );
+      }
+    } catch (_error) {
+      // Calendar sync is best-effort and must not block task deletion.
     }
 
     res.json({

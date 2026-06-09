@@ -1,40 +1,48 @@
-/** Privacy setting for who may send friend requests. */
-const ALLOW_FRIEND_REQUESTS_EVERYONE = "everyone";
-const ALLOW_FRIEND_REQUESTS_NOBODY = "nobody";
-const ALLOW_FRIEND_REQUESTS_VALUES = new Set([
-  ALLOW_FRIEND_REQUESTS_EVERYONE,
-  ALLOW_FRIEND_REQUESTS_NOBODY,
-]);
+/**
+ * Privacy setting for who may send friend requests.
+ * Stored as boolean; legacy "everyone"/"nobody" strings are still read safely.
+ */
 
-const normalizeAllowFriendRequests = (value) => {
-  if (value === undefined) {
-    return undefined;
-  }
-  const normalized = String(value || "").trim().toLowerCase();
-  if (!ALLOW_FRIEND_REQUESTS_VALUES.has(normalized)) {
-    throw new Error(
-      `allow_friend_requests must be "${ALLOW_FRIEND_REQUESTS_EVERYONE}" or "${ALLOW_FRIEND_REQUESTS_NOBODY}"`,
-    );
-  }
-  return normalized;
-};
+const LEGACY_CLOSED_VALUES = new Set(["nobody", "false"]);
+const LEGACY_OPEN_VALUES = new Set(["everyone", "true"]);
 
 /** Missing or legacy settings default to accepting requests. */
 const isAcceptingFriendRequests = (settings) => {
   if (!settings) {
     return true;
   }
+
   const raw = settings.allow_friend_requests;
   if (raw == null || raw === "") {
     return true;
   }
-  return String(raw).trim().toLowerCase() !== ALLOW_FRIEND_REQUESTS_NOBODY;
+
+  if (typeof raw === "boolean") {
+    return raw;
+  }
+
+  const normalized = String(raw).trim().toLowerCase();
+  if (LEGACY_CLOSED_VALUES.has(normalized)) {
+    return false;
+  }
+  if (LEGACY_OPEN_VALUES.has(normalized)) {
+    return true;
+  }
+
+  return true;
 };
 
+/** Normalize stored value to boolean for API responses. */
+const allowFriendRequestsToBoolean = (value) =>
+  isAcceptingFriendRequests({ allow_friend_requests: value });
+
+/** Mongo filter for users who are not accepting new friend requests. */
+const closedToFriendRequestsFilter = () => ({
+  allow_friend_requests: { $in: [false, "nobody"] },
+});
+
 module.exports = {
-  ALLOW_FRIEND_REQUESTS_EVERYONE,
-  ALLOW_FRIEND_REQUESTS_NOBODY,
-  ALLOW_FRIEND_REQUESTS_VALUES,
-  normalizeAllowFriendRequests,
   isAcceptingFriendRequests,
+  allowFriendRequestsToBoolean,
+  closedToFriendRequestsFilter,
 };

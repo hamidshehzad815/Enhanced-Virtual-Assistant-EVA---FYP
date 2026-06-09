@@ -342,15 +342,38 @@ Notes:
 ### `PATCH /api/profile`
 - Auth: Yes
 - Allowed fields only:
-  - `name`, `username`, `profile_picture`, `bio`, `university`, `department`, `semester`, `timezone`
+  - `name`, `username`, `bio`, `university`, `department`, `semester`, `timezone`
 - Notes:
   - Invalid fields rejected
   - Username uniqueness enforced
+  - Profile pictures are **not** updated here — use `POST /api/profile/avatar`
 - Success:
   - `200` with updated public profile
 - Common errors:
   - `400` invalid fields / empty required field
   - `409` username already taken
+
+### `POST /api/profile/avatar`
+- Auth: Yes
+- Content-Type: `multipart/form-data`
+- Form field: `avatar` (single image file)
+- Allowed types: JPEG, PNG, WebP (max 2 MB by default)
+- Success:
+  - `200` with updated public profile (`profile_picture` URL)
+- Notes:
+  - First upload and replace use the same endpoint
+  - Previous Cloudinary image is deleted on replace
+  - There is no remove-photo endpoint
+- Env required:
+  - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
+  - Optional: `CLOUDINARY_PROFILE_FOLDER` (default `eva/profile-pictures`)
+  - Optional: `AVATAR_MAX_SIZE_MB` (default `2`)
+- Common errors:
+  - `400` missing/invalid file
+  - `401` unauthorized
+  - `502` Cloudinary upload failed
+  - `503` Cloudinary not configured
+  - `429` too many uploads (10/hour per IP)
 
 ---
 
@@ -584,7 +607,8 @@ Notes:
 
 ### `GET /api/settings`
 - Auth: Yes
-- Returns full settings doc and computed `preferred_learning_schedules` view.
+- Returns full settings doc in `data.settings`.
+- `settings.preferred_learning_schedules` is normalized on read (legacy flat slots migrated when needed).
 
 ### `PATCH /api/settings`
 - Auth: Yes
@@ -592,7 +616,7 @@ Notes:
   - `notifications_enabled`, `push_notifications_enabled`, `email_notifications_enabled`
   - `quiet_hours_enabled`, `quiet_hours`
   - `push_token`, `remove_push_token`
-  - `theme`, `language`
+  - `theme`
   - `default_reminder_minutes` (tasks), `default_learning_reminder_minutes` (learning sessions; legacy alias `default_topic_reminder_minutes` accepted on PATCH)
   - `default_task_priority`, `default_task_duration`
   - `behavioral_analytics_enabled`
@@ -601,7 +625,6 @@ Notes:
   - `preferred_learning_schedules`
   - `google_calendar_sync_enabled`
   - `allow_friend_requests`
-  - `show_last_active`
 - Notes:
   - If no valid fields: `400`.
   - `quiet_hours` blocks: array of `{label,start,end,enabled}` with `HH:mm`.
@@ -672,7 +695,8 @@ Notes:
 ### `DELETE /api/settings/learning-schedules/:scheduleId`
 - Auth: Yes
 - Rules:
-  - Blocked if active `LearningGoal` references schedule id (`409`)
+  - Blocked if any active or paused `LearningGoal` references schedule id (`409`)
+  - Allowed when no plan uses the schedule, or linked plan(s) are completed/cancelled/soft-deleted
 - Success: updated schedule list.
 
 ---

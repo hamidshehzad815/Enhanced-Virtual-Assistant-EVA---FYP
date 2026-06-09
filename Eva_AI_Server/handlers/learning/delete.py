@@ -21,7 +21,8 @@ from db.learning_goals import (
 )
 from db.roadmap_topics import soft_delete_pending_topics
 from db.tasks import get_pending_learning_tasks, soft_delete_pending_learning_tasks
-from handlers.scheduling.add import _coerce_text, _pick_active_google_integration
+from handlers.scheduling.add import _coerce_text
+from utils.google_calendar_sync import resolve_google_calendar_sync
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
 from utils.learning_utils import (
@@ -431,7 +432,7 @@ async def _perform_deletions(
     deleted_goals: List[Dict[str, Any]] = []
     notifications: List[Dict[str, Any]] = []
 
-    google_integration = _pick_active_google_integration(integrations)
+    google_integration = await resolve_google_calendar_sync(user_id, integrations, settings)
     access_token = _coerce_text((google_integration or {}).get("access_token"))
     calendar_id = _coerce_text((google_integration or {}).get("calendar_id")) or "primary"
 

@@ -85,8 +85,8 @@ from db.roadmap_topics import (
 )
 from handlers.learning.update import skip_session_and_rebalance
 from db.tasks import get_task_by_id, soft_delete_task, update_task
-from handlers.scheduling.add import _pick_active_google_integration
 from services.google_calendar import google_calendar_client
+from utils.google_calendar_sync import resolve_google_calendar_sync
 from utils.learning_utils import build_schedule, normalize_subtopic_entity
 
 _COMMAND_VERBS = {
@@ -577,6 +577,10 @@ async def internal_rebuild_schedule(payload: RebuildScheduleRequest):
         learning_days,
     )
 
+    user_settings = await fetch_user_settings(user_id)
+    integrations = await fetch_integrations(user_id)
+    google = await resolve_google_calendar_sync(user_id, integrations, user_settings)
+
     updated = 0
     for goal in goals:
         goal_id = str(goal.get("_id") or "").strip()
@@ -594,7 +598,6 @@ async def internal_rebuild_schedule(payload: RebuildScheduleRequest):
         if not rows or len(rows) != len(pending_topics):
             continue
         last_dt = None
-        google = _pick_active_google_integration([])
         for topic, row in zip(pending_topics, rows):
             due_dt = row["scheduled_date"]
             last_dt = due_dt

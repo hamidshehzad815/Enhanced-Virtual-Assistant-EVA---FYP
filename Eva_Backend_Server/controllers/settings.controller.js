@@ -30,7 +30,7 @@ const {
 } = require("../utils/learningSchedules");
 const { callAIInternal } = require("../services/ai.service");
 const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
-const { normalizeAllowFriendRequests } = require("../utils/friendSettings");
+const { allowFriendRequestsToBoolean } = require("../utils/friendSettings");
 
 const buildApiData = (req, payload) => {
   const timezone = userTimeZone(req);
@@ -42,6 +42,8 @@ const INTERNAL_SETTINGS_FIELDS = [
   "analytics_min_tasks_per_day",
   "preferred_learning_duration",
 ];
+
+const REMOVED_SETTINGS_FIELDS = ["language", "show_last_active"];
 
 /** Map legacy fields and strip internal-only settings from API responses. */
 const normalizeSettingsForApi = (settings) => {
@@ -55,6 +57,22 @@ const normalizeSettingsForApi = (settings) => {
   INTERNAL_SETTINGS_FIELDS.forEach((field) => {
     delete plain[field];
   });
+  REMOVED_SETTINGS_FIELDS.forEach((field) => {
+    delete plain[field];
+  });
+  if (plain.allow_friend_requests !== undefined) {
+    plain.allow_friend_requests = allowFriendRequestsToBoolean(
+      plain.allow_friend_requests,
+    );
+  }
+  return plain;
+};
+
+/** Single normalized schedules list on settings (migrates legacy flat slots on read). */
+const withPreferredLearningSchedulesForApi = (settingsDoc) => {
+  const plain = normalizeSettingsForApi(settingsDoc);
+  plain.preferred_learning_schedules = getSchedulesFromSettingsDoc(plain);
+  delete plain.preferred_learning_schedule;
   return plain;
 };
 
@@ -62,6 +80,14 @@ const rejectInternalSettingsFields = (body) => {
   for (const field of INTERNAL_SETTINGS_FIELDS) {
     if (body[field] !== undefined) {
       throw new BadRequestError(`${field} is a system setting and cannot be changed`);
+    }
+  }
+};
+
+const rejectRemovedSettingsFields = (body) => {
+  for (const field of REMOVED_SETTINGS_FIELDS) {
+    if (body[field] !== undefined) {
+      throw new BadRequestError(`${field} is no longer supported`);
     }
   }
 };
@@ -273,14 +299,11 @@ const schedulesArrayFromDoc = (settings) => {
 const getSettings = async (req, res, next) => {
   try {
     const settings = await ensureUserSettings(req.userId);
-    const plain = normalizeSettingsForApi(settings);
-    const schedulesView = getSchedulesFromSettingsDoc(plain);
 
     res.json({
       status: "success",
       data: buildApiData(req, {
-        settings: plain,
-        preferred_learning_schedules: schedulesView,
+        settings: withPreferredLearningSchedulesForApi(settings),
       }),
     });
   } catch (error) {
@@ -401,7 +424,6 @@ const updateSettings = async (req, res, next) => {
       "remove_push_token",
     );
     const theme = normalizeString(req.body.theme);
-    const language = normalizeString(req.body.language);
     const defaultReminderMinutes = normalizeInteger(
       req.body.default_reminder_minutes,
       "default_reminder_minutes",
@@ -424,6 +446,7 @@ const updateSettings = async (req, res, next) => {
       "default_task_duration",
     );
     rejectInternalSettingsFields(req.body);
+    rejectRemovedSettingsFields(req.body);
 
     const behavioralAnalyticsEnabled = parseBoolean(
       req.body.behavioral_analytics_enabled,
@@ -449,12 +472,10 @@ const updateSettings = async (req, res, next) => {
       req.body.google_calendar_sync_enabled,
       "google_calendar_sync_enabled",
     );
-    const allowFriendRequests = wrapBadRequest(
-      normalizeAllowFriendRequests,
+    const allowFriendRequests = parseBoolean(
       req.body.allow_friend_requests,
+      "allow_friend_requests",
     );
-    const showLastActive = parseBoolean(req.body.show_last_active, "show_last_active");
-
     if (notificationsEnabled !== undefined) {
       update.notifications_enabled = notificationsEnabled;
     }
@@ -481,10 +502,6 @@ const updateSettings = async (req, res, next) => {
 
     if (theme !== undefined) {
       update.theme = theme;
-    }
-
-    if (language !== undefined) {
-      update.language = language;
     }
 
     if (defaultReminderMinutes !== undefined) {
@@ -525,10 +542,6 @@ const updateSettings = async (req, res, next) => {
 
     if (allowFriendRequests !== undefined) {
       update.allow_friend_requests = allowFriendRequests;
-    }
-
-    if (showLastActive !== undefined) {
-      update.show_last_active = showLastActive;
     }
 
     const hasPushTokenMutation =
@@ -615,7 +628,7 @@ const updateSettings = async (req, res, next) => {
       status: "success",
       message: "Settings updated",
       data: buildApiData(req, {
-        settings: normalizeSettingsForApi(settings),
+        settings: withPreferredLearningSchedulesForApi(settings),
         ...(rebuildSummary ? { rebuild: rebuildSummary } : {}),
       }),
     });
@@ -781,15 +794,10 @@ const deleteLearningSchedule = async (req, res, next) => {
       throw new BadRequestError("scheduleId is required");
     }
 
-    const inUse = await LearningGoal.exists({
-      user_id: req.userId,
-      learning_schedule_id: scheduleId,
-      status: "active",
-      is_deleted: false,
-    });
-    if (inUse) {
+    if (await scheduleInUseByLearningPlan(req.userId, scheduleId)) {
       throw new ConflictError(
-        "This schedule is linked to an active learning plan. Pause or complete that plan before deleting the schedule.",
+        "This schedule is linked to an active or paused learning plan. "
+        + "Complete or delete that plan before removing this schedule.",
         { schedule_id: scheduleId },
       );
     }
