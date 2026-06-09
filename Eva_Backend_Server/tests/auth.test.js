@@ -82,6 +82,7 @@ describe("Auth API", () => {
       username: "hamid",
       email: "hamid@example.com",
       is_verified: false,
+      profile_picture: null,
     };
 
     const createdUser = {

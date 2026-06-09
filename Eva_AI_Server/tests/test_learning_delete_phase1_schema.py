@@ -35,7 +35,8 @@ class LearningDeletePhase1SchemaTests(unittest.IsolatedAsyncioTestCase):
                     "action_type": "goal_deleted",
                     "subject": "python",
                     "source": "learning_module",
-                }
+                },
+                force=True,
             )
 
         self.assertTrue(inserted_id)

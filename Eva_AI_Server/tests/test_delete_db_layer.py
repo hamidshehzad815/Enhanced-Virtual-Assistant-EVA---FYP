@@ -308,7 +308,8 @@ class TestDeleteDbLayer(unittest.IsolatedAsyncioTestCase):
                     "task_id": self.task1_id,
                     "action_type": "task_deleted",
                     "subject": "Physics exam",
-                }
+                },
+                force=True,
             )
 
         self.assertTrue(inserted_id)

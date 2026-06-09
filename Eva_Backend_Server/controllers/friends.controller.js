@@ -12,6 +12,8 @@ const {
   ForbiddenError,
 } = require("../middleware/errorHandler");
 const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
+const { insert_and_dispatch } = require("../services/notification.service");
+const { isAcceptingFriendRequests, closedToFriendRequestsFilter } = require("../utils/friendSettings");
 
 const buildApiData = (req, payload) => {
   const timezone = (req.user && req.user.timezone) || "UTC";
@@ -24,6 +26,38 @@ const mapForRequest = (req, friendship) =>
 
 const ALLOWED_RESPONSES = new Set(["accept", "reject"]);
 const ALLOWED_REQUEST_FILTERS = new Set(["incoming", "outgoing", "all"]);
+
+const dispatchFriendNotification = async ({
+  recipientId,
+  senderId,
+  type,
+  friendshipId,
+  title,
+  message,
+  actionRequired = false,
+}) => {
+  if (!recipientId || !senderId || String(recipientId) === String(senderId)) {
+    return;
+  }
+
+  try {
+    await insert_and_dispatch([
+      {
+        user_id: String(recipientId),
+        sender_id: String(senderId),
+        type,
+        reference_type: "friend",
+        reference_id: String(friendshipId),
+        title,
+        message,
+        action_required: actionRequired,
+        delivery_channel: ["push", "in_app"],
+      },
+    ]);
+  } catch (_error) {
+    // Friend request should succeed even if notification dispatch fails.
+  }
+};
 
 const sanitizeUser = (userDoc) => {
   if (!userDoc) {
@@ -151,10 +185,7 @@ const sendFriendRequest = async (req, res, next) => {
       .select("allow_friend_requests")
       .lean();
 
-    if (
-      targetSettings
-      && targetSettings.allow_friend_requests === "nobody"
-    ) {
+    if (!isAcceptingFriendRequests(targetSettings)) {
       throw new ForbiddenError("This user is not accepting friend requests");
     }
 
@@ -172,6 +203,19 @@ const sendFriendRequest = async (req, res, next) => {
         .populate("requester_id", "name username email profile_picture")
         .populate("recipient_id", "name username email profile_picture")
         .lean();
+
+      const requesterName = hydrated.requester_id?.name
+        || hydrated.requester_id?.username
+        || "Someone";
+      await dispatchFriendNotification({
+        recipientId: targetUser._id,
+        senderId: req.userId,
+        type: "friend_request",
+        friendshipId: friendship._id,
+        title: "New friend request",
+        message: `${requesterName} sent you a friend request.`,
+        actionRequired: true,
+      });
 
       return res.status(201).json({
         status: "success",
@@ -209,6 +253,19 @@ const sendFriendRequest = async (req, res, next) => {
       .populate("requester_id", "name username email profile_picture")
       .populate("recipient_id", "name username email profile_picture")
       .lean();
+
+    const requesterName = refreshed.requester_id?.name
+      || refreshed.requester_id?.username
+      || "Someone";
+    await dispatchFriendNotification({
+      recipientId: targetUser._id,
+      senderId: req.userId,
+      type: "friend_request",
+      friendshipId: existing._id,
+      title: "New friend request",
+      message: `${requesterName} sent you a friend request.`,
+      actionRequired: true,
+    });
 
     return res.json({
       status: "success",
@@ -377,11 +434,9 @@ const searchUsers = async (req, res, next) => {
       .limit(limit * 3)
       .lean();
 
-    const visibleUsers = users
-      .filter((user) => !blockedIds.has(String(user._id)))
-      .slice(0, limit);
+    const notBlockedUsers = users.filter((user) => !blockedIds.has(String(user._id)));
 
-    const candidateIds = visibleUsers.map((user) => user._id);
+    const candidateIds = notBlockedUsers.map((user) => user._id);
     let relationshipMap = new Map();
 
     if (candidateIds.length > 0) {
@@ -403,6 +458,30 @@ const searchUsers = async (req, res, next) => {
         }),
       );
     }
+
+    let closedToRequestsIds = new Set();
+    if (candidateIds.length > 0) {
+      const closedSettings = await UserSetting.find({
+        user_id: { $in: candidateIds },
+        ...closedToFriendRequestsFilter(),
+      })
+        .select("user_id")
+        .lean();
+      closedToRequestsIds = new Set(
+        closedSettings.map((entry) => String(entry.user_id)),
+      );
+    }
+
+    const visibleUsers = notBlockedUsers
+      .filter((user) => {
+        const userId = String(user._id);
+        const relationshipStatus = relationshipMap.get(userId) || "none";
+        if (relationshipStatus !== "none") {
+          return true;
+        }
+        return !closedToRequestsIds.has(userId);
+      })
+      .slice(0, limit);
 
     res.json({
       status: "success",
@@ -458,6 +537,20 @@ const respondToFriendRequest = async (req, res, next) => {
       .populate("requester_id", "name username email profile_picture")
       .populate("recipient_id", "name username email profile_picture")
       .lean();
+
+    if (action === "accept") {
+      const accepterName = updated.recipient_id?.name
+        || updated.recipient_id?.username
+        || "Someone";
+      await dispatchFriendNotification({
+        recipientId: updated.requester_id._id,
+        senderId: req.userId,
+        type: "friend_accepted",
+        friendshipId: updated._id,
+        title: "Friend request accepted",
+        message: `${accepterName} accepted your friend request.`,
+      });
+    }
 
     res.json({
       status: "success",

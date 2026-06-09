@@ -38,6 +38,7 @@ class TestDeletePhase17Handler(unittest.IsolatedAsyncioTestCase):
                 "calendar_id": "primary",
             }
         ]
+        context["settings"] = {"google_calendar_sync_enabled": True}
         context["pending_context"] = {
             "expected_response": "yes_no",
             "pending_action": {

@@ -266,8 +266,7 @@ Success response (`200`):
       "is_verified": true
     },
     "settings": {
-      "theme": "light",
-      "language": "en"
+      "theme": "light"
     }
   }
 }
@@ -322,13 +321,39 @@ Headers:
 Allowed fields:
 - `name`
 - `username`
-- `profile_picture`
 - `bio`
 - `university`
 - `department`
 - `semester`
 - `timezone`
 
+Profile pictures are updated via `POST /api/profile/avatar` (multipart field `avatar`), not PATCH.
+
+### 10.3 Upload Profile Picture
+Endpoint:
+- `POST /api/profile/avatar`
+
+Headers:
+- `Authorization: Bearer <access_token>`
+- `Content-Type: multipart/form-data`
+
+Form field:
+- `avatar` (JPEG, PNG, or WebP; max 2 MB)
+
+Success response (`200`):
+```json
+{
+  "status": "success",
+  "message": "Profile picture updated",
+  "data": {
+    "user": {
+      "profile_picture": "https://res.cloudinary.com/..."
+    }
+  }
+}
+```
+
+### 10.4 Update Profile (example)
 Example request body:
 ```json
 {

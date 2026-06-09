@@ -9,7 +9,9 @@ const {
   Task,
   User,
   ActivityLog,
+  UserSetting,
 } = require("../models");
+const { isBehavioralAnalyticsEnabled } = require("../utils/behavioralSettings");
 const { NotFoundError } = require("../middleware/errorHandler");
 
 const toObjectId = (value) => {
@@ -132,13 +134,16 @@ const softDeleteLearningGoalById = async (goalId, ownerUserId) => {
   );
 
   try {
-    await ActivityLog.create({
-      user_id: ownerOid,
-      action_type: "goal_deleted",
-      subject: goal.subject || null,
-      source: "learning_module",
-      action_timestamp: now,
-    });
+    const userSettings = await UserSetting.findOne({ user_id: ownerUserId }).lean();
+    if (isBehavioralAnalyticsEnabled(userSettings)) {
+      await ActivityLog.create({
+        user_id: ownerOid,
+        action_type: "goal_deleted",
+        subject: goal.subject || null,
+        source: "learning_module",
+        action_timestamp: now,
+      });
+    }
   } catch (error) {
     // Non-blocking — same as AI server behavior for log failures.
     console.error("[learningDelete] Activity log insert failed:", error.message);

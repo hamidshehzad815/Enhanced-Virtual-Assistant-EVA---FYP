@@ -59,7 +59,7 @@ jest.mock("../models", () => ({
 }));
 
 const app = require("../app");
-const { User, ActivityLog } = require("../models");
+const { User, ActivityLog, UserSetting } = require("../models");
 const { callAIAnalytics } = require("../services/ai.service");
 
 const USER_ID = "507f1f77bcf86cd799439011";
@@ -77,6 +77,9 @@ describe("Analytics API", () => {
       is_active: true,
       timezone: "Asia/Karachi",
       toPublicProfile: jest.fn(),
+    });
+    UserSetting.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ behavioral_analytics_enabled: true }),
     });
   });
 

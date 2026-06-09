@@ -5,7 +5,8 @@
 
 const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
-const { Task, ActivityLog, Notification } = require("../models");
+const { Task, ActivityLog, Notification, UserSetting } = require("../models");
+const { isBehavioralAnalyticsEnabled } = require("../utils/behavioralSettings");
 const { toLocalDayRangeUtc } = require("../utils/timezone");
 const {
   BadRequestError,
@@ -17,6 +18,8 @@ const { withApiTimezone } = require("../utils/apiDateTime");
 const {
   notifyOwnerOfCollaborationResponse,
 } = require("../services/collaborationNotifications");
+const { resolveGoogleCalendarSync } = require("../utils/googleCalendarSync");
+const { deleteEvent } = require("../services/googleCalendar.service");
 
 const STATUS_VALUES = new Set(["pending", "complete"]);
 const STORED_STATUS_FILTER = {
@@ -514,9 +517,12 @@ const updateTaskStatus = async (req, res, next) => {
       && String(existingTask.status || "").toLowerCase() !== "complete"
     ) {
       try {
-        await ActivityLog.create(
-          buildCompletedLogPayload(task),
-        );
+        const userSettings = await UserSetting.findOne({ user_id: req.userId }).lean();
+        if (isBehavioralAnalyticsEnabled(userSettings)) {
+          await ActivityLog.create(
+            buildCompletedLogPayload(task),
+          );
+        }
       } catch (error) {
         console.warn(
           `[TasksController] Failed to insert task_completed log for task ${task._id}: ${error.message}`,
@@ -568,6 +574,21 @@ const deleteTask = async (req, res, next) => {
 
     if (!task) {
       throw new NotFoundError("Task not found");
+    }
+
+    try {
+      const userSettings = await UserSetting.findOne({ user_id: req.userId }).lean();
+      const googleIntegration = await resolveGoogleCalendarSync(req.userId, userSettings);
+      const eventId = String(task.google_calendar_event_id || "").trim();
+      if (googleIntegration && eventId) {
+        await deleteEvent(
+          googleIntegration.access_token,
+          googleIntegration.calendar_id || "primary",
+          eventId,
+        );
+      }
+    } catch (_error) {
+      // Calendar sync is best-effort and must not block task deletion.
     }
 
     res.json({

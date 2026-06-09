@@ -36,7 +36,8 @@ class LearningUpdatePhase1SchemaTests(unittest.IsolatedAsyncioTestCase):
                     "action_type": "task_completed",
                     "subject": "python",
                     "source": "learning_module",
-                }
+                },
+                force=True,
             )
 
         self.assertTrue(inserted_id)
@@ -60,7 +61,8 @@ class LearningUpdatePhase1SchemaTests(unittest.IsolatedAsyncioTestCase):
                     "action_type": "task_completed",
                     "subject": "python",
                     "source": "learning_module",
-                }
+                },
+                force=True,
             )
 
         self.assertTrue(inserted_id)
