@@ -9,10 +9,12 @@ const router = express.Router();
 const { protect } = require("../middleware/auth");
 const {
   connectGoogleCalendar,
+  disconnectGoogleCalendar,
   getIntegrations,
 } = require("../controllers/integrations.controller");
 
 router.post("/google/connect", protect, connectGoogleCalendar);
+router.delete("/google", protect, disconnectGoogleCalendar);
 router.get("/", protect, getIntegrations);
 
 module.exports = router;

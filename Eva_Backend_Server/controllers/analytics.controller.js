@@ -3,7 +3,8 @@
  * Behavioral analytics dashboard endpoints (non-chat APIs).
  */
 
-const { ActivityLog } = require("../models");
+const { ActivityLog, UserSetting } = require("../models");
+const { isBehavioralAnalyticsEnabled } = require("../utils/behavioralSettings");
 const { BadRequestError } = require("../middleware/errorHandler");
 const { toLocalDayRangeUtc } = require("../utils/timezone");
 const { callAIAnalytics } = require("../services/ai.service");
@@ -188,6 +189,20 @@ const getDaysDistribution = async (req, res, next) => {
  */
 const getCompletionTrend = async (req, res, next) => {
   try {
+    const userSettings = await UserSetting.findOne({ user_id: req.userId }).lean();
+    if (!isBehavioralAnalyticsEnabled(userSettings)) {
+      return res.json({
+        status: "analytics_disabled",
+        message:
+          "Behavioral analytics is disabled. Enable it in Settings to track and view productivity insights.",
+        data: {
+          weeks: parseWeeksQuery(req.query.weeks),
+          trend: [],
+          behavioral_analytics_enabled: false,
+        },
+      });
+    }
+
     const weeks = parseWeeksQuery(req.query.weeks);
     const match = {
       ...buildCompletionMatch(req.userId),

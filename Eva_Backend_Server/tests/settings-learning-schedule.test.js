@@ -89,7 +89,6 @@ describe("PATCH /api/settings/learning-schedule", () => {
     mockOpenTasks([]);
     const mockSettings = {
       user_id: USER_ID,
-      preferred_learning_duration: 90,
       preferred_learning_schedules: [],
       save: jest.fn().mockResolvedValue(),
     };
@@ -177,7 +176,7 @@ describe("PATCH /api/settings/learning-schedule", () => {
         preferred_learning_schedules: [
           {
             label: "Morning",
-            slots: [{ day: 0, time: "10:30" }],
+            slots: [{ day: 0, time: "10:30", duration_minutes: 90 }],
           },
         ],
       });
@@ -202,7 +201,6 @@ describe("learning-schedules CRUD", () => {
   test("POST create → 201", async () => {
     const mockSettings = {
       user_id: USER_ID,
-      preferred_learning_duration: 90,
       preferred_learning_schedules: [],
       save: jest.fn().mockResolvedValue(),
     };
@@ -224,7 +222,6 @@ describe("learning-schedules CRUD", () => {
   test("POST second schedule → 201", async () => {
     const mockSettings = {
       user_id: USER_ID,
-      preferred_learning_duration: 90,
       preferred_learning_schedules: [
         {
           id: "s1",
@@ -332,7 +329,6 @@ describe("learning-schedules CRUD", () => {
   test("PATCH update by id → 200", async () => {
     const mockSettings = {
       user_id: USER_ID,
-      preferred_learning_duration: 90,
       preferred_learning_schedules: [
         {
           id: "s1",
@@ -426,13 +422,36 @@ describe("learning-schedules CRUD", () => {
       .set(authHeaders());
 
     expect(response.status).toBe(409);
+    expect(response.body.message).toMatch(/active or paused/i);
     expect(LearningGoal.exists).toHaveBeenCalledWith(
       expect.objectContaining({
         learning_schedule_id: "s1",
-        status: "active",
+        status: { $in: ["active", "paused"] },
         is_deleted: false,
       }),
     );
+  });
+
+  test("DELETE when paused goal uses schedule → 409", async () => {
+    LearningGoal.exists.mockResolvedValue({ _id: "goal1" });
+    UserSetting.findOne.mockResolvedValue({
+      user_id: USER_ID,
+      preferred_learning_schedules: [
+        {
+          id: "s1",
+          label: "Morning",
+          slots: [{ day: 0, time: "09:00", duration_minutes: 60 }],
+        },
+      ],
+      save: jest.fn().mockResolvedValue(),
+    });
+
+    const response = await request(app)
+      .delete("/api/settings/learning-schedules/s1")
+      .set(authHeaders());
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toMatch(/active or paused/i);
   });
 
   test("DELETE succeeds when only soft-deleted goals used schedule", async () => {
@@ -456,14 +475,16 @@ describe("learning-schedules CRUD", () => {
 
     expect(response.status).toBe(200);
     expect(LearningGoal.exists).toHaveBeenCalledWith(
-      expect.objectContaining({ is_deleted: false }),
+      expect.objectContaining({
+        status: { $in: ["active", "paused"] },
+        is_deleted: false,
+      }),
     );
   });
 
   test("GET list → 200", async () => {
     UserSetting.findOne.mockResolvedValue({
       user_id: USER_ID,
-      preferred_learning_duration: 90,
       preferred_learning_schedules: [
         {
           id: "a",
@@ -501,7 +522,6 @@ describe("GET /api/settings", () => {
     UserSetting.findOne.mockResolvedValue({
       user_id: USER_ID,
       theme: "dark",
-      preferred_learning_duration: 90,
       preferred_learning_schedules: [
         {
           id: "s1",
@@ -514,14 +534,16 @@ describe("GET /api/settings", () => {
     const response = await request(app).get("/api/settings").set(authHeaders());
 
     expect(response.status).toBe(200);
-    expect(response.body.data.preferred_learning_schedules).toHaveLength(1);
-    expect(response.body.data.preferred_learning_schedules[0].label).toBe("Study");
+    expect(response.body.data.settings.preferred_learning_schedules).toHaveLength(1);
+    expect(response.body.data.settings.preferred_learning_schedules[0].label).toBe(
+      "Study",
+    );
+    expect(response.body.data.preferred_learning_schedules).toBeUndefined();
   });
 
   test("migrates orphan flat slots from old Mongo docs on read", async () => {
     UserSetting.findOne.mockResolvedValue({
       user_id: USER_ID,
-      preferred_learning_duration: 90,
       preferred_learning_schedules: [],
       preferred_learning_schedule: [{ day: 2, time: "14:00" }],
     });
@@ -529,7 +551,124 @@ describe("GET /api/settings", () => {
     const response = await request(app).get("/api/settings").set(authHeaders());
 
     expect(response.status).toBe(200);
-    expect(response.body.data.preferred_learning_schedules).toHaveLength(1);
-    expect(response.body.data.preferred_learning_schedules[0].label).toBe("Default");
+    expect(response.body.data.settings.preferred_learning_schedules).toHaveLength(1);
+    expect(response.body.data.settings.preferred_learning_schedules[0].label).toBe(
+      "Default",
+    );
+    expect(response.body.data.preferred_learning_schedules).toBeUndefined();
+  });
+});
+
+describe("PATCH /api/settings internal fields", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    User.findById.mockResolvedValue({
+      _id: USER_ID,
+      is_active: true,
+      timezone: "UTC",
+    });
+    UserSetting.findOne.mockResolvedValue({
+      user_id: USER_ID,
+      save: jest.fn().mockResolvedValue(),
+    });
+  });
+
+  test("rejects analytics_min_tasks_threshold", async () => {
+    const response = await request(app)
+      .patch("/api/settings")
+      .set(authHeaders())
+      .send({ analytics_min_tasks_threshold: 10 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/system setting/i);
+  });
+
+  test("rejects preferred_learning_duration", async () => {
+    const response = await request(app)
+      .patch("/api/settings")
+      .set(authHeaders())
+      .send({ preferred_learning_duration: 60 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/system setting/i);
+  });
+
+  test("rejects removed language setting", async () => {
+    const response = await request(app)
+      .patch("/api/settings")
+      .set(authHeaders())
+      .send({ language: "en" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/language is no longer supported/i);
+  });
+
+  test("rejects removed show_last_active setting", async () => {
+    const response = await request(app)
+      .patch("/api/settings")
+      .set(authHeaders())
+      .send({ show_last_active: false });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/show_last_active is no longer supported/i);
+  });
+
+  test("rejects invalid allow_friend_requests", async () => {
+    const response = await request(app)
+      .patch("/api/settings")
+      .set(authHeaders())
+      .send({ allow_friend_requests: "friends_only" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/allow_friend_requests must be boolean/i);
+  });
+
+  test("accepts allow_friend_requests false", async () => {
+    const mockSettings = {
+      user_id: USER_ID,
+      save: jest.fn().mockResolvedValue(),
+    };
+    UserSetting.findOne.mockResolvedValue(mockSettings);
+
+    const response = await request(app)
+      .patch("/api/settings")
+      .set(authHeaders())
+      .send({ allow_friend_requests: false });
+
+    expect(response.status).toBe(200);
+    expect(mockSettings.allow_friend_requests).toBe(false);
+    expect(mockSettings.save).toHaveBeenCalled();
+  });
+});
+
+describe("learning schedule slot validation", () => {
+  beforeEach(() => {
+    jest.clearAllMocks();
+    LearningGoal.exists.mockResolvedValue(null);
+    User.findById.mockResolvedValue({
+      _id: USER_ID,
+      is_active: true,
+      timezone: "UTC",
+    });
+    mockOpenTasks([]);
+  });
+
+  test("POST schedule without duration_minutes → 400", async () => {
+    UserSetting.findOne.mockResolvedValue({
+      user_id: USER_ID,
+      preferred_learning_schedules: [],
+      save: jest.fn().mockResolvedValue(),
+    });
+
+    const response = await request(app)
+      .post("/api/settings/learning-schedules")
+      .set(authHeaders())
+      .send({
+        label: "Morning",
+        slots: [{ day: 0, time: "09:00" }],
+      });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/duration_minutes is required/i);
   });
 });

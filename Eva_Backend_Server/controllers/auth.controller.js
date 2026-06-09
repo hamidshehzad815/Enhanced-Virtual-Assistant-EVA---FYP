@@ -18,6 +18,7 @@ const {
   sendPasswordResetEmail,
 } = require("../services/email.service");
 const { renderEmailVerificationPage } = require("../utils/verificationPage");
+const { allowFriendRequestsToBoolean } = require("../utils/friendSettings");
 
 const serializeAuthUser = (user) => ({
   _id: user._id,
@@ -25,6 +26,7 @@ const serializeAuthUser = (user) => ({
   username: user.username,
   email: user.email,
   is_verified: Boolean(user.is_verified),
+  profile_picture: user.profile_picture || null,
 });
 
 /**
@@ -318,25 +320,32 @@ const logout = async (req, res, next) => {
  */
 const getMe = async (req, res, next) => {
   try {
-    const settings = await UserSetting.findOne({ user_id: req.user._id })
+    const settingsDoc = await UserSetting.findOne({ user_id: req.user._id })
       .select([
         "theme",
-        "language",
         "notifications_enabled",
         "push_notifications_enabled",
         "email_notifications_enabled",
         "quiet_hours_enabled",
         "quiet_hours",
         "allow_friend_requests",
-        "show_last_active",
       ].join(" "))
       .lean();
+
+    const settings = settingsDoc
+      ? {
+          ...settingsDoc,
+          allow_friend_requests: allowFriendRequestsToBoolean(
+            settingsDoc.allow_friend_requests,
+          ),
+        }
+      : null;
 
     res.json({
       status: "success",
       data: {
         user: serializeAuthUser(req.user),
-        settings: settings || null,
+        settings,
       },
     });
   } catch (error) {

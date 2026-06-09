@@ -11,6 +11,7 @@ from typing import Any, Dict, Optional
 from db.readers import fetch_user, fetch_user_settings
 from db.tasks import find_overlapping_task_for_user
 from utils.learning_schedule_conflicts import find_task_conflicts_from_settings
+from utils.quiet_hours import find_quiet_hour_matches_for_datetime, format_quiet_hour_labels
 from utils.timezone_utils import resolve_timezone_name
 
 
@@ -47,6 +48,19 @@ async def find_user_calendar_conflicts(
         }
 
     settings = await fetch_user_settings(user_id)
+    quiet_matches = find_quiet_hour_matches_for_datetime(
+        settings,
+        due,
+        duration_minutes,
+        timezone_name=tz,
+    )
+    if quiet_matches:
+        return {
+            "kind": "quiet_hours",
+            "labels": format_quiet_hour_labels(quiet_matches),
+            "blocks": quiet_matches,
+        }
+
     schedule_conflicts = find_task_conflicts_from_settings(
         due,
         duration_minutes,
@@ -73,6 +87,19 @@ def format_collaborator_conflict_message(
 ) -> str:
     """User-facing message when a collaborator cannot use a time window."""
     name = (collaborator_name or "Your collaborator").strip()
+    if conflict.get("kind") == "quiet_hours":
+        labels = str(conflict.get("labels") or "quiet hours")
+        if for_learning_plan:
+            return (
+                f"{name} has {labels} at that time, so a lesson in this plan would "
+                "fall in their quiet hours. Adjust the plan, remove that collaborator, "
+                "or ask them to change their quiet hours."
+            )
+        return (
+            f"{name} has {labels} at that time. "
+            "Please choose a different time for this task."
+        )
+
     if conflict.get("kind") == "task":
         title = str(conflict.get("title") or "another task")
         if for_learning_plan:

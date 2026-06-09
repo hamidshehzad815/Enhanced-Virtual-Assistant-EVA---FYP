@@ -75,8 +75,6 @@ async def fetch_user_settings(user_id: str) -> Dict[str, Any]:
 				break
 
 	settings = _normalize_doc_id(doc) or {}
-	settings.setdefault("analytics_min_tasks_threshold", 20)
-	settings.setdefault("analytics_min_tasks_per_day", 5)
 	settings.setdefault("preferred_learning_schedules", [])
 	try:
 		from utils.learning_schedules import schedules_from_settings

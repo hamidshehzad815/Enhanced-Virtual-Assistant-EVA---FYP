@@ -234,7 +234,7 @@ async def main_async(
         logs = build_sparse_logs(owner) if profile == "sparse" else build_full_logs(owner)
 
         for payload in logs:
-            await insert_log(payload)
+            await insert_log(payload, force=True)
 
         total = await get_total_completed(user_id)
         counts = await get_log_count_per_day(user_id)

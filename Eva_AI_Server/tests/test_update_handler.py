@@ -495,6 +495,7 @@ class TestUpdateHandlerPhase28(unittest.IsolatedAsyncioTestCase):
                 "calendar_id": "primary",
             }
         ]
+        yes_context["settings"] = {"google_calendar_sync_enabled": True}
         yes_context["pending_context"] = {
             "pending_action": {
                 "intent": "update",

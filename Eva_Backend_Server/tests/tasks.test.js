@@ -44,6 +44,9 @@ jest.mock("../models", () => ({
   ActivityLog: {
     create: jest.fn(),
   },
+  UserSetting: {
+    findOne: jest.fn(),
+  },
   Task: {
     find: jest.fn(),
     countDocuments: jest.fn(),
@@ -54,7 +57,7 @@ jest.mock("../models", () => ({
 }));
 
 const app = require("../app");
-const { User, Task, ActivityLog } = require("../models");
+const { User, Task, ActivityLog, UserSetting } = require("../models");
 
 const USER_ID = "507f1f77bcf86cd799439011";
 const TASK_ID = "507f1f77bcf86cd799439012";
@@ -282,6 +285,9 @@ describe("Tasks API", () => {
     });
     ActivityLog.create.mockResolvedValue({
       _id: "507f1f77bcf86cd799439099",
+    });
+    UserSetting.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ behavioral_analytics_enabled: true }),
     });
 
     const response = await request(app)

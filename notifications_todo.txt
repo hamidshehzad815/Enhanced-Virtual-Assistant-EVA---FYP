@@ -1,0 +1,80 @@
+# Notifications System — Audit & Fix Tracker
+# Last updated: 2026-06-05
+
+## Architecture
+- Central dispatcher: Eva_Backend_Server/services/notification.service.js → insert_and_dispatch()
+- Model: Eva_Backend_Server/models/Notification.js
+- Producers: chat bridge, AI scheduling/learning handlers, reminder.job.js,
+  collaborationNotifications.js, learningDelete.service.js, friends (after fix)
+
+## Issues Found & Status
+
+### P0 — Critical (user-facing broken behavior)
+[FIXED] 1. notifications_enabled master switch ignored
+    - insert_and_dispatch always inserted in_app and dispatched push/email
+    - Fix: skip entire notification when notifications_enabled === false
+
+[FIXED] 2. No notifications REST API for Flutter in-app inbox
+    - routes/index.js had commented placeholder; no notification.routes.js
+    - Fix: GET /api/notifications, GET /unread-count, PATCH /:id/read, PATCH /read-all
+
+[FIXED] 3. Friend notifications never sent
+    - friend_request / friend_accepted in schema enum but friends.controller never called dispatcher
+    - Fix: notify recipient on send; notify requester on accept
+
+### P1 — Consistency & correctness
+[FIXED] 4. Owner task_scheduled / learning_plan_created missing push channel
+    - Collaborators got push+in_app+email; owner only in_app+email
+    - Fix: add push to owner payloads in add.py and create.py
+
+[FIXED] 5. sent_at set even when all external channels failed
+    - Fix: set sent_at when in_app persisted OR any channel dispatched successfully
+
+[FIXED] 6. Summary missing skipped count for disabled users
+    - Fix: add skipped counter to insert_and_dispatch return value
+
+[DOCUMENTED] 7. Collaboration invite email bypasses email_notifications_enabled
+    - Intentional: collab invites still email when master notifications on
+    - Master switch off blocks everything including forced collab email
+
+### P2 — Unimplemented notification types (schema only)
+[FIXED] 8. goal_progress never dispatched
+    - Fix: emit on learning goal completion in update.py complete flow
+
+[DEFERRED] 9. behavioral_suggestion never dispatched
+    - Requires proactive analytics job or chat handler integration
+    - Not wired in this pass; no producer exists yet
+
+### P3 — Settings cross-cutting (related, not notification core)
+[FIXED] 10. Renamed to default_learning_reminder_minutes; learning create uses it (tasks use default_reminder_minutes)
+[OPEN] 11. behavioral_analytics_enabled stored but AI never checks it
+
+### P4 — Test coverage
+[FIXED] 12. notification.service.test.js only tested empty input
+    - Fix: tests for master switch, push/email gating, skipped count
+
+[OPEN] 13. No integration tests for notifications API endpoints
+    - Add in follow-up if needed
+
+## Channel Matrix (after fixes)
+| Event                      | push | in_app | email | Notes                          |
+|----------------------------|------|--------|-------|--------------------------------|
+| task_scheduled (owner)     |  Y   |   Y    |   Y   | aligned with reminders         |
+| collaboration_invite       |  Y   |   Y    |  Y*   | *forced if master on           |
+| task_deleted (collab)      |  Y   |   Y    |   N   |                                |
+| task/topic reminder        |  Y   |   Y    |   Y   | reminder.job.js                |
+| overdue_alert              |  Y   |   Y    |   Y   | reminder.job.js                |
+| learning_plan_created      |  Y   |   Y    |   Y   | owner aligned                  |
+| learning_collab_invite     |  Y   |   Y    |  Y*   |                                |
+| learning_goal_deleted      |  N   |   Y    |   N   | collaborators only             |
+| collaboration_response     |  Y   |   Y    |   Y   |                                |
+| friend_request             |  Y   |   Y    |   N   | NEW                            |
+| friend_accepted            |  Y   |   Y    |   N   | NEW                            |
+| goal_progress              |  Y   |   Y    |   N   | on plan completion             |
+
+## Settings Gating (after fixes)
+notifications_enabled=false  → skip insert + all channels (skipped++)
+notifications_enabled=true:
+  push_notifications_enabled=false  → skip push only
+  email_notifications_enabled=false → skip email except collab invites
+  in_app always persisted when master on
