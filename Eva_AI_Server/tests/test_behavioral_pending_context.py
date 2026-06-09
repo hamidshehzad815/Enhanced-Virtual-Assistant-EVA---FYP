@@ -66,7 +66,7 @@ def _fetched(context):
             "name": "Hamid",
             "timezone": "Asia/Karachi",
         },
-        settings={"analytics_min_tasks_threshold": 10},
+        settings={"behavioral_analytics_enabled": True},
         history=[],
         integrations=[],
         context=context,

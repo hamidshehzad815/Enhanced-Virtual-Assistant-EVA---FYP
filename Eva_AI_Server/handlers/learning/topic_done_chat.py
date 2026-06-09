@@ -280,6 +280,22 @@ async def maybe_handle_learning_topic_done_chat(
     if user_name:
         body = f"{body} Keep going, {user_name}."
 
+    notifications: List[Dict[str, Any]] = []
+    if (goal or {}).get("status") == "completed":
+        notifications = [
+            {
+                "user_id": str(user_id),
+                "sender_id": None,
+                "type": "goal_progress",
+                "reference_type": "learning_goal",
+                "reference_id": str(goal_id),
+                "title": "Learning goal completed",
+                "message": body[:500],
+                "action_required": False,
+                "delivery_channel": ["push", "in_app"],
+            }
+        ]
+
     return {
         "status": "ok",
         "too_short": False,
@@ -287,6 +303,7 @@ async def maybe_handle_learning_topic_done_chat(
         "context_handled": True,
         "learning_topic_completed": True,
         "response_text": body,
+        "notifications": notifications,
         "user_name": user_name,
         "settings": settings_data,
     }

@@ -1,10 +1,10 @@
 /**
  * Integrations Controller
- * Phase 11 Google Calendar connect/list endpoints.
+ * Phase 11 Google Calendar connect/list/disconnect endpoints.
  */
 
-const { Integration } = require("../models");
-const { BadRequestError } = require("../middleware/errorHandler");
+const { Integration, UserSetting } = require("../models");
+const { BadRequestError, NotFoundError } = require("../middleware/errorHandler");
 const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
 
 const buildApiData = (req, payload) => {
@@ -28,6 +28,30 @@ const sanitizeIntegration = (integration, timezone) =>
     },
     timezone,
   );
+
+const enableGoogleCalendarSyncSetting = async (userId) => {
+  await UserSetting.findOneAndUpdate(
+    { user_id: userId },
+    {
+      $set: {
+        google_calendar_sync_enabled: true,
+        updated_at: new Date(),
+      },
+    },
+  );
+};
+
+const disableGoogleCalendarSyncSetting = async (userId) => {
+  await UserSetting.findOneAndUpdate(
+    { user_id: userId },
+    {
+      $set: {
+        google_calendar_sync_enabled: false,
+        updated_at: new Date(),
+      },
+    },
+  );
+};
 
 /**
  * POST /api/integrations/google/connect
@@ -86,11 +110,56 @@ const connectGoogleCalendar = async (req, res, next) => {
       },
     ).lean();
 
+    await enableGoogleCalendarSyncSetting(req.userId);
+
     res.status(200).json({
       status: "success",
       message: "Google Calendar connected",
       data: buildApiData(req, {
         integration: sanitizeIntegration(integration, (req.user && req.user.timezone) || "UTC"),
+        google_calendar_sync_enabled: true,
+      }),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * DELETE /api/integrations/google
+ * Disconnect Google Calendar and turn sync toggle off.
+ */
+const disconnectGoogleCalendar = async (req, res, next) => {
+  try {
+    const integration = await Integration.findOne({
+      user_id: req.userId,
+      provider: "google_calendar",
+      is_active: true,
+    }).lean();
+
+    if (!integration) {
+      throw new NotFoundError("Google Calendar is not connected");
+    }
+
+    await Integration.updateOne(
+      { _id: integration._id },
+      {
+        $set: {
+          is_active: false,
+          updated_at: new Date(),
+        },
+      },
+    );
+
+    await disableGoogleCalendarSyncSetting(req.userId);
+
+    res.status(200).json({
+      status: "success",
+      message: "Google Calendar disconnected",
+      data: buildApiData(req, {
+        provider: "google_calendar",
+        is_active: false,
+        google_calendar_sync_enabled: false,
       }),
     });
   } catch (error) {
@@ -128,5 +197,6 @@ const getIntegrations = async (req, res, next) => {
 
 module.exports = {
   connectGoogleCalendar,
+  disconnectGoogleCalendar,
   getIntegrations,
 };

@@ -105,6 +105,7 @@ class TestUpdateHandlerPhase27(unittest.IsolatedAsyncioTestCase):
         context["pending_context"] = {
             "pending_action": {
                 "intent": "update",
+                "stage": "confirm",
                 "task_id": "task1",
                 "entities": {"task_id": "task1", "task_name": "Physics exam"},
                 "updates": {"priority": "high"},
@@ -168,9 +169,11 @@ class TestUpdateHandlerPhase27(unittest.IsolatedAsyncioTestCase):
                 "calendar_id": "primary",
             }
         ]
+        context["settings"] = {"google_calendar_sync_enabled": True}
         context["pending_context"] = {
             "pending_action": {
                 "intent": "update",
+                "stage": "confirm",
                 "task_id": "task1",
                 "entities": {"task_id": "task1", "task_name": "Physics exam"},
                 "updates": {

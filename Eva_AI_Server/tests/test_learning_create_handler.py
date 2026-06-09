@@ -23,7 +23,8 @@ def _ctx(**kwargs):
                 },
             ],
             "default_reminder_minutes": 30,
-            "preferred_learning_duration": 60,
+            "default_learning_reminder_minutes": 15,
+            "google_calendar_sync_enabled": True,
         },
         "history": [],
         "integrations": [],
@@ -512,8 +513,10 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(),
             ),
             patch(
-                "handlers.learning.create._pick_active_google_integration",
-                return_value={"access_token": "tok", "calendar_id": "primary"},
+                "handlers.learning.create.resolve_google_calendar_sync",
+                new=AsyncMock(
+                    return_value={"access_token": "tok", "calendar_id": "primary"},
+                ),
             ),
             patch(
                 "handlers.learning.create.google_calendar_client.create_event",

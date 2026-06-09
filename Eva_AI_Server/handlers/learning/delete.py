@@ -21,7 +21,8 @@ from db.learning_goals import (
 )
 from db.roadmap_topics import soft_delete_pending_topics
 from db.tasks import get_pending_learning_tasks, soft_delete_pending_learning_tasks
-from handlers.scheduling.add import _coerce_text, _pick_active_google_integration
+from handlers.scheduling.add import _coerce_text
+from utils.google_calendar_sync import resolve_google_calendar_sync
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
 from utils.learning_utils import (
@@ -426,11 +427,12 @@ async def _perform_deletions(
     entities: Dict[str, Any],
     integrations: List[Dict[str, Any]],
     owner_name: Optional[str],
+    settings: Optional[Dict[str, Any]] = None,
 ) -> tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     deleted_goals: List[Dict[str, Any]] = []
     notifications: List[Dict[str, Any]] = []
 
-    google_integration = _pick_active_google_integration(integrations)
+    google_integration = await resolve_google_calendar_sync(user_id, integrations, settings)
     access_token = _coerce_text((google_integration or {}).get("access_token"))
     calendar_id = _coerce_text((google_integration or {}).get("calendar_id")) or "primary"
 
@@ -462,7 +464,8 @@ async def _perform_deletions(
                     "action_type": "goal_deleted",
                     "subject": subject_for_log,
                     "source": "learning_module",
-                }
+                },
+                settings=settings,
             )
         except Exception as error:
             print(f"[LearningDelete] Activity log insert failed for goal_id={goal_id}: {error}")
@@ -485,6 +488,7 @@ async def handle_learning_delete(
     user_id = str(context.get("user_id") or "")
     session_id = str(context.get("session_id") or "")
     user = context.get("user") or {}
+    settings = context.get("settings") or {}
     integrations = context.get("integrations") or []
     history = context.get("history") or []
     user_message = str(context.get("message") or "")
@@ -536,6 +540,7 @@ async def handle_learning_delete(
                 entities=pending_entities,
                 integrations=integrations,
                 owner_name=user_name,
+                settings=settings,
             )
             await redis_client.delete_context(user_id)
 

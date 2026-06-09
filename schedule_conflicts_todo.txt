@@ -1,0 +1,33 @@
+# Schedule Conflicts — Tasks × Learning × Quiet Hours
+# Updated: 2026-06-05
+
+## Policy (confirmed with user)
+- Task vs learning schedule slot → HARD BLOCK (no override)
+- Task vs quiet hours → WARN + yes/no; schedule only if user confirms
+- Learning sessions vs quiet hours → HARD BLOCK
+- Settings: learning schedule vs quiet hours → BLOCK save (409)
+- Overlap checks use FULL time window (start + duration), not start-only
+
+## Matrix (after fixes)
+
+| Flow | Task overlap | Learning slot | Quiet hours |
+|------|-------------|---------------|-------------|
+| Task ADD (chat) | hard block | hard block | ask yes/no |
+| Task UPDATE (chat) | hard block | hard block | ask yes/no |
+| Learning CREATE | hard block (owner + collab) | N/A (on slots) | hard block |
+| Learning RESCHEDULE | hard block | learning day check | hard block |
+| Settings: save learning schedule | vs tasks ✓ | cross-schedule ✓ | vs quiet hours ✓ |
+| Settings: save quiet hours | — | vs learning schedules ✓ | — |
+| Collaborator calendar | task → quiet → learning | | |
+
+## Files
+- Eva_AI_Server/utils/quiet_hours.py (shared)
+- Eva_AI_Server/utils/learning_schedule_conflicts.py
+- Eva_AI_Server/utils/collaborator_calendar.py
+- Eva_Backend_Server/utils/quietHoursConflict.js
+- Eva_Backend_Server/utils/learningScheduleConflict.js
+
+## Still open (optional)
+- [ ] Learning skip/rebalance: validate all shifted sessions for quiet hours + tasks
+- [ ] Reminder job: suppress notifications during quiet hours
+- [ ] Task reschedule via UI (non-chat) if added later

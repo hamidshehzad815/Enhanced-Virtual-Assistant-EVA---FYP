@@ -22,14 +22,13 @@ class SchedulesFromSettingsTests(unittest.TestCase):
         self.assertEqual(out[0]["label"], "Morning")
         self.assertEqual(out[0]["slots"][0]["duration_minutes"], 45)
 
-    def test_legacy_flat_migrates(self):
+    def test_legacy_flat_migrates_missing_duration(self):
         settings = {
             "preferred_learning_schedule": [{"day": 1, "time": "10:00"}],
-            "preferred_learning_duration": 75,
         }
         out = ls.schedules_from_settings(settings)
         self.assertEqual(out[0]["id"], "default")
-        self.assertEqual(out[0]["slots"][0]["duration_minutes"], 75)
+        self.assertEqual(out[0]["slots"][0]["duration_minutes"], ls.LEGACY_SLOT_DURATION_MINUTES)
 
 
 class ResolveScheduleTests(unittest.TestCase):

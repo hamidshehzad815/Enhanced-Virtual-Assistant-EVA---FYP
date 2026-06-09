@@ -6,6 +6,7 @@
 const { User } = require("../models");
 const { BadRequestError, ConflictError } = require("../middleware/errorHandler");
 const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
+const { replaceProfilePicture } = require("../services/cloudinary.service");
 
 const buildApiData = (req, payload) => {
   const timezone = (req.user && req.user.timezone) || "UTC";
@@ -15,7 +16,6 @@ const buildApiData = (req, payload) => {
 const ALLOWED_UPDATES = new Set([
   "name",
   "username",
-  "profile_picture",
   "bio",
   "university",
   "department",
@@ -74,6 +74,7 @@ const getProfile = async (req, res, next) => {
 /**
  * PATCH /api/profile
  * Update authenticated user's profile fields.
+ * Profile pictures are updated via POST /api/profile/avatar only.
  */
 const updateProfile = async (req, res, next) => {
   try {
@@ -101,11 +102,6 @@ const updateProfile = async (req, res, next) => {
         throw new BadRequestError("username is required");
       }
       update.username = username.toLowerCase();
-    }
-
-    if (hasOwn(req.body, "profile_picture")) {
-      const profilePicture = normalizeOptionalString(req.body.profile_picture);
-      update.profile_picture = profilePicture || null;
     }
 
     if (hasOwn(req.body, "bio")) {
@@ -173,7 +169,57 @@ const updateProfile = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/profile/avatar
+ * Upload or replace the authenticated user's profile picture via Cloudinary.
+ */
+const uploadAvatar = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      throw new BadRequestError('avatar file is required (multipart field "avatar")');
+    }
+
+    const currentUser = await User.findById(req.userId).select(
+      "+profile_picture_public_id",
+    );
+    if (!currentUser) {
+      throw new BadRequestError("User not found");
+    }
+
+    const uploaded = await replaceProfilePicture(
+      req.userId,
+      req.file,
+      currentUser.profile_picture_public_id,
+    );
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.userId,
+      {
+        $set: {
+          profile_picture: uploaded.secure_url,
+          profile_picture_public_id: uploaded.public_id,
+        },
+      },
+      {
+        new: true,
+        runValidators: true,
+      },
+    );
+
+    res.json({
+      status: "success",
+      message: "Profile picture updated",
+      data: buildApiData(req, {
+        user: updatedUser.toPublicProfile(),
+      }),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
+  uploadAvatar,
 };

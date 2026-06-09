@@ -19,6 +19,7 @@ const learningRoutes = require("./learning.routes");
 const roadmapsRoutes = require("./roadmaps.routes");
 const profileRoutes = require("./profile.routes");
 const dashboardRoutes = require("./dashboard.routes");
+const notificationRoutes = require("./notifications.routes");
 
 // Register routes
 router.use("/", healthRoutes);
@@ -33,9 +34,6 @@ router.use("/api/learning", learningRoutes);
 router.use("/api/roadmaps", roadmapsRoutes);
 router.use("/api/profile", profileRoutes);
 router.use("/api/dashboard", dashboardRoutes);
-
-// Future routes will be added here:
-// router.use('/api/notifications', notificationRoutes);
-// router.use('/api/learning', learningRoutes);
+router.use("/api/notifications", notificationRoutes);
 
 module.exports = router;

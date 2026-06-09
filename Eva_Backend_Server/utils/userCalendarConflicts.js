@@ -7,6 +7,10 @@ const {
   findTaskConflictsWithLearningSchedules,
 } = require("./learningScheduleConflict");
 const { getSchedulesFromSettingsDoc } = require("./learningSchedules");
+const {
+  findQuietHourMatchesForDate,
+  formatQuietHourLabels,
+} = require("./quietHoursConflict");
 
 const DEFAULT_TASK_DURATION = 120;
 
@@ -74,6 +78,20 @@ async function findUserCalendarConflicts(userId, dueDate, durationMinutes, timeZ
   }
 
   const settingsDoc = await UserSetting.findOne({ user_id: userId }).lean();
+  const quietMatches = findQuietHourMatchesForDate(
+    settingsDoc || {},
+    dueDate,
+    dur,
+    tz,
+  );
+  if (quietMatches.length > 0) {
+    return {
+      kind: "quiet_hours",
+      labels: formatQuietHourLabels(quietMatches),
+      blocks: quietMatches,
+    };
+  }
+
   const schedules = getSchedulesFromSettingsDoc(settingsDoc || {});
   const scheduleConflicts = findTaskConflictsWithLearningSchedules(
     new Date(dueDate),
@@ -96,6 +114,21 @@ async function findUserCalendarConflicts(userId, dueDate, durationMinutes, timeZ
 
 function formatCollaboratorConflictMessage(collaboratorName, conflict, { forLearningPlan = false } = {}) {
   const name = (collaboratorName || "Your collaborator").trim();
+  if (conflict.kind === "quiet_hours") {
+    const labels = conflict.labels || "quiet hours";
+    if (forLearningPlan) {
+      return (
+        `${name} has ${labels} at that time, so a lesson in this plan would `
+        + "fall in their quiet hours. Adjust the plan, remove that collaborator, "
+        + "or ask them to change their quiet hours."
+      );
+    }
+    return (
+      `${name} has ${labels} at that time. `
+      + "Please choose a different time for this task."
+    );
+  }
+
   if (conflict.kind === "task") {
     const title = conflict.title || "another task";
     if (forLearningPlan) {
