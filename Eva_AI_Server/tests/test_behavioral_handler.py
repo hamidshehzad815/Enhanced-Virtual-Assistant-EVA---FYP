@@ -23,8 +23,7 @@ def _base_context(message: str) -> dict:
             "timezone": "Asia/Karachi",
         },
         "settings": {
-            "analytics_min_tasks_threshold": 20,
-            "analytics_min_tasks_per_day": 5,
+            "behavioral_analytics_enabled": True,
         },
         "history": [],
     }
@@ -35,6 +34,22 @@ def _gemini_stub(action_context, _user_name, _history):
 
 
 class TestBehavioralHandlerPhase8(unittest.IsolatedAsyncioTestCase):
+    async def test_analytics_disabled_returns_prompt_to_enable(self):
+        context = _base_context("when am i most productive")
+        context["settings"] = {"behavioral_analytics_enabled": False}
+
+        with patch(
+            "handlers.behavioral.behavioral.gemini_service.generate_reply",
+            side_effect=_gemini_stub,
+        ), patch(
+            "handlers.behavioral.behavioral._save_turn",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await handle_behavioral({}, context)
+
+        self.assertEqual(result["status"], "analytics_disabled")
+        self.assertEqual(result["response_text"], "ACTION:behavioral_analytics_disabled")
+
     async def test_below_global_threshold_returns_not_enough_data(self):
         with patch(
             "handlers.behavioral.behavioral.get_total_completed",

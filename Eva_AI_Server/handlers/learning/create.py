@@ -24,9 +24,9 @@ from handlers.scheduling.add import (
     _find_and_validate_collaborators,
     _format_date_display,
     _format_time_display,
-    _pick_active_google_integration,
     _split_collaborators,
 )
+from utils.google_calendar_sync import resolve_google_calendar_sync
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
@@ -35,11 +35,17 @@ from utils.collaborator_calendar import (
     format_collaborator_conflict_message,
 )
 from utils.learning_schedules import (
+    DEFAULT_DURATION_MINUTES,
     resolve_schedule_for_learning,
     schedules_from_settings,
     used_learning_schedule_ids,
 )
+from utils.quiet_hours import (
+    find_quiet_hour_matches_for_datetime,
+    format_quiet_hours_learning_block_message,
+)
 from utils.learning_utils import (
+    resolve_learning_reminder_minutes,
     SUPPORTED_TOPICS,
     build_schedule,
     calculate_available_sessions,
@@ -193,8 +199,7 @@ async def handle_learning_create(
     tz = resolve_timezone_name(user.get("timezone"))
     labeled_schedules = schedules_from_settings(settings)
 
-    reminder_minutes = int(settings.get("default_reminder_minutes", 30))
-    default_session_duration = int(settings.get("preferred_learning_duration", 90))
+    reminder_minutes = resolve_learning_reminder_minutes(settings)
     schedule_slots: List[Dict[str, Any]] = []
     chosen_schedule_id = ""
 
@@ -421,14 +426,14 @@ async def handle_learning_create(
         start_d,
         topics_db,
         schedule_slots,
-        default_duration_minutes=default_session_duration,
+        default_duration_minutes=DEFAULT_DURATION_MINUTES,
         timezone_name=tz,
     )
     for row in scheduled_rows:
         session_dt = row.get("scheduled_date")
         if not isinstance(session_dt, datetime):
             continue
-        session_dur = int(row.get("duration_minutes") or default_session_duration)
+        session_dur = int(row.get("duration_minutes") or DEFAULT_DURATION_MINUTES)
         overlap_task = await find_overlapping_task_for_user(
             user_id,
             session_dt,
@@ -441,6 +446,21 @@ async def handle_learning_create(
                 f"I can't create this plan because {session_label} would overlap "
                 f"your existing task “{conflict_title}”. "
                 "Move or delete that task, pick a different learning schedule, or adjust your plan dates."
+            )
+            return await finish(msg, status="error")
+
+        quiet_matches = find_quiet_hour_matches_for_datetime(
+            settings,
+            session_dt,
+            session_dur,
+            timezone_name=tz,
+        )
+        if quiet_matches:
+            session_label = _coerce_text(row.get("title")) or "A learning session"
+            msg = format_quiet_hours_learning_block_message(
+                quiet_matches,
+                session_label=session_label,
+                user_name=user_name,
             )
             return await finish(msg, status="error")
 
@@ -508,7 +528,7 @@ async def handle_learning_create(
         sd = sch.get("scheduled_date")
         if not isinstance(sd, datetime):
             sd = datetime.combine(start_d, datetime.min.time())
-        row_dur = int(sch.get("duration_minutes") or default_session_duration)
+        row_dur = int(sch.get("duration_minutes") or DEFAULT_DURATION_MINUTES)
         bulk_topics.append(
             {
                 "goal_id": goal_id,
@@ -521,7 +541,7 @@ async def handle_learning_create(
         )
     topic_ids = await insert_topics_bulk(bulk_topics)
 
-    google_integration = _pick_active_google_integration(integrations)
+    google_integration = await resolve_google_calendar_sync(user_id, integrations, settings)
     access_token = _coerce_text((google_integration or {}).get("access_token"))
     calendar_id = _coerce_text((google_integration or {}).get("calendar_id")) or "primary"
     calendar_any = False
@@ -533,7 +553,7 @@ async def handle_learning_create(
         if not isinstance(due, datetime):
             continue
         task_title = f"Learn: {_coerce_text(sch.get('title')) or f'Session {idx + 1}'}"
-        task_dur = int(sch.get("duration_minutes") or default_session_duration)
+        task_dur = int(sch.get("duration_minutes") or DEFAULT_DURATION_MINUTES)
         task_doc: Dict[str, Any] = {
             "owner_id": owner_oid,
             "title": task_title[:200],
@@ -585,7 +605,8 @@ async def handle_learning_create(
             "action_timestamp": now,
             "subject": title,
             "source": "learning_module",
-        }
+        },
+        settings=settings,
     )
 
     preview: List[str] = []
@@ -636,7 +657,7 @@ async def handle_learning_create(
             "title": "Learning plan ready",
             "message": response_text[:500],
             "action_required": False,
-            "delivery_channel": ["in_app", "email"],
+            "delivery_channel": ["push", "in_app", "email"],
         }
     ]
 

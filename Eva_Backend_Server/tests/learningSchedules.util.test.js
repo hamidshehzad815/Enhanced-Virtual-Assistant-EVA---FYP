@@ -46,6 +46,17 @@ describe("learningSchedules cross-schedule slots", () => {
     ).toThrow(/Monday 18:00|same weekday/i);
   });
 
+  test("bulk normalize requires duration_minutes on each slot", () => {
+    expect(() =>
+      normalizePreferredLearningSchedules([
+        {
+          label: "Morning",
+          slots: [{ day: 0, time: "09:00" }],
+        },
+      ]),
+    ).toThrow(/duration_minutes is required/i);
+  });
+
   test("assertNoDuplicateSlotsAcrossSchedules passes for non-overlapping", () => {
     expect(() =>
       assertNoDuplicateSlotsAcrossSchedules([

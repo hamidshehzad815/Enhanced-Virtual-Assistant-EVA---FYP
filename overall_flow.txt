@@ -131,7 +131,7 @@ STEP 3 — AI SERVER RECEIVES REQUEST
     gets: default_priority, default_duration,
           default_reminder_minutes, behavioral_analytics_enabled,
           analytics_min_tasks_threshold, preferred_learning_time,
-          google_calendar_sync_enabled, quiet_hours, language
+          google_calendar_sync_enabled, quiet_hours
 
   → fetch conversation history:
     db.conversation_history.find({ session_id: session_id })

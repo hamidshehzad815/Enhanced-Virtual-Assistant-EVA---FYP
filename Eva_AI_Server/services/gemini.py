@@ -58,6 +58,7 @@ _ACTION_GUIDANCE: Dict[str, str] = {
     "show_results": "Introduce shown tasks naturally and keep the tone concise and helpful.",
     "show_not_found": "Explain that no tasks matched the requested show filters.",
     "behavioral_ask_day": "Ask which weekday the user wants analytics for.",
+    "behavioral_analytics_disabled": "Explain that behavioral analytics is turned off in Settings and ask the user to enable it so Eva can track recent activity and provide insights going forward.",
     "behavioral_not_enough_data": "Explain that more completed tasks are needed before meaningful analytics can be generated.",
     "behavioral_no_data_for_filter": "Explain that no analytics data exists for the requested filter and suggest trying another filter.",
     "behavioral_productive_hours": "Summarize the user's top productive hours naturally with completion and on-time insights.",
@@ -361,6 +362,11 @@ _FALLBACK_RESPONSES: Dict[str, List[str]] = {
         "Which day would you like me to find the best time for, {name}?",
         "Tell me the weekday you want, {name}, like Monday or Friday.",
         "I can do that, {name}. Which day should I analyze?",
+    ],
+    "behavioral_analytics_disabled": [
+        "Behavioral analytics is turned off in your Settings, {name}. Turn it on so I can track your recent activity and give you productivity insights.",
+        "I can't run behavioral insights right now because analytics tracking is disabled, {name}. Enable behavioral analytics in Settings and I'll start collecting fresh data for you.",
+        "Your behavioral analytics toggle is off, {name}. Switch it on in Settings so I can track new completions and help with scheduling insights later.",
     ],
     "behavioral_not_enough_data": [
         "I need a little more history first, {name}. You have {total_completed} completed tasks, and I need at least {threshold} to give reliable insights.",
