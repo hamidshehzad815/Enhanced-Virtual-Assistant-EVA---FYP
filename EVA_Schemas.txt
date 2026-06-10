@@ -304,7 +304,7 @@ COLLECTION OWNERSHIP
   quiet_hours                     Array           One or multiple named quiet-hour blocks
                                                   [{ label, start, end, enabled }]
   default_reminder_minutes        Number          Default 30, for task reminders
-  default_topic_reminder_minutes  Number          Default 15, for learning topic reminders
+  default_learning_reminder_minutes Number        Default 15, for learning topic reminders
   default_task_priority           Enum            "low" / "medium" / "high", default "medium"
   default_task_duration           Number          Default 120 minutes
   behavioral_analytics_enabled    Boolean         Default true

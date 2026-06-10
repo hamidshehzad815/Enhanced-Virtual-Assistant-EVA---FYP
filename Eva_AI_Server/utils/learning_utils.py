@@ -708,20 +708,16 @@ def extract_duration_days(text: Optional[str]) -> Optional[int]:
 
 DEFAULT_LEARNING_REMINDER_MINUTES = 15
 LEARNING_REMINDER_SETTING_KEY = "default_learning_reminder_minutes"
-LEGACY_LEARNING_REMINDER_SETTING_KEY = "default_topic_reminder_minutes"
 
 
 def resolve_learning_reminder_minutes(settings: Optional[Dict[str, Any]]) -> int:
     """
     Minutes before a learning session due time to send a reminder.
 
-    Reads ``default_learning_reminder_minutes`` from user settings (falls back to
-    legacy ``default_topic_reminder_minutes``, then 15).
+    Reads ``default_learning_reminder_minutes`` from user settings (default 15).
     """
     settings = settings or {}
     raw = settings.get(LEARNING_REMINDER_SETTING_KEY)
-    if raw is None:
-        raw = settings.get(LEGACY_LEARNING_REMINDER_SETTING_KEY)
     try:
         minutes = int(raw if raw is not None else DEFAULT_LEARNING_REMINDER_MINUTES)
     except (TypeError, ValueError):

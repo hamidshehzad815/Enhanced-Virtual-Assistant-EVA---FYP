@@ -164,7 +164,7 @@ PIPELINE (inside AI Server)
   AI SERVER SELF-FETCH
   → user info (name, timezone)
   → user settings (preferred_learning_schedule,
-                   default_topic_reminder_minutes)
+                   default_learning_reminder_minutes)
   → conversation history
   → integrations (google_calendar)
   → Redis context
