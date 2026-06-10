@@ -126,7 +126,6 @@ Notes:
 ### Settings
 - `GET /api/settings` (protected)
 - `PATCH /api/settings` (protected)
-- `PATCH /api/settings/learning-schedule` (protected, bulk replace)
 - `GET /api/settings/learning-schedules` (protected)
 - `POST /api/settings/learning-schedules` (protected)
 - `PATCH /api/settings/learning-schedules/:scheduleId` (protected)
@@ -617,46 +616,22 @@ Notes:
   - `quiet_hours_enabled`, `quiet_hours`
   - `push_token`, `remove_push_token`
   - `theme`
-  - `default_reminder_minutes` (tasks), `default_learning_reminder_minutes` (learning sessions; legacy alias `default_topic_reminder_minutes` accepted on PATCH)
-  - `default_task_priority`, `default_task_duration`
+  - `default_reminder_minutes` (tasks), `default_learning_reminder_minutes` (learning sessions)
+  - `default_task_duration`
   - `behavioral_analytics_enabled`
-  - `analytics_min_tasks_threshold`, `analytics_min_tasks_per_day`
-  - `preferred_learning_duration`
-  - `preferred_learning_schedules`
   - `google_calendar_sync_enabled`
-  - `allow_friend_requests`
+  - `allow_friend_requests` (boolean)
+- Not accepted on this route:
+  - `preferred_learning_schedules` — use `/api/settings/learning-schedules` CRUD instead
+  - Removed: `default_topic_reminder_minutes`, `language`, `show_last_active`
+  - Internal/system-only: `default_task_priority`, `analytics_min_tasks_threshold`, `analytics_min_tasks_per_day`, `preferred_learning_duration`
 - Notes:
   - If no valid fields: `400`.
   - `quiet_hours` blocks: array of `{label,start,end,enabled}` with `HH:mm`.
-  - Push token fields mutate `User.push_tokens`.
+  - Sending `quiet_hours: []` auto-disables `quiet_hours_enabled` unless you also send `quiet_hours_enabled: true`.
+  - Push token fields mutate `User.push_tokens` (not returned on GET settings).
 
-### `PATCH /api/settings/learning-schedule` (bulk replace)
-- Auth: Yes
-- Body:
-```json
-{
-  "preferred_learning_schedules": [
-    {
-      "id": "optional in first schedule for migration behavior",
-      "label": "string",
-      "slots": [
-        { "day": 0, "time": "19:00", "duration_minutes": 60 }
-      ]
-    }
-  ]
-}
-```
-- Rules:
-  - At least 1 schedule required
-  - Max schedules: 20
-  - Unique schedule labels and ids
-  - Slot day must be 0..6
-  - Slot time must be `HH:mm`
-  - Slot duration 15..240 minutes
-  - One slot per day per schedule
-  - Conflict check: cannot overlap existing non-complete tasks at same weekday/time in user timezone
-
-### `GET /api/settings/learning-schedules`
+### Learning schedule CRUD (only way to change schedules)
 - Auth: Yes
 - Returns only `preferred_learning_schedules`.
 

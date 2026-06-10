@@ -28,7 +28,6 @@ const {
   assertUniqueLabelAmong,
   applyLearningSchedules,
 } = require("../utils/learningSchedules");
-const { callAIInternal } = require("../services/ai.service");
 const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
 const { allowFriendRequestsToBoolean } = require("../utils/friendSettings");
 
@@ -41,30 +40,27 @@ const INTERNAL_SETTINGS_FIELDS = [
   "analytics_min_tasks_threshold",
   "analytics_min_tasks_per_day",
   "preferred_learning_duration",
+  "default_task_priority",
 ];
 
-const REMOVED_SETTINGS_FIELDS = ["language", "show_last_active"];
+const REMOVED_SETTINGS_FIELDS = [
+  "language",
+  "show_last_active",
+  "default_topic_reminder_minutes",
+];
 
-/** Map legacy fields and strip internal-only settings from API responses. */
+/** Strip internal-only and removed settings from API responses. */
 const normalizeSettingsForApi = (settings) => {
   const plain = settings && settings.toObject ? settings.toObject() : { ...(settings || {}) };
-  if (
-    plain.default_learning_reminder_minutes == null
-    && plain.default_topic_reminder_minutes != null
-  ) {
-    plain.default_learning_reminder_minutes = plain.default_topic_reminder_minutes;
-  }
   INTERNAL_SETTINGS_FIELDS.forEach((field) => {
     delete plain[field];
   });
   REMOVED_SETTINGS_FIELDS.forEach((field) => {
     delete plain[field];
   });
-  if (plain.allow_friend_requests !== undefined) {
-    plain.allow_friend_requests = allowFriendRequestsToBoolean(
-      plain.allow_friend_requests,
-    );
-  }
+  plain.allow_friend_requests = allowFriendRequestsToBoolean(
+    plain.allow_friend_requests,
+  );
   return plain;
 };
 
@@ -89,6 +85,14 @@ const rejectRemovedSettingsFields = (body) => {
     if (body[field] !== undefined) {
       throw new BadRequestError(`${field} is no longer supported`);
     }
+  }
+};
+
+const rejectScheduleFieldsOnSettingsPatch = (body) => {
+  if (body.preferred_learning_schedules !== undefined) {
+    throw new BadRequestError(
+      "preferred_learning_schedules cannot be updated via PATCH /api/settings. Use /api/settings/learning-schedules instead.",
+    );
   }
 };
 
@@ -312,87 +316,6 @@ const getSettings = async (req, res, next) => {
 };
 
 /**
- * PATCH /api/settings/learning-schedule
- * Replace all learning schedules (bulk). Prefer CRUD routes for single-schedule edits.
- */
-const patchLearningSchedule = async (req, res, next) => {
-  try {
-    const settings = await ensureUserSettings(req.userId);
-
-    if (req.body.preferred_learning_schedules === undefined) {
-      throw new BadRequestError("preferred_learning_schedules is required");
-    }
-
-    let firstScheduleIdProvided = true;
-    const rawSchedules = req.body.preferred_learning_schedules;
-    if (Array.isArray(rawSchedules) && rawSchedules.length > 0) {
-      firstScheduleIdProvided = Boolean(String(rawSchedules[0]?.id || "").trim());
-    }
-    const schedules = wrapBadRequest(normalizePreferredLearningSchedules, rawSchedules);
-
-    if (!schedules.length) {
-      throw new BadRequestError("At least one labeled learning schedule is required");
-    }
-
-    const existingPrimary = Array.isArray(settings.preferred_learning_schedules)
-      ? settings.preferred_learning_schedules[0]
-      : null;
-    if (existingPrimary && schedules[0] && !firstScheduleIdProvided) {
-      schedules[0].id = String(existingPrimary.id || schedules[0].id || "default");
-    }
-
-    const timeZone = (req.user && req.user.timezone) || "UTC";
-    for (const entry of schedules) {
-      const conflicts = await findLearningScheduleTaskConflicts(
-        req.userId,
-        entry.slots,
-        timeZone,
-        Task,
-      );
-      if (conflicts.length > 0) {
-        throw new ConflictError(
-          `Learning schedule "${entry.label}" conflicts with existing tasks`,
-          { conflicts, schedule_id: entry.id, schedule_label: entry.label },
-        );
-      }
-    }
-
-    assertNoQuietHourLearningConflicts(
-      buildSettingsPreview(settings, { preferred_learning_schedules: schedules }),
-      schedules,
-    );
-
-    applyLearningSchedules(settings, schedules);
-    await settings.save();
-
-    // Non-blocking: trigger AI schedule rebuild after learning schedule update.
-    let rebuildSummary = null;
-    try {
-      const primarySlots =
-        Array.isArray(schedules) && schedules[0] ? schedules[0].slots : [];
-      rebuildSummary = await callAIInternal("/internal/rebuild-schedule", {
-        user_id: String(req.userId),
-        new_schedule: primarySlots,
-      });
-    } catch (err) {
-      rebuildSummary = { status: "error", message: err.message };
-    }
-
-    res.json({
-      status: "success",
-      message: "Learning schedules updated",
-      data: buildApiData(req, {
-        settings,
-        preferred_learning_schedules: schedules,
-        rebuild: rebuildSummary,
-      }),
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
  * PATCH /api/settings
  * Update user settings (quiet-hours + notification toggles) for the authenticated user.
  */
@@ -428,45 +351,22 @@ const updateSettings = async (req, res, next) => {
       req.body.default_reminder_minutes,
       "default_reminder_minutes",
     );
-    let defaultLearningReminderMinutes;
-    if (req.body.default_learning_reminder_minutes !== undefined) {
-      defaultLearningReminderMinutes = normalizeInteger(
-        req.body.default_learning_reminder_minutes,
-        "default_learning_reminder_minutes",
-      );
-    } else if (req.body.default_topic_reminder_minutes !== undefined) {
-      defaultLearningReminderMinutes = normalizeInteger(
-        req.body.default_topic_reminder_minutes,
-        "default_learning_reminder_minutes",
-      );
-    }
-    const defaultTaskPriority = normalizeString(req.body.default_task_priority);
+    const defaultLearningReminderMinutes = normalizeInteger(
+      req.body.default_learning_reminder_minutes,
+      "default_learning_reminder_minutes",
+    );
     const defaultTaskDuration = normalizeInteger(
       req.body.default_task_duration,
       "default_task_duration",
     );
     rejectInternalSettingsFields(req.body);
     rejectRemovedSettingsFields(req.body);
+    rejectScheduleFieldsOnSettingsPatch(req.body);
 
     const behavioralAnalyticsEnabled = parseBoolean(
       req.body.behavioral_analytics_enabled,
       "behavioral_analytics_enabled",
     );
-
-    let preferredLearningSchedules;
-    let firstScheduleIdProvided = true;
-    if (req.body.preferred_learning_schedules !== undefined) {
-      const rawSchedules = req.body.preferred_learning_schedules;
-      if (Array.isArray(rawSchedules) && rawSchedules.length > 0) {
-        firstScheduleIdProvided = Boolean(
-          String(rawSchedules[0]?.id || "").trim(),
-        );
-      }
-      preferredLearningSchedules = wrapBadRequest(
-        normalizePreferredLearningSchedules,
-        rawSchedules,
-      );
-    }
 
     const googleCalendarSyncEnabled = parseBoolean(
       req.body.google_calendar_sync_enabled,
@@ -512,28 +412,12 @@ const updateSettings = async (req, res, next) => {
       update.default_learning_reminder_minutes = defaultLearningReminderMinutes;
     }
 
-    if (defaultTaskPriority !== undefined) {
-      update.default_task_priority = defaultTaskPriority;
-    }
-
     if (defaultTaskDuration !== undefined) {
       update.default_task_duration = defaultTaskDuration;
     }
 
     if (behavioralAnalyticsEnabled !== undefined) {
       update.behavioral_analytics_enabled = behavioralAnalyticsEnabled;
-    }
-
-    if (preferredLearningSchedules !== undefined) {
-      const existingPrimary = Array.isArray(settings.preferred_learning_schedules)
-        ? settings.preferred_learning_schedules[0]
-        : null;
-      if (existingPrimary && preferredLearningSchedules[0] && !firstScheduleIdProvided) {
-        preferredLearningSchedules[0].id = String(
-          existingPrimary.id || preferredLearningSchedules[0].id || "default",
-        );
-      }
-      update.preferred_learning_schedules = preferredLearningSchedules;
     }
 
     if (googleCalendarSyncEnabled !== undefined) {
@@ -552,54 +436,16 @@ const updateSettings = async (req, res, next) => {
     }
 
     const shouldValidateScheduleCross =
-      preferredLearningSchedules !== undefined
-      || quietHours !== undefined
-      || quietHoursEnabled !== undefined;
+      quietHours !== undefined || quietHoursEnabled !== undefined;
 
     if (shouldValidateScheduleCross) {
       const preview = buildSettingsPreview(settings, update);
       assertNoQuietHourLearningConflicts(preview);
-
-      if (preferredLearningSchedules !== undefined) {
-        const timeZone = userTimeZone(req);
-        for (const entry of preferredLearningSchedules) {
-          const conflicts = await findLearningScheduleTaskConflicts(
-            req.userId,
-            entry.slots,
-            timeZone,
-            Task,
-          );
-          if (conflicts.length > 0) {
-            throw new ConflictError(
-              `Learning schedule "${entry.label}" conflicts with existing tasks`,
-              { conflicts, schedule_id: entry.id, schedule_label: entry.label },
-            );
-          }
-        }
-      }
     }
 
     if (Object.keys(update).length > 0) {
       Object.assign(settings, update);
       await settings.save();
-    }
-
-    // Non-blocking: when preferred_learning_schedules updated, ask AI to rebuild pending sessions.
-    let rebuildSummary = null;
-    if (update.preferred_learning_schedules !== undefined) {
-      try {
-        const primarySlots =
-          Array.isArray(update.preferred_learning_schedules) &&
-          update.preferred_learning_schedules[0]
-            ? update.preferred_learning_schedules[0].slots
-            : [];
-        rebuildSummary = await callAIInternal("/internal/rebuild-schedule", {
-          user_id: String(req.userId),
-          new_schedule: primarySlots,
-        });
-      } catch (err) {
-        rebuildSummary = { status: "error", message: err.message };
-      }
     }
 
     if (pushToken !== undefined) {
@@ -629,7 +475,6 @@ const updateSettings = async (req, res, next) => {
       message: "Settings updated",
       data: buildApiData(req, {
         settings: withPreferredLearningSchedulesForApi(settings),
-        ...(rebuildSummary ? { rebuild: rebuildSummary } : {}),
       }),
     });
   } catch (error) {
@@ -826,7 +671,6 @@ const deleteLearningSchedule = async (req, res, next) => {
 module.exports = {
   getSettings,
   updateSettings,
-  patchLearningSchedule,
   listLearningSchedules,
   createLearningSchedule,
   updateLearningSchedule,

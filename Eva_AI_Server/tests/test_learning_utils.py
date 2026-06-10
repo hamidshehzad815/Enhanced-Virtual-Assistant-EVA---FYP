@@ -404,12 +404,6 @@ class ResolveLearningReminderMinutesTests(unittest.TestCase):
             20,
         )
 
-    def test_legacy_topic_setting_fallback(self):
-        self.assertEqual(
-            lu.resolve_learning_reminder_minutes({"default_topic_reminder_minutes": 25}),
-            25,
-        )
-
     def test_default_when_missing(self):
         self.assertEqual(lu.resolve_learning_reminder_minutes({}), 15)
 

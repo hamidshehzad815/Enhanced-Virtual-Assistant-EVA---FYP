@@ -5,39 +5,32 @@ const {
 } = require("../utils/friendSettings");
 
 describe("friendSettings utils", () => {
-  test("isAcceptingFriendRequests defaults to true when settings missing", () => {
-    expect(isAcceptingFriendRequests(null)).toBe(true);
-    expect(isAcceptingFriendRequests(undefined)).toBe(true);
-    expect(isAcceptingFriendRequests({})).toBe(true);
-  });
-
-  test("isAcceptingFriendRequests respects boolean values", () => {
+  test("isAcceptingFriendRequests accepts true and rejects false", () => {
     expect(isAcceptingFriendRequests({ allow_friend_requests: true })).toBe(true);
     expect(isAcceptingFriendRequests({ allow_friend_requests: false })).toBe(false);
   });
 
-  test("isAcceptingFriendRequests maps legacy everyone/nobody strings", () => {
+  test("isAcceptingFriendRequests defaults to true when missing or non-boolean", () => {
+    expect(isAcceptingFriendRequests(null)).toBe(true);
+    expect(isAcceptingFriendRequests({})).toBe(true);
     expect(isAcceptingFriendRequests({ allow_friend_requests: "nobody" })).toBe(
-      false,
+      true,
     );
-    expect(isAcceptingFriendRequests({ allow_friend_requests: "NOBODY" })).toBe(
-      false,
+    expect(isAcceptingFriendRequests({ allow_friend_requests: "everyone" })).toBe(
+      true,
     );
-    expect(
-      isAcceptingFriendRequests({ allow_friend_requests: "everyone" }),
-    ).toBe(true);
   });
 
-  test("allowFriendRequestsToBoolean normalizes stored values", () => {
-    expect(allowFriendRequestsToBoolean("nobody")).toBe(false);
-    expect(allowFriendRequestsToBoolean("everyone")).toBe(true);
-    expect(allowFriendRequestsToBoolean(false)).toBe(false);
+  test("allowFriendRequestsToBoolean returns boolean only", () => {
     expect(allowFriendRequestsToBoolean(true)).toBe(true);
+    expect(allowFriendRequestsToBoolean(false)).toBe(false);
+    expect(allowFriendRequestsToBoolean(undefined)).toBe(true);
+    expect(allowFriendRequestsToBoolean("nobody")).toBe(true);
   });
 
-  test("closedToFriendRequestsFilter includes legacy nobody", () => {
+  test("closedToFriendRequestsFilter matches boolean false only", () => {
     expect(closedToFriendRequestsFilter()).toEqual({
-      allow_friend_requests: { $in: [false, "nobody"] },
+      allow_friend_requests: false,
     });
   });
 });

@@ -74,28 +74,32 @@ function mockOpenTasks(tasks) {
   });
 }
 
-describe("PATCH /api/settings/learning-schedule", () => {
+describe("learning schedule routes (no bulk PATCH)", () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    LearningGoal.exists.mockResolvedValue(null);
     User.findById.mockResolvedValue({
       _id: USER_ID,
       is_active: true,
       timezone: "UTC",
     });
+    UserSetting.findOne.mockResolvedValue({
+      user_id: USER_ID,
+      save: jest.fn().mockResolvedValue(),
+    });
   });
 
-  test("labeled schedules bulk replace → 200", async () => {
-    mockOpenTasks([]);
-    const mockSettings = {
-      user_id: USER_ID,
-      preferred_learning_schedules: [],
-      save: jest.fn().mockResolvedValue(),
-    };
-    UserSetting.findOne.mockResolvedValue(mockSettings);
-
+  test("PATCH /api/settings/learning-schedule route removed → 404", async () => {
     const response = await request(app)
       .patch("/api/settings/learning-schedule")
+      .set(authHeaders())
+      .send({ preferred_learning_schedules: [] });
+
+    expect(response.status).toBe(404);
+  });
+
+  test("PATCH /api/settings rejects preferred_learning_schedules", async () => {
+    const response = await request(app)
+      .patch("/api/settings")
       .set(authHeaders())
       .send({
         preferred_learning_schedules: [
@@ -106,83 +110,8 @@ describe("PATCH /api/settings/learning-schedule", () => {
         ],
       });
 
-    expect(response.status).toBe(200);
-    expect(mockSettings.preferred_learning_schedules).toHaveLength(1);
-    expect(mockSettings.preferred_learning_schedules[0].label).toBe("Morning");
-    expect(mockSettings.preferred_learning_schedules[0].slots[0].duration_minutes).toBe(
-      45,
-    );
-    expect(mockSettings.save).toHaveBeenCalled();
-  });
-
-  test("missing preferred_learning_schedules → 400", async () => {
-    mockOpenTasks([]);
-    UserSetting.findOne.mockResolvedValue({
-      user_id: USER_ID,
-      preferred_learning_schedules: [],
-      save: jest.fn().mockResolvedValue(),
-    });
-
-    const response = await request(app)
-      .patch("/api/settings/learning-schedule")
-      .set(authHeaders())
-      .send({});
-
     expect(response.status).toBe(400);
-  });
-
-  test("invalid day → 400", async () => {
-    mockOpenTasks([]);
-    UserSetting.findOne.mockResolvedValue({
-      user_id: USER_ID,
-      preferred_learning_schedules: [],
-      save: jest.fn().mockResolvedValue(),
-    });
-
-    const response = await request(app)
-      .patch("/api/settings/learning-schedule")
-      .set(authHeaders())
-      .send({
-        preferred_learning_schedules: [
-          {
-            label: "Bad",
-            slots: [{ day: 8, time: "09:00" }],
-          },
-        ],
-      });
-
-    expect(response.status).toBe(400);
-  });
-
-  test("conflict with existing task → 409", async () => {
-    mockOpenTasks([
-      {
-        _id: "507f1f77bcf86cd799439099",
-        title: "Overlap",
-        due_datetime: new Date(Date.UTC(2026, 0, 5, 10, 30, 0)),
-        status: "pending",
-      },
-    ]);
-    UserSetting.findOne.mockResolvedValue({
-      user_id: USER_ID,
-      preferred_learning_schedules: [],
-      save: jest.fn().mockResolvedValue(),
-    });
-
-    const response = await request(app)
-      .patch("/api/settings/learning-schedule")
-      .set(authHeaders())
-      .send({
-        preferred_learning_schedules: [
-          {
-            label: "Morning",
-            slots: [{ day: 0, time: "10:30", duration_minutes: 90 }],
-          },
-        ],
-      });
-
-    expect(response.status).toBe(409);
-    expect(response.body.data.conflicts[0].task.title).toBe("Overlap");
+    expect(response.body.message).toMatch(/learning-schedules instead/i);
   });
 });
 
@@ -557,6 +486,44 @@ describe("GET /api/settings", () => {
     );
     expect(response.body.data.preferred_learning_schedules).toBeUndefined();
   });
+
+  test("returns allow_friend_requests true when missing on stored doc", async () => {
+    UserSetting.findOne.mockResolvedValue({
+      user_id: USER_ID,
+      theme: "light",
+    });
+
+    const response = await request(app).get("/api/settings").set(authHeaders());
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.settings.allow_friend_requests).toBe(true);
+  });
+
+  test("returns allow_friend_requests false when stored as false", async () => {
+    UserSetting.findOne.mockResolvedValue({
+      user_id: USER_ID,
+      allow_friend_requests: false,
+    });
+
+    const response = await request(app).get("/api/settings").set(authHeaders());
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.settings.allow_friend_requests).toBe(false);
+  });
+
+  test("does not expose internal default_task_priority", async () => {
+    UserSetting.findOne.mockResolvedValue({
+      user_id: USER_ID,
+      default_task_priority: "high",
+      default_task_duration: 120,
+    });
+
+    const response = await request(app).get("/api/settings").set(authHeaders());
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.settings.default_task_priority).toBeUndefined();
+    expect(response.body.data.settings.default_task_duration).toBe(120);
+  });
 });
 
 describe("PATCH /api/settings internal fields", () => {
@@ -611,6 +578,28 @@ describe("PATCH /api/settings internal fields", () => {
 
     expect(response.status).toBe(400);
     expect(response.body.message).toMatch(/show_last_active is no longer supported/i);
+  });
+
+  test("rejects default_task_priority", async () => {
+    const response = await request(app)
+      .patch("/api/settings")
+      .set(authHeaders())
+      .send({ default_task_priority: "high" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/system setting/i);
+  });
+
+  test("rejects removed default_topic_reminder_minutes setting", async () => {
+    const response = await request(app)
+      .patch("/api/settings")
+      .set(authHeaders())
+      .send({ default_topic_reminder_minutes: 20 });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(
+      /default_topic_reminder_minutes is no longer supported/i,
+    );
   });
 
   test("rejects invalid allow_friend_requests", async () => {

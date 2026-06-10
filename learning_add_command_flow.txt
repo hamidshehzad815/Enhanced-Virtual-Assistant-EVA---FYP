@@ -192,7 +192,7 @@ PIPELINE (inside AI Server)
   AI SERVER SELF-FETCH
   → user info (name, timezone)
   → user settings (preferred_learning_schedule,
-                   default_topic_reminder_minutes,
+                   default_learning_reminder_minutes,
                    analytics_min_tasks_threshold)
   → conversation history
   → integrations (google_calendar)
@@ -646,7 +646,7 @@ STEP 11 — CREATE TASKS FOR EACH TOPIC
     scheduled_by            : "manual",
     learning_plan_id        : goal_id,
     learning_topic_id       : topic_id,
-    reminder_minutes_before : settings.default_topic_reminder_minutes,
+    reminder_minutes_before : settings.default_learning_reminder_minutes,
     collaborators           : [],
     is_deleted              : false,
     created_at              : now,
@@ -909,9 +909,9 @@ REMINDER FLOW
 ================================================================
 
   Node.js reminder job fires at:
-    topic.scheduled_date - settings.default_topic_reminder_minutes
+    topic.scheduled_date - settings.default_learning_reminder_minutes
 
-  default_topic_reminder_minutes = 30 (from User_Settings)
+  default_learning_reminder_minutes = 15 (from User_Settings, user-configurable)
   independent of default_reminder_minutes (task reminders)
   user can change in settings without affecting tasks
 
