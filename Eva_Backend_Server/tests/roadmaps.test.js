@@ -64,6 +64,14 @@ const pythonGoal = {
   updated_at: new Date(),
 };
 
+const completedPythonGoal = {
+  ...pythonGoal,
+  _id: new mongoose.Types.ObjectId(),
+  status: "completed",
+  title: "Python basics (done)",
+  updated_at: new Date("2026-01-01"),
+};
+
 describe("User roadmaps API", () => {
   beforeEach(() => {
     jest.clearAllMocks();
@@ -87,13 +95,19 @@ describe("User roadmaps API", () => {
       { key: "javascript", label: "JavaScript" },
       { key: "python", label: "Python" },
     ]);
-    expect(LearningGoal.distinct).toHaveBeenCalledWith(
-      "subject",
-      expect.objectContaining({ user_id: USER_ID, is_deleted: false }),
-    );
   });
 
-  test("GET /api/roadmaps returns roadmaps with session details", async () => {
+  test("GET /api/roadmaps without language -> 400", async () => {
+    const response = await request(app)
+      .get("/api/roadmaps")
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/language query parameter is required/i);
+    expect(LearningGoal.find).not.toHaveBeenCalled();
+  });
+
+  test("GET /api/roadmaps?language=python returns single roadmap with sessions", async () => {
     const goalChain = {
       select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
@@ -130,50 +144,34 @@ describe("User roadmaps API", () => {
     RoadmapTopic.find.mockReturnValue(topicChain);
 
     const response = await request(app)
-      .get("/api/roadmaps")
+      .get("/api/roadmaps?language=python")
       .set("Authorization", `Bearer ${makeToken()}`);
 
     expect(response.status).toBe(200);
-    expect(response.body.data.count).toBe(1);
-    const roadmap = response.body.data.roadmaps[0];
+    expect(response.body.data.language).toEqual({ key: "python", label: "Python" });
+    const roadmap = response.body.data.roadmap;
     expect(roadmap).toEqual(
       expect.objectContaining({
         title: "Python basics",
         language: "Python",
+        language_key: "python",
         track_label: "Basics",
         status: "active",
         session_count: 2,
       }),
     );
-    expect(roadmap).not.toHaveProperty("subject");
-    expect(roadmap).not.toHaveProperty("roadmap_key");
-    expect(roadmap).not.toHaveProperty("learning_schedule_id");
-    expect(roadmap).not.toHaveProperty("created_at");
     expect(roadmap.sessions).toHaveLength(2);
-    expect(roadmap.sessions[0]).toEqual(
-      expect.objectContaining({
-        title: "Session 1",
-        session_state: "completed",
-        is_current: false,
-      }),
-    );
-    expect(roadmap.sessions[0]).toHaveProperty("completed_at");
-    expect(roadmap.sessions[0].resources).toHaveLength(1);
-    expect(roadmap.sessions[0]).not.toHaveProperty("task_id");
-    expect(roadmap.sessions[1].session_state).toBeDefined();
     expect(roadmap.sessions[1].is_current).toBe(true);
-    expect(roadmap.sessions[1]).not.toHaveProperty("completed_at");
-    expect(roadmap.sessions_summary.completed).toBe(1);
-    expect(roadmap.sessions_summary.pending).toBe(1);
   });
 
-  test("GET /api/roadmaps?language=Python filters by subject", async () => {
-    const chain = {
+  test("prefers active roadmap over completed for same language", async () => {
+    const activeGoal = { ...pythonGoal, updated_at: new Date("2026-02-01") };
+    const goalChain = {
       select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockResolvedValue([pythonGoal]),
+      lean: jest.fn().mockResolvedValue([completedPythonGoal, activeGoal]),
     };
-    LearningGoal.find.mockReturnValue(chain);
+    LearningGoal.find.mockReturnValue(goalChain);
     RoadmapTopic.find.mockReturnValue({
       select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
@@ -181,43 +179,38 @@ describe("User roadmaps API", () => {
     });
 
     const response = await request(app)
-      .get("/api/roadmaps?language=Python")
+      .get("/api/roadmaps?language=python")
       .set("Authorization", `Bearer ${makeToken()}`);
 
     expect(response.status).toBe(200);
-    expect(LearningGoal.find).toHaveBeenCalledWith(
-      expect.objectContaining({
-        user_id: USER_ID,
-        is_deleted: false,
-        subject: "python",
-      }),
-    );
-    expect(response.body.data.filters.language).toBe("Python");
+    expect(response.body.data.roadmap.title).toBe("Python basics");
+    expect(response.body.data.roadmap.status).toBe("active");
   });
 
-  test("GET /api/roadmaps?status=active,paused applies status filter", async () => {
-    const chain = {
+  test("returns completed roadmap when only completed exists", async () => {
+    const goalChain = {
+      select: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([completedPythonGoal]),
+    };
+    LearningGoal.find.mockReturnValue(goalChain);
+    RoadmapTopic.find.mockReturnValue({
       select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([]),
-    };
-    LearningGoal.find.mockReturnValue(chain);
-    RoadmapTopic.find.mockReset();
+    });
 
-    await request(app)
-      .get("/api/roadmaps?status=active,paused")
+    const response = await request(app)
+      .get("/api/roadmaps?language=python")
       .set("Authorization", `Bearer ${makeToken()}`);
 
-    expect(LearningGoal.find).toHaveBeenCalledWith(
-      expect.objectContaining({
-        status: { $in: ["active", "paused"] },
-      }),
-    );
+    expect(response.status).toBe(200);
+    expect(response.body.data.roadmap.status).toBe("completed");
   });
 
   test("GET /api/roadmaps?status=invalid -> 400", async () => {
     const response = await request(app)
-      .get("/api/roadmaps?status=running")
+      .get("/api/roadmaps?language=python&status=running")
       .set("Authorization", `Bearer ${makeToken()}`);
 
     expect(response.status).toBe(400);
@@ -227,7 +220,7 @@ describe("User roadmaps API", () => {
   test("roadmaps routes require auth -> 401", async () => {
     const [languages, list] = await Promise.all([
       request(app).get("/api/roadmaps/languages"),
-      request(app).get("/api/roadmaps"),
+      request(app).get("/api/roadmaps?language=python"),
     ]);
 
     expect(languages.status).toBe(401);

@@ -83,7 +83,7 @@ from db.roadmap_topics import (
     get_topics_for_goal,
     reschedule_topic,
 )
-from handlers.learning.update import skip_session_and_rebalance
+from handlers.learning.update import reschedule_session_for_api, skip_session_and_rebalance
 from db.tasks import get_task_by_id, soft_delete_task, update_task
 from services.google_calendar import google_calendar_client
 from utils.google_calendar_sync import resolve_google_calendar_sync
@@ -225,6 +225,13 @@ class SkipTopicRequest(BaseModel):
     topic_id: str
     goal_id: str
     user_id: str
+
+
+class RescheduleTopicRequest(BaseModel):
+    topic_id: str
+    goal_id: str
+    user_id: str
+    scheduled_date: str
 
 
 def _safe_reply(
@@ -704,6 +711,38 @@ async def internal_skip_topic(payload: SkipTopicRequest):
         "status": "success",
         "schedule_shifted": shifted,
     }
+
+
+@app.post("/internal/reschedule-topic")
+async def internal_reschedule_topic(payload: RescheduleTopicRequest):
+    """
+    Reschedule the current session to a new date (same rules as chat learning_update).
+    """
+    goal_id = str(payload.goal_id or "").strip()
+    topic_id = str(payload.topic_id or "").strip()
+    user_id = str(payload.user_id or "").strip()
+    scheduled_date = str(payload.scheduled_date or "").strip()
+    if not goal_id or not topic_id or not user_id or not scheduled_date:
+        return {
+            "status": "error",
+            "message": "topic_id, goal_id, user_id, and scheduled_date are required",
+        }
+
+    settings_data = await fetch_user_settings(user_id)
+    user_doc = await fetch_user(user_id)
+    integrations = await fetch_integrations(user_id)
+    tz = resolve_timezone_name((user_doc or {}).get("timezone"))
+
+    result = await reschedule_session_for_api(
+        user_id=user_id,
+        goal_id=goal_id,
+        topic_id=topic_id,
+        scheduled_date=scheduled_date,
+        settings=settings_data,
+        integrations=integrations,
+        timezone_name=tz,
+    )
+    return with_api_timezone(result, tz)
 
 
 @app.post("/process")

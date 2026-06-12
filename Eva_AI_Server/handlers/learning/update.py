@@ -496,6 +496,202 @@ async def skip_session_and_rebalance(
     return True, bool(last_dt)
 
 
+async def reschedule_session_for_api(
+    *,
+    user_id: str,
+    goal_id: str,
+    topic_id: str,
+    scheduled_date: str,
+    settings: Dict[str, Any],
+    integrations: List[Dict[str, Any]],
+    timezone_name: str,
+) -> Dict[str, Any]:
+    """
+    Reschedule the current session to a new local date (REST + chat rules).
+    Returns {status, message, rebased?}.
+    """
+    goal_full = await get_goal_by_id(goal_id)
+    if not goal_full:
+        return {"status": "error", "message": "Learning goal not found"}
+
+    if str(goal_full.get("status") or "").lower() != "active":
+        return {
+            "status": "error",
+            "message": "Only active learning plans accept session date changes.",
+        }
+
+    current = await get_current_session(goal_id)
+    if not current or str(current.get("_id")) != str(topic_id):
+        return {
+            "status": "error",
+            "message": "Only the current session can be rescheduled.",
+        }
+
+    all_topics = await get_topics_for_goal(goal_id)
+    prev_scheduled = None
+    prev_resolved = None
+    try:
+        cur_order = int(current.get("order") or 0)
+        prev = next(
+            (t for t in all_topics if int(t.get("order") or 0) == cur_order - 1),
+            None,
+        )
+        if prev:
+            prev_scheduled = prev.get("scheduled_date")
+            prev_resolved = prev.get("completed_at") or prev.get("updated_at")
+    except Exception:
+        prev_scheduled = None
+        prev_resolved = None
+
+    state = compute_session_state(
+        current,
+        datetime.now(get_zoneinfo(timezone_name)),
+        previous_scheduled_date=prev_scheduled,
+        previous_resolved_at=prev_resolved,
+    )
+    if state == "locked":
+        return {
+            "status": "error",
+            "message": "That session is still locked. It unlocks within 24 hours of its scheduled time.",
+        }
+
+    iso = _coerce_text(scheduled_date)
+    if not iso:
+        return {"status": "error", "message": "scheduled_date is required (YYYY-MM-DD)."}
+
+    try:
+        new_d = datetime.strptime(iso[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return {
+            "status": "error",
+            "message": "scheduled_date must be a valid date (YYYY-MM-DD).",
+        }
+
+    learning_slots = resolve_learning_slots(settings, goal=goal_full, entities={})
+    days = _learning_days(learning_slots)
+    if days and new_d.weekday() not in days:
+        return {
+            "status": "error",
+            "message": "That isn't one of your learning days. Pick a valid learning day.",
+        }
+
+    today_local = datetime.now(get_zoneinfo(timezone_name)).date()
+    if new_d < today_local:
+        return {
+            "status": "error",
+            "message": "That date is in the past. Pick today or a future learning day.",
+        }
+
+    slot_time, _dur = _schedule_slot_for_day(learning_slots, new_d.weekday())
+    new_dt = local_datetime_to_utc_naive(
+        new_d.isoformat(),
+        slot_time.strftime("%H:%M:%S"),
+        timezone_name,
+    )
+    if new_dt is None:
+        return {
+            "status": "error",
+            "message": "Could not resolve scheduled_date in your timezone.",
+        }
+
+    session_dur = int(
+        current.get("estimated_duration")
+        or current.get("duration")
+        or 90,
+    )
+    quiet_matches = find_quiet_hour_matches_for_datetime(
+        settings,
+        new_dt,
+        session_dur,
+        timezone_name=timezone_name,
+    )
+    if quiet_matches:
+        topic_title = _coerce_text(current.get("title")) or "That session"
+        return {
+            "status": "error",
+            "message": format_quiet_hours_learning_block_message(
+                quiet_matches,
+                session_label=f'"{topic_title}"',
+                user_name=None,
+            ),
+        }
+
+    linked_task_id = str(current.get("task_id") or "").strip()
+    has_task_conflict = False
+    if linked_task_id:
+        has_task_conflict = await check_update_overlap(
+            user_id,
+            linked_task_id,
+            new_dt,
+            session_dur,
+        )
+    else:
+        overlap_task = await find_overlapping_task_for_user(
+            user_id,
+            new_dt,
+            session_dur,
+        )
+        has_task_conflict = bool(overlap_task)
+
+    if has_task_conflict:
+        return {
+            "status": "error",
+            "message": (
+                "That time overlaps another task on your calendar. "
+                "Pick a different learning day or free up that time first."
+            ),
+        }
+
+    later = await get_pending_sessions_after(goal_id, int(current.get("order") or 0))
+    next_dt = None
+    if later and isinstance(later[0].get("scheduled_date"), datetime):
+        next_dt = later[0]["scheduled_date"]
+
+    google = await resolve_google_calendar_sync(user_id, integrations, settings)
+    rebased = False
+
+    if next_dt is None or new_dt < next_dt:
+        ok = await rt_reschedule_topic(str(current.get("_id")), new_dt)
+        if not ok:
+            return {
+                "status": "error",
+                "message": "Could not move that session right now. Please try again.",
+            }
+        if linked_task_id:
+            await _update_task_and_calendar(
+                user_id=user_id,
+                task_id=linked_task_id,
+                due_dt=new_dt,
+                timezone_name=timezone_name,
+                google_integration=google,
+            )
+        return {
+            "status": "success",
+            "message": "Session date updated.",
+            "rebased": False,
+        }
+
+    pending_all = [current] + later
+    last_dt = await _rebuild_pending_schedule(
+        user_id=user_id,
+        goal_id=goal_id,
+        pending_topics=pending_all,
+        start_from=new_d,
+        preferred_learning_schedule=learning_slots,
+        timezone_name=timezone_name,
+        google_integration=google,
+    )
+    if last_dt:
+        await update_end_date(goal_id, last_dt)
+        rebased = True
+
+    return {
+        "status": "success",
+        "message": "Session date updated and remaining sessions were rebased.",
+        "rebased": rebased,
+    }
+
+
 async def _resume_plan_with_rebase(
     *,
     user_id: str,

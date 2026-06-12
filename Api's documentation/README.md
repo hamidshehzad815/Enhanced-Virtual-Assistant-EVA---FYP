@@ -1,6 +1,6 @@
 # EVA Backend API Documentation (Frontend)
 
-Focused reference for **Dashboard**, **Settings**, and **Profile** APIs on the Node backend (`Eva_Backend_Server`).
+Focused reference for **Dashboard**, **Settings**, **Profile**, and **Roadmaps** APIs on the Node backend (`Eva_Backend_Server`).
 
 ## Base URL
 
@@ -81,6 +81,7 @@ Conflict responses (`409`) may include extra context:
 | [settings-api.md](./settings-api.md) | `GET /api/settings`, `PATCH /api/settings` |
 | [settings-learning-schedules-api.md](./settings-learning-schedules-api.md) | Learning schedule CRUD under `/api/settings/learning-schedules` |
 | [profile-api.md](./profile-api.md) | `GET` / `PATCH /api/profile`, `POST /api/profile/avatar` |
+| [roadmaps-api.md](./roadmaps-api.md) | `GET /api/roadmaps`, session/plan writes on `/api/learning` |
 
 ## Quick frontend map
 
@@ -88,6 +89,7 @@ Conflict responses (`409`) may include extra context:
 |--------|------|-------|
 | Home / Dashboard | `GET /api/dashboard` | — |
 | Profile (name, username, photo, timezone) | `GET /api/profile` | `PATCH /api/profile`, `POST /api/profile/avatar` |
+| Roadmap (select language first) | `GET /api/roadmaps/languages`, then `GET /api/roadmaps?language=` | `PATCH /api/learning/:goalId/sessions/:sessionId` |
 | Settings (toggles, quiet hours, reminders) | `GET /api/settings` | `PATCH /api/settings` |
 | Learning schedules UI | `GET /api/settings` or `GET /api/settings/learning-schedules` | `POST` / `PATCH` / `DELETE` on `/api/settings/learning-schedules` |
 

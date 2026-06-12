@@ -3,6 +3,7 @@
  */
 
 const { LearningGoal, RoadmapTopic } = require("../models");
+const { BadRequestError } = require("../middleware/errorHandler");
 const {
   normalizeSubjectFilter,
   subjectToDisplay,
@@ -17,8 +18,15 @@ const {
 
 const GOAL_STATUSES = new Set(["active", "paused", "completed", "cancelled"]);
 
+const GOAL_STATUS_PRIORITY = {
+  active: 0,
+  paused: 1,
+  completed: 2,
+  cancelled: 3,
+};
+
 const GOAL_LIST_PROJECTION =
-  "title subject roadmap_key status start_date end_date total_topics completed_topics";
+  "title subject roadmap_key status start_date end_date total_topics completed_topics created_at updated_at";
 
 const TOPIC_LIST_PROJECTION =
   "goal_id order title status scheduled_date estimated_duration completed_at updated_at resources";
@@ -73,6 +81,7 @@ const serializeRoadmap = (goal, sessions = [], timezone = "UTC") => {
     id: String(goal._id),
     title: goal.title,
     language: subjectToDisplay(subject),
+    language_key: subject,
     track_label: formatTrackLabel(goal.roadmap_key),
     status: goal.status,
     start_date: goal.start_date
@@ -168,6 +177,32 @@ const buildGoalsQuery = (userId, filters = {}) => {
   return query;
 };
 
+const goalSortKey = (goal) => {
+  const priority = GOAL_STATUS_PRIORITY[goal.status] ?? 99;
+  const updated = new Date(goal.updated_at || goal.created_at || 0).getTime();
+  return { priority, updated };
+};
+
+/**
+ * Prefer active/paused over completed when multiple goals share a language.
+ */
+const pickPreferredGoal = (goals) => {
+  if (!Array.isArray(goals) || goals.length === 0) {
+    return null;
+  }
+
+  const sorted = [...goals].sort((a, b) => {
+    const ka = goalSortKey(a);
+    const kb = goalSortKey(b);
+    if (ka.priority !== kb.priority) {
+      return ka.priority - kb.priority;
+    }
+    return kb.updated - ka.updated;
+  });
+
+  return sorted[0];
+};
+
 /**
  * Distinct languages (subjects) the user has at least one non-deleted roadmap for.
  */
@@ -190,54 +225,90 @@ const listUserLanguages = async (userId) => {
 };
 
 /**
- * List user's roadmaps with optional filters.
+ * Single roadmap for a language (Approach B: language required on fetch).
+ * When multiple goals exist, returns active/paused over completed/cancelled.
  */
-const listUserRoadmaps = async (userId, filters = {}, timezone = "UTC") => {
-  const subject = filters.languageInput
-    ? normalizeSubjectFilter(filters.languageInput)
-    : null;
+const getUserRoadmapForLanguage = async (userId, languageInput, timezone = "UTC", filters = {}) => {
+  const subject = normalizeSubjectFilter(languageInput);
+  if (!subject) {
+    throw new BadRequestError(
+      "language query parameter is required (e.g. ?language=python)",
+    );
+  }
 
   const statuses = parseStatusFilter(filters.statusInput);
-  const roadmapKey = String(filters.roadmapKeyInput || "").trim().toLowerCase() || null;
-  const includeSessions = filters.includeSessions !== false;
 
   const query = buildGoalsQuery(userId, {
     subject,
     statuses,
-    roadmap_key: roadmapKey,
   });
 
   const goals = await LearningGoal.find(query)
     .select(GOAL_LIST_PROJECTION)
-    .sort({ created_at: -1 })
+    .sort({ updated_at: -1, created_at: -1 })
     .lean();
 
-  let sessionsByGoal = new Map();
-  if (includeSessions && goals.length > 0) {
-    sessionsByGoal = await loadSessionsByGoalId(
-      goals.map((g) => g._id),
+  const chosen = pickPreferredGoal(goals);
+  if (!chosen) {
+    return withApiTimezone(
+      {
+        language: {
+          key: subject,
+          label: subjectToDisplay(subject),
+        },
+        roadmap: null,
+      },
       timezone,
     );
   }
 
+  const sessionsByGoal = await loadSessionsByGoalId([chosen._id], timezone);
+  const sessions = sessionsByGoal.get(String(chosen._id)) || [];
+
   return withApiTimezone(
     {
-    filters: {
-      language: subject ? subjectToDisplay(subject) : null,
-      subject,
-      status: statuses,
-      roadmap_key: roadmapKey,
-      include_sessions: includeSessions,
+      language: {
+        key: subject,
+        label: subjectToDisplay(subject),
+      },
+      roadmap: serializeRoadmap(chosen, sessions, timezone),
     },
-    roadmaps: goals.map((goal) =>
-      serializeRoadmap(
-        goal,
-        includeSessions ? sessionsByGoal.get(String(goal._id)) || [] : [],
-        timezone,
-      ),
-    ),
-    count: goals.length,
-  },
+    timezone,
+  );
+};
+
+/**
+ * Refresh payload after session/plan mutations (roadmap + optional session slice).
+ */
+const buildRoadmapMutationPayload = async (
+  userId,
+  goalDoc,
+  timezone = "UTC",
+  { sessionId = null } = {},
+) => {
+  if (!goalDoc) {
+    return { language: null, roadmap: null, session: null };
+  }
+
+  const subject = String(goalDoc.subject || "").trim().toLowerCase();
+  const sessionsByGoal = await loadSessionsByGoalId([goalDoc._id], timezone);
+  const sessions = sessionsByGoal.get(String(goalDoc._id)) || [];
+  const roadmap = serializeRoadmap(goalDoc, sessions, timezone);
+
+  let session = null;
+  if (sessionId) {
+    session = sessions.find((row) => row.id === String(sessionId)) || null;
+  }
+
+  return withApiTimezone(
+    {
+      language: subject
+        ? { key: subject, label: subjectToDisplay(subject) }
+        : null,
+      roadmap,
+      session,
+      sessions,
+    },
     timezone,
   );
 };
@@ -245,9 +316,11 @@ const listUserRoadmaps = async (userId, filters = {}, timezone = "UTC") => {
 module.exports = {
   GOAL_STATUSES,
   listUserLanguages,
-  listUserRoadmaps,
+  getUserRoadmapForLanguage,
+  buildRoadmapMutationPayload,
   serializeRoadmap,
   serializeSession,
   buildGoalsQuery,
-  enrichSessionsForGoal,
+  pickPreferredGoal,
+  loadSessionsByGoalId,
 };
