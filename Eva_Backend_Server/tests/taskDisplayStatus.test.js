@@ -2,6 +2,7 @@ const {
   computeTaskDisplayStatus,
   normalizeStoredStatus,
   enrichTaskForApi,
+  serializeTaskForApi,
 } = require("../utils/taskDisplayStatus");
 
 describe("taskDisplayStatus", () => {
@@ -59,5 +60,37 @@ describe("taskDisplayStatus", () => {
     expect(computeTaskDisplayStatus(task, now)).toBe("overdue");
     expect(enrichTaskForApi(task, now).status).toBe("pending");
     expect(enrichTaskForApi(task, now).display_status).toBe("overdue");
+  });
+
+  test("serializeTaskForApi returns slim list shape", () => {
+    const task = {
+      _id: "507f1f77bcf86cd799439012",
+      owner_id: "507f1f77bcf86cd799439011",
+      title: "Learn: Python",
+      due_datetime: new Date("2026-06-12T08:00:00.000Z"),
+      duration: 75,
+      priority: "medium",
+      status: "pending",
+      source: "eva",
+      learning_plan_id: "507f1f77bcf86cd799439099",
+      learning_topic_id: "507f1f77bcf86cd799439088",
+      is_deleted: false,
+      created_at: new Date("2026-06-04T08:00:00.000Z"),
+    };
+    const out = serializeTaskForApi(task, now, "UTC");
+    expect(out).toEqual(
+      expect.objectContaining({
+        id: "507f1f77bcf86cd799439012",
+        title: "Learn: Python",
+        duration: 75,
+        status: "pending",
+        display_status: "pending",
+        is_learning_task: true,
+        learning_goal_id: "507f1f77bcf86cd799439099",
+      }),
+    );
+    expect(out).not.toHaveProperty("owner_id");
+    expect(out).not.toHaveProperty("learning_topic_id");
+    expect(out).not.toHaveProperty("description");
   });
 });

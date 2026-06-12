@@ -88,6 +88,7 @@ describe("Tasks API", () => {
     ];
 
     const findChain = {
+      select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
@@ -103,9 +104,16 @@ describe("Tasks API", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.status).toBe("success");
-    expect(response.body.data.tasks).toEqual(
-      tasks.map((task) => ({ ...task, display_status: "pending" })),
-    );
+    expect(response.body.data.tasks).toEqual([
+      expect.objectContaining({
+        id: TASK_ID,
+        title: "Physics quiz",
+        status: "pending",
+        display_status: "pending",
+        is_learning_task: false,
+        learning_goal_id: null,
+      }),
+    ]);
     expect(response.body.data.pagination.total).toBe(1);
     expect(Task.find).toHaveBeenCalledTimes(1);
     const query = Task.find.mock.calls[0][0];
@@ -119,6 +127,7 @@ describe("Tasks API", () => {
   test("GET /api/tasks?priority=high -> returns high priority upcoming tasks only", async () => {
     const tasks = [];
     const findChain = {
+      select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
@@ -144,6 +153,7 @@ describe("Tasks API", () => {
   test("GET /api/tasks?status=pending -> returns pending upcoming tasks only", async () => {
     const tasks = [];
     const findChain = {
+      select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
@@ -178,6 +188,7 @@ describe("Tasks API", () => {
     ];
 
     const findChain = {
+      select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
@@ -193,8 +204,11 @@ describe("Tasks API", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.status).toBe("success");
-    expect(response.body.data.tasks).toEqual(
-      tasks.map((task) => ({ ...task, display_status: "pending" })),
+    expect(response.body.data.tasks[0]).toEqual(
+      expect.objectContaining({
+        id: TASK_ID,
+        display_status: "pending",
+      }),
     );
     expect(Task.find).toHaveBeenCalledTimes(1);
     expect(Task.find).toHaveBeenCalledWith(
@@ -215,6 +229,7 @@ describe("Tasks API", () => {
 
     const tasks = [];
     const findChain = {
+      select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
       skip: jest.fn().mockReturnThis(),
       limit: jest.fn().mockReturnThis(),
@@ -241,10 +256,17 @@ describe("Tasks API", () => {
       _id: TASK_ID,
       title: "Physics quiz",
       status: "pending",
+      due_datetime: new Date("2026-06-12T08:00:00.000Z"),
+      duration: 75,
+      priority: "medium",
+      description: "Review chapter 1",
+      learning_plan_id: "507f1f77bcf86cd799439099",
     };
 
     Task.findOne.mockReturnValue({
-      lean: jest.fn().mockResolvedValue(task),
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(task),
+      }),
     });
 
     const response = await request(app)
@@ -253,7 +275,18 @@ describe("Tasks API", () => {
 
     expect(response.status).toBe(200);
     expect(response.body.status).toBe("success");
-    expect(response.body.data.task._id).toBe(TASK_ID);
+    expect(response.body.data.task).toEqual(
+      expect.objectContaining({
+        id: TASK_ID,
+        title: "Physics quiz",
+        status: "pending",
+        description: "Review chapter 1",
+        is_learning_task: true,
+        learning_goal_id: "507f1f77bcf86cd799439099",
+      }),
+    );
+    expect(response.body.data.task).not.toHaveProperty("owner_id");
+    expect(response.body.data.task).not.toHaveProperty("_id");
   });
 
   test("PATCH /api/tasks/:id/status -> status updated", async () => {

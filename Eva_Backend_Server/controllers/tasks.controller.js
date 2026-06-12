@@ -13,7 +13,10 @@ const {
   NotFoundError,
   ConflictError,
 } = require("../middleware/errorHandler");
-const { enrichTaskForApi } = require("../utils/taskDisplayStatus");
+const { serializeTaskForApi } = require("../utils/taskDisplayStatus");
+
+const TASK_LIST_PROJECTION =
+  "title description due_datetime duration priority status learning_plan_id completed_at";
 const { withApiTimezone } = require("../utils/apiDateTime");
 const {
   notifyOwnerOfCollaborationResponse,
@@ -395,7 +398,12 @@ const getTasks = async (req, res, next) => {
     }
 
     const [tasks, total] = await Promise.all([
-      Task.find(query).sort({ due_datetime: 1 }).skip(skip).limit(limit).lean(),
+      Task.find(query)
+        .select(TASK_LIST_PROJECTION)
+        .sort({ due_datetime: 1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
       Task.countDocuments(query),
     ]);
 
@@ -405,7 +413,7 @@ const getTasks = async (req, res, next) => {
       status: "success",
       data: withApiTimezone(
         {
-        tasks: tasks.map((task) => enrichTaskForApi(task, now, timezone)),
+        tasks: tasks.map((task) => serializeTaskForApi(task, now, timezone)),
         pagination: {
           page,
           limit,
@@ -442,7 +450,9 @@ const getTaskById = async (req, res, next) => {
       _id: id,
       owner_id: req.userId,
       is_deleted: false,
-    }).lean();
+    })
+      .select(TASK_LIST_PROJECTION)
+      .lean();
 
     if (!task) {
       throw new NotFoundError("Task not found");
@@ -452,7 +462,11 @@ const getTaskById = async (req, res, next) => {
     res.json({
       status: "success",
       data: withApiTimezone(
-        { task: enrichTaskForApi(task, new Date(), timezone) },
+        {
+          task: serializeTaskForApi(task, new Date(), timezone, {
+            includeDescription: true,
+          }),
+        },
         timezone,
       ),
     });
@@ -535,7 +549,11 @@ const updateTaskStatus = async (req, res, next) => {
       status: "success",
       message: "Task status updated",
       data: withApiTimezone(
-        { task: enrichTaskForApi(task, new Date(), timezone) },
+        {
+          task: serializeTaskForApi(task, new Date(), timezone, {
+            includeDescription: true,
+          }),
+        },
         timezone,
       ),
     });

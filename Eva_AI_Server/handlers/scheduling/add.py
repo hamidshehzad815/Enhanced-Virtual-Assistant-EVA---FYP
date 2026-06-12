@@ -1218,7 +1218,6 @@ async def handle_scheduling_add(
         "owner_id": _to_object_id(user_id),
         "title": task_name,
         "due_datetime": due_datetime,
-        "is_all_day": False,
         "duration": duration_minutes,
         "priority": priority,
         "status": "pending",

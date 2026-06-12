@@ -638,7 +638,6 @@ STEP 11 — CREATE TASKS FOR EACH TOPIC
     owner_id                : user_id,
     title                   : topic.title,
     due_datetime            : topic.scheduled_date,
-    is_all_day              : false,
     duration                : estimated_duration,
     priority                : "medium",
     status                  : "pending",
