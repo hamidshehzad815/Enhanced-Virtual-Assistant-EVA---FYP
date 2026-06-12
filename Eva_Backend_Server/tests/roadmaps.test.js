@@ -95,12 +95,14 @@ describe("User roadmaps API", () => {
 
   test("GET /api/roadmaps returns roadmaps with session details", async () => {
     const goalChain = {
+      select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([pythonGoal]),
     };
     LearningGoal.find.mockReturnValue(goalChain);
 
     const topicChain = {
+      select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([
         {
@@ -111,6 +113,7 @@ describe("User roadmaps API", () => {
           status: "completed",
           scheduled_date: new Date("2026-06-02T18:00:00Z"),
           estimated_duration: 90,
+          completed_at: new Date("2026-06-03T18:00:00Z"),
           resources: [{ title: "Intro", url: "https://youtu.be/x" }],
         },
         {
@@ -121,7 +124,6 @@ describe("User roadmaps API", () => {
           status: "pending",
           scheduled_date: new Date("2026-06-05T18:00:00Z"),
           estimated_duration: 90,
-          resources: [],
         },
       ]),
     };
@@ -134,26 +136,46 @@ describe("User roadmaps API", () => {
     expect(response.status).toBe(200);
     expect(response.body.data.count).toBe(1);
     const roadmap = response.body.data.roadmaps[0];
-    expect(roadmap.language).toBe("Python");
-    expect(roadmap.session_count).toBe(2);
+    expect(roadmap).toEqual(
+      expect.objectContaining({
+        title: "Python basics",
+        language: "Python",
+        track_label: "Basics",
+        status: "active",
+        session_count: 2,
+      }),
+    );
+    expect(roadmap).not.toHaveProperty("subject");
+    expect(roadmap).not.toHaveProperty("roadmap_key");
+    expect(roadmap).not.toHaveProperty("learning_schedule_id");
+    expect(roadmap).not.toHaveProperty("created_at");
     expect(roadmap.sessions).toHaveLength(2);
-    expect(roadmap.sessions[0].title).toBe("Session 1");
+    expect(roadmap.sessions[0]).toEqual(
+      expect.objectContaining({
+        title: "Session 1",
+        session_state: "completed",
+        is_current: false,
+      }),
+    );
+    expect(roadmap.sessions[0]).toHaveProperty("completed_at");
     expect(roadmap.sessions[0].resources).toHaveLength(1);
-    expect(roadmap.sessions[0].session_state).toBe("completed");
-    expect(roadmap.sessions[0].is_current).toBe(false);
+    expect(roadmap.sessions[0]).not.toHaveProperty("task_id");
     expect(roadmap.sessions[1].session_state).toBeDefined();
     expect(roadmap.sessions[1].is_current).toBe(true);
+    expect(roadmap.sessions[1]).not.toHaveProperty("completed_at");
     expect(roadmap.sessions_summary.completed).toBe(1);
     expect(roadmap.sessions_summary.pending).toBe(1);
   });
 
   test("GET /api/roadmaps?language=Python filters by subject", async () => {
     const chain = {
+      select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([pythonGoal]),
     };
     LearningGoal.find.mockReturnValue(chain);
     RoadmapTopic.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([]),
     });
@@ -175,6 +197,7 @@ describe("User roadmaps API", () => {
 
   test("GET /api/roadmaps?status=active,paused applies status filter", async () => {
     const chain = {
+      select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([]),
     };
