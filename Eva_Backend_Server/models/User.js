@@ -204,15 +204,8 @@ userSchema.methods.toPublicProfile = function () {
     username: this.username,
     email: this.email,
     profile_picture: this.profile_picture,
-    bio: this.bio,
-    university: this.university,
-    department: this.department,
-    semester: this.semester,
     timezone: this.timezone,
-    auth_provider: this.auth_provider,
     is_verified: this.is_verified,
-    last_login: this.last_login,
-    created_at: this.created_at,
   };
 };
 

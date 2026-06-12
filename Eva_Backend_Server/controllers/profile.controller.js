@@ -13,15 +13,7 @@ const buildApiData = (req, payload) => {
   return withApiTimezone(localizeApiPayload(payload, timezone), timezone);
 };
 
-const ALLOWED_UPDATES = new Set([
-  "name",
-  "username",
-  "bio",
-  "university",
-  "department",
-  "semester",
-  "timezone",
-]);
+const ALLOWED_UPDATES = new Set(["name", "username", "timezone"]);
 
 const hasOwn = (obj, key) => Object.prototype.hasOwnProperty.call(obj, key);
 
@@ -33,25 +25,6 @@ const normalizeOptionalString = (value) => {
     return null;
   }
   return String(value).trim();
-};
-
-const parseSemester = (value) => {
-  if (value === undefined) {
-    return undefined;
-  }
-  if (value === null || value === "") {
-    return null;
-  }
-
-  const parsed = typeof value === "number"
-    ? value
-    : Number.parseInt(String(value).trim(), 10);
-
-  if (!Number.isInteger(parsed)) {
-    throw new BadRequestError("semester must be an integer");
-  }
-
-  return parsed;
 };
 
 /**
@@ -102,25 +75,6 @@ const updateProfile = async (req, res, next) => {
         throw new BadRequestError("username is required");
       }
       update.username = username.toLowerCase();
-    }
-
-    if (hasOwn(req.body, "bio")) {
-      const bio = normalizeOptionalString(req.body.bio);
-      update.bio = bio || null;
-    }
-
-    if (hasOwn(req.body, "university")) {
-      const university = normalizeOptionalString(req.body.university);
-      update.university = university || null;
-    }
-
-    if (hasOwn(req.body, "department")) {
-      const department = normalizeOptionalString(req.body.department);
-      update.department = department || null;
-    }
-
-    if (hasOwn(req.body, "semester")) {
-      update.semester = parseSemester(req.body.semester);
     }
 
     if (hasOwn(req.body, "timezone")) {

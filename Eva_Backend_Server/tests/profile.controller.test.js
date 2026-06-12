@@ -60,12 +60,7 @@ const mockUserDoc = (overrides = {}) => ({
   username: "hamid",
   email: "hamid@example.com",
   profile_picture: null,
-  bio: "Student",
-  university: null,
-  department: null,
-  semester: null,
   timezone: "UTC",
-  auth_provider: "local",
   is_verified: true,
   is_active: true,
   toPublicProfile() {
@@ -75,15 +70,8 @@ const mockUserDoc = (overrides = {}) => ({
       username: this.username,
       email: this.email,
       profile_picture: this.profile_picture,
-      bio: this.bio,
-      university: this.university,
-      department: this.department,
-      semester: this.semester,
       timezone: this.timezone,
-      auth_provider: this.auth_provider,
       is_verified: this.is_verified,
-      last_login: this.last_login,
-      created_at: this.created_at,
     };
   },
   ...overrides,
@@ -106,20 +94,31 @@ describe("PATCH /api/profile", () => {
     expect(mockFindByIdAndUpdate).not.toHaveBeenCalled();
   });
 
-  test("updates allowed fields such as bio", async () => {
-    const updatedUser = mockUserDoc({ bio: "Updated bio" });
-    mockFindByIdAndUpdate.mockResolvedValue(updatedUser);
-
+  test("rejects removed fields such as bio", async () => {
     const response = await request(app)
       .patch("/api/profile")
       .set(authHeaders())
       .send({ bio: "Updated bio" });
 
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/Invalid profile fields/i);
+    expect(mockFindByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test("updates allowed fields such as name", async () => {
+    const updatedUser = mockUserDoc({ name: "Updated Name" });
+    mockFindByIdAndUpdate.mockResolvedValue(updatedUser);
+
+    const response = await request(app)
+      .patch("/api/profile")
+      .set(authHeaders())
+      .send({ name: "Updated Name" });
+
     expect(response.status).toBe(200);
-    expect(response.body.data.user.bio).toBe("Updated bio");
+    expect(response.body.data.user.name).toBe("Updated Name");
     expect(mockFindByIdAndUpdate).toHaveBeenCalledWith(
       USER_ID,
-      { $set: { bio: "Updated bio" } },
+      { $set: { name: "Updated Name" } },
       expect.objectContaining({ new: true }),
     );
   });
