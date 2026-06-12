@@ -105,11 +105,14 @@ class QuietHourInterval {
   String label;
   TimeOfDay startTime;
   TimeOfDay endTime;
+  bool enabled;  // new field
+
 
   QuietHourInterval({
     required this.label,
     required this.startTime,
     required this.endTime,
+    this.enabled = true,  // default to enabled
   });
 
   Map<String, dynamic> toJson() => {
@@ -118,6 +121,7 @@ class QuietHourInterval {
     'startMinute': startTime.minute,
     'endHour': endTime.hour,
     'endMinute': endTime.minute,
+    'enabled': enabled,
   };
 
   factory QuietHourInterval.fromJson(Map<String, dynamic> json) =>
@@ -128,6 +132,7 @@ class QuietHourInterval {
           minute: json['startMinute'],
         ),
         endTime: TimeOfDay(hour: json['endHour'], minute: json['endMinute']),
+        enabled: json['enabled'] ?? true,
       );
 }
 
