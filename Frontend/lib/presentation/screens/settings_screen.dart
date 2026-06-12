@@ -26,6 +26,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _searchController.addListener(() {
       setState(() => _searchQuery = _searchController.text.toLowerCase());
     });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final themeProvider = context.read<ThemeProvider>();
+
+      setState(() {
+        if (themeProvider.themeMode == ThemeMode.dark) {
+          _settings.theme = 'dark';
+        } else if (themeProvider.themeMode == ThemeMode.light) {
+          _settings.theme = 'light';
+        } else {
+          _settings.theme = 'system';
+        }
+      });
+    });
   }
 
   @override
@@ -807,6 +821,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           label: 'New Interval',
           startTime: const TimeOfDay(hour: 22, minute: 0),
           endTime: const TimeOfDay(hour: 7, minute: 0),
+          enabled: true, // explicit
         ),
       );
     });
@@ -845,10 +860,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                     style: const TextStyle(fontWeight: FontWeight.w500),
                     onChanged: (value) {
-                      // Update model directly without rebuilding the tile
                       interval.label = value;
                     },
                   ),
+                ),
+                // Per-interval toggle
+                Switch(
+                  value: interval.enabled,
+                  onChanged: (val) =>
+                      setSheetState(() => interval.enabled = val),
+                  activeColor: AppColors.primary,
                 ),
                 IconButton(
                   icon: const Icon(Icons.delete_outline, size: 20),

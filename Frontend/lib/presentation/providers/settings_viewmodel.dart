@@ -20,6 +20,7 @@ class SettingsViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+
   void clearSearch() {
     _searchQuery = '';
     notifyListeners();
