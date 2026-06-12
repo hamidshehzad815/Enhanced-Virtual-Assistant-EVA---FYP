@@ -197,7 +197,6 @@ async def seed_conflict_task(user_id: str) -> str:
             "owner_id": owner,
             "title": "Seed blocker — Monday 6PM (behavioral B12)",
             "due_datetime": due,
-            "is_all_day": False,
             "duration": 60,
             "priority": "medium",
             "status": "pending",

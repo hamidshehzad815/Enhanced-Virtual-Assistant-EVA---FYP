@@ -61,23 +61,58 @@ const computeTaskDisplayStatus = (task, now = new Date()) => {
 
 const { localizeApiPayload } = require("./apiDateTime");
 
-const enrichTaskForApi = (task, now = new Date(), timezone = "UTC") => {
+/**
+ * Public task shape for tasks page / detail (no internal DB fields).
+ */
+const serializeTaskForApi = (
+  task,
+  now = new Date(),
+  timezone = "UTC",
+  { includeDescription = false } = {},
+) => {
   if (!task || typeof task !== "object") {
     return task;
   }
-  const enriched = {
-    ...task,
+
+  const learningGoalId = task.learning_plan_id
+    ? String(task.learning_plan_id)
+    : null;
+
+  const payload = {
+    id: task._id != null ? String(task._id) : String(task.id || ""),
+    title: task.title,
+    due_datetime: task.due_datetime,
+    duration: Number.isFinite(Number(task.duration)) && Number(task.duration) > 0
+      ? Number(task.duration)
+      : DEFAULT_DURATION_MINUTES,
+    priority: task.priority || "medium",
     status: normalizeStoredStatus(task.status),
     display_status: computeTaskDisplayStatus(task, now),
+    is_learning_task: Boolean(learningGoalId),
+    learning_goal_id: learningGoalId,
   };
-  return localizeApiPayload(enriched, timezone);
+
+  if (task.completed_at) {
+    payload.completed_at = task.completed_at;
+  }
+
+  if (includeDescription) {
+    payload.description = task.description || null;
+  }
+
+  return localizeApiPayload(payload, timezone);
 };
+
+/** @deprecated Prefer serializeTaskForApi for HTTP responses. */
+const enrichTaskForApi = (task, now = new Date(), timezone = "UTC") =>
+  serializeTaskForApi(task, now, timezone, { includeDescription: true });
 
 module.exports = {
   DEFAULT_DURATION_MINUTES,
   isStoredComplete,
   normalizeStoredStatus,
   computeTaskDisplayStatus,
+  serializeTaskForApi,
   enrichTaskForApi,
   taskWindowEnd,
 };

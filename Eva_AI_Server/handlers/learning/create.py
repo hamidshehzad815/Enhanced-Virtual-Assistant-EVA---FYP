@@ -558,7 +558,6 @@ async def handle_learning_create(
             "owner_id": owner_oid,
             "title": task_title[:200],
             "due_datetime": due,
-            "is_all_day": False,
             "duration": task_dur,
             "priority": "medium",
             "status": "pending",

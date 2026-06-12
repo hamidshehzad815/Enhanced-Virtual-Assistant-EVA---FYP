@@ -162,7 +162,6 @@ const cloneLearningPlanForCollaborator = async (ownerGoal, collaboratorUserId) =
       title: ownerTask.title,
       description: ownerTask.description,
       due_datetime: ownerTask.due_datetime,
-      is_all_day: ownerTask.is_all_day,
       duration: ownerTask.duration,
       priority: ownerTask.priority,
       status: "pending",
