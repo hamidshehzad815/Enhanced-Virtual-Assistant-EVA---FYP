@@ -66,7 +66,6 @@ COLLECTION OWNERSHIP
   title                   String, required, max 200   Task name
   description    ❌         String, max 1000            Optional details
   due_datetime            Date                        Combined datetime for sorting and reminders
-  is_all_day     ❌         Boolean                     Always false in current flow (hardcoded)
   duration                Number                      Duration in minutes, default 120
   priority                Enum                        "low" / "medium" / "high", default "medium"
   status                  Enum                        "pending" / "ongoing" / "complete"

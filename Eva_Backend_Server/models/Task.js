@@ -46,10 +46,6 @@ const taskSchema = new mongoose.Schema(
       required: true,
       index: true,
     },
-    is_all_day: {
-      type: Boolean,
-      default: false,
-    },
     duration: {
       type: Number,
       default: 120,

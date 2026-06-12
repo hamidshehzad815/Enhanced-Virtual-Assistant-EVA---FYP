@@ -45,12 +45,11 @@ DECISIONS LOCKED
 
   1. task_name, date, time — ALL THREE required
      EVA asks for any missing, one by one in order
-  2. is_all_day = False always, hardcoded
-  3. due_datetime always fully populated (both required)
-  4. Behavioral threshold = analytics_min_tasks_threshold (default 20)
+  2. due_datetime always fully populated (both required)
+  3. Behavioral threshold = analytics_min_tasks_threshold (default 20)
      and analytics_min_tasks_per_day (default 5) from user_settings
-  5. Model 1 has 5 classes (no salutation_command)
-  6. AI server self-fetches all required data at request start
+  4. Model 1 has 5 classes (no salutation_command)
+  5. AI server self-fetches all required data at request start
   7. AI server performs ALL DB operations directly
   8. Node.js dispatches push notifications only
   9. Gemini called directly from AI server
@@ -196,7 +195,6 @@ STEP 3 — TIME RESOLUTION
   │ → pass to Duckling                                      │
   │ → merge with date_part                                  │
   │   due_datetime = "2026-03-23T17:00:00"                  │
-  │ → is_all_day   = False (always)                         │
   │ → scheduled_by = "manual"                               │
   │ → continue to STEP 4                                    │
   └─────────────────────────────────────────────────────────┘
@@ -391,7 +389,6 @@ STEP 8 — INSERT TASK (AI Server → MongoDB directly)
     owner_id                : user_id,
     title                   : task_name,
     due_datetime            : "2026-03-23T17:00:00",
-    is_all_day              : false,
     duration                : minutes,
     priority                : "low" / "medium" / "high",
     status                  : "pending",

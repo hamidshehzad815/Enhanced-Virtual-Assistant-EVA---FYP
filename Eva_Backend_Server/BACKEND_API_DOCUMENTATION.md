@@ -540,11 +540,22 @@ Notes:
 
 ### `GET /api/roadmaps` and `GET /api/roadmaps/languages`
 - Auth: Yes
-- Returns user learning goals (not static catalog). Each `sessions[]` item includes:
-  - `session_state`: `locked` | `unlocked_future` | `overdue` | `completed` | `skipped` | `upcoming`
-  - `is_current`: `true` only for the lowest-order `pending` session
-  - `unlock_at`: ISO datetime when `session_state` is `locked` and `is_current` (else `null`)
-- `upcoming` = later pending sessions (not yet the active step).
+- Returns user learning goals (not static catalog).
+
+**Roadmap shape** (`data.roadmaps[]`):
+- `id`, `title`, `language`, `track_label`, `status`
+- `start_date`, `end_date` (local date strings)
+- `completed_topics`, `total_topics`, `progress_percent`
+- `session_count`, `sessions_summary`, `sessions`
+
+**Session shape** (`sessions[]`):
+- `id`, `order`, `title`, `status`, `scheduled_date`, `estimated_duration`, `resources`
+- `session_state`: `locked` | `unlocked_future` | `overdue` | `completed` | `skipped` | `upcoming`
+- `is_current`: `true` only for the lowest-order `pending` session
+- `unlock_at`: ISO datetime when `session_state` is `locked` and `is_current` (else `null`)
+- `completed_at`: only when `status` is `completed` or `skipped`
+
+`resources[]`: `{ title, url, thumbnail?, channel_name? }` for session study links.
 
 ### `POST /api/learning/:id/topics/:topicId/skip`
 - Auth: Yes
