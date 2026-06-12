@@ -8,10 +8,10 @@ const router = express.Router();
 const { protect } = require("../middleware/auth");
 const {
   getUserLanguages,
-  getUserRoadmaps,
+  getUserRoadmap,
 } = require("../controllers/roadmaps.controller");
 
 router.get("/languages", protect, getUserLanguages);
-router.get("/", protect, getUserRoadmaps);
+router.get("/", protect, getUserRoadmap);
 
 module.exports = router;

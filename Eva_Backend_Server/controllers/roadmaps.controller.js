@@ -1,11 +1,11 @@
 /**
- * User roadmap APIs — learning goals the user created (filter by language, status, track).
+ * User roadmap APIs — language dropdown + single roadmap per selected language.
  */
 
 const { BadRequestError } = require("../middleware/errorHandler");
 const {
   listUserLanguages,
-  listUserRoadmaps,
+  getUserRoadmapForLanguage,
   GOAL_STATUSES,
 } = require("../services/userRoadmaps.service");
 
@@ -29,11 +29,19 @@ const getUserLanguages = async (req, res, next) => {
 };
 
 /**
- * GET /api/roadmaps
- * Query: language, status (comma-separated), roadmap_key
+ * GET /api/roadmaps?language=python
+ * Returns one roadmap for the language (active/paused preferred over completed).
+ * Approach B: language is required — show placeholder until user selects.
  */
-const getUserRoadmaps = async (req, res, next) => {
+const getUserRoadmap = async (req, res, next) => {
   try {
+    const languageInput = pickLanguageQuery(req);
+    if (!languageInput) {
+      throw new BadRequestError(
+        "language query parameter is required (e.g. ?language=python)",
+      );
+    }
+
     const statusInput = req.query.status || req.query.statuses || "";
     if (statusInput) {
       const parts = String(statusInput)
@@ -48,19 +56,16 @@ const getUserRoadmaps = async (req, res, next) => {
       }
     }
 
-    const includeSessions =
-      req.query.include_sessions !== "false" && req.query.include_sessions !== "0";
-
-    const result = await listUserRoadmaps(req.userId, {
-      languageInput: pickLanguageQuery(req),
-      statusInput,
-      roadmapKeyInput: req.query.roadmap_key || req.query.track || req.query.level || "",
-      includeSessions,
-    }, req.user?.timezone || "UTC");
+    const data = await getUserRoadmapForLanguage(
+      req.userId,
+      languageInput,
+      req.user?.timezone || "UTC",
+      { statusInput },
+    );
 
     res.json({
       status: "success",
-      data: result,
+      data,
     });
   } catch (error) {
     next(error);
@@ -69,5 +74,5 @@ const getUserRoadmaps = async (req, res, next) => {
 
 module.exports = {
   getUserLanguages,
-  getUserRoadmaps,
+  getUserRoadmap,
 };

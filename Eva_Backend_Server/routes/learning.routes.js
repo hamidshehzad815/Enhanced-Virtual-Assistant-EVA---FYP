@@ -7,9 +7,7 @@ const router = express.Router();
 
 const { protect } = require("../middleware/auth");
 const {
-  getAllGoals,
-  getGoal,
-  getTopics,
+  updateSession,
   completeTopic,
   skipTopic,
   updateStatus,
@@ -19,13 +17,11 @@ const {
 } = require("../controllers/learning.controller");
 
 router.get("/collaboration/respond", respondToLearningCollaborationInviteViaLink);
-router.get("/", protect, getAllGoals);
-router.post("/:id/collaborators/respond", protect, respondToLearningCollaborationInvite);
-router.get("/:id/topics", protect, getTopics);
-router.post("/:id/topics/:topicId/complete", protect, completeTopic);
-router.post("/:id/topics/:topicId/skip", protect, skipTopic);
-router.get("/:id", protect, getGoal);
-router.delete("/:id", protect, deleteGoal);
-router.patch("/:id/status", protect, updateStatus);
+router.post("/:goalId/collaborators/respond", protect, respondToLearningCollaborationInvite);
+router.patch("/:goalId/sessions/:sessionId", protect, updateSession);
+router.post("/:goalId/topics/:topicId/complete", protect, completeTopic);
+router.post("/:goalId/topics/:topicId/skip", protect, skipTopic);
+router.delete("/:goalId", protect, deleteGoal);
+router.patch("/:goalId/status", protect, updateStatus);
 
 module.exports = router;
