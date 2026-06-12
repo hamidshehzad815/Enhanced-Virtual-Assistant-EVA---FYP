@@ -1,6 +1,6 @@
 # EVA Backend API Documentation (Frontend)
 
-Focused reference for **Dashboard** and **Settings** APIs on the Node backend (`Eva_Backend_Server`).
+Focused reference for **Dashboard**, **Settings**, and **Profile** APIs on the Node backend (`Eva_Backend_Server`).
 
 ## Base URL
 
@@ -17,7 +17,7 @@ All endpoints in this folder require a logged-in user.
 | Header | Value |
 |--------|--------|
 | `Authorization` | `Bearer <access_token>` |
-| `Content-Type` | `application/json` (for POST/PATCH bodies) |
+| `Content-Type` | `application/json` (for PATCH bodies). Avatar upload uses `multipart/form-data` — see [profile-api.md](./profile-api.md). |
 
 Get `access_token` from `POST /api/auth/login` → `data.tokens.access_token`.
 
@@ -63,6 +63,8 @@ Conflict responses (`409`) may include extra context:
 | `404` | Route or resource not found |
 | `409` | Conflict (schedule in use, task overlap, quiet hours, etc.) |
 | `422` | Mongoose validation (rare on these routes) |
+| `429` | Rate limit (e.g. avatar uploads) |
+| `502` | Upstream failure (e.g. Cloudinary) |
 | `500` | Server error |
 
 ## Timezone convention
@@ -78,12 +80,14 @@ Conflict responses (`409`) may include extra context:
 | [dashboard-api.md](./dashboard-api.md) | `GET /api/dashboard` |
 | [settings-api.md](./settings-api.md) | `GET /api/settings`, `PATCH /api/settings` |
 | [settings-learning-schedules-api.md](./settings-learning-schedules-api.md) | Learning schedule CRUD under `/api/settings/learning-schedules` |
+| [profile-api.md](./profile-api.md) | `GET` / `PATCH /api/profile`, `POST /api/profile/avatar` |
 
 ## Quick frontend map
 
 | Screen | Read | Write |
 |--------|------|-------|
 | Home / Dashboard | `GET /api/dashboard` | — |
+| Profile (name, username, photo, timezone) | `GET /api/profile` | `PATCH /api/profile`, `POST /api/profile/avatar` |
 | Settings (toggles, quiet hours, reminders) | `GET /api/settings` | `PATCH /api/settings` |
 | Learning schedules UI | `GET /api/settings` or `GET /api/settings/learning-schedules` | `POST` / `PATCH` / `DELETE` on `/api/settings/learning-schedules` |
 
