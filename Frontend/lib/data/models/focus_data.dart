@@ -1,7 +1,7 @@
 class FocusData {
   final String title;
   final String nextTopic;
-  final DateTime nextTopicTime;
+  final String nextTopicTime;
 
   FocusData({
     required this.title,
@@ -16,10 +16,7 @@ class FocusData {
       title: json['title'] ?? '',
       nextTopic:
           json['next_topic']['title'] ?? '',
-      nextTopicTime: DateTime.parse(
-        json['next_topic']
-            ['scheduled_datetime'],
-      ),
+      nextTopicTime: json['next_topic']['time'] ?? '',
     );
   }
 }

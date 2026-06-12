@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../../core/constants/api_constants.dart';
 import '../models/user_model.dart';
 
 class AuthService {
@@ -8,7 +9,7 @@ class AuthService {
     String email,
     String password,
   ) async {
-    final url = Uri.parse("http://192.168.100.7:4500/api/auth/login");
+    final url = Uri.parse("${AppConstants.baseUrl}/auth/login");
 
     try {
       final response = await http
@@ -21,14 +22,12 @@ class AuthService {
 
       final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
 
-      // SUCCESS – backend returns { "status": "success", ... }
       if (response.statusCode == 200) {
         return {
           "success": true, // ✅ added for UI check
           ...data,
         };
       }
-      // ERROR RESPONSE – backend may send { "status": "fail", "message": ... }
       return {
         "success": false,
         "field": data["field"], // keep if backend sends field-specific error
@@ -41,7 +40,7 @@ class AuthService {
 
   /// Signup API
   static Future<Map<String, dynamic>> signupUser(UserModel user) async {
-    final url = Uri.parse("http://192.168.100.7:4500/api/auth/register");
+    final url = Uri.parse("${AppConstants.baseUrl}/auth/register");
 
     try {
       final response = await http

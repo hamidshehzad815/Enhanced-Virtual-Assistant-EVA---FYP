@@ -1,21 +1,21 @@
-class TaskData {
+class UpNextData {
   final String title;
   final String day;
-  final String taskTime;
+  final String time;
 
-  TaskData({
+  UpNextData({
     required this.title,
     required this.day,
-    required this.taskTime,
+    required this.time,
   });
 
-  factory TaskData.fromJson(
+  factory UpNextData.fromJson(
     Map<String, dynamic> json,
   ) {
-    return TaskData(
+    return UpNextData(
       title: json['title'] ?? '',
       day: json['day'] ?? '',
-      taskTime: json['time'] ?? '',
+      time: json['time'] ?? '',
     );
   }
 }

@@ -4,7 +4,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_colours.dart';
 import '../../core/theme/app_text_style.dart';
-import '../../data/models/task_data.dart';
+import '../../data/models/up_next_data.dart';
 import '../../data/models/focus_data.dart';
 import '../../data/models/schedule_item.dart';
 import '../providers/home_screen_viewmodel.dart';
@@ -32,57 +32,6 @@ class _HomeScreenState extends State<HomeScreen>
   static const Color _focusDark = Color(0xFF2D2A4A);
   static const Color _scheduleLight = Color.fromARGB(255, 201, 225, 241);
   static const Color _scheduleDark = Color(0xFF1A283A);
-
-  // Fallback data (used when ViewModel is empty)
-  static const _userName = 'Areej';
-  static const _progressValue = 0.65;
-
-  final _upcomingTask = TaskData(
-    title: 'NLP Mid Exam',
-    day: 'Thursday',
-    taskTime: '3:00 PM',
-  );
-
-  final List<FocusData> _fallbackFocusList = [
-    FocusData(
-      title: 'Python Roadmap',
-      nextTopic: 'OOP Concepts',
-      nextTopicTime: DateTime.now().add(const Duration(hours: 2)),
-    ),
-    FocusData(
-      title: 'Flutter Animations',
-      nextTopic: 'CustomPaint',
-      nextTopicTime: DateTime.now().add(const Duration(hours: 5)),
-    ),
-  ];
-
-  final List<ScheduleItem> _fallbackSchedule = [
-    ScheduleItem(
-      time: DateTime(2023, 10, 1, 8, 0),
-      title: 'Math Lecture',
-      tag: 'completed',
-    ),
-    ScheduleItem(
-      time: DateTime(2023, 10, 1, 10, 0),
-      title: 'Intro to AI',
-      tag: 'pending',
-    ),
-    ScheduleItem(
-      time: DateTime(2023, 10, 1, 13, 0),
-      title: 'Physics Lab',
-      tag: 'ongoing',
-    ),
-    ScheduleItem(
-      time: DateTime(2023, 10, 1, 15, 30),
-      title: 'Group Study',
-      tag: 'due',
-    ),
-    ScheduleItem(
-      time: DateTime(2023, 10, 1, 17, 0),
-      title: 'NLP Exam Prep',
-      tag: 'pending',
-    ),
-  ];
 
   @override
   void initState() {
@@ -120,18 +69,19 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<HomeScreenViewModel>();
+
+    if (vm.isLoading) {
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final primaryText = Theme.of(context).textTheme.bodyMedium!.color!;
     final secondaryText = Theme.of(context).textTheme.bodySmall!.color!;
 
-    final userName = vm.userProfile?.name ?? _userName;
-    final progressValue = vm.userProfile?.dailyProgress ?? _progressValue;
-    final upcomingTask = vm.upcomingTask ?? _upcomingTask;
-    // ✅ Use list from ViewModel or fallback
-    final focusList = vm.focusList.isNotEmpty
-        ? vm.focusList
-        : _fallbackFocusList;
-    final schedule = vm.schedule.isNotEmpty ? vm.schedule : _fallbackSchedule;
+    final userName = vm.userProfile?.name ?? '';
+    final progressValue = (vm.dailyProgress?.completionPercentage ?? 0) / 100;
+    final upcomingTask = vm.upcomingTask;
+    final focusList = vm.focusList;
+    final schedule = vm.schedule;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -146,6 +96,7 @@ class _HomeScreenState extends State<HomeScreen>
                 secondaryText,
                 context,
                 userName,
+                vm.userProfile?.initial ?? '?',
               ),
             ),
             if (vm.error != null)
@@ -194,7 +145,7 @@ class _HomeScreenState extends State<HomeScreen>
             SliverToBoxAdapter(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: _buildCurrentFocusCard(isDark, focusList), // ✅ pass list
+                child: _buildCurrentFocusCard(isDark, focusList),
               ),
             ),
             SliverToBoxAdapter(
@@ -221,6 +172,7 @@ class _HomeScreenState extends State<HomeScreen>
     Color secondaryText,
     BuildContext context,
     String userName,
+    String userInitial,
   ) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
@@ -293,17 +245,7 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                     ],
                   ),
-                  child: const Center(
-                    child: Text(
-                      'A',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ),
+                  child: Center(child: Text(userInitial)),
                 ),
               ),
             ],
@@ -314,7 +256,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   // ─── UP NEXT CARD ─────────────────────────────────────────
-  Widget _buildUpNextCard(bool isDark, TaskData t) {
+  Widget _buildUpNextCard(bool isDark, UpNextData? t) {
     final bg = isDark ? _upNextDark : _upNextLight;
     final border = isDark ? AppColors.borderDark : AppColors.borderLight;
     return Container(
@@ -334,81 +276,96 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ),
           const SizedBox(height: 14),
-          Row(
-            children: [
-              Container(
-                width: 44,
-                height: 44,
-                decoration: BoxDecoration(
-                  color: Color(0xFFDBEAFE).withOpacity(isDark ? 0.2 : 1.0),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  Icons.edit_calendar_rounded,
-                  color: Color(0xFF3B82F6),
-                  size: 22,
+          if (t == null)
+            Expanded(
+              child: Center(
+                child: Text(
+                  'No upcoming tasks',
+                  textAlign: TextAlign.center,
+                  style: AppTextStyles.subtitleSmall.copyWith(
+                    color: isDark
+                        ? AppColors.secondaryTextDark
+                        : AppColors.secondaryTextLight,
+                  ),
                 ),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      t.title,
-                      style: AppTextStyles.subtitleSmall.copyWith(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                        color: isDark
-                            ? AppColors.primaryTextDark
-                            : AppColors.primaryTextLight,
+            )
+          else
+            Row(
+              children: [
+                Container(
+                  width: 44,
+                  height: 44,
+                  decoration: BoxDecoration(
+                    color: Color(0xFFDBEAFE).withOpacity(isDark ? 0.2 : 1.0),
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(
+                    Icons.edit_calendar_rounded,
+                    color: Color(0xFF3B82F6),
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        t.title,
+                        style: AppTextStyles.subtitleSmall.copyWith(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: isDark
+                              ? AppColors.primaryTextDark
+                              : AppColors.primaryTextLight,
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      t.day, // Display the day
-                      style: AppTextStyles.subtitleSmall.copyWith(
-                        fontSize: 11,
-                        color: isDark
-                            ? AppColors.secondaryTextDark
-                            : AppColors.secondaryTextLight,
+                      const SizedBox(height: 2),
+                      Text(
+                        t.day, // Display the day
+                        style: AppTextStyles.subtitleSmall.copyWith(
+                          fontSize: 11,
+                          color: isDark
+                              ? AppColors.secondaryTextDark
+                              : AppColors.secondaryTextLight,
+                        ),
                       ),
-                    ),
-                    Text(
-                      t.taskTime, // Display the task time
-                      style: AppTextStyles.subtitleSmall.copyWith(
-                        fontSize: 11,
-                        color: isDark
-                            ? AppColors.secondaryTextDark
-                            : AppColors.secondaryTextLight,
+                      Text(
+                        t.time, // Display the task time
+                        style: AppTextStyles.subtitleSmall.copyWith(
+                          fontSize: 11,
+                          color: isDark
+                              ? AppColors.secondaryTextDark
+                              : AppColors.secondaryTextLight,
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          SizedBox(
-            height: 34,
-            child: ElevatedButton(
-              onPressed: () {},
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.primary,
-                foregroundColor: Colors.white,
-                padding: const EdgeInsets.symmetric(horizontal: 16),
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                elevation: 0,
-                minimumSize: const Size(0, 34),
-              ),
-              child: Text(
-                'Remind Me',
-                style: AppTextStyles.button.copyWith(fontSize: 12),
-              ),
+              ],
             ),
-          ),
+          const SizedBox(height: 16),
+          // SizedBox(
+          //   height: 34,
+          //   child: ElevatedButton(
+          //     onPressed: () {},
+          //     style: ElevatedButton.styleFrom(
+          //       backgroundColor: AppColors.primary,
+          //       foregroundColor: Colors.white,
+          //       padding: const EdgeInsets.symmetric(horizontal: 16),
+          //       shape: RoundedRectangleBorder(
+          //         borderRadius: BorderRadius.circular(8),
+          //       ),
+          //       elevation: 0,
+          //       minimumSize: const Size(0, 34),
+          //     ),
+          //     child: Text(
+          //       'Remind Me',
+          //       style: AppTextStyles.button.copyWith(fontSize: 12),
+          //     ),
+          //   ),
+          // ),
         ],
       ),
     );
@@ -509,17 +466,32 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ),
           const SizedBox(height: 16),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 240),
-            child: ListView.separated(
-              shrinkWrap: true,
-              physics: const BouncingScrollPhysics(),
-              itemCount: focusList.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 12),
-              itemBuilder: (_, index) =>
-                  _buildFocusTile(focusList[index], isDark),
+          if (focusList.isEmpty)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Text(
+                'No learning goals yet',
+                textAlign: TextAlign.center,
+                style: AppTextStyles.subtitleSmall.copyWith(
+                  color: isDark
+                      ? AppColors.secondaryTextDark
+                      : AppColors.secondaryTextLight,
+                ),
+              ),
+            )
+          else
+            ConstrainedBox(
+              constraints: const BoxConstraints(maxHeight: 240),
+              child: ListView.separated(
+                shrinkWrap: true,
+                physics: const BouncingScrollPhysics(),
+                itemCount: focusList.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (_, index) =>
+                    _buildFocusTile(focusList[index], isDark),
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -571,7 +543,7 @@ class _HomeScreenState extends State<HomeScreen>
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  _format12HourTime(f.nextTopicTime),
+                  f.nextTopicTime,
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w500,
@@ -610,16 +582,31 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
           ),
-          ConstrainedBox(
-            constraints: const BoxConstraints(maxHeight: 340),
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 18),
-              physics: const BouncingScrollPhysics(),
-              itemCount: schedule.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (_, i) => _buildScheduleItem(schedule[i], isDark),
-            ),
-          ),
+          schedule.isEmpty
+              ? Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 24),
+                  child: Text(
+                    'No tasks scheduled today',
+                    textAlign: TextAlign.center,
+                    style: AppTextStyles.subtitleSmall.copyWith(
+                      color: isDark
+                          ? AppColors.secondaryTextDark
+                          : AppColors.secondaryTextLight,
+                    ),
+                  ),
+                )
+              : ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 340),
+                  child: ListView.separated(
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: schedule.length,
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
+                    itemBuilder: (_, i) =>
+                        _buildScheduleItem(schedule[i], isDark),
+                  ),
+                ),
           const SizedBox(height: 12),
         ],
       ),
@@ -627,7 +614,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildScheduleItem(ScheduleItem item, bool isDark) {
-    final tagColor = _getTagColor(item.tag);
+    final tagColor = _getTagColor(item.status);
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -643,7 +630,7 @@ class _HomeScreenState extends State<HomeScreen>
           SizedBox(
             width: 60,
             child: Text(
-              _format12HourTime(item.time),
+              item.time,
               style: TextStyle(
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
@@ -674,7 +661,7 @@ class _HomeScreenState extends State<HomeScreen>
               border: Border.all(color: tagColor, width: 1),
             ),
             child: Text(
-              item.tag.toUpperCase(),
+              item.status.toUpperCase(),
               style: TextStyle(
                 fontSize: 10,
                 fontWeight: FontWeight.bold,
@@ -703,14 +690,6 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   // ─── HELPERS ───────────────────────────────────────────────
-  String _format12HourTime(DateTime time) {
-    int hour = time.hour;
-    final minute = time.minute;
-    final period = hour >= 12 ? 'PM' : 'AM';
-    hour = hour % 12;
-    if (hour == 0) hour = 12;
-    return '$hour:${minute.toString().padLeft(2, '0')} $period';
-  }
 
   BoxDecoration _cardDecoration(Color bg, Color border, bool isDark) {
     return BoxDecoration(

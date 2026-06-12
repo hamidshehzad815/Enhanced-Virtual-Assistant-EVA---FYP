@@ -1,30 +1,28 @@
-/// User profile data model - ready for API integration
 class UserProfile {
   final String name;
-  final String userInitial;
-  final double dailyProgress; // 0.0 to 1.0
+  final String? profilePicture;
 
   UserProfile({
     required this.name,
-    required this.userInitial,
-    required this.dailyProgress,
+    this.profilePicture,
   });
 
-  /// Convert to JSON for API calls
-  Map<String, dynamic> toJson() {
-    return {
-      'name': name,
-      'userInitial': userInitial,
-      'dailyProgress': dailyProgress,
-    };
+  factory UserProfile.fromJson(
+    Map<String, dynamic> json,
+  ) {
+    return UserProfile(
+      name: json['name'] ?? '',
+      profilePicture: json['profile_picture'],
+    );
   }
 
-  /// Create from JSON API response
-  factory UserProfile.fromJson(Map<String, dynamic> json) {
-    return UserProfile(
-      name: json['name'] as String,
-      userInitial: json['userInitial'] as String,
-      dailyProgress: (json['dailyProgress'] as num?)?.toDouble() ?? 0.0,
-    );
+  String get initial {
+    if (name.isEmpty) return '?';
+
+    return name
+        .trim()
+        .split(' ')
+        .first[0]
+        .toUpperCase();
   }
 }

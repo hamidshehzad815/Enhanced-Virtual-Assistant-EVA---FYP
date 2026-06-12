@@ -1,16 +1,18 @@
 import 'package:flutter/foundation.dart';
 import '../../data/services/storage_service.dart';
 import '../../data/models/user_profile.dart';
-import '../../data/models/task_data.dart';
+import '../../data/models/up_next_data.dart';
 import '../../data/models/focus_data.dart';
 import '../../data/models/schedule_item.dart';
+import '../../data/models/daily_progress.dart';
 import '../../data/repositories/home_screen_repository.dart';
 
 class HomeScreenViewModel extends ChangeNotifier {
   final HomeScreenRepository _repository;
 
   UserProfile? _userProfile;
-  TaskData? _upcomingTask;
+  DailyProgress? _dailyProgress;
+  UpNextData? _upcomingTask;
   List<FocusData> _focusList = [];
   List<ScheduleItem> _schedule = [];
 
@@ -22,7 +24,8 @@ class HomeScreenViewModel extends ChangeNotifier {
 
   // Getters
   UserProfile? get userProfile => _userProfile;
-  TaskData? get upcomingTask => _upcomingTask;
+  DailyProgress? get dailyProgress => _dailyProgress;
+  UpNextData? get upcomingTask => _upcomingTask;
   List<FocusData> get focusList => List.unmodifiable(_focusList);
   List<ScheduleItem> get schedule => List.unmodifiable(_schedule);
   bool get isLoading => _isLoading;
@@ -39,28 +42,25 @@ class HomeScreenViewModel extends ChangeNotifier {
         throw Exception("Token not found");
       }
 
-      final dashboard = await _repository.getDashboard(token);
-      debugPrint(dashboard.toString());
+      final profileData = await _repository.getProfile(token);
 
-      final data = dashboard['data'];
+      final dashboardData = await _repository.getDashboard(token);
 
-      final progress = data['daily_progress'];
+      _userProfile = UserProfile.fromJson(profileData['data']['user']);
+      // debugPrint(dashboardData.toString());
 
-      _userProfile = UserProfile(
-        name: 'Areej',
-        userInitial: 'A',
-        dailyProgress: (progress['completion_percentage'] ?? 0) / 100,
-      );
+      final dashboard = dashboardData['data'];
+      _dailyProgress = DailyProgress.fromJson(dashboard['daily_progress']);
 
-      _upcomingTask = data['up_next'] != null
-          ? TaskData.fromJson(data['up_next'])
+      _upcomingTask = dashboard['up_next'] != null
+          ? UpNextData.fromJson(dashboard['up_next'])
           : null;
 
-      _focusList = (data['learning'] as List)
+      _focusList = (dashboard['learning'] as List)
           .map((e) => FocusData.fromJson(e))
           .toList();
 
-      _schedule = (data['today_schedule'] as List)
+      _schedule = (dashboard['today_schedule'] as List)
           .map((e) => ScheduleItem.fromJson(e))
           .toList();
 
