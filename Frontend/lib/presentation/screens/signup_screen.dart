@@ -87,8 +87,12 @@ class _SignupScreenState extends State<SignupScreen> {
           actions: [
             TextButton(
               onPressed: () {
-                context.go('/auth', extra: {'initialindex': 0});
-                Navigator.of(context).pop();
+                Navigator.of(context, rootNavigator: true).pop();
+
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!context.mounted) return;
+                  context.go('/auth', extra: {'initialindex': 0});
+                });
               },
               style: TextButton.styleFrom(
                 foregroundColor: AppColors.primary,

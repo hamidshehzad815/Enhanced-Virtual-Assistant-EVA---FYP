@@ -133,7 +133,7 @@ class _FeaturesScreenState extends State<FeaturesScreen> {
                       ),
                       TextButton(
                         onPressed: () {
-                          context.go('/');
+                          context.go('/get-started');
                         },
                         child: Text(
                           "Skip",
