@@ -1,0 +1,14 @@
+.venv
+__pycache__
+*.pyc
+.env
+.git
+.gitattributes
+tests
+testModels
+scripts
+docs
+deploy
+.DS_Store
+*.md
+!README.md

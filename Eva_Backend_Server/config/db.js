@@ -10,6 +10,28 @@ const logger = require("./logger");
 let isConnected = false;
 
 /**
+ * Resolve MongoDB database name from URI or env.
+ * Mongoose defaults to "test" when the URI has no database segment — match AI server instead.
+ */
+const getDatabaseName = (uri) => {
+  const explicit = (process.env.MONGODB_DB_NAME || "").trim();
+  if (explicit) {
+    return explicit;
+  }
+
+  if (!uri) {
+    return "EVA";
+  }
+
+  const tail = uri.split("/").pop()?.split("?")[0]?.trim() || "";
+  if (tail && !tail.includes("@") && !tail.includes(".")) {
+    return tail;
+  }
+
+  return "EVA";
+};
+
+/**
  * Connect to MongoDB
  * @returns {Promise<boolean>} Connection success status
  */
@@ -20,13 +42,13 @@ const connectDB = async () => {
   }
 
   try {
+    const dbName = getDatabaseName(process.env.MONGODB_URI);
     const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      // Mongoose 8.x uses these options by default
-      // Add any additional options here if needed
+      dbName,
     });
 
     isConnected = true;
-    logger.info(`MongoDB connected: ${conn.connection.host}`);
+    logger.info(`MongoDB connected: ${conn.connection.host} (database: ${conn.connection.name})`);
     return true;
   } catch (error) {
     logger.error("MongoDB connection failed", { error: error.message });

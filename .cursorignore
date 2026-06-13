@@ -22,7 +22,7 @@ __pycache__/
 !.env.example
 
 # ML / large binaries (same as .gitignore intent)
-Eva_AI_Server/models/
+# Eva_AI_Server/models/
 */testModels/*
 
 # Data & generated test artifacts
