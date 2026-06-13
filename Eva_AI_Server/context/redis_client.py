@@ -3,6 +3,7 @@ Redis client module for context management
 """
 import json
 from typing import Any, Optional
+from urllib.parse import urlparse
 
 try:
     import redis.asyncio as redis
@@ -11,10 +12,44 @@ except Exception:  # pragma: no cover - runtime dependency guard
 from config.settings import settings
 
 
+def _normalize_redis_host(host: str) -> str:
+    value = (host or "").strip()
+    for prefix in ("rediss://", "redis://", "https://", "http://"):
+        if value.startswith(prefix):
+            value = value[len(prefix) :]
+    if "@" in value:
+        value = value.split("@", 1)[1]
+    if ":" in value:
+        value = value.split(":", 1)[0]
+    return value.strip("/")
+
+
 class RedisClient:
     """Redis connection manager for context state"""
 
     client: Any = None
+
+    def _build_client(self):
+        redis_url = settings.REDIS_URL.strip()
+        if redis_url:
+            return redis.from_url(redis_url, decode_responses=True)
+
+        host = _normalize_redis_host(settings.REDIS_HOST)
+        username = (settings.REDIS_USERNAME or "").strip() or None
+        if settings.REDIS_SSL and not username:
+            username = "default"
+
+        kwargs = {
+            "host": host,
+            "port": settings.REDIS_PORT,
+            "username": username,
+            "password": settings.REDIS_PASSWORD or None,
+            "decode_responses": True,
+        }
+        if settings.REDIS_SSL:
+            kwargs["ssl"] = True
+
+        return redis.Redis(**kwargs)
 
     async def connect(self):
         """Connect to Redis"""
@@ -23,15 +58,14 @@ class RedisClient:
             return False
 
         try:
-            self.client = redis.Redis(
-                host=settings.REDIS_HOST,
-                port=settings.REDIS_PORT,
-                password=settings.REDIS_PASSWORD or None,
-                decode_responses=True
-            )
-            # Verify connection
+            self.client = self._build_client()
             await self.client.ping()
-            print(f"[Redis] Connected to {settings.REDIS_HOST}:{settings.REDIS_PORT}")
+            if settings.REDIS_URL:
+                parsed = urlparse(settings.REDIS_URL)
+                target = parsed.hostname or "redis"
+            else:
+                target = _normalize_redis_host(settings.REDIS_HOST)
+            print(f"[Redis] Connected to {target}:{settings.REDIS_PORT}")
             return True
         except Exception as e:
             print(f"[Redis] Connection failed: {e}")

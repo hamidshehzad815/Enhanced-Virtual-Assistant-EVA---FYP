@@ -69,10 +69,14 @@ class Settings:
     # MongoDB
     MONGODB_URI: str = os.getenv("MONGODB_URI", "mongodb://localhost:27017/eva_db")
 
-    # Redis
+    # Redis — use REDIS_URL (Upstash TCP string) or host/port/password fields.
+    REDIS_URL: str = os.getenv("REDIS_URL", "").strip()
     REDIS_HOST: str = os.getenv("REDIS_HOST", "localhost")
     REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
     REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
+    REDIS_USERNAME: str = os.getenv("REDIS_USERNAME", "")
+    # Upstash and other cloud Redis providers require TLS (set REDIS_SSL=true).
+    REDIS_SSL: bool = _as_bool(os.getenv("REDIS_SSL"), False)
 
     # Duckling
     DUCKLING_URL: str = os.getenv("DUCKLING_URL", "http://localhost:8000")

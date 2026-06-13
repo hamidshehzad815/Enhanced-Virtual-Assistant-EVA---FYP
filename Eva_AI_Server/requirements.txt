@@ -21,6 +21,7 @@ python-dotenv==1.0.1
 transformers==4.37.2
 torch==2.2.0
 numpy==1.26.4
+scikit-learn==1.6.1
 
 # Gemini API (for later phases)
 google-generativeai==0.4.0

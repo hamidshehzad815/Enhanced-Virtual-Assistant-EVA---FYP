@@ -15,28 +15,32 @@ class DucklingClient:
 
     async def connect(self) -> bool:
         """Check if Duckling service is available"""
-        try:
-            async with httpx.AsyncClient() as client:
-                # Duckling doesn't have a health endpoint, so we do a test parse
-                response = await client.post(
-                    f"{self.base_url}/parse",
-                    data={
-                        "locale": "en_US",
-                        "text": "tomorrow",
-                        "dims": '["time"]'
-                    },
-                    timeout=5.0
-                )
-                if response.status_code == 200:
-                    self.connected = True
-                    print(f"[Duckling] Connected to {self.base_url}")
-                    return True
-                else:
+        import asyncio
+
+        for attempt in range(1, 6):
+            try:
+                async with httpx.AsyncClient() as client:
+                    if attempt == 1:
+                        print(f"[Duckling] Checking {self.base_url}")
+                    response = await client.post(
+                        f"{self.base_url}/parse",
+                        data={
+                            "locale": "en_US",
+                            "text": "tomorrow",
+                            "dims": '["time"]',
+                        },
+                        timeout=5.0,
+                    )
+                    if response.status_code == 200:
+                        self.connected = True
+                        print(f"[Duckling] Connected to {self.base_url}")
+                        return True
                     print(f"[Duckling] Unexpected response: {response.status_code}")
-                    return False
-        except Exception as e:
-            print(f"[Duckling] Connection failed: {e}")
-            return False
+            except Exception as e:
+                print(f"[Duckling] Connection attempt {attempt}/5 failed: {e}")
+            if attempt < 5:
+                await asyncio.sleep(2)
+        return False
 
     async def health_check(self) -> bool:
         """Check if Duckling service is healthy"""
