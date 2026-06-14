@@ -41,10 +41,36 @@ describe("learningSessionState", () => {
     expect(computeSessionState(session(scheduled), now)).toBe("unlocked_future");
   });
 
-  test("overdue after scheduled time", () => {
+  test("ongoing during scheduled session window", () => {
     const scheduled = new Date("2025-06-10T09:00:00Z");
-    const now = new Date("2025-06-10T12:00:00Z");
-    expect(computeSessionState(session(scheduled), now)).toBe("overdue");
+    const now = new Date("2025-06-10T10:00:00Z");
+    expect(
+      computeSessionState(
+        { ...session(scheduled), estimated_duration: 90 },
+        now,
+      ),
+    ).toBe("ongoing");
+  });
+
+  test("ongoing at scheduled start time", () => {
+    const scheduled = new Date("2025-06-10T13:45:00Z");
+    expect(
+      computeSessionState(
+        { ...session(scheduled), estimated_duration: 90 },
+        scheduled,
+      ),
+    ).toBe("ongoing");
+  });
+
+  test("overdue after session window ends", () => {
+    const scheduled = new Date("2025-06-10T09:00:00Z");
+    const now = new Date("2025-06-10T10:31:00Z");
+    expect(
+      computeSessionState(
+        { ...session(scheduled), estimated_duration: 90 },
+        now,
+      ),
+    ).toBe("overdue");
   });
 
   test("short gap unlocks after previous resolved", () => {
@@ -109,6 +135,46 @@ describe("learningSessionState", () => {
       is_current: false,
       unlock_at: null,
     });
+  });
+
+  test("validateTopicAction allows complete when ongoing", () => {
+    const scheduled = new Date(Date.now() - 30 * 60 * 1000);
+    const topics = [
+      {
+        _id: "a",
+        order: 1,
+        status: "pending",
+        scheduled_date: scheduled,
+        estimated_duration: 90,
+      },
+    ];
+    const err = validateTopicAction({
+      topics,
+      topicId: "a",
+      action: "complete",
+      now: new Date(),
+    });
+    expect(err).toBeNull();
+  });
+
+  test("validateTopicAction blocks skip when ongoing", () => {
+    const scheduled = new Date(Date.now() - 30 * 60 * 1000);
+    const topics = [
+      {
+        _id: "a",
+        order: 1,
+        status: "pending",
+        scheduled_date: scheduled,
+        estimated_duration: 90,
+      },
+    ];
+    const err = validateTopicAction({
+      topics,
+      topicId: "a",
+      action: "skip",
+      now: new Date(),
+    });
+    expect(err?.message).toMatch(/in progress/i);
   });
 
   test("validateTopicAction blocks skip when locked", () => {

@@ -165,6 +165,25 @@ _LEARNING_UPDATE_SUB_INTENT_PATTERNS: Tuple[Tuple[str, str], ...] = tuple(
 )
 
 _SESSION_UNLOCK_WINDOW = timedelta(hours=24)
+_DEFAULT_SESSION_DURATION_MINUTES = 90
+
+
+def session_duration_minutes(session: Dict[str, Any]) -> int:
+    """Estimated session length used for ongoing vs overdue boundaries."""
+    for key in ("estimated_duration", "duration"):
+        try:
+            value = int(session.get(key) or 0)
+            if value > 0:
+                return value
+        except (TypeError, ValueError):
+            continue
+    return _DEFAULT_SESSION_DURATION_MINUTES
+
+
+def session_window_end(session: Dict[str, Any], scheduled: datetime) -> datetime:
+    """UTC-aware end of the scheduled session window."""
+    start = _as_utc_aware(scheduled)
+    return start + timedelta(minutes=session_duration_minutes(session))
 
 # Typos: reschdule, reshedule, etc.
 _RESCHEDULE_WORD_RE = re.compile(
@@ -304,10 +323,13 @@ def compute_session_state(
     """
     Runtime session lock state for learning_update interactions.
 
-    Returns: locked | unlocked_future | overdue | completed | skipped
+    Returns: locked | unlocked_future | ongoing | overdue | completed | skipped
 
     When the gap to the previous session is under 24 hours, the session unlocks when
     the previous session is resolved (completed/skipped), not 24h before schedule.
+
+    ``ongoing`` covers scheduled start through scheduled start + estimated_duration.
+    ``overdue`` begins once that window ends without completion.
     """
     status = str(session.get("status") or "").strip().lower()
     if status in ("completed", "skipped"):
@@ -337,6 +359,8 @@ def compute_session_state(
         return "locked"
     if now < scheduled:
         return "unlocked_future"
+    if now < session_window_end(session, scheduled):
+        return "ongoing"
     return "overdue"
 
 

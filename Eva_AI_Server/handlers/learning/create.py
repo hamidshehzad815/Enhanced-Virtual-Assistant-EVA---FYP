@@ -279,11 +279,20 @@ async def handle_learning_create(
             if requested_track and requested_track != "general"
             else " another roadmap"
         )
+        plan_status = str(conflicting.get("status") or "active").strip().lower()
+        if plan_status == "paused":
+            status_phrase = f"paused {canonical_topic} learning plan"
+            next_steps = (
+                "Resume and complete it, cancel it, or delete it before creating"
+            )
+        else:
+            status_phrase = f"{canonical_topic} learning plan"
+            next_steps = "Complete it, cancel it, or delete it before creating"
         msg = (
-            f"You already have an active {canonical_topic} learning plan"
+            f"You already have a {status_phrase}"
             f"{f' ({existing_track})' if existing_track and existing_track != 'general' else ''}. "
             f"Only one {canonical_topic} roadmap is allowed at a time. "
-            f"Complete that plan first, or delete it, before creating{track_hint}."
+            f"{next_steps}{track_hint}."
         )
         return await finish(msg, status="error")
 

@@ -259,121 +259,6 @@ const updateSession = async (req, res, next) => {
  * Body: { "status": "active" | "paused" | "cancelled" }
  * "active" resumes a paused plan. "completed" is not allowed (AI-only).
  */
-/**
- * POST /api/learning/:id/topics/:topicId/complete
- * Marks roadmap topic completed, syncs linked task, increments goal progress.
- */
-const completeTopic = async (req, res, next) => {
-  try {
-    const { oid: goalOid, goal } = await loadOwnedGoal(req.params.goalId, req.userId);
-    if (goal.status !== "active") {
-      throw new BadRequestError("Only active learning plans accept topic completion.");
-    }
-
-    const topicOid = toObjectId(req.params.topicId);
-    if (!topicOid) {
-      throw new BadRequestError("Invalid topic id");
-    }
-
-    const goalTopics = await RoadmapTopic.find({
-      goal_id: goalOid,
-      is_deleted: false,
-    })
-      .sort({ order: 1 })
-      .lean();
-
-    const completeBlock = validateTopicAction({
-      topics: goalTopics,
-      topicId: topicOid,
-      action: "complete",
-    });
-    if (completeBlock) {
-      throw new ConflictError(completeBlock.message);
-    }
-
-    // AI server performs all DB writes for learning update flows.
-    const aiResult = await callAIInternal("/internal/auto-complete-topic", {
-      topic_id: String(topicOid),
-      goal_id: String(goalOid),
-      user_id: String(req.userId),
-    });
-
-    const savedGoal = await LearningGoal.findOne({
-      _id: goalOid,
-      user_id: req.userId,
-      is_deleted: false,
-    }).lean();
-
-    res.json({
-      status: "success",
-      message: "Topic marked complete",
-      data: {
-        ...(await buildMutationData(req, savedGoal, String(topicOid))),
-        ai: aiResult || null,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * POST /api/learning/:id/topics/:topicId/skip
- * Skips a roadmap topic via AI internal endpoint (cascades future sessions).
- */
-const skipTopic = async (req, res, next) => {
-  try {
-    const { oid: goalOid, goal } = await loadOwnedGoal(req.params.goalId, req.userId);
-    if (goal.status !== "active") {
-      throw new BadRequestError("Only active learning plans accept skipping topics.");
-    }
-
-    const topicOid = toObjectId(req.params.topicId);
-    if (!topicOid) {
-      throw new BadRequestError("Invalid topic id");
-    }
-
-    const goalTopics = await RoadmapTopic.find({
-      goal_id: goalOid,
-      is_deleted: false,
-    })
-      .sort({ order: 1 })
-      .lean();
-
-    const skipBlock = validateTopicAction({
-      topics: goalTopics,
-      topicId: topicOid,
-      action: "skip",
-    });
-    if (skipBlock) {
-      throw new ConflictError(skipBlock.message);
-    }
-
-    const aiResult = await callAIInternal("/internal/skip-topic", {
-      topic_id: String(topicOid),
-      goal_id: String(goalOid),
-      user_id: String(req.userId),
-    });
-
-    const savedGoal = await LearningGoal.findOne({
-      _id: goalOid,
-      user_id: req.userId,
-      is_deleted: false,
-    }).lean();
-
-    res.json({
-      status: "success",
-      message: "Topic skipped",
-      data: {
-        ...(await buildMutationData(req, savedGoal, String(topicOid))),
-        ai: aiResult || null,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
 const updateStatus = async (req, res, next) => {
   try {
     const raw = String(req.body?.status || "")
@@ -466,41 +351,6 @@ const updateStatus = async (req, res, next) => {
       data: buildApiData(req, {
         goal: saved,
         ...(rebuildSummary ? { rebuild: rebuildSummary } : {}),
-      }),
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * DELETE /api/learning/:id — soft-delete goal (UI); same rules as chat learning_delete.
- */
-const deleteGoal = async (req, res, next) => {
-  try {
-    const { goal, notifications } = await softDeleteLearningGoalById(
-      req.params.goalId,
-      req.userId,
-    );
-
-    let notificationSummary = {
-      requested: 0,
-      inserted: 0,
-      dispatched_push: 0,
-      dispatched_email: 0,
-      failed: 0,
-      results: [],
-    };
-    if (notifications.length > 0) {
-      notificationSummary = await insert_and_dispatch(notifications);
-    }
-
-    res.json({
-      status: "success",
-      message: "Learning goal removed",
-      data: buildApiData(req, {
-        goal,
-        notifications: notificationSummary,
       }),
     });
   } catch (error) {
@@ -611,10 +461,7 @@ const respondToLearningCollaborationInviteViaLink = async (req, res, next) => {
 
 module.exports = {
   updateSession,
-  completeTopic,
-  skipTopic,
   updateStatus,
-  deleteGoal,
   respondToLearningCollaborationInvite,
   respondToLearningCollaborationInviteViaLink,
 };

@@ -4,6 +4,7 @@
  */
 
 const SESSION_UNLOCK_MS = 24 * 60 * 60 * 1000;
+const DEFAULT_SESSION_DURATION_MINUTES = 90;
 
 const TERMINAL_STATUSES = new Set(["completed", "skipped"]);
 
@@ -23,6 +24,26 @@ const coerceDate = (value) => {
 };
 
 const normalizeStatus = (status) => String(status || "").trim().toLowerCase();
+
+const sessionDurationMinutes = (session) => {
+  for (const key of ["estimated_duration", "duration"]) {
+    const parsed = Number(session?.[key]);
+    if (Number.isFinite(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return DEFAULT_SESSION_DURATION_MINUTES;
+};
+
+const sessionWindowEnd = (session) => {
+  const scheduled = coerceDate(session?.scheduled_date);
+  if (!scheduled) {
+    return null;
+  }
+  return new Date(
+    scheduled.getTime() + sessionDurationMinutes(session) * 60 * 1000,
+  );
+};
 
 const previousResolvedAt = (topic) => {
   if (!topic) {
@@ -59,7 +80,7 @@ const computeUnlockTime = (
 };
 
 /**
- * @returns {"locked"|"unlocked_future"|"overdue"|"completed"|"skipped"}
+ * @returns {"locked"|"unlocked_future"|"ongoing"|"overdue"|"completed"|"skipped"}
  */
 const computeSessionState = (
   session,
@@ -90,6 +111,11 @@ const computeSessionState = (
   }
   if (nowMs < scheduled.getTime()) {
     return "unlocked_future";
+  }
+
+  const windowEnd = sessionWindowEnd(session);
+  if (windowEnd && nowMs < windowEnd.getTime()) {
+    return "ongoing";
   }
   return "overdue";
 };
@@ -161,10 +187,12 @@ const enrichSessionsForGoal = (topics, now = new Date()) => {
 const ACTION_MESSAGES = {
   skip_locked:
     "That session is still locked. It unlocks within 24 hours of its scheduled time.",
+  skip_ongoing:
+    "That session is in progress — mark it complete or reschedule it, but you cannot skip it.",
   skip_overdue:
     "That session is overdue — mark it complete or reschedule it, but you cannot skip it.",
   skip_not_current: "Only the current session can be skipped.",
-  complete_not_overdue:
+  complete_not_started:
     "That session has not started yet. Reschedule or skip it instead of marking it complete.",
   complete_locked:
     "That session is still locked. It unlocks within 24 hours of its scheduled time.",
@@ -204,6 +232,9 @@ const validateTopicAction = ({
     if (sessionState === "locked") {
       return { message: ACTION_MESSAGES.skip_locked };
     }
+    if (sessionState === "ongoing") {
+      return { message: ACTION_MESSAGES.skip_ongoing };
+    }
     if (sessionState === "overdue") {
       return { message: ACTION_MESSAGES.skip_overdue };
     }
@@ -218,9 +249,9 @@ const validateTopicAction = ({
       return { message: ACTION_MESSAGES.complete_locked };
     }
     if (sessionState === "unlocked_future") {
-      return { message: ACTION_MESSAGES.complete_not_overdue };
+      return { message: ACTION_MESSAGES.complete_not_started };
     }
-    if (sessionState !== "overdue") {
+    if (sessionState !== "ongoing" && sessionState !== "overdue") {
       return { message: "That session cannot be completed right now." };
     }
     return null;
@@ -231,7 +262,10 @@ const validateTopicAction = ({
 
 module.exports = {
   SESSION_UNLOCK_MS,
+  DEFAULT_SESSION_DURATION_MINUTES,
   coerceDate,
+  sessionDurationMinutes,
+  sessionWindowEnd,
   computeUnlockTime,
   computeSessionState,
   findCurrentPendingTopic,

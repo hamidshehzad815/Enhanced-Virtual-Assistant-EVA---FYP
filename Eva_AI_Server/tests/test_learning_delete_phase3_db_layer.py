@@ -12,6 +12,8 @@ from db import learning_goals as lg
 from db import roadmap_topics as rt
 from db.tasks import (
     get_pending_learning_tasks,
+    get_task_for_learning_topic,
+    soft_delete_learning_topic_task,
     soft_delete_pending_learning_tasks,
 )
 
@@ -101,6 +103,19 @@ class FakeCollection:
                 for k, v in update.get("$set", {}).items():
                     doc[k] = v
         return FakeUpdateResult(matched)
+
+    async def find_one(self, query, projection=None):
+        rows = [d for d in self.docs if _matches(d, query)]
+        if not rows:
+            return None
+        row = dict(rows[0])
+        if projection:
+            projected = {}
+            for key, include in projection.items():
+                if include and key in row:
+                    projected[key] = row[key]
+            return projected
+        return row
 
 
 class FakeDB:
@@ -357,6 +372,52 @@ class LearningDeletePhase3DbLayerTests(unittest.IsolatedAsyncioTestCase):
             rows = await get_pending_learning_tasks(str(self.goal_id))
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["google_calendar_event_id"], cal_id)
+
+    async def test_get_task_for_learning_topic_falls_back_to_learning_topic_id(self):
+        fake = FakeDB()
+        topic_id = ObjectId()
+        task_id = ObjectId()
+        fake.tasks.docs = [
+            {
+                "_id": task_id,
+                "owner_id": self.user_id,
+                "learning_plan_id": self.goal_id,
+                "learning_topic_id": topic_id,
+                "status": "pending",
+                "is_deleted": False,
+            }
+        ]
+        with patch("db.tasks.get_db", return_value=fake):
+            row = await get_task_for_learning_topic(
+                str(topic_id),
+                str(self.goal_id),
+                str(self.user_id),
+            )
+        self.assertEqual(row["_id"], str(task_id))
+
+    async def test_soft_delete_learning_topic_task_uses_learning_topic_id_fallback(self):
+        fake = FakeDB()
+        topic_id = ObjectId()
+        task_id = ObjectId()
+        fake.tasks.docs = [
+            {
+                "_id": task_id,
+                "owner_id": self.user_id,
+                "learning_plan_id": self.goal_id,
+                "learning_topic_id": topic_id,
+                "status": "pending",
+                "is_deleted": False,
+            }
+        ]
+        with patch("db.tasks.get_db", return_value=fake):
+            deleted, task_doc = await soft_delete_learning_topic_task(
+                topic_id=str(topic_id),
+                goal_id=str(self.goal_id),
+                user_id=str(self.user_id),
+            )
+        self.assertTrue(deleted)
+        self.assertEqual(task_doc["_id"], str(task_id))
+        self.assertTrue(fake.tasks.docs[0]["is_deleted"])
 
 
 if __name__ == "__main__":

@@ -38,6 +38,9 @@ def _matches(doc, query):
                         return False
                     if not val and has:
                         return False
+                elif op == "$in":
+                    if actual not in val:
+                        return False
             continue
         if actual != expected:
             return False
@@ -262,6 +265,43 @@ class LearningDbLayerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(dup_basics)
         self.assertTrue(dup_intermediate)
         self.assertFalse(dup_rust)
+
+    async def test_check_duplicate_blocks_paused_plan_same_language(self):
+        fake = FakeDB()
+        uid = ObjectId()
+        fake.learning_goals.docs = [
+            {
+                "_id": ObjectId(),
+                "user_id": uid,
+                "subject": "python",
+                "roadmap_key": "basics",
+                "status": "paused",
+                "is_deleted": False,
+                "updated_at": datetime(2026, 1, 2),
+            },
+        ]
+        with patch_learning_db(fake):
+            dup = await lg.check_duplicate_goal(str(uid), "python", "intermediate")
+            conflict = await lg.find_conflicting_goal(str(uid), "python", "intermediate")
+        self.assertTrue(dup)
+        self.assertEqual(conflict.get("status"), "paused")
+
+    async def test_check_duplicate_allows_completed_plan_same_language(self):
+        fake = FakeDB()
+        uid = ObjectId()
+        fake.learning_goals.docs = [
+            {
+                "_id": ObjectId(),
+                "user_id": uid,
+                "subject": "python",
+                "roadmap_key": "basics",
+                "status": "completed",
+                "is_deleted": False,
+            },
+        ]
+        with patch_learning_db(fake):
+            dup = await lg.check_duplicate_goal(str(uid), "python", "intermediate")
+        self.assertFalse(dup)
 
     async def test_check_duplicate_new_general_blocks_existing_track(self):
         fake = FakeDB()

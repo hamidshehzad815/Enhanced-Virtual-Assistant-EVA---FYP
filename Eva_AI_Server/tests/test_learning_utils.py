@@ -350,10 +350,42 @@ class ComputeSessionStateTests(unittest.TestCase):
         state = lu.compute_session_state(self._session(scheduled), now)
         self.assertEqual(state, "unlocked_future")
 
-    def test_overdue_after_scheduled_time(self):
+    def test_ongoing_during_scheduled_session_window(self):
         scheduled = datetime(2025, 6, 10, 9, 0)
-        now = datetime(2025, 6, 10, 12, 0)
-        state = lu.compute_session_state(self._session(scheduled), now)
+        now = datetime(2025, 6, 10, 10, 0)
+        state = lu.compute_session_state(
+            {
+                "status": "pending",
+                "scheduled_date": scheduled,
+                "estimated_duration": 90,
+            },
+            now,
+        )
+        self.assertEqual(state, "ongoing")
+
+    def test_ongoing_at_scheduled_start(self):
+        scheduled = datetime(2025, 6, 10, 13, 45)
+        state = lu.compute_session_state(
+            {
+                "status": "pending",
+                "scheduled_date": scheduled,
+                "estimated_duration": 90,
+            },
+            scheduled,
+        )
+        self.assertEqual(state, "ongoing")
+
+    def test_overdue_after_session_window_ends(self):
+        scheduled = datetime(2025, 6, 10, 9, 0)
+        now = datetime(2025, 6, 10, 10, 31)
+        state = lu.compute_session_state(
+            {
+                "status": "pending",
+                "scheduled_date": scheduled,
+                "estimated_duration": 90,
+            },
+            now,
+        )
         self.assertEqual(state, "overdue")
 
     def test_short_gap_unlocks_after_previous_resolved(self):

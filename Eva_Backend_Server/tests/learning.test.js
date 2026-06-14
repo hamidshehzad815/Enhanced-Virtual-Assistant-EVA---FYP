@@ -252,7 +252,8 @@ describe("Learning API", () => {
     expect(res.body.data.goal.status).toBe("active");
   });
 
-  test("PATCH /api/learning/:id/status cancel → soft-deletes via service", async () => {
+  test("PATCH /api/learning/:id/status cancel → soft-deletes and dispatches notifications", async () => {
+    const collabId = "507f1f77bcf86cd799439066";
     LearningGoal.findOne.mockReturnValue({
       lean: jest.fn().mockResolvedValue({
         _id: GOAL_ID,
@@ -262,31 +263,6 @@ describe("Learning API", () => {
       }),
     });
 
-    softDeleteLearningGoalById.mockResolvedValue({
-      goal: { _id: GOAL_ID, is_deleted: true },
-      notifications: [],
-    });
-    insert_and_dispatch.mockResolvedValue({
-      requested: 0,
-      inserted: 0,
-      dispatched_push: 0,
-      dispatched_email: 0,
-      failed: 0,
-      results: [],
-    });
-
-    const res = await request(app)
-      .patch(`/api/learning/${GOAL_ID}/status`)
-      .set("Authorization", `Bearer ${makeToken()}`)
-      .send({ status: "cancelled" });
-
-    expect(res.status).toBe(200);
-    expect(softDeleteLearningGoalById).toHaveBeenCalledWith(GOAL_ID, USER_ID);
-    expect(res.body.data.goal.is_deleted).toBe(true);
-  });
-
-  test("DELETE /api/learning/:id → soft-deletes and dispatches notifications", async () => {
-    const collabId = "507f1f77bcf86cd799439066";
     softDeleteLearningGoalById.mockResolvedValue({
       goal: { _id: GOAL_ID, is_deleted: true, title: "Python basics" },
       notifications: [
@@ -308,8 +284,9 @@ describe("Learning API", () => {
     });
 
     const res = await request(app)
-      .delete(`/api/learning/${GOAL_ID}`)
-      .set("Authorization", `Bearer ${makeToken()}`);
+      .patch(`/api/learning/${GOAL_ID}/status`)
+      .set("Authorization", `Bearer ${makeToken()}`)
+      .send({ status: "cancelled" });
 
     expect(res.status).toBe(200);
     expect(softDeleteLearningGoalById).toHaveBeenCalledWith(GOAL_ID, USER_ID);
@@ -319,11 +296,7 @@ describe("Learning API", () => {
       ]),
     );
     expect(res.body.data.notifications.inserted).toBe(1);
-  });
-
-  test("DELETE /api/learning/:id without token → 401", async () => {
-    const res = await request(app).delete(`/api/learning/${GOAL_ID}`);
-    expect(res.status).toBe(401);
+    expect(res.body.data.goal.is_deleted).toBe(true);
   });
 
   test("PATCH status completed → 400", async () => {
@@ -378,7 +351,7 @@ describe("Learning API", () => {
     });
   });
 
-  test("POST /api/learning/:id/topics/:topicId/complete calls AI internal auto-complete-topic", async () => {
+  test("PATCH /api/learning/:goalId/sessions/:sessionId complete calls AI internal auto-complete-topic", async () => {
     const activeGoal = {
       _id: GOAL_ID,
       user_id: USER_ID,
@@ -395,13 +368,23 @@ describe("Learning API", () => {
       .mockReturnValueOnce({ lean: jest.fn().mockResolvedValue(activeGoal) })
       .mockReturnValueOnce({ lean: jest.fn().mockResolvedValue(activeGoal) });
 
+    RoadmapTopic.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: TOPIC_ID,
+        goal_id: GOAL_ID,
+        order: 1,
+        status: "pending",
+      }),
+    });
+
     mockGoalTopicsForValidation([overdueCurrentTopic()]);
 
     callAIInternal.mockResolvedValue({ status: "success", goal_completed: false, next_session: null });
 
     const res = await request(app)
-      .post(`/api/learning/${GOAL_ID}/topics/${TOPIC_ID}/complete`)
-      .set("Authorization", `Bearer ${makeToken()}`);
+      .patch(`/api/learning/${GOAL_ID}/sessions/${TOPIC_ID}`)
+      .set("Authorization", `Bearer ${makeToken()}`)
+      .send({ status: "completed" });
 
     expect(res.status).toBe(200);
     expect(callAIInternal).toHaveBeenCalledWith("/internal/auto-complete-topic", {
@@ -412,7 +395,7 @@ describe("Learning API", () => {
     expect(res.body.data.roadmap).toBeDefined();
   });
 
-  test("POST /api/learning/:id/topics/:topicId/skip calls AI internal skip-topic", async () => {
+  test("PATCH /api/learning/:goalId/sessions/:sessionId skip calls AI internal skip-topic", async () => {
     const activeGoal = {
       _id: GOAL_ID,
       user_id: USER_ID,
@@ -429,13 +412,23 @@ describe("Learning API", () => {
       .mockReturnValueOnce({ lean: jest.fn().mockResolvedValue(activeGoal) })
       .mockReturnValueOnce({ lean: jest.fn().mockResolvedValue(activeGoal) });
 
+    RoadmapTopic.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: TOPIC_ID,
+        goal_id: GOAL_ID,
+        order: 1,
+        status: "pending",
+      }),
+    });
+
     mockGoalTopicsForValidation([skippableCurrentTopic()]);
 
     callAIInternal.mockResolvedValue({ status: "success" });
 
     const res = await request(app)
-      .post(`/api/learning/${GOAL_ID}/topics/${TOPIC_ID}/skip`)
-      .set("Authorization", `Bearer ${makeToken()}`);
+      .patch(`/api/learning/${GOAL_ID}/sessions/${TOPIC_ID}`)
+      .set("Authorization", `Bearer ${makeToken()}`)
+      .send({ status: "skipped" });
 
     expect(res.status).toBe(200);
     expect(callAIInternal).toHaveBeenCalledWith("/internal/skip-topic", {

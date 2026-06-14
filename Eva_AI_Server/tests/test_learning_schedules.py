@@ -114,18 +114,19 @@ class ResolveScheduleTests(unittest.TestCase):
 
 
 class UsedScheduleIdsTests(unittest.IsolatedAsyncioTestCase):
-    async def test_collects_from_active_goals(self):
+    async def test_collects_from_in_progress_goals(self):
         with patch(
-            "utils.learning_schedules.get_active_goals_for_user",
+            "utils.learning_schedules.get_in_progress_goals_for_user",
             new=AsyncMock(
                 return_value=[
-                    {"learning_schedule_id": "s1"},
+                    {"learning_schedule_id": "s1", "status": "active"},
+                    {"learning_schedule_id": "s2", "status": "paused"},
                     {"learning_schedule_id": None},
                 ],
             ),
         ):
             used = await ls.used_learning_schedule_ids("user1")
-        self.assertEqual(used, {"s1"})
+        self.assertEqual(used, {"s1", "s2"})
 
 
 if __name__ == "__main__":

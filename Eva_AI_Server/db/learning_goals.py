@@ -71,34 +71,48 @@ async def get_paused_goals_for_user(
     return [_normalize_doc(r) for r in rows]
 
 
+async def get_in_progress_goals_for_user(
+    user_id: str,
+    topic: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Active or paused, non-deleted goals (optional subject filter)."""
+    db = get_db()
+    uid = _to_object_id(user_id)
+    query: Dict[str, Any] = {
+        "user_id": uid,
+        "status": {"$in": ["active", "paused"]},
+        "is_deleted": False,
+    }
+    subject = (topic or "").strip().lower()
+    if subject:
+        query["subject"] = subject
+
+    cursor = db.learning_goals.find(query).sort(
+        [("status", 1), ("updated_at", -1)],
+    )
+    rows = await cursor.to_list(length=500)
+    return [_normalize_doc(r) for r in rows]
+
+
 async def find_conflicting_goal(
     user_id: str,
     topic: str,
     roadmap_key: str = "",
 ) -> Optional[Dict[str, Any]]:
     """
-    Return an active learning goal for this language/subject if one exists.
+    Return an in-progress learning goal for this language/subject if one exists.
 
-    One active plan per language: a second Python plan is blocked regardless of track
-    (basics vs intermediate). Different languages (Python vs JavaScript) may coexist.
+    One roadmap per language at a time: active or paused blocks a second plan for the
+    same subject (any track). Different languages may coexist.
     ``roadmap_key`` is accepted for API compatibility but not used in the query.
     """
     _ = roadmap_key
-    db = get_db()
-    uid = _to_object_id(user_id)
     subject_norm = (topic or "").strip().lower()
     if not subject_norm:
         return None
 
-    doc = await db.learning_goals.find_one(
-        {
-            "user_id": uid,
-            "status": "active",
-            "is_deleted": False,
-            "subject": subject_norm,
-        },
-    )
-    return _normalize_doc(doc) if doc else None
+    rows = await get_in_progress_goals_for_user(user_id, topic=subject_norm)
+    return rows[0] if rows else None
 
 
 async def check_duplicate_goal(user_id: str, topic: str, roadmap_key: str) -> bool:

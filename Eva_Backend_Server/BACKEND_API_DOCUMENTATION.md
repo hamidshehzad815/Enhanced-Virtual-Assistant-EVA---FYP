@@ -116,12 +116,9 @@ Notes:
 
 ### Learning
 - `GET /api/learning/collaboration/respond` (link-based HTML)
-- `GET /api/learning` (protected)
-- `GET /api/learning/:id` (protected)
-- `GET /api/learning/:id/topics` (protected)
-- `POST /api/learning/:id/topics/:topicId/complete` (protected)
-- `PATCH /api/learning/:id/status` (protected)
-- `POST /api/learning/:id/collaborators/respond` (protected)
+- `PATCH /api/learning/:goalId/sessions/:sessionId` (protected)
+- `PATCH /api/learning/:goalId/status` (protected)
+- `POST /api/learning/:goalId/collaborators/respond` (protected)
 
 ### Settings
 - `GET /api/settings` (protected)
@@ -550,34 +547,33 @@ Notes:
 
 **Session shape** (`sessions[]`):
 - `id`, `order`, `title`, `status`, `scheduled_date`, `estimated_duration`, `resources`
-- `session_state`: `locked` | `unlocked_future` | `overdue` | `completed` | `skipped` | `upcoming`
+- `session_state`: `locked` | `unlocked_future` | `ongoing` | `overdue` | `completed` | `skipped` | `upcoming`
 - `is_current`: `true` only for the lowest-order `pending` session
 - `unlock_at`: ISO datetime when `session_state` is `locked` and `is_current` (else `null`)
 - `completed_at`: only when `status` is `completed` or `skipped`
 
 `resources[]`: `{ title, url, thumbnail?, channel_name? }` for session study links.
 
-### `POST /api/learning/:id/topics/:topicId/skip`
+### `PATCH /api/learning/:goalId/sessions/:sessionId`
 - Auth: Yes
-- Owner-only; goal must be `active`.
-- Rules (aligned with chat): current session only; `session_state` must be `unlocked_future`.
-- Returns `409` with message when skip is not allowed (locked, overdue, or not current).
+- Body (one or both):
+```json
+{ "scheduled_date": "YYYY-MM-DD" }
+```
+```json
+{ "status": "completed" }
+```
+```json
+{ "status": "skipped" }
+```
+- Owner-only; goal must be `active` for changes.
+- **Reschedule** (`scheduled_date`): current session only; learning day; no past dates; no quiet-hour or task overlap; may rebase later sessions.
+- **Complete** (`status: "completed"`): current session only; `session_state` must be `ongoing` or `overdue`.
+- **Skip** (`status: "skipped"`): current session only; `session_state` must be `unlocked_future`.
+- **Chat create** (AI): one roadmap per language while any plan is **active** or **paused**; complete, cancel, or delete before creating another for that language.
+- Returns refreshed `roadmap`, `session`, and `sessions` in `data`.
 
-### `POST /api/learning/:id/topics/:topicId/complete`
-- Auth: Yes
-- Owner-only.
-- Rules:
-  - Goal must be `active`.
-  - Current session only; `session_state` must be `overdue`.
-  - Returns `409` when complete is not allowed (locked, not yet due, or not current).
-- Behavior:
-  - Marks topic completed
-  - Sets goal `started_at` if first completion
-  - Increments `completed_topics`
-  - Auto-sets goal to `completed` + `completed_at` + `time_taken_days` when all topics done
-  - Marks linked `Task` complete if `topic.task_id` exists
-
-### `PATCH /api/learning/:id/status`
+### `PATCH /api/learning/:goalId/status`
 - Auth: Yes
 - Body:
 ```json

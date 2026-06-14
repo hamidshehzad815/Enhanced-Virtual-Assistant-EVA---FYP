@@ -682,14 +682,6 @@ async def internal_skip_topic(payload: SkipTopicRequest):
     if not topic_doc:
         return {"status": "error", "message": "topic not found"}
 
-    # Keep tasks list consistent: skip should remove the linked task if present.
-    try:
-        task_id = str(topic_doc.get("task_id") or "").strip()
-        if task_id:
-            await soft_delete_task(task_id)
-    except Exception:
-        pass
-
     settings_data = await fetch_user_settings(user_id)
     user_doc = await fetch_user(user_id)
     integrations = await fetch_integrations(user_id)

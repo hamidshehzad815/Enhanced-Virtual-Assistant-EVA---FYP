@@ -39,7 +39,8 @@ from db.tasks import (
     check_update_overlap,
     find_overlapping_task_for_user,
     get_task_by_id,
-    soft_delete_task,
+    get_task_for_learning_topic,
+    soft_delete_learning_topic_task,
     update_task,
 )
 from handlers.scheduling.add import _coerce_text
@@ -332,6 +333,73 @@ def _schedule_slot_for_day(schedule: List[Dict[str, Any]], weekday: int) -> Tupl
     return time(hour=18, minute=0), 90
 
 
+async def _collect_learning_topic_task_ids(
+    *,
+    user_id: str,
+    goal_id: str,
+    topics: List[Dict[str, Any]],
+) -> Set[str]:
+    """Resolve calendar task ids for learning sessions (direct link or fallback)."""
+    ids: Set[str] = set()
+    for topic in topics:
+        direct_id = str(topic.get("task_id") or "").strip()
+        if direct_id:
+            ids.add(direct_id)
+            continue
+        task_doc = await get_task_for_learning_topic(
+            str(topic.get("_id") or ""),
+            goal_id,
+            user_id,
+        )
+        if task_doc and task_doc.get("_id"):
+            ids.add(str(task_doc["_id"]))
+    return ids
+
+
+async def _learning_reschedule_has_task_conflict(
+    *,
+    user_id: str,
+    goal_id: str,
+    current: Dict[str, Any],
+    new_dt: datetime,
+    session_dur: int,
+    later: List[Dict[str, Any]],
+    next_dt: Optional[datetime],
+) -> bool:
+    """
+    Return True when the proposed session time conflicts with a non-learning task.
+
+    When the reschedule will rebase later sessions in the same plan, sibling
+    learning tasks are excluded because they move together.
+    """
+    will_rebase = bool(later and next_dt is not None and new_dt >= next_dt)
+    exclude_ids: Optional[Set[str]] = None
+    if will_rebase:
+        exclude_ids = await _collect_learning_topic_task_ids(
+            user_id=user_id,
+            goal_id=goal_id,
+            topics=[current, *later],
+        )
+
+    linked_task_id = str(current.get("task_id") or "").strip()
+    if linked_task_id:
+        return await check_update_overlap(
+            user_id,
+            linked_task_id,
+            new_dt,
+            session_dur,
+            exclude_task_ids=exclude_ids,
+        )
+
+    overlap_task = await find_overlapping_task_for_user(
+        user_id,
+        new_dt,
+        session_dur,
+        exclude_task_ids=exclude_ids,
+    )
+    return bool(overlap_task)
+
+
 async def _update_task_and_calendar(
     *,
     user_id: str,
@@ -451,21 +519,23 @@ async def skip_session_and_rebalance(
         return False, False
 
     google = await resolve_google_calendar_sync(user_id, integrations, settings)
-    task_id = str(current_topic.get("task_id") or "").strip()
-    if task_id:
-        try:
-            task_doc = await get_task_by_id(task_id, user_id)
-            await soft_delete_task(task_id)
-            if google and task_doc:
-                event_id = str(task_doc.get("google_calendar_event_id") or "").strip()
-                if event_id:
-                    await google_calendar_client.delete_event(
-                        str(google.get("access_token") or ""),
-                        str(google.get("calendar_id") or ""),
-                        event_id,
-                    )
-        except Exception as error:
-            print(f"[LearningUpdate] skip calendar/task cleanup failed: {error}")
+    try:
+        deleted, task_doc = await soft_delete_learning_topic_task(
+            topic_id=str(topic_id),
+            goal_id=str(goal_id),
+            user_id=str(user_id),
+            topic_task_id=str(current_topic.get("task_id") or "").strip() or None,
+        )
+        if deleted and google and task_doc:
+            event_id = str(task_doc.get("google_calendar_event_id") or "").strip()
+            if event_id:
+                await google_calendar_client.delete_event(
+                    str(google.get("access_token") or ""),
+                    str(google.get("calendar_id") or ""),
+                    event_id,
+                )
+    except Exception as error:
+        print(f"[LearningUpdate] skip calendar/task cleanup failed: {error}")
 
     goal = await get_goal_by_id(goal_id)
     slots = resolve_learning_slots(settings, goal=goal)
@@ -616,22 +686,20 @@ async def reschedule_session_for_api(
             ),
         }
 
-    linked_task_id = str(current.get("task_id") or "").strip()
-    has_task_conflict = False
-    if linked_task_id:
-        has_task_conflict = await check_update_overlap(
-            user_id,
-            linked_task_id,
-            new_dt,
-            session_dur,
-        )
-    else:
-        overlap_task = await find_overlapping_task_for_user(
-            user_id,
-            new_dt,
-            session_dur,
-        )
-        has_task_conflict = bool(overlap_task)
+    later = await get_pending_sessions_after(goal_id, int(current.get("order") or 0))
+    next_dt = None
+    if later and isinstance(later[0].get("scheduled_date"), datetime):
+        next_dt = later[0]["scheduled_date"]
+
+    has_task_conflict = await _learning_reschedule_has_task_conflict(
+        user_id=user_id,
+        goal_id=goal_id,
+        current=current,
+        new_dt=new_dt,
+        session_dur=session_dur,
+        later=later,
+        next_dt=next_dt,
+    )
 
     if has_task_conflict:
         return {
@@ -642,13 +710,9 @@ async def reschedule_session_for_api(
             ),
         }
 
-    later = await get_pending_sessions_after(goal_id, int(current.get("order") or 0))
-    next_dt = None
-    if later and isinstance(later[0].get("scheduled_date"), datetime):
-        next_dt = later[0]["scheduled_date"]
-
     google = await resolve_google_calendar_sync(user_id, integrations, settings)
     rebased = False
+    linked_task_id = str(current.get("task_id") or "").strip()
 
     if next_dt is None or new_dt < next_dt:
         ok = await rt_reschedule_topic(str(current.get("_id")), new_dt)
@@ -782,7 +846,7 @@ async def _execute_session_sub_intent(
     learning_slots = resolve_learning_slots(settings, goal=goal_full, entities=entities)
 
     if sub_intent == "complete":
-        if state != "overdue":
+        if state not in ("ongoing", "overdue"):
             if state == "locked":
                 return await finish(
                     "That session is still locked. It unlocks within 24 hours of its scheduled time.",
@@ -861,6 +925,12 @@ async def _execute_session_sub_intent(
             if state == "locked":
                 return await finish(
                     "That session is still locked, so it can't be skipped yet.",
+                    status="blocked",
+                    sub_intent=sub_intent,
+                )
+            if state == "ongoing":
+                return await finish(
+                    "That session is in progress — you can mark it complete or reschedule it, but not skip it.",
                     status="blocked",
                     sub_intent=sub_intent,
                 )
@@ -980,22 +1050,20 @@ async def _execute_session_sub_intent(
                 sub_intent=sub_intent,
             )
 
-        linked_task_id = str(current.get("task_id") or "").strip()
-        has_task_conflict = False
-        if linked_task_id:
-            has_task_conflict = await check_update_overlap(
-                user_id,
-                linked_task_id,
-                new_dt,
-                session_dur,
-            )
-        else:
-            overlap_task = await find_overlapping_task_for_user(
-                user_id,
-                new_dt,
-                session_dur,
-            )
-            has_task_conflict = bool(overlap_task)
+        later = await get_pending_sessions_after(goal_id, int(current.get("order") or 0))
+        next_dt = None
+        if later and isinstance(later[0].get("scheduled_date"), datetime):
+            next_dt = later[0]["scheduled_date"]
+
+        has_task_conflict = await _learning_reschedule_has_task_conflict(
+            user_id=user_id,
+            goal_id=goal_id,
+            current=current,
+            new_dt=new_dt,
+            session_dur=session_dur,
+            later=later,
+            next_dt=next_dt,
+        )
 
         if has_task_conflict:
             return await finish(
@@ -1004,11 +1072,6 @@ async def _execute_session_sub_intent(
                 status="error",
                 sub_intent=sub_intent,
             )
-
-        later = await get_pending_sessions_after(goal_id, int(current.get("order") or 0))
-        next_dt = None
-        if later and isinstance(later[0].get("scheduled_date"), datetime):
-            next_dt = later[0]["scheduled_date"]
 
         google = await resolve_google_calendar_sync(user_id, integrations, settings)
 

@@ -86,8 +86,8 @@ def looks_like_learning_completion(message_lower: str) -> bool:
 
 
 def _complete_blocked_message(session_state: str) -> Optional[str]:
-    """Same rules as learning_update complete — only overdue may be completed."""
-    if session_state == "overdue":
+    """Same rules as learning_update complete — ongoing or overdue may be completed."""
+    if session_state in ("ongoing", "overdue"):
         return None
     if session_state == "locked":
         return (

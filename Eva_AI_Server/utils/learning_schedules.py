@@ -8,7 +8,7 @@ import re
 import uuid
 from typing import Any, Dict, List, Optional, Set, Tuple
 
-from db.learning_goals import get_active_goals_for_user
+from db.learning_goals import get_in_progress_goals_for_user
 
 DEFAULT_DURATION_MINUTES = 90
 # Read-only fallback for slots saved before duration_minutes was required.
@@ -100,9 +100,9 @@ def schedules_from_settings(settings: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 async def used_learning_schedule_ids(user_id: str) -> Set[str]:
-    """Schedule ids already tied to an active learning goal for this user."""
+    """Schedule ids already tied to an active or paused learning goal for this user."""
     used: Set[str] = set()
-    for goal in await get_active_goals_for_user(user_id):
+    for goal in await get_in_progress_goals_for_user(user_id):
         sid = goal.get("learning_schedule_id")
         if sid is not None and str(sid).strip():
             used.add(str(sid).strip())
@@ -241,9 +241,9 @@ def resolve_schedule_for_learning(
         if chosen_id in used_ids:
             return (
                 None,
-                "That schedule is already tied to another active learning plan. "
+                "That schedule is already tied to another active or paused learning plan. "
                 "If this topic needs different days or session lengths, add a new schedule in "
-                "Settings → Learning schedule, or finish your other plan first.",
+                "Settings → Learning schedule, or finish, cancel, or delete your other plan first.",
                 None,
             )
         return entry, None, None
@@ -252,7 +252,7 @@ def resolve_schedule_for_learning(
     if not free:
         return (
             None,
-            "Every learning schedule you saved is already linked to an active plan. "
+            "Every learning schedule you saved is already linked to an active or paused plan. "
             "To study this topic on different days or times, open Settings (Learning schedule), "
             "create a new schedule with the times you want, then ask me to set up this plan again.",
             None,
