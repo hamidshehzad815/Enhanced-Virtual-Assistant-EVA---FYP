@@ -18,7 +18,7 @@ class Database:
         try:
             self.client = AsyncIOMotorClient(settings.MONGODB_URI)
             # Extract database name from URI or use default
-            db_name = settings.MONGODB_URI.split("/")[-1].split("?")[0] or "EVA"
+            db_name = settings.MONGODB_URI.split("/")[-1].split("?")[0] or "eva_db"
             self.db = self.client[db_name]
             # Verify connection
             await self.client.admin.command("ping")

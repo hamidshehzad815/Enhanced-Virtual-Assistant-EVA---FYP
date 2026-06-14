@@ -97,15 +97,11 @@ class LearningUpdateInternalEndpointsTests(unittest.IsolatedAsyncioTestCase):
             ai_main,
             "skip_session_and_rebalance",
             new=AsyncMock(return_value=(True, True)),
-        ), patch.object(
+        ) as mock_skip, patch.object(
             ai_main,
             "get_topics_for_goal",
             new=AsyncMock(return_value=[{"_id": tid, "task_id": task_id}]),
         ), patch.object(
-            ai_main,
-            "soft_delete_task",
-            new=AsyncMock(return_value=True),
-        ) as mock_soft, patch.object(
             ai_main,
             "fetch_user_settings",
             new=AsyncMock(return_value={}),
@@ -122,7 +118,7 @@ class LearningUpdateInternalEndpointsTests(unittest.IsolatedAsyncioTestCase):
             out = await ai_main.internal_skip_topic(req)
 
         self.assertEqual(out["status"], "success")
-        self.assertEqual(mock_soft.await_count, 1)
+        self.assertEqual(mock_skip.await_count, 1)
 
     async def test_rebuild_schedule_updates_goals_count(self):
         uid = str(ObjectId())

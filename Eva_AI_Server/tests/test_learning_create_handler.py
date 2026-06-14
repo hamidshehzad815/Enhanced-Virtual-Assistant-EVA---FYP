@@ -316,6 +316,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                 return_value={
                     "roadmap_key": "functions",
                     "subject": "python",
+                    "status": "active",
                 },
             ),
         ):
@@ -328,9 +329,32 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                 _ctx(),
             )
         self.assertEqual(out["status"], "error")
-        self.assertIn("already have an active Python learning plan", out["response_text"])
-        self.assertIn("Complete that plan first, or delete it", out["response_text"])
-        self.assertNotIn("Pause", out["response_text"])
+        self.assertIn("already have a python learning plan", out["response_text"].lower())
+        self.assertIn("only one python roadmap is allowed", out["response_text"].lower())
+        self.assertIn("Complete it, cancel it, or delete it", out["response_text"])
+
+    async def test_duplicate_goal_when_paused(self):
+        with patch(
+            "handlers.learning.create.find_conflicting_goal",
+            new=AsyncMock(
+                return_value={
+                    "roadmap_key": "basics",
+                    "subject": "python",
+                    "status": "paused",
+                },
+            ),
+        ):
+            out = await handle_learning_create(
+                {
+                    "topic": "Python",
+                    "start_date": self._FUTURE_START,
+                    "duration_days": 14,
+                },
+                _ctx(),
+            )
+        self.assertEqual(out["status"], "error")
+        self.assertIn("paused python learning plan", out["response_text"].lower())
+        self.assertIn("Resume and complete it", out["response_text"])
 
     async def test_success_path_creates_goal_and_tasks(self):
         topics = [

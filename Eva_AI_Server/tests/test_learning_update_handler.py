@@ -30,7 +30,10 @@ if "pipeline.ner" not in sys.modules:
     sys.modules["pipeline.ner"] = _ner_mod
 
 
-from handlers.learning.update import handle_learning_update
+from handlers.learning.update import (
+    _learning_reschedule_has_task_conflict,
+    handle_learning_update,
+)
 
 
 def _base_context(**overrides):
@@ -281,6 +284,44 @@ class LearningUpdateHandlerTests(unittest.IsolatedAsyncioTestCase):
         payload = mock_set.await_args.args[1]
         self.assertEqual(payload["pending_action"]["stage"], "resume_confirm")
         self.assertEqual(payload["pending_action"]["deferred_sub_intent"], "skip")
+
+    async def test_learning_reschedule_ignores_sibling_tasks_when_rebasing(self):
+        current_task = str(ObjectId())
+        later_task = str(ObjectId())
+        current = {
+            "_id": str(ObjectId()),
+            "order": 2,
+            "task_id": current_task,
+            "estimated_duration": 90,
+        }
+        later = [
+            {
+                "_id": str(ObjectId()),
+                "order": 3,
+                "task_id": later_task,
+                "scheduled_date": datetime(2026, 6, 15, 14, 0, 0),
+            }
+        ]
+        new_dt = datetime(2026, 6, 15, 14, 0, 0)
+
+        with patch(
+            "handlers.learning.update.check_update_overlap",
+            new=AsyncMock(return_value=False),
+        ) as mock_overlap:
+            conflict = await _learning_reschedule_has_task_conflict(
+                user_id=str(ObjectId()),
+                goal_id=str(ObjectId()),
+                current=current,
+                new_dt=new_dt,
+                session_dur=90,
+                later=later,
+                next_dt=later[0]["scheduled_date"],
+            )
+
+        self.assertFalse(conflict)
+        exclude_ids = mock_overlap.await_args.kwargs["exclude_task_ids"]
+        self.assertIn(current_task, exclude_ids)
+        self.assertIn(later_task, exclude_ids)
 
 
 if __name__ == "__main__":

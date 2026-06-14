@@ -272,6 +272,19 @@ class TestUpdatePhase24DbLayer(unittest.IsolatedAsyncioTestCase):
 
         self.assertFalse(has_conflict)
 
+    async def test_check_update_overlap_honors_exclude_task_ids(self):
+        fake_db = FakeDB(tasks_collection=FakeTasksCollection(self.docs))
+        with patch("db.tasks.get_db", return_value=fake_db):
+            has_conflict = await check_update_overlap(
+                str(self.owner_id),
+                str(self.task1_id),
+                datetime(2026, 4, 1, 19, 45, 0),
+                120,
+                exclude_task_ids={str(self.task2_id)},
+            )
+
+        self.assertFalse(has_conflict)
+
     async def test_insert_log_accepts_task_updated_action(self):
         fake_db = FakeDB(activity_logs_collection=FakeActivityLogsCollection())
         with patch("db.activity_logs.get_db", return_value=fake_db):

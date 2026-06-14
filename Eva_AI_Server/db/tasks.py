@@ -3,7 +3,7 @@ Task database operations for scheduling handlers.
 """
 from datetime import date, datetime, time, timedelta, timezone
 import re
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from bson import ObjectId
 
@@ -219,6 +219,8 @@ async def find_overlapping_task_for_user(
     user_id: str,
     due_datetime: datetime,
     duration_minutes: int,
+    *,
+    exclude_task_ids: Optional[Set[str]] = None,
 ) -> Optional[Dict[str, Any]]:
     """
     Find the first non-deleted overlapping task where the user is either:
@@ -258,6 +260,8 @@ async def find_overlapping_task_for_user(
         rows = await db.tasks.find(query).sort("due_datetime", 1).to_list(length=100)
 
         for row in rows:
+            if exclude_task_ids and str(row.get("_id")) in exclude_task_ids:
+                continue
             existing_start = row.get("due_datetime")
             if not isinstance(existing_start, datetime):
                 continue
@@ -495,6 +499,8 @@ async def check_update_overlap(
     task_id: str,
     new_datetime: datetime,
     duration: Any,
+    *,
+    exclude_task_ids: Optional[Set[str]] = None,
 ) -> bool:
     """
     Return True when the updated task window overlaps another non-deleted task.
@@ -514,6 +520,8 @@ async def check_update_overlap(
     if task_object_id != task_id:
         task_variants.append(task_id)
     excluded_ids = {str(value) for value in task_variants}
+    if exclude_task_ids:
+        excluded_ids.update(str(value) for value in exclude_task_ids)
 
     requested_duration = max(1, int(duration or 0))
     new_start = new_datetime
@@ -684,3 +692,82 @@ async def get_task_by_id(task_id: str, user_id: str) -> Optional[Dict[str, Any]]
                 return _normalize_doc(doc)
 
     return None
+
+
+async def get_task_for_learning_topic(
+    topic_id: str,
+    goal_id: str,
+    user_id: str,
+    *,
+    topic_task_id: Optional[str] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Resolve the calendar task for a learning session.
+
+    Prefer ``roadmap_topics.task_id``; fall back to ``tasks.learning_topic_id``
+    when the topic link was never backfilled.
+    """
+    direct_id = str(topic_task_id or "").strip()
+    if direct_id:
+        doc = await get_task_by_id(direct_id, user_id)
+        if doc:
+            return doc
+
+    db = get_db()
+    topic_variants = [_to_object_id(topic_id)]
+    if topic_variants[0] != topic_id:
+        topic_variants.append(topic_id)
+
+    goal_variants = [_to_object_id(goal_id)]
+    if goal_variants[0] != goal_id:
+        goal_variants.append(goal_id)
+
+    owner_variants = [_to_object_id(user_id)]
+    if owner_variants[0] != user_id:
+        owner_variants.append(user_id)
+
+    for topic_value in topic_variants:
+        for goal_value in goal_variants:
+            for owner_value in owner_variants:
+                doc = await db.tasks.find_one(
+                    {
+                        "learning_topic_id": topic_value,
+                        "learning_plan_id": goal_value,
+                        "owner_id": owner_value,
+                        "is_deleted": {"$ne": True},
+                    }
+                )
+                if doc:
+                    return _normalize_doc(doc)
+
+    return None
+
+
+async def soft_delete_learning_topic_task(
+    *,
+    topic_id: str,
+    goal_id: str,
+    user_id: str,
+    topic_task_id: Optional[str] = None,
+) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """
+    Soft-delete the task linked to a learning topic.
+
+    Returns ``(deleted, task_doc)`` where ``task_doc`` is the pre-delete snapshot
+    (for calendar cleanup).
+    """
+    task_doc = await get_task_for_learning_topic(
+        topic_id,
+        goal_id,
+        user_id,
+        topic_task_id=topic_task_id,
+    )
+    if not task_doc:
+        return False, None
+
+    resolved_task_id = str(task_doc.get("_id") or "").strip()
+    if not resolved_task_id:
+        return False, None
+
+    deleted = await soft_delete_task(resolved_task_id)
+    return deleted, task_doc if deleted else None
