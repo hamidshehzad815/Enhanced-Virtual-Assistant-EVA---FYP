@@ -359,7 +359,6 @@ Notes:
 - Notes:
   - First upload and replace use the same endpoint
   - Previous Cloudinary image is deleted on replace
-  - There is no remove-photo endpoint
 - Env required:
   - `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
   - Optional: `CLOUDINARY_PROFILE_FOLDER` (default `eva/profile-pictures`)

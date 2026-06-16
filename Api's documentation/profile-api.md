@@ -285,6 +285,56 @@ Upload or replace the profile picture. **Only way** to set `profile_picture`.
 
 ---
 
+## `DELETE /api/profile/avatar`
+
+Remove the profile picture. Clears `profile_picture` on the user and deletes the image from Cloudinary when a `profile_picture_public_id` is stored.
+
+| | |
+|---|---|
+| **Auth** | Required |
+| **Method** | `DELETE` |
+| **Path** | `/api/profile/avatar` |
+| **Body** | None |
+
+### What the server does
+
+1. Loads the user's stored Cloudinary `public_id` (if any)
+2. Deletes the image from Cloudinary (best-effort; failures are logged, DB still cleared)
+3. Sets `profile_picture` and `profile_picture_public_id` to `null`
+4. Returns updated `data.user`
+
+If the user already has no picture, returns `200` with message `"No profile picture to remove"` (idempotent).
+
+### Success `200`
+
+```json
+{
+  "status": "success",
+  "message": "Profile picture removed",
+  "data": {
+    "timezone": "Asia/Karachi",
+    "user": {
+      "_id": "674a1b2c3d4e5f6789012301",
+      "name": "Hamid",
+      "username": "hamid",
+      "email": "hamid@example.com",
+      "profile_picture": null,
+      "timezone": "Asia/Karachi",
+      "is_verified": true
+    }
+  }
+}
+```
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `401` | Auth failure |
+| `500` | Server error |
+
+---
+
 ## TypeScript reference (optional)
 
 ```typescript
@@ -342,6 +392,7 @@ type ProfileAvatarResponse = {
 | Edit username | `PATCH /api/profile` → `{ "username": "..." }` |
 | Change timezone | `PATCH /api/profile` → `{ "timezone": "..." }` |
 | Pick / change photo | `POST /api/profile/avatar` (multipart, field `avatar`) |
+| Remove photo | `DELETE /api/profile/avatar` |
 | Show "Verify email" banner | `user.is_verified === false` |
 | Show avatar placeholder | `profile_picture === null` |
 
