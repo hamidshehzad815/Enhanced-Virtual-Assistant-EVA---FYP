@@ -628,6 +628,33 @@ describe("PATCH /api/settings internal fields", () => {
     expect(mockSettings.allow_friend_requests).toBe(false);
     expect(mockSettings.save).toHaveBeenCalled();
   });
+
+  test("accepts theme system", async () => {
+    const mockSettings = {
+      user_id: USER_ID,
+      save: jest.fn().mockResolvedValue(),
+    };
+    UserSetting.findOne.mockResolvedValue(mockSettings);
+
+    const response = await request(app)
+      .patch("/api/settings")
+      .set(authHeaders())
+      .send({ theme: "system" });
+
+    expect(response.status).toBe(200);
+    expect(mockSettings.theme).toBe("system");
+    expect(mockSettings.save).toHaveBeenCalled();
+  });
+
+  test("rejects invalid theme", async () => {
+    const response = await request(app)
+      .patch("/api/settings")
+      .set(authHeaders())
+      .send({ theme: "midnight" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/theme must be one of/i);
+  });
 });
 
 describe("learning schedule slot validation", () => {

@@ -196,11 +196,24 @@ const normalizePushToken = (value, fieldName) => {
   return token;
 };
 
+const THEME_VALUES = new Set(["dark", "light", "system"]);
+
 const normalizeString = (value) => {
   if (value === undefined) {
     return undefined;
   }
   return String(value || "").trim();
+};
+
+const normalizeTheme = (value) => {
+  if (value === undefined) {
+    return undefined;
+  }
+  const normalized = String(value || "").trim().toLowerCase();
+  if (!THEME_VALUES.has(normalized)) {
+    throw new BadRequestError('theme must be one of: "dark", "light", "system"');
+  }
+  return normalized;
 };
 
 const normalizeInteger = (value, fieldName) => {
@@ -346,7 +359,7 @@ const updateSettings = async (req, res, next) => {
       req.body.remove_push_token,
       "remove_push_token",
     );
-    const theme = normalizeString(req.body.theme);
+    const theme = normalizeTheme(req.body.theme);
     const defaultReminderMinutes = normalizeInteger(
       req.body.default_reminder_minutes,
       "default_reminder_minutes",

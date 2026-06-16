@@ -292,7 +292,7 @@ COLLECTION OWNERSHIP
   ──────────────────────────────────────────────────────────────
   setting_id                      ObjectId, PK    Unique identifier
   user_id                         ObjectId, FK, unique  One settings doc per user
-  theme                           Enum            "light" / "dark", default "light"
+  theme                           Enum            "dark" / "light" / "system", default "system"
   notifications_enabled           Boolean         Master notification switch, default true
   push_notifications_enabled      Boolean         Default true
   email_notifications_enabled     Boolean         Default false
