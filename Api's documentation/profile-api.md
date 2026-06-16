@@ -335,6 +335,66 @@ If the user already has no picture, returns `200` with message `"No profile pict
 
 ---
 
+## `DELETE /api/profile/account`
+
+Permanently deactivate the logged-in user's account (soft delete). The user cannot log in again; email and username are anonymized so a new account can reuse them.
+
+| | |
+|---|---|
+| **Auth** | Required |
+| **Method** | `DELETE` |
+| **Path** | `/api/profile/account` |
+| **Content-Type** | `application/json` |
+
+### Request body
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `password` | `string` | **Yes** for local accounts | Current password |
+| — | — | No for Google-only accounts | Bearer token is sufficient |
+
+Google-only users have no `password_hash`; omit `password`.
+
+### What the server does
+
+1. Verifies password (local accounts only)
+2. Deletes profile picture from Cloudinary (if any)
+3. Soft-deletes owned tasks, learning goals, roadmap topics, chat sessions, and messages
+4. Removes friend relationships and deactivates integrations
+5. Disables notification settings and clears push tokens
+6. Sets `is_active: false`, clears tokens/password, anonymizes `email`, `username`, and `name`
+
+After success, clear stored `access_token` and `refresh_token` on the client. Further API calls with the old access token return `401` once the user is deactivated.
+
+### Success `200`
+
+```json
+{
+  "status": "success",
+  "message": "Account deleted successfully"
+}
+```
+
+No `data` payload.
+
+### Errors
+
+| Status | When |
+|--------|------|
+| `400` | `password is required to delete your account` (local user) |
+| `401` | Missing/invalid access token |
+| `401` | `Invalid password` |
+| `429` | More than 5 deletion attempts per hour per IP |
+
+### Recommended client flow
+
+1. Show confirmation dialog ("This cannot be undone")
+2. `DELETE /api/profile/account` with password
+3. On `200` → wipe local tokens and navigate to login/welcome screen
+4. Optional: call `PATCH /api/settings` with `remove_push_token` before delete if you want explicit FCM cleanup (push tokens are cleared server-side anyway)
+
+---
+
 ## TypeScript reference (optional)
 
 ```typescript
@@ -393,6 +453,7 @@ type ProfileAvatarResponse = {
 | Change timezone | `PATCH /api/profile` → `{ "timezone": "..." }` |
 | Pick / change photo | `POST /api/profile/avatar` (multipart, field `avatar`) |
 | Remove photo | `DELETE /api/profile/avatar` |
+| Delete account (Settings) | `DELETE /api/profile/account` → `{ "password": "..." }` |
 | Show "Verify email" banner | `user.is_verified === false` |
 | Show avatar placeholder | `profile_picture === null` |
 
@@ -437,3 +498,4 @@ Friend lists and search return a **partial** user snippet only (`name`, `usernam
 | Load profile | `GET` | `/api/profile` | — |
 | Update name / username / timezone | `PATCH` | `/api/profile` | JSON (partial) |
 | Change photo | `POST` | `/api/profile/avatar` | `multipart`, field `avatar` |
+| Delete account | `DELETE` | `/api/profile/account` | `{ "password": "..." }` (local only) |

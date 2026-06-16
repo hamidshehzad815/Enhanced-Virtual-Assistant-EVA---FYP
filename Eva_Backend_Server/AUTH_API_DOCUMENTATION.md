@@ -1,5 +1,7 @@
 # EVA Backend Auth API Documentation
 
+> **Canonical frontend reference:** [Api's documentation/auth-api.md](../Api's%20documentation/auth-api.md) (profile details: [profile-api.md](../Api's%20documentation/profile-api.md)). This file is kept for quick backend lookup; prefer the `Api's documentation` folder to avoid drift.
+
 This document covers authentication and profile APIs in `Eva_Backend_Server`.
 
 Base URL (local):
