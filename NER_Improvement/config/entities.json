@@ -1,0 +1,259 @@
+{
+  "models": {
+    "scheduling_ner": {
+      "description": "Extracts entities for scheduling and behavioral commands",
+      "deploy_path": "Eva_AI_Server/models/ner_model",
+      "intents": [
+        "scheduling_add",
+        "scheduling_delete",
+        "scheduling_update",
+        "scheduling_show",
+        "behavioral"
+      ]
+    },
+    "learning_ner": {
+      "description": "Extracts entities for learning roadmap commands",
+      "deploy_path": "Eva_AI_Server/models/learning_ner",
+      "intents": [
+        "learning_create",
+        "learning_update",
+        "learning_delete"
+      ]
+    }
+  },
+  "scheduling_ner_entities": [
+    {
+      "model_label": "task_name",
+      "canonical_key": "task_name",
+      "multi_word": true,
+      "description": "Task or event name"
+    },
+    {
+      "model_label": "date",
+      "canonical_key": "date",
+      "multi_word": true,
+      "description": "Schedule date"
+    },
+    {
+      "model_label": "time",
+      "canonical_key": "time",
+      "multi_word": true,
+      "description": "Schedule time"
+    },
+    {
+      "model_label": "priority",
+      "canonical_key": "priority",
+      "multi_word": false,
+      "description": "Task priority"
+    },
+    {
+      "model_label": "status",
+      "canonical_key": "status",
+      "multi_word": true,
+      "description": "Task status filter"
+    },
+    {
+      "model_label": "duration",
+      "canonical_key": "duration",
+      "multi_word": true,
+      "description": "Task duration"
+    },
+    {
+      "model_label": "person",
+      "canonical_key": "collaborator",
+      "multi_word": true,
+      "description": "Collaborator name (normalized to collaborator after scoping)"
+    },
+    {
+      "model_label": "day",
+      "canonical_key": "day",
+      "multi_word": false,
+      "description": "Weekday for behavioral analytics"
+    },
+    {
+      "model_label": "new_taskname",
+      "canonical_key": "new_title",
+      "multi_word": true,
+      "description": "Updated task name"
+    },
+    {
+      "model_label": "new_date",
+      "canonical_key": "new_date",
+      "multi_word": true,
+      "description": "Updated date"
+    },
+    {
+      "model_label": "new_time",
+      "canonical_key": "new_time",
+      "multi_word": true,
+      "description": "Updated time"
+    },
+    {
+      "model_label": "new_priority",
+      "canonical_key": "new_priority",
+      "multi_word": false,
+      "description": "Updated priority"
+    },
+    {
+      "model_label": "new_status",
+      "canonical_key": "new_status",
+      "multi_word": true,
+      "description": "Updated status"
+    },
+    {
+      "model_label": "new_duration",
+      "canonical_key": "new_duration",
+      "multi_word": true,
+      "description": "Updated duration"
+    }
+  ],
+  "learning_ner_entities": [
+    {
+      "model_label": "topic",
+      "canonical_key": "topic",
+      "multi_word": true,
+      "description": "Learning subject or language"
+    },
+    {
+      "model_label": "subtopic",
+      "canonical_key": "subtopic",
+      "multi_word": true,
+      "description": "Roadmap subtopic or skill level"
+    },
+    {
+      "model_label": "start_date",
+      "canonical_key": "start_date",
+      "multi_word": true,
+      "description": "Plan start date"
+    },
+    {
+      "model_label": "date",
+      "canonical_key": "date",
+      "multi_word": true,
+      "description": "Generic date for update/delete filters"
+    },
+    {
+      "model_label": "duration",
+      "canonical_key": "duration",
+      "multi_word": true,
+      "description": "Study plan duration"
+    },
+    {
+      "model_label": "person",
+      "canonical_key": "person",
+      "multi_word": true,
+      "description": "Collaborator on learning create"
+    }
+  ],
+  "intent_entity_scope": {
+    "scheduling_add": [
+      "task_name",
+      "date",
+      "time",
+      "priority",
+      "duration",
+      "collaborator"
+    ],
+    "scheduling_delete": [
+      "task_name",
+      "date",
+      "priority",
+      "status"
+    ],
+    "scheduling_update": [
+      "task_name",
+      "date",
+      "priority",
+      "status",
+      "new_title",
+      "new_date",
+      "new_time",
+      "new_priority",
+      "new_status",
+      "new_duration"
+    ],
+    "scheduling_show": [
+      "date",
+      "priority",
+      "status",
+      "task_name"
+    ],
+    "behavioral": [
+      "day"
+    ],
+    "learning_create": [
+      "topic",
+      "subtopic",
+      "start_date",
+      "duration",
+      "person"
+    ],
+    "learning_update": [
+      "topic",
+      "subtopic",
+      "date"
+    ],
+    "learning_delete": [
+      "topic",
+      "subtopic"
+    ]
+  },
+  "entity_aliases": {
+    "person": "collaborator",
+    "person_name": "collaborator",
+    "people": "collaborator",
+    "new_taskname": "new_title",
+    "new_task_name": "new_title",
+    "new_scheduled_date": "new_date",
+    "new_start_date": "new_date",
+    "subject": "task_name"
+  },
+  "learning_entity_aliases": {
+    "subject": "topic",
+    "date_to_start_date_on_create": {
+      "intent": "learning_create",
+      "from": "date",
+      "to": "start_date"
+    },
+    "person_on_create": {
+      "intent": "learning_create",
+      "keep_as": "person"
+    }
+  },
+  "required_entities": {
+    "scheduling_add": {
+      "required": ["task_name", "date", "time"],
+      "optional": ["priority", "duration", "collaborator"]
+    },
+    "scheduling_delete": {
+      "required": [],
+      "optional": ["task_name", "date", "priority", "status"],
+      "note": "At least one filter entity must be present"
+    },
+    "scheduling_update": {
+      "required": ["task_name"],
+      "optional": ["date", "priority", "status", "new_title", "new_date", "new_time", "new_priority", "new_status", "new_duration"],
+      "note": "At least one new_* field required in practice"
+    },
+    "scheduling_show": {
+      "required": [],
+      "optional": ["date", "priority", "status", "task_name"]
+    },
+    "behavioral": {
+      "required": ["day"],
+      "optional": []
+    },
+    "learning_create": {
+      "required": ["topic"],
+      "optional": ["subtopic", "start_date", "duration", "person"]
+    },
+    "learning_update": {
+      "required": ["topic"],
+      "optional": ["subtopic", "date"]
+    },
+    "learning_delete": {
+      "required": ["topic"],
+      "optional": ["subtopic"]
+    }
+  }
+}
