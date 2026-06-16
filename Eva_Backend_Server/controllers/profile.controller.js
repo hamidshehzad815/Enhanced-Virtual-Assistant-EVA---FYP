@@ -4,7 +4,12 @@
  */
 
 const { User } = require("../models");
-const { BadRequestError, ConflictError } = require("../middleware/errorHandler");
+const {
+  BadRequestError,
+  ConflictError,
+  UnauthorizedError,
+} = require("../middleware/errorHandler");
+const { softDeleteUserAccount } = require("../services/accountDelete.service");
 const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
 const {
   deleteProfilePicture,
@@ -226,9 +231,45 @@ const deleteAvatar = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /api/profile/account
+ * Soft-delete the authenticated user's account (requires password for local auth).
+ */
+const deleteAccount = async (req, res, next) => {
+  try {
+    const currentUser = await User.findById(req.userId).select(
+      "+password_hash +profile_picture_public_id",
+    );
+    if (!currentUser) {
+      throw new BadRequestError("User not found");
+    }
+
+    if (currentUser.password_hash) {
+      const password = req.body?.password;
+      if (!password) {
+        throw new BadRequestError("password is required to delete your account");
+      }
+      const isPasswordValid = await currentUser.comparePassword(password);
+      if (!isPasswordValid) {
+        throw new UnauthorizedError("Invalid password");
+      }
+    }
+
+    await softDeleteUserAccount(currentUser);
+
+    res.json({
+      status: "success",
+      message: "Account deleted successfully",
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
   uploadAvatar,
   deleteAvatar,
+  deleteAccount,
 };

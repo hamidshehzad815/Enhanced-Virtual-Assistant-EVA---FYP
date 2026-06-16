@@ -101,6 +101,7 @@ Notes:
 ### Profile
 - `GET /api/profile` (protected)
 - `PATCH /api/profile` (protected)
+- `DELETE /api/profile/account` (protected)
 
 ### Chat
 - `POST /api/chat/session` (protected)
@@ -369,6 +370,20 @@ Notes:
   - `502` Cloudinary upload failed
   - `503` Cloudinary not configured
   - `429` too many uploads (10/hour per IP)
+
+### `DELETE /api/profile/account`
+- Auth: Yes
+- Body (local accounts): `{ "password": "string" }` (required)
+- Body (Google-only): none required
+- Behavior:
+  - Soft-deletes account (`is_active=false`), anonymizes email/username
+  - Clears refresh token, password, push tokens, avatar (Cloudinary)
+  - Soft-deletes owned tasks, learning plans, chat sessions; removes friendships
+- Success: `200 { status: "success", message: "Account deleted successfully" }`
+- Common errors:
+  - `400` password required (local)
+  - `401` invalid password / token
+  - `429` rate limit (5/hour per IP)
 
 ---
 
