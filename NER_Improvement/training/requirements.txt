@@ -1,0 +1,8 @@
+# Phase 3 NER training dependencies
+torch>=2.2.0
+transformers>=4.37.0
+seqeval>=1.2.2
+datasets>=2.16.0
+accelerate>=0.27.0
+scikit-learn>=1.4.0
+numpy>=1.26.0

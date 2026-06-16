@@ -1,0 +1,19 @@
+{
+  "target_example_pct": 0.12,
+  "max_oversample_per_entity": 600,
+  "scheduling_priority_entities": [
+    "new_taskname",
+    "new_status",
+    "new_duration",
+    "day",
+    "person",
+    "duration"
+  ],
+  "learning_priority_entities": [
+    "date",
+    "person",
+    "subtopic",
+    "duration"
+  ],
+  "note": "Oversample examples containing entity types below target_example_pct until floor reached (capped per entity)."
+}

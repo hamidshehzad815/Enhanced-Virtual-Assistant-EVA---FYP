@@ -1,0 +1,405 @@
+{
+  "intent": "behavioral",
+  "version": "1.0.0",
+  "groups": [
+    {
+      "id": "legacy_behavioral_core",
+      "label": "Legacy behavioral productivity queries",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "when am I most productive on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "what are my best hours on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "when do I work best on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "what time am I focused on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "show productive hours for {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "when am I most efficient on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "what time should I work on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "when do I usually complete tasks on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "what are my peak hours on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "tell me my best hours on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "find the best time on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "when should I schedule on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "what is the best time to study on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "suggest a time for {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "what time works best on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "find me a good time on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "when should I work on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "what is the ideal time on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "suggest the best slot on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "when am I usually free on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "what time is best for me on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "when should I do my tasks on {day}",
+          "entities": [
+            "day"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "question_behavioral",
+      "label": "Question-style behavioral",
+      "styles": [
+        "question"
+      ],
+      "templates": [
+        {
+          "text": "can you tell me when I am most productive on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "could you show my productivity on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "what time should I study on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "when am I free on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "what about my focus time on {day}",
+          "entities": [
+            "day"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "casual_behavioral",
+      "label": "Casual behavioral queries",
+      "styles": [
+        "casual"
+      ],
+      "templates": [
+        {
+          "text": "hey EVA when am I productive on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "show my best time on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "need to know my peak hours on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "yar {day} pe kab productive hota hun",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "bhai {day} best study time kya hai",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "boss my focus time on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "when do I slay on {day}",
+          "entities": [
+            "day"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "polite_behavioral",
+      "label": "Polite behavioral queries",
+      "styles": [
+        "polite"
+      ],
+      "templates": [
+        {
+          "text": "please tell me my productive hours on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "kindly show when I focus best on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "can you analyze my schedule on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "please show peak productivity on {day}",
+          "entities": [
+            "day"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "productivity_variants",
+      "label": "Productivity phrasing variants",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "my productivity on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "peak performance time on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "when should I schedule hard tasks on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "best slot for deep work on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "energy levels on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "focus pattern on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "study rhythm on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "work efficiency on {day}",
+          "entities": [
+            "day"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "confirmation_behavioral",
+      "label": "Behavioral with confirmation",
+      "styles": [
+        "confirmation"
+      ],
+      "templates": [
+        {
+          "text": "when am I most productive on {day} ok",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "show best hours on {day} thanks",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "my peak time on {day} right",
+          "entities": [
+            "day"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "analytics_behavioral",
+      "label": "Analytics-style behavioral queries",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "analyze my habits on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "productivity stats for {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "how productive am I on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "when do I get most work done on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "best study window on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "optimal work hours on {day}",
+          "entities": [
+            "day"
+          ]
+        },
+        {
+          "text": "when am I least distracted on {day}",
+          "entities": [
+            "day"
+          ]
+        }
+      ]
+    }
+  ]
+}
