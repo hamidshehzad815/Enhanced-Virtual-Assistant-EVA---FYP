@@ -13,7 +13,11 @@ import torch
 from transformers import AutoModelForTokenClassification, AutoTokenizer
 
 from config.settings import settings
+from pipeline.add_entity_fallback import extract_add_entities_fallback
 from pipeline.delete_entity_fallback import extract_delete_entities_fallback
+from pipeline.entity_postprocess import apply_entity_fallbacks
+from pipeline.learning_entity_fallback import extract_learning_entities_fallback
+from pipeline.spell_correction import apply_spell_corrections
 from pipeline.update_entity_fallback import extract_update_entities_fallback
 
 
@@ -240,6 +244,8 @@ class NERExtractor:
         if not text:
             return {}
 
+        text = apply_spell_corrections(text)
+
         encoded = self.tokenizer(
             text,
             return_tensors="pt",
@@ -264,21 +270,17 @@ class NERExtractor:
 
         entities = self._aggregate_entities(text, tags_with_offsets)
 
-        if intent_hint == "scheduling_delete":
-            fallback_entities = extract_delete_entities_fallback(text)
-            for key, value in fallback_entities.items():
-                current_value = entities.get(key)
-                if current_value in (None, "", [], {}):
-                    entities[key] = value
+        fallbacks: List[Dict[str, str]] = []
+        if intent_hint in ("scheduling_delete",):
+            fallbacks.append(extract_delete_entities_fallback(text))
+        elif intent_hint in ("scheduling_update",):
+            fallbacks.append(extract_update_entities_fallback(text))
+        elif intent_hint in ("scheduling_add", "add"):
+            fallbacks.append(extract_add_entities_fallback(text))
+        elif intent_hint in _LEARNING_NER_INTENTS:
+            fallbacks.append(extract_learning_entities_fallback(text, intent_hint))
 
-        if intent_hint == "scheduling_update":
-            fallback_entities = extract_update_entities_fallback(text)
-            for key, value in fallback_entities.items():
-                current_value = entities.get(key)
-                if current_value in (None, "", [], {}):
-                    entities[key] = value
-
-        return entities
+        return apply_entity_fallbacks(entities, intent_hint, text, fallbacks)
 
 
 _LEARNING_NER_INTENTS = frozenset(

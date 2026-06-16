@@ -1,0 +1,8 @@
+{
+  "model": "scheduling_ner",
+  "overall_f1": 1.0,
+  "classification_report": "              precision    recall  f1-score   support\n\n        date     1.0000    1.0000    1.0000       489\n         day     1.0000    1.0000    1.0000        67\n    duration     1.0000    1.0000    1.0000        50\n    new_date     1.0000    1.0000    1.0000       120\nnew_duration     1.0000    1.0000    1.0000        40\nnew_priority     1.0000    1.0000    1.0000        81\n  new_status     1.0000    1.0000    1.0000        37\nnew_taskname     1.0000    1.0000    1.0000        28\n    new_time     1.0000    1.0000    1.0000       114\n      person     1.0000    1.0000    1.0000        65\n    priority     1.0000    1.0000    1.0000       199\n      status     1.0000    1.0000    1.0000       130\n   task_name     1.0000    1.0000    1.0000       697\n        time     1.0000    1.0000    1.0000       238\n\n   micro avg     1.0000    1.0000    1.0000      2355\n   macro avg     1.0000    1.0000    1.0000      2355\nweighted avg     1.0000    1.0000    1.0000      2355\n",
+  "epochs": 10,
+  "train_size": 9544,
+  "val_size": 1061
+}

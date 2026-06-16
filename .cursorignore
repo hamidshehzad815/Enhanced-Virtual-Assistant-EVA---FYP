@@ -23,10 +23,10 @@ __pycache__/
 
 # ML / large binaries (same as .gitignore intent)
 # Eva_AI_Server/models/
-*/testModels/*
+# */testModels/*
 
 # Data & generated test artifacts
-DataSets/
+# DataSets/
 # Roadmaps/
 EVA_Test_Automation/
 Frontend/
