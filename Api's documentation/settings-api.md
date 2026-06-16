@@ -14,7 +14,7 @@ Fields returned by `GET /api/settings` and `PATCH /api/settings` (after update).
 |-------|------|---------|--------------|-------|
 | `_id` | `string` | auto | No | Mongo id |
 | `user_id` | `string` | auto | No | Owner |
-| `theme` | `"light" \| "dark"` | `"light"` | Yes | |
+| `theme` | `"dark" \| "light" \| "system"` | `"system"` | Yes | `system` follows device appearance |
 | `notifications_enabled` | `boolean` | `true` | Yes | Master notifications |
 | `push_notifications_enabled` | `boolean` | `true` | Yes | |
 | `email_notifications_enabled` | `boolean` | `false` | Yes | |
@@ -89,7 +89,7 @@ Never show or send these from the app:
     "settings": {
       "_id": "674a1b2c3d4e5f6789012300",
       "user_id": "674a1b2c3d4e5f6789012301",
-      "theme": "light",
+      "theme": "system",
       "notifications_enabled": true,
       "push_notifications_enabled": true,
       "email_notifications_enabled": false,
@@ -129,7 +129,7 @@ Partial update — send **only fields you change**.
 
 | Field | Type | Validation |
 |-------|------|------------|
-| `theme` | `string` | `"light"` or `"dark"` |
+| `theme` | `string` | `"dark"`, `"light"`, or `"system"` |
 | `notifications_enabled` | `boolean` | |
 | `push_notifications_enabled` | `boolean` | |
 | `email_notifications_enabled` | `boolean` | |
@@ -238,7 +238,7 @@ Register when user enables push on device; remove on logout.
 
 | UI control | GET field | PATCH field |
 |------------|-----------|-------------|
-| Dark mode | `settings.theme` | `theme` |
+| Theme (dark / light / system) | `settings.theme` | `theme` |
 | Notifications master | `settings.notifications_enabled` | `notifications_enabled` |
 | Push toggle | `settings.push_notifications_enabled` | `push_notifications_enabled` |
 | Email toggle | `settings.email_notifications_enabled` | `email_notifications_enabled` |

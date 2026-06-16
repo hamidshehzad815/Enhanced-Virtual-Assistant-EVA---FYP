@@ -266,7 +266,7 @@ Success response (`200`):
       "is_verified": true
     },
     "settings": {
-      "theme": "light"
+      "theme": "system"
     }
   }
 }

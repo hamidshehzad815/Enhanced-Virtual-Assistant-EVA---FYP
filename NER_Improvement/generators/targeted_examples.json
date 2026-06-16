@@ -1,0 +1,169 @@
+{
+  "description": "Phase 5 targeted examples for underrepresented entity types. Merged into final training sets.",
+  "scheduling": [
+    {
+      "text": "rename physics exam to physics midterm exam",
+      "intent": "scheduling_update",
+      "tokens": ["rename", "physics", "exam", "to", "physics", "midterm", "exam"],
+      "labels": ["O", "B-task_name", "I-task_name", "O", "B-new_taskname", "I-new_taskname", "I-new_taskname"]
+    },
+    {
+      "text": "change physics exam title to final physics exam",
+      "intent": "scheduling_update",
+      "tokens": ["change", "physics", "exam", "title", "to", "final", "physics", "exam"],
+      "labels": ["O", "B-task_name", "I-task_name", "O", "O", "B-new_taskname", "I-new_taskname", "I-new_taskname"]
+    },
+    {
+      "text": "mark physics exam as complete",
+      "intent": "scheduling_update",
+      "tokens": ["mark", "physics", "exam", "as", "complete"],
+      "labels": ["O", "B-task_name", "I-task_name", "O", "B-new_status"]
+    },
+    {
+      "text": "set chemistry lab status to pending",
+      "intent": "scheduling_update",
+      "tokens": ["set", "chemistry", "lab", "status", "to", "pending"],
+      "labels": ["O", "B-task_name", "I-task_name", "O", "O", "B-new_status"]
+    },
+    {
+      "text": "change duration of team meeting to 2 hours",
+      "intent": "scheduling_update",
+      "tokens": ["change", "duration", "of", "team", "meeting", "to", "2", "hours"],
+      "labels": ["O", "O", "O", "B-task_name", "I-task_name", "O", "B-new_duration", "I-new_duration"]
+    },
+    {
+      "text": "update lab report duration to 45 minutes",
+      "intent": "scheduling_update",
+      "tokens": ["update", "lab", "report", "duration", "to", "45", "minutes"],
+      "labels": ["O", "B-task_name", "I-task_name", "O", "O", "B-new_duration", "I-new_duration"]
+    },
+    {
+      "text": "when am I productive on Tuesday",
+      "intent": "behavioral",
+      "tokens": ["when", "am", "I", "productive", "on", "Tuesday"],
+      "labels": ["O", "O", "O", "O", "O", "B-day"]
+    },
+    {
+      "text": "how do I perform on Friday",
+      "intent": "behavioral",
+      "tokens": ["how", "do", "I", "perform", "on", "Friday"],
+      "labels": ["O", "O", "O", "O", "O", "B-day"]
+    },
+    {
+      "text": "am I focused on Monday",
+      "intent": "behavioral",
+      "tokens": ["am", "I", "focused", "on", "Monday"],
+      "labels": ["O", "O", "O", "O", "B-day"]
+    },
+    {
+      "text": "add physics exam with Sara on Monday at 4pm",
+      "intent": "scheduling_add",
+      "tokens": ["add", "physics", "exam", "with", "Sara", "on", "Monday", "at", "4pm"],
+      "labels": ["O", "B-task_name", "I-task_name", "O", "B-person", "O", "B-date", "O", "B-time"]
+    },
+    {
+      "text": "schedule group study with Ahmed on Wednesday at 6pm",
+      "intent": "scheduling_add",
+      "tokens": ["schedule", "group", "study", "with", "Ahmed", "on", "Wednesday", "at", "6pm"],
+      "labels": ["O", "B-task_name", "I-task_name", "O", "B-person", "O", "B-date", "O", "B-time"]
+    },
+    {
+      "text": "add coding session with Hamid for 90 minutes",
+      "intent": "scheduling_add",
+      "tokens": ["add", "coding", "session", "with", "Hamid", "for", "90", "minutes"],
+      "labels": ["O", "B-task_name", "I-task_name", "O", "B-person", "O", "B-duration", "I-duration"]
+    },
+    {
+      "text": "show my tasks on Monday",
+      "intent": "scheduling_show",
+      "tokens": ["show", "my", "tasks", "on", "Monday"],
+      "labels": ["O", "O", "O", "O", "B-date"]
+    },
+    {
+      "text": "update my physics exam priority to high",
+      "intent": "scheduling_update",
+      "tokens": ["update", "my", "physics", "exam", "priority", "to", "high"],
+      "labels": ["O", "O", "B-task_name", "I-task_name", "O", "O", "B-new_priority"]
+    },
+    {
+      "text": "move physics exam to Tuesday at 3pm",
+      "intent": "scheduling_update",
+      "tokens": ["move", "physics", "exam", "to", "Tuesday", "at", "3pm"],
+      "labels": ["O", "B-task_name", "I-task_name", "O", "B-new_date", "O", "B-new_time"]
+    }
+  ],
+  "learning": [
+    {
+      "text": "reschedule my Python session to Friday",
+      "intent": "learning_update",
+      "tokens": ["reschedule", "my", "Python", "session", "to", "Friday"],
+      "labels": ["O", "O", "B-topic", "O", "O", "B-date"]
+    },
+    {
+      "text": "move Python basics session to next Monday",
+      "intent": "learning_update",
+      "tokens": ["move", "Python", "basics", "session", "to", "next", "Monday"],
+      "labels": ["O", "B-topic", "B-subtopic", "O", "O", "B-date", "I-date"]
+    },
+    {
+      "text": "shift JavaScript roadmap session to Thursday",
+      "intent": "learning_update",
+      "tokens": ["shift", "JavaScript", "roadmap", "session", "to", "Thursday"],
+      "labels": ["O", "B-topic", "O", "O", "O", "B-date"]
+    },
+    {
+      "text": "learn Python with Sara for 3 weeks",
+      "intent": "learning_create",
+      "tokens": ["learn", "Python", "with", "Sara", "for", "3", "weeks"],
+      "labels": ["O", "B-topic", "O", "B-person", "O", "B-duration", "I-duration"]
+    },
+    {
+      "text": "create Java roadmap with Ali starting Monday",
+      "intent": "learning_create",
+      "tokens": ["create", "Java", "roadmap", "with", "Ali", "starting", "Monday"],
+      "labels": ["O", "B-topic", "O", "O", "B-person", "O", "B-start_date"]
+    },
+    {
+      "text": "learn Go intermediate starting next week for 1 month",
+      "intent": "learning_create",
+      "tokens": ["learn", "Go", "intermediate", "starting", "next", "week", "for", "1", "month"],
+      "labels": ["O", "B-topic", "B-subtopic", "O", "B-start_date", "I-start_date", "O", "B-duration", "I-duration"]
+    },
+    {
+      "text": "delete my plan",
+      "intent": "learning_delete",
+      "tokens": ["delete", "my", "plan"],
+      "labels": ["O", "O", "O"]
+    },
+    {
+      "text": "remove my learning",
+      "intent": "learning_delete",
+      "tokens": ["remove", "my", "learning"],
+      "labels": ["O", "O", "O"]
+    },
+    {
+      "text": "cancel my study plan",
+      "intent": "learning_delete",
+      "tokens": ["cancel", "my", "study", "plan"],
+      "labels": ["O", "O", "O", "O"]
+    },
+    {
+      "text": "create roadmap for Python",
+      "intent": "learning_create",
+      "tokens": ["create", "roadmap", "for", "Python"],
+      "labels": ["O", "O", "O", "B-topic"]
+    },
+    {
+      "text": "pause my Python learning",
+      "intent": "learning_update",
+      "tokens": ["pause", "my", "Python", "learning"],
+      "labels": ["O", "O", "B-topic", "O"]
+    },
+    {
+      "text": "skip next session for Python",
+      "intent": "learning_update",
+      "tokens": ["skip", "next", "session", "for", "Python"],
+      "labels": ["O", "O", "O", "O", "B-topic"]
+    }
+  ]
+}
