@@ -80,7 +80,7 @@ Conflict responses (`409`) may include extra context:
 | [dashboard-api.md](./dashboard-api.md) | `GET /api/dashboard` |
 | [settings-api.md](./settings-api.md) | `GET /api/settings`, `PATCH /api/settings` |
 | [settings-learning-schedules-api.md](./settings-learning-schedules-api.md) | Learning schedule CRUD under `/api/settings/learning-schedules` |
-| [profile-api.md](./profile-api.md) | `GET` / `PATCH /api/profile`, `POST /api/profile/avatar` |
+| [profile-api.md](./profile-api.md) | `GET` / `PATCH /api/profile`, `POST` / `DELETE /api/profile/avatar` |
 | [roadmaps-api.md](./roadmaps-api.md) | `GET /api/roadmaps/*`, `PATCH /api/learning/:goalId/sessions/:sessionId`, `PATCH /api/learning/:goalId/status` |
 | [push-notifications-frontend-setup.md](./push-notifications-frontend-setup.md) | FCM / push token registration (Flutter setup guide) |
 
@@ -89,7 +89,7 @@ Conflict responses (`409`) may include extra context:
 | Screen | Read | Write |
 |--------|------|-------|
 | Home / Dashboard | `GET /api/dashboard` | — |
-| Profile (name, username, photo, timezone) | `GET /api/profile` | `PATCH /api/profile`, `POST /api/profile/avatar` |
+| Profile (name, username, photo, timezone) | `GET /api/profile` | `PATCH /api/profile`, `POST` / `DELETE /api/profile/avatar` |
 | Roadmap (select language first) | `GET /api/roadmaps/languages`, `GET /api/roadmaps?language=` | `PATCH /api/learning/:goalId/sessions/:sessionId`, `PATCH /api/learning/:goalId/status` |
 | Settings (toggles, quiet hours, reminders) | `GET /api/settings` | `PATCH /api/settings` |
 | Push device token (after login) | — | `PATCH /api/settings` with `push_token` — see [push-notifications-frontend-setup.md](./push-notifications-frontend-setup.md) |

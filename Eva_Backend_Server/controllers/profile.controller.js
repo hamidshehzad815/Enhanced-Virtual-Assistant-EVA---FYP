@@ -6,7 +6,10 @@
 const { User } = require("../models");
 const { BadRequestError, ConflictError } = require("../middleware/errorHandler");
 const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
-const { replaceProfilePicture } = require("../services/cloudinary.service");
+const {
+  deleteProfilePicture,
+  replaceProfilePicture,
+} = require("../services/cloudinary.service");
 
 const buildApiData = (req, payload) => {
   const timezone = (req.user && req.user.timezone) || "UTC";
@@ -172,8 +175,60 @@ const uploadAvatar = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /api/profile/avatar
+ * Remove the authenticated user's profile picture (Cloudinary + DB).
+ */
+const deleteAvatar = async (req, res, next) => {
+  try {
+    const currentUser = await User.findById(req.userId).select(
+      "+profile_picture_public_id profile_picture",
+    );
+    if (!currentUser) {
+      throw new BadRequestError("User not found");
+    }
+
+    const publicId = String(currentUser.profile_picture_public_id || "").trim();
+    const hadPicture = Boolean(publicId || currentUser.profile_picture);
+
+    if (publicId) {
+      await deleteProfilePicture(publicId);
+    }
+
+    let updatedUser = currentUser;
+    if (hadPicture) {
+      updatedUser = await User.findByIdAndUpdate(
+        req.userId,
+        {
+          $set: {
+            profile_picture: null,
+            profile_picture_public_id: null,
+          },
+        },
+        {
+          new: true,
+          runValidators: true,
+        },
+      );
+    }
+
+    res.json({
+      status: "success",
+      message: hadPicture
+        ? "Profile picture removed"
+        : "No profile picture to remove",
+      data: buildApiData(req, {
+        user: updatedUser.toPublicProfile(),
+      }),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getProfile,
   updateProfile,
   uploadAvatar,
+  deleteAvatar,
 };

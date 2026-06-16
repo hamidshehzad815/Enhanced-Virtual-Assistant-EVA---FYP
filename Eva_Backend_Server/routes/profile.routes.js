@@ -13,6 +13,7 @@ const {
   getProfile,
   updateProfile,
   uploadAvatar,
+  deleteAvatar,
 } = require("../controllers/profile.controller");
 
 const avatarUploadLimiter = rateLimit({
@@ -35,5 +36,6 @@ router.post(
   uploadAvatarMiddleware,
   uploadAvatar,
 );
+router.delete("/avatar", protect, deleteAvatar);
 
 module.exports = router;

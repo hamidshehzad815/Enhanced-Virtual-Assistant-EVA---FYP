@@ -32,6 +32,7 @@ jest.mock("../config/logger", () => ({
 const mockFindById = jest.fn();
 const mockFindByIdAndUpdate = jest.fn();
 const mockReplaceProfilePicture = jest.fn();
+const mockDeleteProfilePicture = jest.fn();
 
 jest.mock("../models", () => ({
   User: {
@@ -42,6 +43,7 @@ jest.mock("../models", () => ({
 
 jest.mock("../services/cloudinary.service", () => ({
   replaceProfilePicture: (...args) => mockReplaceProfilePicture(...args),
+  deleteProfilePicture: (...args) => mockDeleteProfilePicture(...args),
 }));
 
 const app = require("../app");
@@ -183,6 +185,105 @@ describe("POST /api/profile/avatar", () => {
         filename: "avatar.png",
         contentType: "image/png",
       });
+
+    expect(response.status).toBe(401);
+  });
+});
+
+describe("DELETE /api/profile/avatar", () => {
+  const setupAuthUser = (userOverrides = {}) => {
+    const user = mockUserDoc({ is_active: true, ...userOverrides });
+    // findById is used in two different ways in the code:
+    // - protect: `await User.findById(...)`
+    // - controller: `await User.findById(...).select(...)` (note: `.select` is
+    //   called on the return value of findById, before `await`)
+    //
+    // So we must return an object that both:
+    // - is awaitable (plain object is fine), and
+    // - has a `.select()` function.
+    mockFindById.mockImplementation(() => ({
+      ...user,
+      select: jest.fn().mockResolvedValue(user),
+    }));
+    return user;
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockFindById.mockReset();
+    mockFindByIdAndUpdate.mockReset();
+    mockDeleteProfilePicture.mockResolvedValue(undefined);
+  });
+
+  test("removes avatar from Cloudinary and clears user fields", async () => {
+    setupAuthUser({
+      profile_picture: "https://res.cloudinary.com/demo/old.jpg",
+      profile_picture_public_id: "eva/profile-pictures/old",
+    });
+    const updatedUser = mockUserDoc({
+      profile_picture: null,
+      profile_picture_public_id: null,
+    });
+    mockFindByIdAndUpdate.mockResolvedValue(updatedUser);
+
+    const response = await request(app)
+      .delete("/api/profile/avatar")
+      .set(authHeaders());
+
+    expect(response.status).toBe(200);
+    expect(response.body.message).toBe("Profile picture removed");
+    expect(response.body.data.user.profile_picture).toBeNull();
+    expect(mockDeleteProfilePicture).toHaveBeenCalledWith("eva/profile-pictures/old");
+    expect(mockFindByIdAndUpdate).toHaveBeenCalledWith(
+      USER_ID,
+      {
+        $set: {
+          profile_picture: null,
+          profile_picture_public_id: null,
+        },
+      },
+      expect.objectContaining({ new: true }),
+    );
+  });
+
+  test("returns success when user has no profile picture", async () => {
+    setupAuthUser({
+      profile_picture: null,
+      profile_picture_public_id: null,
+    });
+
+    const response = await request(app)
+      .delete("/api/profile/avatar")
+      .set(authHeaders());
+
+    expect(response.status).toBe(200);
+    expect(response.body.message).toBe("No profile picture to remove");
+    expect(response.body.data.user.profile_picture).toBeNull();
+    expect(mockDeleteProfilePicture).not.toHaveBeenCalled();
+    expect(mockFindByIdAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test("clears DB when only profile_picture URL exists without public_id", async () => {
+    setupAuthUser({
+      profile_picture: "https://res.cloudinary.com/demo/legacy.jpg",
+      profile_picture_public_id: null,
+    });
+    mockFindByIdAndUpdate.mockResolvedValue(
+      mockUserDoc({ profile_picture: null, profile_picture_public_id: null }),
+    );
+
+    const response = await request(app)
+      .delete("/api/profile/avatar")
+      .set(authHeaders());
+
+    expect(response.status).toBe(200);
+    expect(response.body.message).toBe("Profile picture removed");
+    expect(mockDeleteProfilePicture).not.toHaveBeenCalled();
+    expect(mockFindByIdAndUpdate).toHaveBeenCalled();
+  });
+
+  test("returns 401 without auth token", async () => {
+    const response = await request(app).delete("/api/profile/avatar");
 
     expect(response.status).toBe(401);
   });
