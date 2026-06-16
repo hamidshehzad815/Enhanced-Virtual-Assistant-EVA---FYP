@@ -100,8 +100,8 @@ const userSettingSchema = new mongoose.Schema(
     },
     theme: {
       type: String,
-      enum: ["light", "dark"],
-      default: "light",
+      enum: ["dark", "light", "system"],
+      default: "system",
     },
     notifications_enabled: {
       type: Boolean,

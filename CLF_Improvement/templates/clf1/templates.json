@@ -1,0 +1,123 @@
+{
+  "version": 1,
+  "labels": {
+    "command": [
+      "add {task} {date_phrase}",
+      "schedule {task} {date_phrase}",
+      "show {scope} tasks",
+      "delete {scope} task {task_ref}",
+      "update {task_ref} {update_action}",
+      "create {topic} {subtopic} plan starting {start_when} for {duration}",
+      "delete my {topic} roadmap",
+      "show my behavioral summary",
+      "show physics exam task"
+    ],
+    "general": [
+      "what can you do",
+      "how do i use this app",
+      "how does scheduling work",
+      "what is a roadmap",
+      "can you explain my progress",
+      "how to set reminders",
+      "what is the difference between tasks and events"
+    ],
+    "out_of_scope": [
+      "tell me a joke",
+      "write a love letter",
+      "make a logo for my brand",
+      "generate an image of a cat",
+      "book me a flight to dubai",
+      "hack my friend's account",
+      "predict stock prices for tomorrow"
+    ],
+    "confirmation": [
+      "yes",
+      "no",
+      "yep",
+      "nope",
+      "sure",
+      "ok do it",
+      "confirm",
+      "cancel it",
+      "dont do it",
+      "do it"
+    ],
+    "multiple_command": [
+      "add {task} {date_phrase} and show my tasks",
+      "delete {task_ref} then add {task} {date_phrase}",
+      "show my behavioral summary and show my tasks",
+      "create {topic} plan starting {start_when} and add {task} {date_phrase}",
+      "update {task_ref} {update_action}, and delete {task_ref2}"
+    ]
+  },
+  "slots": {
+    "task": [
+      "physics exam",
+      "math quiz",
+      "ai assignment",
+      "project meeting",
+      "doctor appointment",
+      "gym session",
+      "submit fyp report"
+    ],
+    "scope": [
+      "my",
+      "today's",
+      "tomorrow's",
+      "this week's",
+      "next week's"
+    ],
+    "task_ref": [
+      "physics exam",
+      "that meeting",
+      "my appointment",
+      "the quiz",
+      "task 3"
+    ],
+    "task_ref2": [
+      "math quiz",
+      "ai assignment",
+      "task 2"
+    ],
+    "date_phrase": [
+      "today",
+      "tomorrow",
+      "on friday",
+      "next monday",
+      "this weekend",
+      "on 20 june"
+    ],
+    "update_action": [
+      "to friday",
+      "to 3pm",
+      "priority to high",
+      "duration to 2 hours",
+      "rename to physics final exam"
+    ],
+    "topic": [
+      "python",
+      "java",
+      "javascript",
+      "mysql"
+    ],
+    "subtopic": [
+      "basics",
+      "oop",
+      "loops",
+      "arrays"
+    ],
+    "start_when": [
+      "today",
+      "tomorrow",
+      "next monday"
+    ],
+    "duration": [
+      "7 days",
+      "14 days",
+      "30 days",
+      "60 days",
+      "8 weeks"
+    ]
+  }
+}
+

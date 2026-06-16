@@ -1,0 +1,706 @@
+{
+  "intent": "learning_delete",
+  "version": "1.0.0",
+  "groups": [
+    {
+      "id": "core_topic_only",
+      "label": "Topic only — delete roadmap",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "delete {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "remove {topic} learning plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "delete my {topic} plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "cancel {topic} learning",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "remove my {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "delete {topic} study plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "get rid of {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "drop {topic} learning plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "I want to delete {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "please remove {topic} plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "cancel my {topic} study plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "delete {topic} learning goal",
+          "entities": [
+            "topic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "core_topic_subtopic",
+      "label": "Topic + subtopic",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "delete {topic} {subtopic}",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "delete {topic} {subtopic} roadmap",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "remove {topic} {subtopic} plan",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "cancel {topic} {subtopic} learning",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "delete my {topic} {subtopic} roadmap",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "remove {topic} {subtopic} study plan",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "get rid of {topic} {subtopic} plan",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "drop {topic} {subtopic} roadmap",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "I want to delete {topic} {subtopic}",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "please remove {topic} {subtopic} roadmap",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "cancel my {topic} {subtopic} plan",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "delete {topic} {subtopic} learning goal",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "delete_phrasing",
+      "label": "Delete phrasing variants",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "delete my {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "delete {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "delete {topic} {subtopic} roadmap",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "delete {topic} learning roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "delete the {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "delete a {topic} learning plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "delete all {topic} roadmaps",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "permanently delete {topic} plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "wipe {topic} study plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "erase {topic} {subtopic} roadmap",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "remove_phrasing",
+      "label": "Remove phrasing variants",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "remove my {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "remove {topic} {subtopic} from my plans",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "remove the {topic} learning plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "take off {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "remove {topic} {subtopic} study plan",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "I no longer need {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "remove my {topic} {subtopic} learning",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "clear {topic} study plan",
+          "entities": [
+            "topic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cancel_phrasing",
+      "label": "Cancel phrasing variants",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "cancel my {topic} learning",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "cancel {topic} {subtopic} roadmap",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "cancel the {topic} study plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "cancel my {topic} {subtopic} plan",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "I want to cancel {topic} learning",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "cancel learning plan for {topic}",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "cancel {topic} {subtopic} goal",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "stop and cancel {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "question_delete",
+      "label": "Question-style delete",
+      "styles": [
+        "question"
+      ],
+      "templates": [
+        {
+          "text": "can you delete my {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "could you remove {topic} {subtopic} plan",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "can I delete {topic} learning plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "what about deleting {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "could you cancel {topic} {subtopic}",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "can you remove my {topic} study plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "could I delete {topic} {subtopic} roadmap",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "can you get rid of {topic} plan",
+          "entities": [
+            "topic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "polite_casual_delete",
+      "label": "Polite and casual delete",
+      "styles": [
+        "polite",
+        "casual"
+      ],
+      "templates": [
+        {
+          "text": "please delete {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "kindly remove {topic} {subtopic} plan",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "hey EVA delete {topic} plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "need to remove {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "gonna delete {topic} {subtopic}",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "please cancel my {topic} learning",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "hey remove {topic} study plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "kindly delete {topic} {subtopic} roadmap",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "entity_first_delete",
+      "label": "Entity-first delete phrasing",
+      "styles": [
+        "entity_first"
+      ],
+      "templates": [
+        {
+          "text": "{topic} roadmap delete",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "{topic} {subtopic} remove",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "{topic} plan cancel",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "{topic} {subtopic} delete please",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "{topic} learning gone",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "{topic} study plan remove",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "{topic} {subtopic} roadmap hata do",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "{topic} delete karo",
+          "entities": [
+            "topic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "confirmation_delete",
+      "label": "Delete with confirmation endings",
+      "styles": [
+        "confirmation"
+      ],
+      "templates": [
+        {
+          "text": "delete {topic} roadmap ok",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "remove {topic} {subtopic} thanks",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "cancel {topic} plan right",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "delete {topic} learning ok thanks",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "remove {topic} {subtopic} roadmap right",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "delete my {topic} plan ok",
+          "entities": [
+            "topic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pk_casual_delete",
+      "label": "Pakistani student casual delete",
+      "styles": [
+        "casual"
+      ],
+      "templates": [
+        {
+          "text": "yar delete {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "bhai {topic} {subtopic} plan hata do",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "EVA {topic} roadmap delete kar do",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "boss cancel {topic} learning",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "yar {topic} {subtopic} roadmap remove karo",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "bhai mera {topic} plan delete kar do",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "yar {topic} seekhna band karo plan delete",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "kindly {topic} {subtopic} roadmap delete kar dena",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "implicit_delete",
+      "label": "Implicit delete phrasing",
+      "styles": [
+        "implicit"
+      ],
+      "templates": [
+        {
+          "text": "no more {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "{topic} {subtopic} plan gone",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "done with {topic} learning plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "{topic} roadmap finished delete it",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "don't need {topic} {subtopic} anymore",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "{topic} study plan over",
+          "entities": [
+            "topic"
+          ]
+        }
+      ]
+    }
+  ]
+}

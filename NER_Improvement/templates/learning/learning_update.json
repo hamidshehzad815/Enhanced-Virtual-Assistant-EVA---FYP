@@ -1,0 +1,997 @@
+{
+  "intent": "learning_update",
+  "version": "1.0.0",
+  "groups": [
+    {
+      "id": "core_topic_only",
+      "label": "Topic only — pause, resume, complete, skip",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "pause my {topic} learning",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "resume {topic}",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "pause {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "resume my {topic} plan",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "mark {topic} session as done",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "skip {topic} session",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "continue {topic} learning",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "restart {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "mark next {topic} session complete",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "skip today's {topic} session",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "put {topic} on hold",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "unpause {topic}",
+          "entities": [
+            "topic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "core_topic_subtopic",
+      "label": "Topic + subtopic",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "pause {topic} {subtopic}",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "resume {topic} {subtopic}",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "pause my {topic} {subtopic} roadmap",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "resume {topic} {subtopic} plan",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "mark {topic} {subtopic} session done",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "skip {topic} {subtopic} session",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "continue {topic} {subtopic} learning",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "restart {topic} {subtopic}",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "put {topic} {subtopic} on hold",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "mark {topic} {subtopic} as complete",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "skip next {topic} {subtopic} topic",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "unpause {topic} {subtopic} roadmap",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "core_topic_date",
+      "label": "Topic + date — reschedule",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "reschedule {topic} session to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "move {topic} session to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "shift {topic} learning to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "postpone {topic} session to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "reschedule my {topic} session to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "change {topic} session date to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "move my {topic} learning session to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "reschedule {topic} to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "shift my {topic} roadmap session to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "postpone {topic} learning to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "set {topic} next session to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "reschedule next {topic} session to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "core_topic_subtopic_date",
+      "label": "Topic + subtopic + date",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "reschedule {topic} {subtopic} session to {date}",
+          "entities": [
+            "topic",
+            "subtopic",
+            "date"
+          ]
+        },
+        {
+          "text": "move {topic} {subtopic} to {date}",
+          "entities": [
+            "topic",
+            "subtopic",
+            "date"
+          ]
+        },
+        {
+          "text": "shift {topic} {subtopic} session to {date}",
+          "entities": [
+            "topic",
+            "subtopic",
+            "date"
+          ]
+        },
+        {
+          "text": "postpone {topic} {subtopic} to {date}",
+          "entities": [
+            "topic",
+            "subtopic",
+            "date"
+          ]
+        },
+        {
+          "text": "reschedule my {topic} {subtopic} session to {date}",
+          "entities": [
+            "topic",
+            "subtopic",
+            "date"
+          ]
+        },
+        {
+          "text": "change {topic} {subtopic} session date to {date}",
+          "entities": [
+            "topic",
+            "subtopic",
+            "date"
+          ]
+        },
+        {
+          "text": "move {topic} {subtopic} learning to {date}",
+          "entities": [
+            "topic",
+            "subtopic",
+            "date"
+          ]
+        },
+        {
+          "text": "set {topic} {subtopic} next session to {date}",
+          "entities": [
+            "topic",
+            "subtopic",
+            "date"
+          ]
+        },
+        {
+          "text": "reschedule next {topic} {subtopic} session to {date}",
+          "entities": [
+            "topic",
+            "subtopic",
+            "date"
+          ]
+        },
+        {
+          "text": "shift {topic} {subtopic} roadmap session to {date}",
+          "entities": [
+            "topic",
+            "subtopic",
+            "date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pause_resume_phrasing",
+      "label": "Pause and resume phrasing variants",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "stop {topic} for now",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "take a break from {topic}",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "halt {topic} learning",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "pick up {topic} again",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "start {topic} again",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "pause my roadmap for {topic}",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "put {topic} {subtopic} learning on pause",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "continue where I left off in {topic}",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "resume studying {topic} {subtopic}",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "stop {topic} {subtopic} temporarily",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "reschedule_phrasing",
+      "label": "Reschedule and move phrasing",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "reschedule my {topic} session to next {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "move {topic} {subtopic} session to {date}",
+          "entities": [
+            "topic",
+            "subtopic",
+            "date"
+          ]
+        },
+        {
+          "text": "change date of {topic} session to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "postpone my {topic} learning to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "shift session for {topic} to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "reschedule {topic} {subtopic} learning to {date}",
+          "entities": [
+            "topic",
+            "subtopic",
+            "date"
+          ]
+        },
+        {
+          "text": "can we move {topic} to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "push {topic} session to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "delay {topic} {subtopic} session to {date}",
+          "entities": [
+            "topic",
+            "subtopic",
+            "date"
+          ]
+        },
+        {
+          "text": "set {topic} session for {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "skip_complete_phrasing",
+      "label": "Skip and complete phrasing",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "mark session done for {topic}",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "I finished {topic} session",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "completed today's {topic} topic",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "skip this {topic} topic",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "bypass {topic} {subtopic} session",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "already know {topic} {subtopic} skip it",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "mark today's {topic} session complete",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "done with {topic} {subtopic} session",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "skip next session in {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "mark {topic} {subtopic} topic as finished",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "question_update",
+      "label": "Question-style update",
+      "styles": [
+        "question"
+      ],
+      "templates": [
+        {
+          "text": "can you pause my {topic} learning",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "could you resume {topic} {subtopic}",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "can you reschedule {topic} to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "could I skip {topic} session",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "can you mark {topic} session done",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "what about pausing {topic} {subtopic}",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "could you move {topic} session to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "can I mark {topic} {subtopic} complete",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "polite_update",
+      "label": "Polite update phrasing",
+      "styles": [
+        "polite"
+      ],
+      "templates": [
+        {
+          "text": "please pause my {topic} roadmap",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "kindly resume {topic} {subtopic}",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "please reschedule {topic} session to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "can you please skip {topic} session",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "please mark {topic} {subtopic} as done",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "kindly move {topic} learning to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "please continue {topic} {subtopic} learning",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "could you please pause {topic} for now",
+          "entities": [
+            "topic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "entity_first_update",
+      "label": "Entity-first update phrasing",
+      "styles": [
+        "entity_first"
+      ],
+      "templates": [
+        {
+          "text": "{topic} pause",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "{topic} {subtopic} resume",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "{topic} session {date} reschedule",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "{topic} {subtopic} skip",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "{date} {topic} session move",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "{topic} mark complete",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "{topic} {subtopic} on hold",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "{topic} next session {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "confirmation_update",
+      "label": "Update with confirmation endings",
+      "styles": [
+        "confirmation"
+      ],
+      "templates": [
+        {
+          "text": "pause {topic} ok",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "resume {topic} {subtopic} thanks",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "reschedule {topic} to {date} right",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "skip {topic} session ok thanks",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "mark {topic} done thanks",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "move {topic} {subtopic} to {date} ok",
+          "entities": [
+            "topic",
+            "subtopic",
+            "date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "casual_update",
+      "label": "Casual update phrasing",
+      "styles": [
+        "casual"
+      ],
+      "templates": [
+        {
+          "text": "hey EVA pause {topic}",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "need to skip {topic} session",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "gonna resume {topic} {subtopic}",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "hey move {topic} to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "mark {topic} session done pls",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "wanna pause {topic} {subtopic}",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "EVA reschedule {topic} to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "skip {topic} topic for now",
+          "entities": [
+            "topic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pk_casual_update",
+      "label": "Pakistani student casual update",
+      "styles": [
+        "casual"
+      ],
+      "templates": [
+        {
+          "text": "yar {topic} pause kar do",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "bhai {topic} {subtopic} resume karo",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "yar {topic} session {date} pe shift kar do",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "bhai {topic} skip kar do",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "EVA {topic} {subtopic} complete mark kar do",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "yar {topic} learning hold pe rakho",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "bhai {topic} session {date} ko move karo",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "boss {topic} {subtopic} continue karo",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "implicit_update",
+      "label": "Implicit update phrasing",
+      "styles": [
+        "implicit"
+      ],
+      "templates": [
+        {
+          "text": "{topic} on hold",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "{topic} {subtopic} paused",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "{topic} session moved to {date}",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        },
+        {
+          "text": "{topic} done for today",
+          "entities": [
+            "topic"
+          ]
+        },
+        {
+          "text": "{topic} {subtopic} skipped",
+          "entities": [
+            "topic",
+            "subtopic"
+          ]
+        },
+        {
+          "text": "{date} {topic} session",
+          "entities": [
+            "topic",
+            "date"
+          ]
+        }
+      ]
+    }
+  ]
+}

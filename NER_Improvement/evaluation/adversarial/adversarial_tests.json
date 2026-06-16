@@ -1,0 +1,174 @@
+{
+  "description": "Phase 8 adversarial NER evaluation set. NOT used for training.",
+  "version": 2,
+  "scheduling": [
+    {
+      "id": "add_typo_date_time",
+      "text": "add physcis exam on munday at 5pm",
+      "intent": "scheduling_add",
+      "expected": {"task_name": "physics exam", "date": "monday", "time": "5pm"},
+      "tags": ["typo", "add"]
+    },
+    {
+      "id": "add_word_order",
+      "text": "physics exam monday 5pm add",
+      "intent": "scheduling_add",
+      "expected": {"task_name": "physics exam", "date": "monday", "time": "5pm"},
+      "tags": ["word_order", "add"]
+    },
+    {
+      "id": "add_polite_filler",
+      "text": "please add physics exam on Monday at 4pm",
+      "intent": "scheduling_add",
+      "expected": {"task_name": "physics exam", "date": "monday", "time": "4pm"},
+      "tags": ["filler", "add"]
+    },
+    {
+      "id": "add_caps",
+      "text": "ADD PHYSICS EXAM ON MONDAY AT 5PM",
+      "intent": "scheduling_add",
+      "expected": {"task_name": "physics exam", "date": "monday", "time": "5pm"},
+      "tags": ["caps", "add"]
+    },
+    {
+      "id": "delete_my_task",
+      "text": "delete my morning standup",
+      "intent": "scheduling_delete",
+      "expected": {"task_name": "morning standup"},
+      "must_not_extract": ["my"],
+      "tags": ["filler", "delete"]
+    },
+    {
+      "id": "delete_physics",
+      "text": "delete physics exam on Monday",
+      "intent": "scheduling_delete",
+      "expected": {"task_name": "physics exam", "date": "monday"},
+      "tags": ["delete"]
+    },
+    {
+      "id": "update_priority",
+      "text": "change physics exam priority to high",
+      "intent": "scheduling_update",
+      "expected": {"task_name": "physics exam", "new_priority": "high"},
+      "tags": ["update"]
+    },
+    {
+      "id": "update_status",
+      "text": "mark physics exam as complete",
+      "intent": "scheduling_update",
+      "expected": {"task_name": "physics exam", "new_status": "complete"},
+      "tags": ["update"]
+    },
+    {
+      "id": "behavioral_day",
+      "text": "when i am productive on tuesday",
+      "intent": "behavioral",
+      "expected": {"day": "tuesday"},
+      "tags": ["behavioral"]
+    },
+    {
+      "id": "show_my_tasks",
+      "text": "show my tasks on Friday",
+      "intent": "scheduling_show",
+      "expected": {"date": "friday"},
+      "must_not_extract": ["my"],
+      "tags": ["filler", "show"]
+    }
+  ],
+  "learning": [
+    {
+      "id": "create_oop",
+      "text": "create python oop roadmap",
+      "intent": "learning_create",
+      "expected": {"topic": "python", "subtopic": "oop"},
+      "must_not_extract": ["roadmap", "ma"],
+      "tags": ["oop", "create"]
+    },
+    {
+      "id": "delete_my_python",
+      "text": "delete my Python roadmap",
+      "intent": "learning_delete",
+      "expected": {"topic": "python"},
+      "must_not_extract": ["my", "ma", "roadmap"],
+      "tags": ["filler", "delete"]
+    },
+    {
+      "id": "create_typo_duration",
+      "text": "learn py begginer for 2 wks",
+      "intent": "learning_create",
+      "expected": {"topic": "py", "subtopic": "beginner", "duration": "2 wks"},
+      "tags": ["typo", "create"]
+    },
+    {
+      "id": "delete_caps_oop",
+      "text": "DELETE MY python OOP ROADMAP",
+      "intent": "learning_delete",
+      "expected": {"topic": "python", "subtopic": "oop"},
+      "must_not_extract": ["my", "ma", "roadmap"],
+      "tags": ["caps", "delete"]
+    },
+    {
+      "id": "create_filler",
+      "text": "please create python oop roadmap thanks",
+      "intent": "learning_create",
+      "expected": {"topic": "python", "subtopic": "oop"},
+      "must_not_extract": ["roadmap"],
+      "tags": ["filler", "create"]
+    },
+    {
+      "id": "create_word_order",
+      "text": "python oop roadmap create",
+      "intent": "learning_create",
+      "expected": {"topic": "python", "subtopic": "oop"},
+      "must_not_extract": ["roadmap"],
+      "tags": ["word_order", "create"]
+    },
+    {
+      "id": "delete_my_roadmap_only",
+      "text": "delete my roadmap",
+      "intent": "learning_delete",
+      "expected": {},
+      "must_not_extract": ["my", "ma", "roadmap"],
+      "tags": ["filler", "delete", "hard_negative"]
+    },
+    {
+      "id": "create_for_me",
+      "text": "create Python OOP roadmap for me",
+      "intent": "learning_create",
+      "expected": {"topic": "python", "subtopic": "oop"},
+      "must_not_extract": ["me", "roadmap", "ma"],
+      "tags": ["filler", "create"]
+    },
+    {
+      "id": "update_pause_oop",
+      "text": "pause my Python oop roadmap",
+      "intent": "learning_update",
+      "expected": {"topic": "python", "subtopic": "oop"},
+      "must_not_extract": ["my", "roadmap", "ma"],
+      "tags": ["update", "oop"]
+    },
+    {
+      "id": "create_duration_date",
+      "text": "learn Python oop starting Monday for 1 month",
+      "intent": "learning_create",
+      "expected": {"topic": "python", "subtopic": "oop", "start_date": "monday", "duration": "1 month"},
+      "tags": ["create"]
+    },
+    {
+      "id": "delete_lists",
+      "text": "remove my Python lists roadmap",
+      "intent": "learning_delete",
+      "expected": {"topic": "python", "subtopic": "lists"},
+      "must_not_extract": ["my", "roadmap", "ma"],
+      "tags": ["delete"]
+    },
+    {
+      "id": "update_reschedule",
+      "text": "reschedule my Python session to Friday",
+      "intent": "learning_update",
+      "expected": {"topic": "python", "date": "friday"},
+      "must_not_extract": ["my", "session"],
+      "tags": ["update"]
+    }
+  ]
+}

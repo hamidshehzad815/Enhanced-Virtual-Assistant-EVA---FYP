@@ -621,7 +621,7 @@ Notes:
   - `notifications_enabled`, `push_notifications_enabled`, `email_notifications_enabled`
   - `quiet_hours_enabled`, `quiet_hours`
   - `push_token`, `remove_push_token`
-  - `theme`
+  - `theme` (`"dark"`, `"light"`, or `"system"`; default `"system"`)
   - `default_reminder_minutes` (tasks), `default_learning_reminder_minutes` (learning sessions)
   - `default_task_duration`
   - `behavioral_analytics_enabled`
