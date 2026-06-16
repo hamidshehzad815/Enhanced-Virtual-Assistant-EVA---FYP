@@ -1,0 +1,145 @@
+{
+  "description": "Phase 5 hard negatives — filler words that must stay O (not entities).",
+  "scheduling": [
+    {
+      "text": "delete my morning standup",
+      "intent": "scheduling_delete",
+      "tokens": ["delete", "my", "morning", "standup"],
+      "labels": ["O", "O", "B-task_name", "I-task_name"]
+    },
+    {
+      "text": "add my task for tomorrow",
+      "intent": "scheduling_add",
+      "tokens": ["add", "my", "task", "for", "tomorrow"],
+      "labels": ["O", "O", "O", "O", "B-date"]
+    },
+    {
+      "text": "update my physics exam",
+      "intent": "scheduling_update",
+      "tokens": ["update", "my", "physics", "exam"],
+      "labels": ["O", "O", "B-task_name", "I-task_name"]
+    },
+    {
+      "text": "show my tasks today",
+      "intent": "scheduling_show",
+      "tokens": ["show", "my", "tasks", "today"],
+      "labels": ["O", "O", "O", "B-date"]
+    },
+    {
+      "text": "delete my high priority tasks",
+      "intent": "scheduling_delete",
+      "tokens": ["delete", "my", "high", "priority", "tasks"],
+      "labels": ["O", "O", "B-priority", "I-priority", "O"]
+    },
+    {
+      "text": "add meeting for me on Monday",
+      "intent": "scheduling_add",
+      "tokens": ["add", "meeting", "for", "me", "on", "Monday"],
+      "labels": ["O", "B-task_name", "O", "O", "O", "B-date"]
+    },
+    {
+      "text": "please add physics exam tomorrow",
+      "intent": "scheduling_add",
+      "tokens": ["please", "add", "physics", "exam", "tomorrow"],
+      "labels": ["O", "O", "B-task_name", "I-task_name", "B-date"]
+    },
+    {
+      "text": "can you delete my tasks on Friday",
+      "intent": "scheduling_delete",
+      "tokens": ["can", "you", "delete", "my", "tasks", "on", "Friday"],
+      "labels": ["O", "O", "O", "O", "O", "O", "B-date"]
+    }
+  ],
+  "learning": [
+    {
+      "text": "delete my Python roadmap",
+      "intent": "learning_delete",
+      "tokens": ["delete", "my", "Python", "roadmap"],
+      "labels": ["O", "O", "B-topic", "O"]
+    },
+    {
+      "text": "create python oop roadmap",
+      "intent": "learning_create",
+      "tokens": ["create", "python", "oop", "roadmap"],
+      "labels": ["O", "B-topic", "B-subtopic", "O"]
+    },
+    {
+      "text": "remove my Python lists roadmap",
+      "intent": "learning_delete",
+      "tokens": ["remove", "my", "Python", "lists", "roadmap"],
+      "labels": ["O", "O", "B-topic", "B-subtopic", "O"]
+    },
+    {
+      "text": "delete my roadmap",
+      "intent": "learning_delete",
+      "tokens": ["delete", "my", "roadmap"],
+      "labels": ["O", "O", "O"]
+    },
+    {
+      "text": "make me a Python oop roadmap",
+      "intent": "learning_create",
+      "tokens": ["make", "me", "a", "Python", "oop", "roadmap"],
+      "labels": ["O", "O", "O", "B-topic", "B-subtopic", "O"]
+    },
+    {
+      "text": "get rid of my JavaScript roadmap",
+      "intent": "learning_delete",
+      "tokens": ["get", "rid", "of", "my", "JavaScript", "roadmap"],
+      "labels": ["O", "O", "O", "O", "B-topic", "O"]
+    },
+    {
+      "text": "pause my Python oop roadmap",
+      "intent": "learning_update",
+      "tokens": ["pause", "my", "Python", "oop", "roadmap"],
+      "labels": ["O", "O", "B-topic", "B-subtopic", "O"]
+    },
+    {
+      "text": "learn Python oop starting Monday for 1 month",
+      "intent": "learning_create",
+      "tokens": ["learn", "Python", "oop", "starting", "Monday", "for", "1", "month"],
+      "labels": ["O", "B-topic", "B-subtopic", "O", "B-start_date", "O", "B-duration", "I-duration"]
+    },
+    {
+      "text": "create Python OOP roadmap for me",
+      "intent": "learning_create",
+      "tokens": ["create", "Python", "OOP", "roadmap", "for", "me"],
+      "labels": ["O", "B-topic", "B-subtopic", "O", "O", "O"]
+    },
+    {
+      "text": "delete my Python basics roadmap",
+      "intent": "learning_delete",
+      "tokens": ["delete", "my", "Python", "basics", "roadmap"],
+      "labels": ["O", "O", "B-topic", "B-subtopic", "O"]
+    },
+    {
+      "text": "remove my py roadmap",
+      "intent": "learning_delete",
+      "tokens": ["remove", "my", "py", "roadmap"],
+      "labels": ["O", "O", "B-topic", "O"]
+    },
+    {
+      "text": "create my Python study roadmap for 2 weeks",
+      "intent": "learning_create",
+      "tokens": ["create", "my", "Python", "study", "roadmap", "for", "2", "weeks"],
+      "labels": ["O", "O", "B-topic", "O", "O", "O", "B-duration", "I-duration"]
+    },
+    {
+      "text": "next session for Python",
+      "intent": "learning_update",
+      "tokens": ["next", "session", "for", "Python"],
+      "labels": ["O", "O", "O", "B-topic"]
+    },
+    {
+      "text": "mark today's Python session done",
+      "intent": "learning_update",
+      "tokens": ["mark", "today's", "Python", "session", "done"],
+      "labels": ["O", "O", "B-topic", "O", "O"]
+    },
+    {
+      "text": "I want to learn Python basics",
+      "intent": "learning_create",
+      "tokens": ["I", "want", "to", "learn", "Python", "basics"],
+      "labels": ["O", "O", "O", "O", "B-topic", "B-subtopic"]
+    }
+  ]
+}

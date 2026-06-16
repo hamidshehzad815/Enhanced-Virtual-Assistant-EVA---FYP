@@ -1,0 +1,1238 @@
+{
+  "intent": "scheduling_delete",
+  "version": "1.0.0",
+  "groups": [
+    {
+      "id": "legacy_delete_delete_specific_task_only",
+      "label": "DELETE SPECIFIC — task only",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "delete {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "remove {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "cancel {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "delete task {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "remove task {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "delete the {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "remove the {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "cancel the {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "delete a task called {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "can you delete {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "I want to delete {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "please remove {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "get rid of {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "I no longer need {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "drop {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "legacy_delete_delete_specific_time_only",
+      "label": "DELETE SPECIFIC — time only",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "delete task {time}",
+          "entities": [
+            "time"
+          ]
+        },
+        {
+          "text": "remove task {time}",
+          "entities": [
+            "time"
+          ]
+        },
+        {
+          "text": "delete task at {time}",
+          "entities": [
+            "time"
+          ]
+        },
+        {
+          "text": "remove task at {time}",
+          "entities": [
+            "time"
+          ]
+        },
+        {
+          "text": "delete the task at {time}",
+          "entities": [
+            "time"
+          ]
+        },
+        {
+          "text": "remove task scheduled at {time}",
+          "entities": [
+            "time"
+          ]
+        },
+        {
+          "text": "cancel task at {time}",
+          "entities": [
+            "time"
+          ]
+        },
+        {
+          "text": "at {time} delete task",
+          "entities": [
+            "time"
+          ]
+        },
+        {
+          "text": "can you delete the task at {time}",
+          "entities": [
+            "time"
+          ]
+        },
+        {
+          "text": "I want to remove the task at {time}",
+          "entities": [
+            "time"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "legacy_delete_delete_specific_task_date",
+      "label": "DELETE SPECIFIC — task + date",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "delete {task_name} {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "remove {task_name} {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "delete {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "remove {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "delete {task_name} for {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "cancel {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "remove {task_name} scheduled on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "delete the {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "on {date} delete {task_name}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "can you delete {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "I want to remove {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "please delete {task_name} for {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "get rid of {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "legacy_delete_delete_specific_task_time",
+      "label": "DELETE SPECIFIC — task + time",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "delete {task_name} {time}",
+          "entities": [
+            "task_name",
+            "time"
+          ]
+        },
+        {
+          "text": "remove {task_name} {time}",
+          "entities": [
+            "task_name",
+            "time"
+          ]
+        },
+        {
+          "text": "delete {task_name} at {time}",
+          "entities": [
+            "task_name",
+            "time"
+          ]
+        },
+        {
+          "text": "remove {task_name} at {time}",
+          "entities": [
+            "task_name",
+            "time"
+          ]
+        },
+        {
+          "text": "cancel {task_name} at {time}",
+          "entities": [
+            "task_name",
+            "time"
+          ]
+        },
+        {
+          "text": "delete the {task_name} at {time}",
+          "entities": [
+            "task_name",
+            "time"
+          ]
+        },
+        {
+          "text": "remove {task_name} scheduled at {time}",
+          "entities": [
+            "task_name",
+            "time"
+          ]
+        },
+        {
+          "text": "at {time} delete {task_name}",
+          "entities": [
+            "task_name",
+            "time"
+          ]
+        },
+        {
+          "text": "can you delete {task_name} at {time}",
+          "entities": [
+            "task_name",
+            "time"
+          ]
+        },
+        {
+          "text": "I want to remove {task_name} at {time}",
+          "entities": [
+            "task_name",
+            "time"
+          ]
+        },
+        {
+          "text": "please remove {task_name} at {time}",
+          "entities": [
+            "task_name",
+            "time"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "legacy_delete_delete_bulk_date_only",
+      "label": "DELETE BULK — date only",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "delete tasks {date}",
+          "entities": [
+            "date"
+          ]
+        },
+        {
+          "text": "remove tasks {date}",
+          "entities": [
+            "date"
+          ]
+        },
+        {
+          "text": "delete tasks on {date}",
+          "entities": [
+            "date"
+          ]
+        },
+        {
+          "text": "remove tasks on {date}",
+          "entities": [
+            "date"
+          ]
+        },
+        {
+          "text": "delete all tasks on {date}",
+          "entities": [
+            "date"
+          ]
+        },
+        {
+          "text": "remove all tasks on {date}",
+          "entities": [
+            "date"
+          ]
+        },
+        {
+          "text": "cancel tasks on {date}",
+          "entities": [
+            "date"
+          ]
+        },
+        {
+          "text": "delete tasks for {date}",
+          "entities": [
+            "date"
+          ]
+        },
+        {
+          "text": "on {date} delete tasks",
+          "entities": [
+            "date"
+          ]
+        },
+        {
+          "text": "can you delete tasks on {date}",
+          "entities": [
+            "date"
+          ]
+        },
+        {
+          "text": "I want to remove all tasks on {date}",
+          "entities": [
+            "date"
+          ]
+        },
+        {
+          "text": "clear my schedule for {date}",
+          "entities": [
+            "date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "legacy_delete_delete_bulk_status_only",
+      "label": "DELETE BULK — status only",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "delete {status} tasks",
+          "entities": [
+            "status"
+          ]
+        },
+        {
+          "text": "remove {status} tasks",
+          "entities": [
+            "status"
+          ]
+        },
+        {
+          "text": "delete all {status} tasks",
+          "entities": [
+            "status"
+          ]
+        },
+        {
+          "text": "remove all {status} tasks",
+          "entities": [
+            "status"
+          ]
+        },
+        {
+          "text": "delete tasks that are {status}",
+          "entities": [
+            "status"
+          ]
+        },
+        {
+          "text": "cancel {status} tasks",
+          "entities": [
+            "status"
+          ]
+        },
+        {
+          "text": "can you delete {status} tasks",
+          "entities": [
+            "status"
+          ]
+        },
+        {
+          "text": "I want to remove {status} tasks",
+          "entities": [
+            "status"
+          ]
+        },
+        {
+          "text": "clear all {status} tasks",
+          "entities": [
+            "status"
+          ]
+        },
+        {
+          "text": "get rid of {status} tasks",
+          "entities": [
+            "status"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "legacy_delete_delete_bulk_priority_only",
+      "label": "DELETE BULK — priority only",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "delete {priority} tasks",
+          "entities": [
+            "priority"
+          ]
+        },
+        {
+          "text": "remove {priority} priority tasks",
+          "entities": [
+            "priority"
+          ]
+        },
+        {
+          "text": "delete all {priority} priority tasks",
+          "entities": [
+            "priority"
+          ]
+        },
+        {
+          "text": "remove all {priority} tasks",
+          "entities": [
+            "priority"
+          ]
+        },
+        {
+          "text": "delete tasks with {priority} priority",
+          "entities": [
+            "priority"
+          ]
+        },
+        {
+          "text": "cancel {priority} priority tasks",
+          "entities": [
+            "priority"
+          ]
+        },
+        {
+          "text": "can you delete {priority} priority tasks",
+          "entities": [
+            "priority"
+          ]
+        },
+        {
+          "text": "I want to remove {priority} tasks",
+          "entities": [
+            "priority"
+          ]
+        },
+        {
+          "text": "clear {priority} priority tasks",
+          "entities": [
+            "priority"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "legacy_delete_delete_bulk_date_status",
+      "label": "DELETE BULK — date + status",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "delete {status} tasks {date}",
+          "entities": [
+            "status",
+            "date"
+          ]
+        },
+        {
+          "text": "remove {status} tasks {date}",
+          "entities": [
+            "status",
+            "date"
+          ]
+        },
+        {
+          "text": "delete {status} tasks on {date}",
+          "entities": [
+            "status",
+            "date"
+          ]
+        },
+        {
+          "text": "remove {status} tasks on {date}",
+          "entities": [
+            "status",
+            "date"
+          ]
+        },
+        {
+          "text": "delete all {status} tasks on {date}",
+          "entities": [
+            "status",
+            "date"
+          ]
+        },
+        {
+          "text": "cancel {status} tasks on {date}",
+          "entities": [
+            "status",
+            "date"
+          ]
+        },
+        {
+          "text": "remove tasks that are {status} on {date}",
+          "entities": [
+            "status",
+            "date"
+          ]
+        },
+        {
+          "text": "on {date} delete {status} tasks",
+          "entities": [
+            "status",
+            "date"
+          ]
+        },
+        {
+          "text": "can you delete {status} tasks on {date}",
+          "entities": [
+            "status",
+            "date"
+          ]
+        },
+        {
+          "text": "I want to remove {status} tasks on {date}",
+          "entities": [
+            "status",
+            "date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "legacy_delete_delete_bulk_date_priority",
+      "label": "DELETE BULK — date + priority",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "delete {priority} tasks {date}",
+          "entities": [
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "remove {priority} priority tasks {date}",
+          "entities": [
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "delete {priority} priority tasks on {date}",
+          "entities": [
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "remove {priority} tasks on {date}",
+          "entities": [
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "delete all {priority} priority tasks on {date}",
+          "entities": [
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "cancel {priority} priority tasks on {date}",
+          "entities": [
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "on {date} delete {priority} priority tasks",
+          "entities": [
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "can you delete {priority} tasks on {date}",
+          "entities": [
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "I want to remove {priority} priority tasks on {date}",
+          "entities": [
+            "priority",
+            "date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "legacy_delete_delete_bulk_status_priority",
+      "label": "DELETE BULK — status + priority",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "delete {status} {priority} tasks",
+          "entities": [
+            "status",
+            "priority"
+          ]
+        },
+        {
+          "text": "remove {status} {priority} priority tasks",
+          "entities": [
+            "status",
+            "priority"
+          ]
+        },
+        {
+          "text": "delete all {status} {priority} priority tasks",
+          "entities": [
+            "status",
+            "priority"
+          ]
+        },
+        {
+          "text": "remove {status} tasks with {priority} priority",
+          "entities": [
+            "status",
+            "priority"
+          ]
+        },
+        {
+          "text": "delete {priority} priority {status} tasks",
+          "entities": [
+            "status",
+            "priority"
+          ]
+        },
+        {
+          "text": "cancel {status} {priority} tasks",
+          "entities": [
+            "status",
+            "priority"
+          ]
+        },
+        {
+          "text": "can you delete {status} {priority} priority tasks",
+          "entities": [
+            "status",
+            "priority"
+          ]
+        },
+        {
+          "text": "I want to remove {priority} priority {status} tasks",
+          "entities": [
+            "status",
+            "priority"
+          ]
+        },
+        {
+          "text": "clear {status} {priority} tasks",
+          "entities": [
+            "status",
+            "priority"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "legacy_delete_delete_bulk_date_status_priority",
+      "label": "DELETE BULK — date + status + priority",
+      "styles": [
+        "direct"
+      ],
+      "templates": [
+        {
+          "text": "delete {status} {priority} tasks {date}",
+          "entities": [
+            "status",
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "remove {date} {status} {priority} tasks",
+          "entities": [
+            "status",
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "delete {status} {priority} priority tasks on {date}",
+          "entities": [
+            "status",
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "remove all {status} {priority} tasks on {date}",
+          "entities": [
+            "status",
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "delete {priority} priority {status} tasks on {date}",
+          "entities": [
+            "status",
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "cancel {status} {priority} tasks on {date}",
+          "entities": [
+            "status",
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "on {date} delete {status} {priority} priority tasks",
+          "entities": [
+            "status",
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "can you delete {status} {priority} priority tasks on {date}",
+          "entities": [
+            "status",
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "I want to remove {priority} {status} tasks on {date}",
+          "entities": [
+            "status",
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "clear {status} {priority} tasks on {date}",
+          "entities": [
+            "status",
+            "priority",
+            "date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "entity_first_delete",
+      "label": "Entity-first delete phrasing",
+      "styles": [
+        "entity_first"
+      ],
+      "templates": [
+        {
+          "text": "{task_name} delete",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "{task_name} on {date} remove",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "{date} {task_name} cancel",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "{task_name} {date} delete please",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "{priority} priority {task_name} remove",
+          "entities": [
+            "task_name",
+            "priority"
+          ]
+        },
+        {
+          "text": "{status} {task_name} delete",
+          "entities": [
+            "task_name",
+            "status"
+          ]
+        },
+        {
+          "text": "{task_name} {status} on {date} remove",
+          "entities": [
+            "task_name",
+            "status",
+            "date"
+          ]
+        },
+        {
+          "text": "{date} tasks delete all",
+          "entities": [
+            "date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "question_delete",
+      "label": "Question-style delete",
+      "styles": [
+        "question"
+      ],
+      "templates": [
+        {
+          "text": "could you remove {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "what about deleting {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "can you cancel {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "could you clear {status} tasks on {date}",
+          "entities": [
+            "status",
+            "date"
+          ]
+        },
+        {
+          "text": "can you remove all {priority} priority tasks",
+          "entities": [
+            "priority"
+          ]
+        },
+        {
+          "text": "what about removing {task_name} from {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "could you delete {status} tasks",
+          "entities": [
+            "status"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "polite_casual_delete",
+      "label": "Polite and casual delete",
+      "styles": [
+        "polite",
+        "casual"
+      ],
+      "templates": [
+        {
+          "text": "please delete {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "kindly remove {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "hey EVA delete {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "need to remove {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "gonna delete {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "please clear {status} tasks on {date}",
+          "entities": [
+            "status",
+            "date"
+          ]
+        },
+        {
+          "text": "hey remove {priority} priority tasks",
+          "entities": [
+            "priority"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "confirmation_delete",
+      "label": "Delete with confirmation endings",
+      "styles": [
+        "confirmation"
+      ],
+      "templates": [
+        {
+          "text": "delete {task_name} ok",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "remove {task_name} on {date} thanks",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "cancel {task_name} right",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "delete {status} tasks on {date} ok",
+          "entities": [
+            "status",
+            "date"
+          ]
+        },
+        {
+          "text": "clear {date} schedule thanks",
+          "entities": [
+            "date"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pk_casual_delete",
+      "label": "Pakistani student casual delete",
+      "styles": [
+        "casual"
+      ],
+      "templates": [
+        {
+          "text": "yar delete {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "bhai remove {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "{task_name} hata do on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "EVA {task_name} delete kar do",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "boss cancel {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "yar {status} tasks delete kar do",
+          "entities": [
+            "status"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "bulk_delete",
+      "label": "Bulk and filter delete",
+      "styles": [
+        "bulk"
+      ],
+      "templates": [
+        {
+          "text": "remove all {priority} priority tasks on {date}",
+          "entities": [
+            "priority",
+            "date"
+          ]
+        },
+        {
+          "text": "clear all tasks on {date}",
+          "entities": [
+            "date"
+          ]
+        },
+        {
+          "text": "delete everything on {date}",
+          "entities": [
+            "date"
+          ]
+        },
+        {
+          "text": "remove all {status} {priority} tasks",
+          "entities": [
+            "status",
+            "priority"
+          ]
+        },
+        {
+          "text": "cancel all {status} tasks on {date}",
+          "entities": [
+            "status",
+            "date"
+          ]
+        },
+        {
+          "text": "wipe {date} schedule",
+          "entities": [
+            "date"
+          ]
+        },
+        {
+          "text": "delete all {priority} priority {status} tasks",
+          "entities": [
+            "priority",
+            "status"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "implicit_delete",
+      "label": "Implicit delete phrasing",
+      "styles": [
+        "implicit"
+      ],
+      "templates": [
+        {
+          "text": "no more {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "{task_name} gone",
+          "entities": [
+            "task_name"
+          ]
+        },
+        {
+          "text": "{task_name} on {date} gone",
+          "entities": [
+            "task_name",
+            "date"
+          ]
+        },
+        {
+          "text": "skip {task_name}",
+          "entities": [
+            "task_name"
+          ]
+        }
+      ]
+    }
+  ]
+}
