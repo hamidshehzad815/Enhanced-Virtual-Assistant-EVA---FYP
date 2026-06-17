@@ -1,6 +1,6 @@
 # EVA Backend API Documentation (Frontend)
 
-Focused reference for **Dashboard**, **Settings**, **Profile**, and **Roadmaps** APIs on the Node backend (`Eva_Backend_Server`).
+Focused reference for **Auth**, **Dashboard**, **Settings**, **Profile**, and **Roadmaps** APIs on the Node backend (`Eva_Backend_Server`).
 
 ## Base URL
 
@@ -12,14 +12,14 @@ Default port is from `BACKEND_PORT` in `.env` (commonly `3500` or `4500` in loca
 
 ## Authentication
 
-All endpoints in this folder require a logged-in user.
+Most endpoints in this folder require a logged-in user. **Auth routes** (`/api/auth/*`) are documented in [auth-api.md](./auth-api.md) — register, login, refresh, and password reset are public; logout and `me` require a token.
 
 | Header | Value |
 |--------|--------|
 | `Authorization` | `Bearer <access_token>` |
 | `Content-Type` | `application/json` (for PATCH bodies). Avatar upload uses `multipart/form-data` — see [profile-api.md](./profile-api.md). |
 
-Get `access_token` from `POST /api/auth/login` → `data.tokens.access_token`.
+Get `access_token` from `POST /api/auth/login` → `data.tokens.access_token`. See [auth-api.md](./auth-api.md) for the full sign-up, verify, refresh, and logout flows.
 
 ## Standard success envelope
 
@@ -77,10 +77,11 @@ Conflict responses (`409`) may include extra context:
 
 | File | APIs covered |
 |------|----------------|
+| [auth-api.md](./auth-api.md) | `POST /api/auth/register`, `login`, `refresh`, `logout`, `forgot-password`, `reset-password`, `resend-verification`; `GET /api/auth/me`, `verify-email` |
 | [dashboard-api.md](./dashboard-api.md) | `GET /api/dashboard` |
 | [settings-api.md](./settings-api.md) | `GET /api/settings`, `PATCH /api/settings` |
 | [settings-learning-schedules-api.md](./settings-learning-schedules-api.md) | Learning schedule CRUD under `/api/settings/learning-schedules` |
-| [profile-api.md](./profile-api.md) | `GET` / `PATCH /api/profile`, `POST` / `DELETE /api/profile/avatar` |
+| [profile-api.md](./profile-api.md) | `GET` / `PATCH /api/profile`, `POST` / `DELETE /api/profile/avatar`, `DELETE /api/profile/account` |
 | [roadmaps-api.md](./roadmaps-api.md) | `GET /api/roadmaps/*`, `PATCH /api/learning/:goalId/sessions/:sessionId`, `PATCH /api/learning/:goalId/status` |
 | [push-notifications-frontend-setup.md](./push-notifications-frontend-setup.md) | FCM / push token registration (Flutter setup guide) |
 
@@ -88,8 +89,10 @@ Conflict responses (`409`) may include extra context:
 
 | Screen | Read | Write |
 |--------|------|-------|
+| Sign up / Login / Forgot password | — | [auth-api.md](./auth-api.md): `register`, `login`, `refresh`, `forgot-password`, `reset-password`, `resend-verification` |
+| App bootstrap (after login) | `GET /api/auth/me` | `POST /api/auth/logout` |
 | Home / Dashboard | `GET /api/dashboard` | — |
-| Profile (name, username, photo, timezone) | `GET /api/profile` | `PATCH /api/profile`, `POST` / `DELETE /api/profile/avatar` |
+| Profile (name, username, photo, timezone, delete account) | `GET /api/profile` | `PATCH /api/profile`, `POST` / `DELETE /api/profile/avatar`, `DELETE /api/profile/account` |
 | Roadmap (select language first) | `GET /api/roadmaps/languages`, `GET /api/roadmaps?language=` | `PATCH /api/learning/:goalId/sessions/:sessionId`, `PATCH /api/learning/:goalId/status` |
 | Settings (toggles, quiet hours, reminders) | `GET /api/settings` | `PATCH /api/settings` |
 | Push device token (after login) | — | `PATCH /api/settings` with `push_token` — see [push-notifications-frontend-setup.md](./push-notifications-frontend-setup.md) |
