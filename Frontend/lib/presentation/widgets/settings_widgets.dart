@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_colours.dart';
 import '../../core/theme/app_text_style.dart';
+import '../../data/models/user_profile.dart';
 
 class SettingsSearchBar extends StatelessWidget {
   final TextEditingController controller;
@@ -71,120 +72,55 @@ class SettingsSearchBar extends StatelessWidget {
     );
   }
 }
-
 class SettingsProfileCard extends StatelessWidget {
   final bool isDark;
   final String searchQuery;
+  final UserProfile? profile;
+  final VoidCallback? onEditProfile;
 
   const SettingsProfileCard({
     required this.isDark,
     required this.searchQuery,
-    super.key,
+    this.profile,
+    this.onEditProfile,
   });
 
   @override
   Widget build(BuildContext context) {
     if (searchQuery.isNotEmpty) return const SizedBox.shrink();
 
-    final bg = isDark ? AppColors.cardDark : Colors.white;
-    final border = isDark ? AppColors.borderDark : AppColors.borderLight;
-    final primary = isDark
-        ? AppColors.primaryTextDark
-        : AppColors.primaryTextLight;
-    final secondary = isDark
-        ? AppColors.secondaryTextDark
-        : AppColors.secondaryTextLight;
-
     return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: bg,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: border),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.25 : 0.05),
-            blurRadius: 16,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
+      // your existing styling
       child: Row(
         children: [
-          Stack(
-            children: [
-              Container(
-                width: 62,
-                height: 62,
-                decoration: BoxDecoration(
-                  color: AppColors.primary,
-                  shape: BoxShape.circle,
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.primary.withOpacity(0.35),
-                      blurRadius: 12,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: const Center(
-                  child: Text(
-                    'A',
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: 26,
-                      fontWeight: FontWeight.bold,
-                      fontStyle: FontStyle.italic,
-                    ),
-                  ),
-                ),
-              ),
-              Positioned(
-                right: 0,
-                bottom: 0,
-                child: Container(
-                  width: 20,
-                  height: 20,
-                  decoration: BoxDecoration(
-                    color: isDark ? AppColors.cardElevatedDark : Colors.white,
-                    shape: BoxShape.circle,
-                    border: Border.all(
-                      color: isDark
-                          ? AppColors.borderDark
-                          : AppColors.borderLight,
-                    ),
-                  ),
-                  child: Icon(
-                    Icons.edit_rounded,
-                    size: 11,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ),
-            ],
+          CircleAvatar(
+            radius: 32,
+            backgroundImage: profile?.profilePicture != null
+                ? NetworkImage(profile!.profilePicture!)
+                : null,
+            child: profile?.profilePicture == null
+                ? Text(profile?.initial ?? '?')
+                : null,
           ),
-          const SizedBox(width: 16),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Areej',
-                  style: AppTextStyles.subtitleMedium.copyWith(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w700,
-                    color: primary,
-                  ),
+                  profile?.name ?? 'User Name',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  'areej@example.com',
-                  style: TextStyle(fontSize: 12, color: AppColors.primary),
-                ),
+                // Optionally show email if you have it
+                // Text(profile?.email ?? ''),
               ],
             ),
           ),
-          Icon(Icons.chevron_right_rounded, color: secondary, size: 20),
+          if (onEditProfile != null)
+            IconButton(
+              icon: const Icon(Icons.edit),
+              onPressed: onEditProfile,
+            ),
         ],
       ),
     );
@@ -221,9 +157,6 @@ class SettingsSection extends StatelessWidget {
 
     final bg = isDark ? AppColors.cardDark : Colors.white;
     final border = isDark ? AppColors.borderDark : AppColors.borderLight;
-    final primary = isDark
-        ? AppColors.primaryTextDark
-        : AppColors.primaryTextLight;
     final secondary = isDark
         ? AppColors.secondaryTextDark
         : AppColors.secondaryTextLight;
@@ -351,12 +284,9 @@ class _SettingsTileRow extends StatelessWidget {
             ),
             if (tile.toggleValue != null)
               Switch(
-                value: tile.toggleValue!,
-                onChanged: tile.onToggle,
-                activeColor: AppColors.primary,
-                inactiveTrackColor: isDark
-                    ? AppColors.borderDark
-                    : const Color(0xFFE5E7EB),
+                value: tile.toggleValue ?? false,
+                onChanged: tile.enabled ? tile.onToggle : null,
+                activeThumbColor: AppColors.primary,
               )
             else if (tile.valueBadge != null)
               Row(
@@ -403,6 +333,7 @@ class _SettingsTileRow extends StatelessWidget {
 class SettingTileData {
   final IconData icon;
   final Color iconColor;
+  final bool enabled;
   final String label;
   final String? subtitle;
   final bool? toggleValue;
@@ -414,6 +345,7 @@ class SettingTileData {
     required this.icon,
     required this.iconColor,
     required this.label,
+    this.enabled = true,
     this.subtitle,
     this.toggleValue,
     this.onToggle,

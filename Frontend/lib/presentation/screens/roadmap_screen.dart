@@ -513,7 +513,7 @@ class NodePill extends StatelessWidget {
                             color: secTxt,
                           ),
                         ),
-                        Icon(
+                        FaIcon(
                           FontAwesomeIcons.youtube,
                           size: 20,
                           color: Colors.red,

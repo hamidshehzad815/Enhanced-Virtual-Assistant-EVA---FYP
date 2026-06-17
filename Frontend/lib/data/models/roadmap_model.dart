@@ -4,7 +4,7 @@ enum NodeStatus { completed, active, locked }
 
 class RoadmapNode {
   final String id, label, sub, time, duration, desc, ytUrl, schedule;
-  final IconData icon;
+  final dynamic icon;
   final Color color, bg;
   final NodeStatus status;
   final bool important;
@@ -28,7 +28,7 @@ class RoadmapNode {
 
 class RoadmapData {
   final String id, name, category, desc, topicsLabel, level;
-  final IconData icon;
+  final dynamic icon;
   final Color color, bg;
   final List<RoadmapNode> nodes;
 

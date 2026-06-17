@@ -8,6 +8,7 @@ import '../../data/models/up_next_data.dart';
 import '../../data/models/focus_data.dart';
 import '../../data/models/schedule_item.dart';
 import '../providers/home_screen_viewmodel.dart';
+import '../providers/profile_viewmodel.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -21,8 +22,6 @@ class _HomeScreenState extends State<HomeScreen>
   late final ScrollController _scrollController;
   late final AnimationController _progressController;
   late final Animation<double> _progressAnimation;
-  bool _isInitialized = false;
-
   // Pastel colour pairs
   static const Color _upNextLight = Color.fromARGB(255, 223, 180, 169);
   static const Color _upNextDark = Color(0xFF2D2A2A);
@@ -48,15 +47,12 @@ class _HomeScreenState extends State<HomeScreen>
     Future.delayed(const Duration(milliseconds: 400), () {
       if (mounted) _progressController.forward();
     });
-  }
 
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_isInitialized) {
-      _isInitialized = true;
+    // Load data after first frame
+    WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<HomeScreenViewModel>().loadHomeScreenData();
-    }
+      context.read<ProfileViewModel>().loadProfile();
+    });
   }
 
   @override
@@ -73,95 +69,116 @@ class _HomeScreenState extends State<HomeScreen>
     if (vm.isLoading) {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final primaryText = Theme.of(context).textTheme.bodyMedium!.color!;
-    final secondaryText = Theme.of(context).textTheme.bodySmall!.color!;
 
-    final userName = vm.userProfile?.name ?? '';
-    final progressValue = (vm.dailyProgress?.completionPercentage ?? 0) / 100;
-    final upcomingTask = vm.upcomingTask;
-    final focusList = vm.focusList;
-    final schedule = vm.schedule;
+    // This Consumer will rebuild the entire Scaffold whenever profile changes
+    return Consumer<ProfileViewModel>(
+      builder: (context, profileVM, _) {
+        final profile = profileVM.profile;
+        final userName = profile?.name ?? 'User';
+        final userInitial = profile?.initial ?? '?';
+        final profilePicture = profile?.profilePicture;
 
-    return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      body: SafeArea(
-        child: CustomScrollView(
-          controller: _scrollController,
-          slivers: [
-            SliverToBoxAdapter(
-              child: _buildHeader(
-                isDark,
-                primaryText,
-                secondaryText,
-                context,
-                userName,
-                vm.userProfile?.initial ?? '?',
-              ),
-            ),
-            if (vm.error != null)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
+        final isDark = Theme.of(context).brightness == Brightness.dark;
+        final primaryText = Theme.of(context).textTheme.bodyMedium!.color!;
+        final secondaryText = Theme.of(context).textTheme.bodySmall!.color!;
+
+        final progressValue =
+            (vm.dailyProgress?.completionPercentage ?? 0) / 100;
+        final upcomingTask = vm.upcomingTask;
+        final focusList = vm.focusList;
+        final schedule = vm.schedule;
+
+        // 👇 Add a Key that depends on the profile picture URL
+        final screenKey = ValueKey(
+          'home_${profilePicture ?? 'no_pic'}_${profile?.name ?? ''}',
+        );
+
+        return Scaffold(
+          key: screenKey, // force rebuild when picture or name changes
+          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          body: SafeArea(
+            child: CustomScrollView(
+              controller: _scrollController,
+              slivers: [
+                SliverToBoxAdapter(
+                  child: _buildHeader(
+                    isDark,
+                    primaryText,
+                    secondaryText,
+                    context,
+                    userName,
+                    userInitial,
+                    profilePicture,
                   ),
-                  child: Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.red.shade50,
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.red.shade200),
+                ),
+                if (vm.error != null)
+                  SliverToBoxAdapter(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: Colors.red.shade50,
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.red.shade200),
+                        ),
+                        child: Text(
+                          vm.error!,
+                          style: AppTextStyles.subtitleSmall.copyWith(
+                            color: Colors.red.shade700,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
                     ),
-                    child: Text(
-                      vm.error!,
-                      style: AppTextStyles.subtitleSmall.copyWith(
-                        color: Colors.red.shade700,
-                        fontSize: 13,
+                  ),
+                // ... rest of the slivers (Up Next, Progress, Focus, Schedule) unchanged
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: IntrinsicHeight(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Expanded(
+                            child: _buildUpNextCard(isDark, upcomingTask),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: _buildProgressCard(isDark, progressValue),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-              ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: IntrinsicHeight(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(child: _buildUpNextCard(isDark, upcomingTask)),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: _buildProgressCard(isDark, progressValue),
-                      ),
-                    ],
+                const SliverToBoxAdapter(child: SizedBox(height: 12)),
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                    child: _buildCurrentFocusCard(isDark, focusList),
                   ),
                 ),
-              ),
-            ),
-            const SliverToBoxAdapter(child: SizedBox(height: 12)),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: _buildCurrentFocusCard(isDark, focusList),
-              ),
-            ),
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                child: _buildScheduleCard(
-                  isDark,
-                  primaryText,
-                  secondaryText,
-                  schedule,
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+                    child: _buildScheduleCard(
+                      isDark,
+                      primaryText,
+                      secondaryText,
+                      schedule,
+                    ),
+                  ),
                 ),
-              ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 
@@ -173,6 +190,7 @@ class _HomeScreenState extends State<HomeScreen>
     BuildContext context,
     String userName,
     String userInitial,
+    String? profilePicture,
   ) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 20, 20, 16),
@@ -235,17 +253,32 @@ class _HomeScreenState extends State<HomeScreen>
                   width: 42,
                   height: 42,
                   decoration: BoxDecoration(
-                    color: AppColors.primary,
                     shape: BoxShape.circle,
                     boxShadow: [
                       BoxShadow(
-                        color: AppColors.primary.withOpacity(0.35),
+                        color: AppColors.primary.withValues(alpha: 0.35),
                         blurRadius: 12,
                         offset: const Offset(0, 4),
                       ),
                     ],
                   ),
-                  child: Center(child: Text(userInitial)),
+                  child: CircleAvatar(
+                    key: ValueKey(profilePicture ?? userInitial),
+                    radius: 20,
+                    backgroundColor: AppColors.primary,
+                    backgroundImage: profilePicture != null
+                        ? NetworkImage(profilePicture)
+                        : null,
+                    child: profilePicture == null
+                        ? Text(
+                            userInitial,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          )
+                        : null,
+                  ),
                 ),
               ),
             ],
@@ -297,7 +330,9 @@ class _HomeScreenState extends State<HomeScreen>
                   width: 44,
                   height: 44,
                   decoration: BoxDecoration(
-                    color: Color(0xFFDBEAFE).withOpacity(isDark ? 0.2 : 1.0),
+                    color: Color(
+                      0xFFDBEAFE,
+                    ).withValues(alpha: isDark ? 0.2 : 1.0),
                     borderRadius: BorderRadius.circular(12),
                   ),
                   child: Icon(
@@ -313,6 +348,9 @@ class _HomeScreenState extends State<HomeScreen>
                     children: [
                       Text(
                         t.title,
+                        maxLines: 2,
+                        overflow: TextOverflow
+                            .ellipsis, // Display the task title with ellipsis
                         style: AppTextStyles.subtitleSmall.copyWith(
                           fontSize: 15,
                           fontWeight: FontWeight.w700,
@@ -501,7 +539,7 @@ class _HomeScreenState extends State<HomeScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: isDark ? Colors.black12 : Colors.white.withOpacity(0.5),
+        color: isDark ? Colors.black12 : Colors.white.withValues(alpha: 0.5),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isDark ? AppColors.borderDark : AppColors.borderLight,
@@ -513,6 +551,9 @@ class _HomeScreenState extends State<HomeScreen>
         children: [
           Text(
             f.title,
+            maxLines: 1,
+            overflow:
+                TextOverflow.ellipsis, // Display the focus title with ellipsis
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w700,
@@ -526,20 +567,24 @@ class _HomeScreenState extends State<HomeScreen>
             children: [
               Icon(Icons.schedule, size: 14, color: AppColors.primary),
               const SizedBox(width: 4),
-              Text(
-                f.nextTopic,
-                style: TextStyle(
-                  fontSize: 12,
-                  color: isDark
-                      ? AppColors.secondaryTextDark
-                      : AppColors.secondaryTextLight,
+              Expanded(
+                child: Text(
+                  f.nextTopic,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: isDark
+                        ? AppColors.secondaryTextDark
+                        : AppColors.secondaryTextLight,
+                  ),
                 ),
               ),
               const SizedBox(width: 8),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.2),
+                  color: AppColors.primary.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
@@ -618,7 +663,7 @@ class _HomeScreenState extends State<HomeScreen>
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: isDark ? Colors.black12 : Colors.white.withOpacity(0.7),
+        color: isDark ? Colors.black12 : Colors.white.withValues(alpha: 0.7),
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: isDark ? AppColors.borderDark : AppColors.borderLight,
@@ -644,6 +689,8 @@ class _HomeScreenState extends State<HomeScreen>
           Expanded(
             child: Text(
               item.title,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: TextStyle(
                 fontSize: 14,
                 fontWeight: FontWeight.w600,
@@ -656,7 +703,7 @@ class _HomeScreenState extends State<HomeScreen>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
-              color: tagColor.withOpacity(isDark ? 0.2 : 0.1),
+              color: tagColor.withValues(alpha: isDark ? 0.2 : 0.1),
               borderRadius: BorderRadius.circular(20),
               border: Border.all(color: tagColor, width: 1),
             ),
@@ -698,7 +745,7 @@ class _HomeScreenState extends State<HomeScreen>
       border: Border.all(color: border, width: 1),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withOpacity(isDark ? 0.3 : 0.04),
+          color: Colors.black.withValues(alpha: isDark ? 0.3 : 0.04),
           blurRadius: 16,
           offset: const Offset(0, 4),
         ),

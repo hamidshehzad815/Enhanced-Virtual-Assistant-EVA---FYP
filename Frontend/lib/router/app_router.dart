@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-
+import 'package:provider/provider.dart';
 import '../presentation/screens/welcome_screen.dart';
 import '../presentation/screens/features_screen.dart';
 import '../presentation/screens/get_started_screen.dart';
@@ -14,6 +14,8 @@ import '../presentation/widgets/app_shell.dart';
 import '../presentation/screens/analytics_screen.dart';
 import '../presentation/screens/collaboration_screen.dart';
 import '../presentation/screens/splash_screen.dart';
+import '../presentation/screens/edit_profile_screen.dart';
+import '../presentation/providers/profile_viewmodel.dart';
 
 // ── Route path constants ──────────────────────────────────────────────────────
 class AppRoutes {
@@ -31,6 +33,7 @@ class AppRoutes {
   static const settings = '/settings';
   static const analytics = '/analytics';
   static const collaboration = '/collaboration';
+  static const editProfile = '/edit-profile';
 
   // Chat is PUSHED on top of the shell (no nav bar on chat)
   static const chat = '/chat';
@@ -72,6 +75,12 @@ final appRouter = GoRouter(
     GoRoute(
       path: AppRoutes.chat,
       pageBuilder: (context, state) => MaterialPage(child: ChatScreen()),
+    ),
+    GoRoute(
+      path: AppRoutes.editProfile,
+      pageBuilder: (context, state) => MaterialPage(
+        child: EditProfileScreen(viewModel: context.read<ProfileViewModel>()),
+      ),
     ),
 
     // ── Main shell (shows bottom nav bar) ─────────────────────────────────────
