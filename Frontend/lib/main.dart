@@ -10,20 +10,26 @@ import 'presentation/providers/auth_viewmodel.dart';
 import 'presentation/providers/calendar_viewmodel.dart';
 import 'presentation/providers/settings_viewmodel.dart';
 import 'presentation/providers/theme_provider.dart';
+import 'presentation/providers/profile_viewmodel.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
+
+  // Load theme FIRST
+  final themeProvider = ThemeProvider();
+  await themeProvider.loadTheme();
 
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider(create: (_) => HomeScreenViewModel()),
+        ChangeNotifierProvider(create: (_) => ProfileViewModel()),
         ChangeNotifierProvider(create: (_) => ChatViewModel()),
         ChangeNotifierProvider(create: (_) => CalendarViewModel()),
         ChangeNotifierProvider(create: (_) => AuthViewModel()),
         ChangeNotifierProvider(create: (_) => SettingsViewModel()),
-        ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider.value(value: themeProvider),
       ],
       child: const MyApp(),
     ),

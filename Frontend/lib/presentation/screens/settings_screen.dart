@@ -5,6 +5,10 @@ import '../../data/models/setting_model.dart';
 import '../widgets/settings_widgets.dart';
 import 'package:provider/provider.dart';
 import '../providers/theme_provider.dart';
+import '../providers/settings_viewmodel.dart';
+import '../providers/profile_viewmodel.dart';
+import 'package:go_router/go_router.dart';
+import '../../router/app_router.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -14,31 +18,19 @@ class SettingsScreen extends StatefulWidget {
 }
 
 class _SettingsScreenState extends State<SettingsScreen> {
-  late SettingsModel _settings;
-
   final TextEditingController _searchController = TextEditingController();
-  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-    _settings = SettingsModel();
-    _searchController.addListener(() {
-      setState(() => _searchQuery = _searchController.text.toLowerCase());
-    });
-
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final themeProvider = context.read<ThemeProvider>();
-
-      setState(() {
-        if (themeProvider.themeMode == ThemeMode.dark) {
-          _settings.theme = 'dark';
-        } else if (themeProvider.themeMode == ThemeMode.light) {
-          _settings.theme = 'light';
-        } else {
-          _settings.theme = 'system';
-        }
-      });
+      context.read<SettingsViewModel>().loadSettings();
+      context.read<ProfileViewModel>().loadProfile();
+    });
+    _searchController.addListener(() {
+      context.read<SettingsViewModel>().updateSearchQuery(
+        _searchController.text,
+      );
     });
   }
 
@@ -48,26 +40,28 @@ class _SettingsScreenState extends State<SettingsScreen> {
     super.dispose();
   }
 
-  void _save() {
-    debugPrint('Settings saved: ${_settings.toJson()}');
-  }
-
   @override
   Widget build(BuildContext context) {
+    final vm = context.watch<SettingsViewModel>();
+    final settings = vm.settings;
+    final searchQuery = vm.searchQuery;
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final profileVM = context.watch<ProfileViewModel>();
+    final profile = profileVM.profile;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+
       body: SafeArea(
         child: Column(
           children: [
             _buildHeader(isDark),
             SettingsSearchBar(
               controller: _searchController,
-              searchQuery: _searchQuery,
+              searchQuery: searchQuery,
               onClear: () {
                 _searchController.clear();
-                setState(() => _searchQuery = '');
+                vm.updateSearchQuery('');
               },
             ),
             Expanded(
@@ -76,7 +70,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   SettingsProfileCard(
                     isDark: isDark,
-                    searchQuery: _searchQuery,
+                    searchQuery: searchQuery,
+                    profile: profile,
+                    onEditProfile: () => _navigateToEditProfile(profileVM),
                   ),
                   const SizedBox(height: 20),
                   SettingsSection(
@@ -84,8 +80,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.tune_rounded,
                     iconColor: const Color(0xFF3B82F6),
                     title: 'App Preferences',
-                    tiles: _appPreferenceTiles(isDark),
-                    searchQuery: _searchQuery,
+                    tiles: _appPreferenceTiles(vm, settings, isDark),
+                    searchQuery: searchQuery,
                   ),
                   const SizedBox(height: 20),
                   SettingsSection(
@@ -93,8 +89,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.notifications_outlined,
                     iconColor: const Color(0xFFF59E0B),
                     title: 'Notifications',
-                    tiles: _notificationTiles(isDark),
-                    searchQuery: _searchQuery,
+                    tiles: _notificationTiles(vm, settings, isDark),
+                    searchQuery: searchQuery,
                   ),
                   const SizedBox(height: 20),
                   SettingsSection(
@@ -102,8 +98,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.school_outlined,
                     iconColor: const Color(0xFF8B5CF6),
                     title: 'Tasks Scheduling',
-                    tiles: _learningTiles(isDark),
-                    searchQuery: _searchQuery,
+                    tiles: _learningTiles(vm, settings, isDark),
+                    searchQuery: searchQuery,
                   ),
                   const SizedBox(height: 20),
                   SettingsSection(
@@ -111,8 +107,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.assignment_rounded,
                     iconColor: const Color.fromARGB(255, 187, 91, 104),
                     title: 'Learning Scheduling',
-                    tiles: _scheduleTiles(isDark),
-                    searchQuery: _searchQuery,
+                    tiles: _scheduleTiles(vm, settings, isDark),
+                    searchQuery: searchQuery,
                   ),
                   const SizedBox(height: 20),
                   SettingsSection(
@@ -120,8 +116,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     icon: Icons.lock_outline_rounded,
                     iconColor: const Color(0xFF22C55E),
                     title: 'Privacy & Social',
-                    tiles: _privacyTiles(isDark),
-                    searchQuery: _searchQuery,
+                    tiles: _privacyTiles(vm, settings, isDark),
+                    searchQuery: searchQuery,
                   ),
                   const SizedBox(height: 20),
                   SettingsSection(
@@ -130,10 +126,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     iconColor: const Color(0xFF6B7280),
                     title: 'About',
                     tiles: _aboutTiles(isDark),
-                    searchQuery: _searchQuery,
+                    searchQuery: searchQuery,
                   ),
                   const SizedBox(height: 20),
-                  _buildDangerZone(isDark),
+                  _buildDangerZone(vm, isDark),
                 ],
               ),
             ),
@@ -143,7 +139,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ========================= HEADER =========================
   Widget _buildHeader(bool isDark) {
     final primary = isDark
         ? AppColors.primaryTextDark
@@ -161,33 +156,56 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
+  void _navigateToEditProfile(ProfileViewModel profileVM) {
+    context.push(AppRoutes.editProfile);
+  }
+
   // ========================= APP PREFERENCES =========================
-  List<SettingTileData> _appPreferenceTiles(bool isDark) => [
+  List<SettingTileData> _appPreferenceTiles(
+    SettingsViewModel vm,
+    SettingsModel settings,
+    bool isDark,
+  ) => [
     SettingTileData(
       icon: Icons.palette_outlined,
       iconColor: const Color(0xFF3B82F6),
       label: 'Theme',
       subtitle: 'Controls app appearance',
-      valueBadge:
-          _settings.theme[0].toUpperCase() + _settings.theme.substring(1),
+      valueBadge: settings.theme == 'system'
+          ? 'System'
+          : '${settings.theme[0].toUpperCase()}${settings.theme.substring(1)}',
       onTap: () => _showOptionsSheet(
         title: 'Theme',
         options: const ['light', 'dark', 'system'],
-        selected: _settings.theme,
+        selected: settings.theme,
         labels: const ['Light', 'Dark', 'System default'],
         icons: const [
           Icons.light_mode_rounded,
           Icons.dark_mode_rounded,
           Icons.phone_android_rounded,
         ],
-        onSelect: (v) {
-          setState(() {
-            _settings.theme = v;
-          });
-
-          _save();
-
-          Provider.of<ThemeProvider>(context, listen: false).setTheme(v);
+        onSelect: (v) async {
+          final oldTheme = settings.theme;
+          try {
+            await Provider.of<ThemeProvider>(
+              context,
+              listen: false,
+            ).setTheme(v);
+            await vm.updateTheme(v);
+          } catch (e) {
+            await Provider.of<ThemeProvider>(
+              context,
+              listen: false,
+            ).setTheme(oldTheme);
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Failed to update theme: $e'),
+                  backgroundColor: Colors.red,
+                ),
+              );
+            }
+          }
         },
       ),
     ),
@@ -196,181 +214,155 @@ class _SettingsScreenState extends State<SettingsScreen> {
       iconColor: const Color(0xFF3B82F6),
       label: 'Google Calendar Sync',
       subtitle: 'Sync tasks to Google Calendar',
-      toggleValue: _settings.googleCalendarSyncEnabled,
-      onToggle: (v) => setState(() {
-        _settings.googleCalendarSyncEnabled = v;
-        _save();
-      }),
+      toggleValue: settings.googleCalendarSyncEnabled,
+      onToggle: (v) async => vm.updateGoogleCalendarSync(v),
     ),
     SettingTileData(
       icon: Icons.show_chart_outlined,
       iconColor: const Color(0xFF3B82F6),
       label: 'Allow Behavioural Insights',
       subtitle: 'Let Eva analyze your learning patterns',
-      toggleValue: _settings.behavioralAnalyticsEnabled,
-      onToggle: (v) => setState(() {
-        _settings.behavioralAnalyticsEnabled = v;
-        _save();
-      }),
+      toggleValue: settings.behavioralAnalyticsEnabled,
+      onToggle: (v) async => vm.updateBehaviorAnalytics(v),
     ),
   ];
 
   // ========================= NOTIFICATIONS =========================
-  List<SettingTileData> _notificationTiles(bool isDark) {
+  List<SettingTileData> _notificationTiles(
+    SettingsViewModel vm,
+    SettingsModel settings,
+    bool isDark,
+  ) {
     final tiles = [
       SettingTileData(
         icon: Icons.notifications_active_outlined,
         iconColor: const Color(0xFFF59E0B),
         label: 'All Notifications',
         subtitle: 'Master toggle for all alerts',
-        toggleValue: _settings.notificationsEnabled,
-        onToggle: (v) => setState(() {
-          _settings.notificationsEnabled = v;
-          _save();
-        }),
+        toggleValue: settings.notificationsEnabled,
+        onToggle: (v) async => vm.updateNotificationsEnabled(v),
       ),
       SettingTileData(
         icon: Icons.phone_android_rounded,
         iconColor: const Color(0xFFF59E0B),
         label: 'Push Notifications',
         subtitle: 'Alerts on your device',
-        toggleValue: _settings.pushNotificationsEnabled,
-        onToggle: (v) => setState(() {
-          _settings.pushNotificationsEnabled = v;
-          _save();
-        }),
+        toggleValue: settings.pushNotificationsEnabled,
+        enabled: settings.notificationsEnabled, // 👈 ADD THIS LINE
+        onToggle: (v) async => vm.updatePushNotificationsEnabled(v),
       ),
       SettingTileData(
         icon: Icons.email_outlined,
         iconColor: const Color(0xFFF59E0B),
         label: 'Email Notifications',
         subtitle: 'Summaries sent to your email',
-        toggleValue: _settings.emailNotificationsEnabled,
-        onToggle: (v) => setState(() {
-          _settings.emailNotificationsEnabled = v;
-          _save();
-        }),
+        toggleValue: settings.emailNotificationsEnabled,
+        enabled: settings.notificationsEnabled, // 👈 ADD THIS LINE
+        onToggle: (v) async => vm.updateEmailNotificationsEnabled(v),
       ),
-      // Master toggle for Quiet Hours
       SettingTileData(
         icon: Icons.bedtime_outlined,
         iconColor: const Color(0xFFF59E0B),
         label: 'Quiet Hours',
         subtitle: 'Silence notifications during defined intervals',
-        toggleValue: _settings.quietHoursEnabled,
-        onToggle: (v) => setState(() {
-          _settings.quietHoursEnabled = v;
-          _save();
-        }),
+        toggleValue: settings.quietHoursEnabled,
+        onToggle: (v) async => vm.updateQuietHoursEnabled(v),
       ),
     ];
 
-    // Show management tile only if quiet hours are enabled
-    if (_settings.quietHoursEnabled) {
+    if (settings.quietHoursEnabled) {
       tiles.add(
         SettingTileData(
           icon: Icons.edit_calendar_rounded,
           iconColor: const Color(0xFFF59E0B),
           label: 'Manage Quiet Hours',
           subtitle: 'Add or remove intervals',
-          valueBadge: '${_settings.quietHours.length} interval(s)',
-          onTap: () => _showQuietHoursManager(),
+          valueBadge: '${settings.quietHours.length} interval(s)',
+          onTap: () => _showQuietHoursManager(vm),
         ),
       );
     }
-
     return tiles;
   }
 
   // ========================= TASKS SCHEDULING =========================
-  List<SettingTileData> _learningTiles(bool isDark) => [
+  List<SettingTileData> _learningTiles(
+    SettingsViewModel vm,
+    SettingsModel settings,
+    bool isDark,
+  ) => [
     SettingTileData(
       icon: Icons.alarm_rounded,
       iconColor: const Color(0xFF8B5CF6),
       label: 'Default Reminder',
       subtitle: 'Before tasks & exams',
-      valueBadge: '${_settings.defaultReminderMinutes} min',
+      valueBadge: '${settings.defaultReminderMinutes} min',
       onTap: () => _showDurationPicker(
         title: 'Default Reminder Time',
-        currentValue: _settings.defaultReminderMinutes,
+        currentValue: settings.defaultReminderMinutes,
         options: const [5, 10, 15, 30, 60, 120],
         unit: 'min',
-        onSelect: (v) => setState(() {
-          _settings.defaultReminderMinutes = v;
-          _save();
-        }),
+        onSelect: (v) async => vm.updateDefaultReminderMinutes(v),
       ),
     ),
     SettingTileData(
       icon: Icons.timer_outlined,
       iconColor: const Color(0xFF8B5CF6),
       label: 'Default Task Duration',
-      valueBadge: '${_settings.defaultTaskDuration} min',
+      valueBadge: '${settings.defaultTaskDuration} min',
       onTap: () => _showDurationPicker(
         title: 'Default Task Duration',
-        currentValue: _settings.defaultTaskDuration,
+        currentValue: settings.defaultTaskDuration,
         options: const [30, 60, 90, 120, 180, 240],
         unit: 'min',
-        onSelect: (v) => setState(() {
-          _settings.defaultTaskDuration = v;
-          _save();
-        }),
+        onSelect: (v) async => vm.updateDefaultTaskDuration(v),
       ),
     ),
   ];
 
-  // ========================= LEARNING SCHEDULING (MULTI-SLOT) =========================
-  List<SettingTileData> _scheduleTiles(bool isDark) => [
+  // ========================= LEARNING SCHEDULING =========================
+  List<SettingTileData> _scheduleTiles(
+    SettingsViewModel vm,
+    SettingsModel settings,
+    bool isDark,
+  ) => [
     SettingTileData(
       icon: Icons.schedule_rounded,
       iconColor: const Color.fromARGB(255, 187, 91, 104),
       label: 'Learning Schedules',
       subtitle: 'Define multiple study slots',
-      valueBadge: '${_settings.learningSchedules.length} learning schedule',
-      onTap: () => _showLearningSchedulesManager(),
+      valueBadge: '${settings.learningSchedules.length} learning schedule(s)',
+      onTap: () => _showLearningSchedulesManager(vm),
     ),
     SettingTileData(
       icon: Icons.menu_book_rounded,
       iconColor: const Color.fromARGB(255, 187, 91, 104),
       label: 'Learning Reminder Time',
       subtitle: 'Before study sessions',
-      valueBadge: '${_settings.defaultTopicReminderMinutes} min',
+      valueBadge: '${settings.defaultLearningReminderMinutes} min',
       onTap: () => _showDurationPicker(
         title: 'Reminder Time',
-        currentValue: _settings.defaultTopicReminderMinutes,
+        currentValue: settings.defaultLearningReminderMinutes,
         options: const [5, 10, 15, 30, 60],
         unit: 'min',
-        onSelect: (v) => setState(() {
-          _settings.defaultTopicReminderMinutes = v;
-          _save();
-        }),
+        onSelect: (v) async => vm.updateDefaultLearningReminderMinutes(v),
       ),
     ),
   ];
 
   // ========================= PRIVACY & SOCIAL =========================
-  List<SettingTileData> _privacyTiles(bool isDark) => [
+  List<SettingTileData> _privacyTiles(
+    SettingsViewModel vm,
+    SettingsModel settings,
+    bool isDark,
+  ) => [
     SettingTileData(
       icon: Icons.group,
       iconColor: const Color(0xFF22C55E),
       label: 'Allow Friends Request',
-      toggleValue: _settings.allowFriendRequests,
-      onToggle: (v) => setState(() {
-        _settings.allowFriendRequests = v;
-        _save();
-      }),
+      toggleValue: settings.allowFriendRequests,
+      onToggle: (v) async => vm.updateAllowFriendRequests(v),
     ),
-    // SettingTileData(
-    //   icon: Icons.access_time_rounded,
-    //   iconColor: const Color(0xFF22C55E),
-    //   label: 'Show Last Active',
-    //   subtitle: 'Let others see when you were online',
-    //   toggleValue: _settings.showLastActive,
-    //   onToggle: (v) => setState(() {
-    //     _settings.showLastActive = v;
-    //     _save();
-    //   }),
-    // ),
     SettingTileData(
       icon: Icons.shield_outlined,
       iconColor: const Color(0xFF22C55E),
@@ -416,8 +408,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   ];
 
   // ========================= DANGER ZONE =========================
-  Widget _buildDangerZone(bool isDark) {
-    if (_searchQuery.isNotEmpty) return const SizedBox.shrink();
+  Widget _buildDangerZone(SettingsViewModel vm, bool isDark) {
+    if (vm.searchQuery.isNotEmpty) return const SizedBox.shrink();
 
     final bg = isDark ? AppColors.cardDark : Colors.white;
     final divider = isDark ? AppColors.borderDark : const Color(0xFFF3F4F6);
@@ -476,7 +468,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   message: 'Are you sure you want to log out?',
                   confirmLabel: 'Log Out',
                   confirmColor: const Color(0xFFEF4444),
-                  onConfirm: () {},
+                  onConfirm: () async {
+                    try {
+                      await context.read<SettingsViewModel>().logout();
+                      if (mounted) {
+                        context.go(AppRoutes.welcome);
+                      }
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Logout failed: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
                 ),
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(18),
@@ -524,7 +532,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       'This will permanently delete your account and all data. This cannot be undone.',
                   confirmLabel: 'Delete Forever',
                   confirmColor: const Color(0xFFEF4444),
-                  onConfirm: () {},
+                  onConfirm: () async {
+                    try {
+                      await context.read<SettingsViewModel>().deleteAccount();
+                    } catch (e) {
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Account deletion failed: $e'),
+                            backgroundColor: Colors.red,
+                          ),
+                        );
+                      }
+                    }
+                  },
                 ),
                 borderRadius: const BorderRadius.vertical(
                   bottom: Radius.circular(18),
@@ -584,7 +605,299 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  // ========================= HELPER WIDGETS =========================
+  // ==================== QUIET HOURS MANAGER ====================
+  void _showQuietHoursManager(SettingsViewModel vm) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final List<QuietHourInterval> tempList = List.from(vm.settings.quietHours);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Container(
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.cardDark : Colors.white,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildSheetHandle(isDark),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Quiet Hours',
+                          style: AppTextStyles.logo.copyWith(fontSize: 18),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add_circle_outline),
+                          onPressed: () => setSheetState(() {
+                            tempList.add(
+                              QuietHourInterval(
+                                label: 'New Interval',
+                                startTime: const TimeOfDay(hour: 22, minute: 0),
+                                endTime: const TimeOfDay(hour: 7, minute: 0),
+                                enabled: true,
+                              ),
+                            );
+                          }),
+                          color: AppColors.primary,
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (tempList.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 40),
+                      child: Column(
+                        children: [
+                          Icon(
+                            Icons.bedtime_outlined,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No quiet hours defined',
+                            style: TextStyle(color: Colors.grey.shade500),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Tap + to add an interval',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade400,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(ctx).size.height * 0.6,
+                      ),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: tempList.length,
+                        itemBuilder: (_, idx) => _buildQuietHourTile(
+                          ctx,
+                          idx,
+                          tempList,
+                          setSheetState,
+                          isDark,
+                        ),
+                      ),
+                    ),
+                  _buildSaveCancelButtons(
+                    ctx,
+                    onSave: () async {
+                      try {
+                        await vm.updateQuietHours(tempList);
+                        if (ctx.mounted) {
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            const SnackBar(
+                              content: Text('Quiet hours saved successfully'),
+                              backgroundColor: Colors.green,
+                            ),
+                          );
+                        }
+                      } catch (e) {
+                        if (ctx.mounted) {
+                          ScaffoldMessenger.of(ctx).showSnackBar(
+                            SnackBar(
+                              content: Text('Failed to save: $e'),
+                              backgroundColor: Colors.red,
+                            ),
+                          );
+                        }
+                      }
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildQuietHourTile(
+    BuildContext ctx,
+    int index,
+    List<QuietHourInterval> list,
+    StateSetter setSheetState,
+    bool isDark,
+  ) {
+    final interval = list[index];
+    final controller = TextEditingController(text: interval.label);
+
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      color: isDark ? AppColors.cardElevatedDark : Colors.grey.shade50,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: controller,
+                    decoration: const InputDecoration(
+                      hintText: 'Label (e.g., Sleeping)',
+                      border: InputBorder.none,
+                      isDense: true,
+                    ),
+                    style: const TextStyle(fontWeight: FontWeight.w500),
+                    onChanged: (value) => interval.label = value,
+                  ),
+                ),
+                Switch(
+                  value: interval.enabled,
+                  onChanged: (val) =>
+                      setSheetState(() => interval.enabled = val),
+                  activeColor: AppColors.primary,
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, size: 20),
+                  onPressed: () {
+                    setSheetState(() => list.removeAt(index));
+                    controller.dispose();
+                  },
+                  color: Colors.red.shade400,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: _buildTimePickerTile(
+                    label: 'From',
+                    time: interval.startTime,
+                    onChanged: (t) =>
+                        setSheetState(() => interval.startTime = t),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _buildTimePickerTile(
+                    label: 'To',
+                    time: interval.endTime,
+                    onChanged: (t) => setSheetState(() => interval.endTime = t),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ==================== LEARNING SCHEDULES MANAGER ====================
+
+  void _showLearningSchedulesManager(SettingsViewModel vm) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Container(
+              decoration: BoxDecoration(
+                color: isDark ? Colors.grey[900] : Colors.white,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _buildSheetHandle(isDark),
+                  Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        const Text(
+                          'Learning Schedules',
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.add),
+                          onPressed: () async {
+                            await vm.createLearningSchedule('New Schedule', [
+                              ScheduleSlot(
+                                day: 0,
+                                time: '09:00',
+                                durationMinutes: 60,
+                              ),
+                            ]);
+                            setSheetState(() {});
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (vm.settings.learningSchedules.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 40),
+                      child: Column(
+                        children: [
+                          Icon(Icons.schedule, size: 48, color: Colors.grey),
+                          SizedBox(height: 12),
+                          Text(
+                            'No learning schedules',
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        ],
+                      ),
+                    )
+                  else
+                    ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxHeight: MediaQuery.of(ctx).size.height * 0.6,
+                      ),
+                      child: ListView.builder(
+                        shrinkWrap: true,
+                        itemCount: vm.settings.learningSchedules.length,
+                        itemBuilder: (_, idx) => _EditableScheduleTile(
+                          schedule: vm.settings.learningSchedules[idx],
+                          vm: vm,
+                          onRefresh: () => setSheetState(() {}),
+                          isDark: isDark,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ==================== HELPER WIDGETS ====================
   Widget _buildSheetHandle(bool isDark) {
     return Center(
       child: Container(
@@ -674,565 +987,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildDurationPickerTile({
-    required int minutes,
-    required ValueChanged<int> onChanged,
-  }) {
-    return InkWell(
-      onTap: () => _showDurationPickerForSchedule(
-        title: 'Duration',
-        currentValue: minutes,
-        onSelect: onChanged,
-      ),
-      borderRadius: BorderRadius.circular(12),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 12),
-        decoration: BoxDecoration(
-          border: Border.all(color: Colors.grey.shade300),
-          borderRadius: BorderRadius.circular(12),
-        ),
-        child: Row(
-          children: [
-            Icon(Icons.timer_outlined, size: 18, color: AppColors.primary),
-            const SizedBox(width: 8),
-            const Text('Duration'),
-            const Spacer(),
-            Text(
-              '$minutes min',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ========================= QUIET HOURS MANAGER =========================
-  void _showQuietHoursManager() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final List<QuietHourInterval> tempList = List.from(_settings.quietHours);
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            return Container(
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.cardDark : Colors.white,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildSheetHandle(isDark),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Quiet Hours',
-                          style: AppTextStyles.logo.copyWith(fontSize: 18),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.add_circle_outline),
-                          onPressed: () =>
-                              _addQuietHour(ctx, setSheetState, tempList),
-                          color: AppColors.primary,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (tempList.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 40),
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.bedtime_outlined,
-                            size: 48,
-                            color: Colors.grey.shade400,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'No quiet hours defined',
-                            style: TextStyle(color: Colors.grey.shade500),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Tap + to add an interval',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade400,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: MediaQuery.of(ctx).size.height * 0.6,
-                      ),
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: tempList.length,
-                        itemBuilder: (_, idx) => _buildQuietHourTile(
-                          ctx,
-                          idx,
-                          tempList,
-                          setSheetState,
-                        ),
-                      ),
-                    ),
-                  _buildSaveCancelButtons(
-                    ctx,
-                    onSave: () {
-                      setState(() {
-                        _settings.quietHours = tempList;
-                        _save();
-                      });
-                      Navigator.pop(ctx);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  void _addQuietHour(
-    BuildContext ctx,
-    StateSetter setSheetState,
-    List<QuietHourInterval> list,
-  ) {
-    setSheetState(() {
-      list.add(
-        QuietHourInterval(
-          label: 'New Interval',
-          startTime: const TimeOfDay(hour: 22, minute: 0),
-          endTime: const TimeOfDay(hour: 7, minute: 0),
-          enabled: true, // explicit
-        ),
-      );
-    });
-  }
-
-  Widget _buildQuietHourTile(
-    BuildContext ctx,
-    int index,
-    List<QuietHourInterval> list,
-    StateSetter setSheetState,
-  ) {
-    final interval = list[index];
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final controller = TextEditingController(text: interval.label);
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      color: isDark ? AppColors.cardElevatedDark : Colors.grey.shade50,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    textDirection: TextDirection.ltr,
-                    textAlign: TextAlign.start,
-                    decoration: const InputDecoration(
-                      hintText: 'Label (e.g., Sleeping)',
-                      hintTextDirection: TextDirection.ltr,
-                      border: InputBorder.none,
-                      isDense: true,
-                    ),
-                    style: const TextStyle(fontWeight: FontWeight.w500),
-                    onChanged: (value) {
-                      interval.label = value;
-                    },
-                  ),
-                ),
-                // Per-interval toggle
-                Switch(
-                  value: interval.enabled,
-                  onChanged: (val) =>
-                      setSheetState(() => interval.enabled = val),
-                  activeColor: AppColors.primary,
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, size: 20),
-                  onPressed: () {
-                    setSheetState(() {
-                      list.removeAt(index);
-                    });
-                    controller.dispose();
-                  },
-                  color: Colors.red.shade400,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildTimePickerTile(
-                    label: 'From',
-                    time: interval.startTime,
-                    onChanged: (t) =>
-                        setSheetState(() => interval.startTime = t),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildTimePickerTile(
-                    label: 'To',
-                    time: interval.endTime,
-                    onChanged: (t) => setSheetState(() => interval.endTime = t),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ========================= LEARNING SCHEDULES MANAGER =========================
-  void _showLearningSchedulesManager() {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final List<LearningSchedule> tempList = List.from(
-      _settings.learningSchedules,
-    );
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            return Container(
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.cardDark : Colors.white,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildSheetHandle(isDark),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 16),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          'Learning Schedules',
-                          style: AppTextStyles.logo.copyWith(fontSize: 18),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.add_circle_outline),
-                          onPressed: () => _addLearningSchedule(
-                            ctx,
-                            setSheetState,
-                            tempList,
-                          ),
-                          color: AppColors.primary,
-                        ),
-                      ],
-                    ),
-                  ),
-                  if (tempList.isEmpty)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 40),
-                      child: Column(
-                        children: [
-                          Icon(
-                            Icons.schedule_rounded,
-                            size: 48,
-                            color: Colors.grey.shade400,
-                          ),
-                          const SizedBox(height: 12),
-                          Text(
-                            'No learning schedules defined',
-                            style: TextStyle(color: Colors.grey.shade500),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            'Tap + to add a schedule',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey.shade400,
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    ConstrainedBox(
-                      constraints: BoxConstraints(
-                        maxHeight: MediaQuery.of(ctx).size.height * 0.6,
-                      ),
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: tempList.length,
-                        itemBuilder: (_, idx) => _buildLearningScheduleTile(
-                          ctx,
-                          idx,
-                          tempList,
-                          setSheetState,
-                        ),
-                      ),
-                    ),
-                  _buildSaveCancelButtons(
-                    ctx,
-                    onSave: () {
-                      setState(() {
-                        _settings.learningSchedules = tempList;
-                        _save();
-                      });
-                      Navigator.pop(ctx);
-                    },
-                  ),
-                  const SizedBox(height: 12),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  void _addLearningSchedule(
-    BuildContext ctx,
-    StateSetter setSheetState,
-    List<LearningSchedule> list,
-  ) {
-    setSheetState(() {
-      list.add(
-        LearningSchedule(
-          label: 'New Schedule',
-          days: ['monday', 'wednesday', 'friday'],
-          startTime: const TimeOfDay(hour: 9, minute: 0),
-          durationMinutes: 60,
-        ),
-      );
-    });
-  }
-
-  Widget _buildLearningScheduleTile(
-    BuildContext ctx,
-    int index,
-    List<LearningSchedule> list,
-    StateSetter setSheetState,
-  ) {
-    final schedule = list[index];
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final allDays = [
-      'monday',
-      'tuesday',
-      'wednesday',
-      'thursday',
-      'friday',
-      'saturday',
-      'sunday',
-    ];
-    final Map<String, String> dayLabels = {
-      'monday': 'Monday',
-      'tuesday': 'Tuesday',
-      'wednesday': 'Wednesday',
-      'thursday': 'Thursday',
-      'friday': 'Friday',
-      'saturday': 'Saturday',
-      'sunday': 'Sunday',
-    };
-
-    final controller = TextEditingController(text: schedule.label);
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      color: isDark ? AppColors.cardElevatedDark : Colors.grey.shade50,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: controller,
-                    textDirection: TextDirection.ltr,
-                    textAlign: TextAlign.start,
-                    decoration: const InputDecoration(
-                      hintText: 'Slot label (e.g., Morning Study)',
-                      hintTextDirection: TextDirection.ltr,
-                      border: InputBorder.none,
-                    ),
-                    onChanged: (value) {
-                      schedule.label = value;
-                    },
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () {
-                    setSheetState(() {
-                      list.removeAt(index);
-                    });
-                    controller.dispose();
-                  },
-                  color: Colors.red.shade400,
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Days',
-              style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: allDays.map((day) {
-                final isSelected = schedule.days.contains(day);
-                return FilterChip(
-                  label: Text(dayLabels[day]!),
-                  selected: isSelected,
-                  onSelected: (selected) {
-                    setSheetState(() {
-                      if (selected) {
-                        schedule.days.add(day);
-                      } else {
-                        schedule.days.remove(day);
-                      }
-                    });
-                  },
-                  backgroundColor: Colors.transparent,
-                  selectedColor: AppColors.primary.withOpacity(0.2),
-                  checkmarkColor: AppColors.primary,
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: _buildTimePickerTile(
-                    label: 'Start',
-                    time: schedule.startTime,
-                    onChanged: (t) =>
-                        setSheetState(() => schedule.startTime = t),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: _buildDurationPickerTile(
-                    minutes: schedule.durationMinutes,
-                    onChanged: (mins) =>
-                        setSheetState(() => schedule.durationMinutes = mins),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Text(
-              'Ends at: ${_computeEndTime(schedule.startTime, schedule.durationMinutes)}',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showDurationPickerForSchedule({
-    required String title,
-    required int currentValue,
-    required ValueChanged<int> onSelect,
-  }) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    int tempValue = currentValue;
-    showModalBottomSheet(
-      context: context,
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setSheetState) => Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: isDark ? AppColors.cardDark : Colors.white,
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                title,
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.remove_circle_outline),
-                    onPressed: () => setSheetState(
-                      () => tempValue = (tempValue - 15).clamp(15, 480),
-                    ),
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 20,
-                      vertical: 10,
-                    ),
-                    child: Text(
-                      '$tempValue min',
-                      style: const TextStyle(fontSize: 20),
-                    ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.add_circle_outline),
-                    onPressed: () => setSheetState(
-                      () => tempValue = (tempValue + 15).clamp(15, 480),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () {
-                  onSelect(tempValue);
-                  Navigator.pop(ctx);
-                },
-                child: const Text('Set'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ========================= UTILITIES =========================
+  // ==================== UTILITIES ====================
   String _formatTimeOfDay(TimeOfDay time) {
     final hour = time.hourOfPeriod;
     final minute = time.minute.toString().padLeft(2, '0');
@@ -1240,18 +995,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     return '$hour:$minute $period';
   }
 
-  String _computeEndTime(TimeOfDay start, int minutes) {
-    final totalMinutes = start.hour * 60 + start.minute + minutes;
-    final endHour = (totalMinutes ~/ 60) % 24;
-    final endMinute = totalMinutes % 60;
-    final period = endHour >= 12 ? 'PM' : 'AM';
-    final displayHour = endHour > 12
-        ? endHour - 12
-        : (endHour == 0 ? 12 : endHour);
-    return '$displayHour:${endMinute.toString().padLeft(2, '0')} $period';
-  }
-
-  // ========================= GENERIC BOTTOM SHEETS =========================
+  // ==================== GENERIC BOTTOM SHEETS ====================
   void _showOptionsSheet({
     required String title,
     required List<String> options,
@@ -1462,7 +1206,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     required String message,
     required String confirmLabel,
     required Color confirmColor,
-    required VoidCallback onConfirm,
+    required Future<void> Function() onConfirm,
   }) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? AppColors.cardDark : Colors.white;
@@ -1475,7 +1219,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     showDialog(
       context: context,
-      builder: (_) => Dialog(
+      builder: (dialogContext) => Dialog(
         backgroundColor: bg,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         child: Padding(
@@ -1520,7 +1264,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 children: [
                   Expanded(
                     child: OutlinedButton(
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: () => Navigator.pop(dialogContext),
                       style: OutlinedButton.styleFrom(
                         foregroundColor: primaryText,
                         side: BorderSide(
@@ -1539,9 +1283,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   const SizedBox(width: 12),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () {
-                        Navigator.pop(context);
-                        onConfirm();
+                      onPressed: () async {
+                        Navigator.pop(dialogContext);
+                        await onConfirm();
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: confirmColor,
@@ -1556,6 +1300,245 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     ),
                   ),
                 ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// Add this StatefulWidget class inside your settings_screen.dart (outside _SettingsScreenState)
+class _EditableScheduleTile extends StatefulWidget {
+  final LearningSchedule schedule;
+  final SettingsViewModel vm;
+  final VoidCallback onRefresh;
+  final bool isDark;
+
+  const _EditableScheduleTile({
+    required this.schedule,
+    required this.vm,
+    required this.onRefresh,
+    required this.isDark,
+  });
+
+  @override
+  State<_EditableScheduleTile> createState() => _EditableScheduleTileState();
+}
+
+class _EditableScheduleTileState extends State<_EditableScheduleTile> {
+  late String label;
+  late Set<int> selectedDays;
+  late TimeOfDay startTime;
+  late int durationMinutes;
+  final fullDayNames = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    label = widget.schedule.label;
+    selectedDays = widget.schedule.slots.map((s) => s.day).toSet();
+    startTime = _parseTime(widget.schedule.slots.first.time);
+    durationMinutes = widget.schedule.slots.first.durationMinutes;
+  }
+
+  TimeOfDay _parseTime(String timeStr) {
+    final parts = timeStr.split(':');
+    return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+  }
+
+  String _formatTime(TimeOfDay time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final labelController = TextEditingController(text: label);
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      color: widget.isDark ? Colors.grey[850] : Colors.grey[50],
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: labelController,
+                    decoration: const InputDecoration(
+                      hintText: 'Schedule label',
+                      border: InputBorder.none,
+                    ),
+                    onChanged: (value) => label = value,
+                  ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.delete_outline, color: Colors.red),
+                  onPressed: () async {
+                    await widget.vm.deleteLearningSchedule(widget.schedule.id);
+                    widget.onRefresh();
+                  },
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            const Text('Days', style: TextStyle(fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: List.generate(7, (day) {
+                final isSelected = selectedDays.contains(day);
+                return FilterChip(
+                  label: Text(fullDayNames[day]),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    setState(() {
+                      if (selected) {
+                        selectedDays.add(day);
+                      } else {
+                        selectedDays.remove(day);
+                      }
+                    });
+                  },
+                );
+              }),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: () async {
+                      final picked = await showTimePicker(
+                        context: context,
+                        initialTime: startTime,
+                      );
+                      if (picked != null) setState(() => startTime = picked);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.access_time, size: 18),
+                          const SizedBox(width: 8),
+                          Text('Start: ${startTime.format(context)}'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: InkWell(
+                    onTap: () => _showDurationPicker(),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(vertical: 12),
+                      decoration: BoxDecoration(
+                        border: Border.all(color: Colors.grey.shade300),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Icon(Icons.timer_outlined, size: 18),
+                          const SizedBox(width: 8),
+                          Text('$durationMinutes min'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                onPressed: () async {
+                  final slots = selectedDays
+                      .map(
+                        (day) => ScheduleSlot(
+                          day: day,
+                          time: _formatTime(startTime),
+                          durationMinutes: durationMinutes,
+                        ),
+                      )
+                      .toList();
+                  await widget.vm.updateLearningSchedule(
+                    widget.schedule.id,
+                    label: label,
+                    slots: slots,
+                  );
+                  widget.onRefresh();
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Schedule updated')),
+                  );
+                },
+                child: const Text('Save Changes'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showDurationPicker() {
+    int temp = durationMinutes;
+    showModalBottomSheet(
+      context: context,
+      builder: (_) => StatefulBuilder(
+        builder: (ctx, setState) => Container(
+          padding: const EdgeInsets.all(20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Duration',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.remove),
+                    onPressed: () =>
+                        setState(() => temp = (temp - 15).clamp(15, 480)),
+                  ),
+                  Text('$temp min', style: const TextStyle(fontSize: 24)),
+                  IconButton(
+                    icon: const Icon(Icons.add),
+                    onPressed: () =>
+                        setState(() => temp = (temp + 15).clamp(15, 480)),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+              ElevatedButton(
+                onPressed: () {
+                  setState(() => durationMinutes = temp);
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Set'),
               ),
             ],
           ),

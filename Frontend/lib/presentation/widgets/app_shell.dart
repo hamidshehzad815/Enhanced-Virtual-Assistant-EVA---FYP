@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:provider/provider.dart';
 import '../../core/theme/app_colours.dart';
 import '../../core/theme/app_text_style.dart';
+import '../providers/settings_viewmodel.dart';
 
 class AppShell extends StatefulWidget {
   final Widget child;
@@ -137,8 +139,53 @@ class _AppShellState extends State<AppShell>
       context: ctx,
       backgroundColor: Colors.transparent,
       isScrollControlled: false,
-      builder: (_) => _MoreSheet(isDark: isDark, parentContext: ctx),
+      builder: (_) => _MoreSheet(
+        isDark: isDark,
+        parentContext: ctx,
+        onLogout: () => _handleMoreLogout(ctx),
+      ),
     );
+  }
+
+  void _handleMoreLogout(BuildContext ctx) {
+    Navigator.pop(ctx);
+    showDialog<bool>(
+      context: ctx,
+      barrierDismissible: false,
+      builder: (dialogCtx) {
+        return AlertDialog(
+          title: const Text('Log Out'),
+          content: const Text('Are you sure you want to log out?'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(false),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogCtx).pop(true),
+              child: const Text('Log Out', style: TextStyle(color: Colors.red)),
+            ),
+          ],
+        );
+      },
+    ).then((confirmed) async {
+      if (confirmed != true) return;
+      try {
+        await ctx.read<SettingsViewModel>().logout();
+      } catch (e) {
+        if (ctx.mounted) {
+          ScaffoldMessenger.of(ctx).showSnackBar(
+            SnackBar(
+              content: Text('Logout failed: $e'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+      if (ctx.mounted) {
+        ctx.go('/welcome');
+      }
+    });
   }
 
   @override
@@ -264,8 +311,13 @@ class _NavBar extends StatelessWidget {
 class _MoreSheet extends StatelessWidget {
   final bool isDark;
   final BuildContext parentContext;
+  final VoidCallback onLogout;
 
-  const _MoreSheet({required this.isDark, required this.parentContext});
+  const _MoreSheet({
+    required this.isDark,
+    required this.parentContext,
+    required this.onLogout,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -303,11 +355,7 @@ class _MoreSheet extends StatelessWidget {
         label: 'Log Out',
         subtitle: 'Sign out of your account',
         color: const Color(0xFFEF4444),
-        onTap: () {
-          Navigator.pop(context);
-          // TODO: clear auth state then:
-          // parentContext.go('/welcome');
-        },
+        onTap: onLogout,
       ),
     ];
 

@@ -67,4 +67,21 @@ class AuthService {
       return {"success": false, "msg": "Server not reachable: $e"};
     }
   }
+
+  static Future<Map<String, dynamic>> logoutUser(String token) async {
+    final url = Uri.parse("${AppConstants.baseUrl}/auth/logout");
+
+    try {
+      final response = await http
+          .post(url, headers: {"Authorization": "Bearer $token"})
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        return {"success": true, "msg": "Logged out successfully"};
+      }
+      return {"success": false, "msg": "Logout failed"};
+    } catch (e) {
+      return {"success": false, "msg": "Server not reachable: $e"};
+    }
+  }
 }

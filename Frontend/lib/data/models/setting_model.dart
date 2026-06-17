@@ -1,170 +1,219 @@
 import 'package:flutter/material.dart';
 
 class SettingsModel {
-  // ── Notifications ──────────────────────────────────────────────────────────
+  // App Preferences
+  String theme;
+  bool googleCalendarSyncEnabled;
+  bool behavioralAnalyticsEnabled;
+
+  // Notifications
   bool notificationsEnabled;
   bool pushNotificationsEnabled;
   bool emailNotificationsEnabled;
   bool quietHoursEnabled;
-  List<QuietHourInterval> quietHours = [];
+  List<QuietHourInterval> quietHours;
+
+  // Task Scheduling
   int defaultReminderMinutes;
-  int defaultTopicReminderMinutes;
+  int defaultTaskDuration;
 
-  // ── Task defaults ──────────────────────────────────────────────────────────
-  String defaultTaskPriority; // 'low' | 'medium' | 'high'
-  int defaultTaskDuration; // minutes
+  // Learning Scheduling
+  int defaultLearningReminderMinutes;
+  List<LearningSchedule> learningSchedules;
 
-  // ── Task Scheduling ───────────────────────────────────────────────────
-  int preferredLearningDuration; // minutes
-
-  // ── Learning Scheduling ───────────────────────────────────────────────────
-  List<LearningSchedule> learningSchedules = [];
-  TimeOfDay? learningStartTime; // e.g. TimeOfDay(hour: 17, minute: 0)
-
-  // ── Integrations ──────────────────────────────────────────────────────────
-  bool googleCalendarSyncEnabled;
-
-  // ── Privacy & Social ───────────────────────────────────────────────────────
+  // Privacy & Social
   bool allowFriendRequests;
-  bool showLastActive;
-  int analyticsMinTasksThreshold;
-
-  // ── App ────────────────────────────────────────────────────────────────────
-  String theme; // 'light' | 'dark' | 'system'
-  bool behavioralAnalyticsEnabled;
 
   SettingsModel({
+    this.theme = 'system',
+    this.googleCalendarSyncEnabled = false,
+    this.behavioralAnalyticsEnabled = true,
     this.notificationsEnabled = true,
     this.pushNotificationsEnabled = true,
     this.emailNotificationsEnabled = false,
     this.quietHoursEnabled = false,
     this.quietHours = const [],
     this.defaultReminderMinutes = 30,
-    this.defaultTopicReminderMinutes = 15,
-    this.defaultTaskPriority = 'medium',
     this.defaultTaskDuration = 120,
-    this.preferredLearningDuration = 90,
-
-    this.googleCalendarSyncEnabled = false,
+    this.defaultLearningReminderMinutes = 15,
+    this.learningSchedules = const [],
     this.allowFriendRequests = true,
-    this.showLastActive = true,
-    this.behavioralAnalyticsEnabled = false,
-    this.analyticsMinTasksThreshold = 10,
-    this.theme = 'light',
   });
 
-  // Populate from API JSON map
   factory SettingsModel.fromJson(Map<String, dynamic> json) {
-    final s = json['data']?['settings'] ?? json;
+    final data = json['data']?['settings'] ?? json;
     return SettingsModel(
-      notificationsEnabled: s['notifications_enabled'] ?? true,
-      pushNotificationsEnabled: s['push_notifications_enabled'] ?? true,
-      emailNotificationsEnabled: s['email_notifications_enabled'] ?? false,
-      quietHours:
-          (s['quiet_hours'] as List<dynamic>?)
-              ?.map((qh) => QuietHourInterval.fromJson(qh))
+      theme: data['theme'] ?? 'light',
+      googleCalendarSyncEnabled: data['google_calendar_sync_enabled'] ?? false,
+      behavioralAnalyticsEnabled: data['behavioral_analytics_enabled'] ?? true,
+      notificationsEnabled: data['notifications_enabled'] ?? true,
+      pushNotificationsEnabled: data['push_notifications_enabled'] ?? true,
+      emailNotificationsEnabled: data['email_notifications_enabled'] ?? false,
+      quietHoursEnabled: data['quiet_hours_enabled'] ?? false,
+      quietHours: (data['quiet_hours'] as List?)
+              ?.map((e) => QuietHourInterval.fromJson(e as Map<String, dynamic>))
               .toList() ??
           [],
-      defaultReminderMinutes: s['default_reminder_minutes'] ?? 30,
-      defaultTopicReminderMinutes: s['default_topic_reminder_minutes'] ?? 15,
-      defaultTaskPriority: s['default_task_priority'] ?? 'medium',
-      defaultTaskDuration: s['default_task_duration'] ?? 120,
-      preferredLearningDuration: s['preferred_learning_duration'] ?? 90,
-      googleCalendarSyncEnabled: s['google_calendar_sync_enabled'] ?? false,
-      allowFriendRequests: s['allow_friend_requests'] ?? true,
-      showLastActive: s['show_last_active'] ?? true,
-      quietHoursEnabled: s['quiet_hours_enabled'] ?? false,
-      behavioralAnalyticsEnabled: s['behavioral_analytics_enabled'] ?? false,
-      analyticsMinTasksThreshold: s['analytics_min_tasks_threshold'] ?? 10,
-      theme: s['theme'] ?? 'light',
+      defaultReminderMinutes: data['default_reminder_minutes'] ?? 30,
+      defaultTaskDuration: data['default_task_duration'] ?? 120,
+      defaultLearningReminderMinutes: data['default_learning_reminder_minutes'] ?? 15,
+      learningSchedules: (data['preferred_learning_schedules'] as List?)
+              ?.map((e) => LearningSchedule.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+      allowFriendRequests: data['allow_friend_requests'] ?? true,
     );
   }
 
-  Map<String, dynamic> toJson() => {
-    'notifications_enabled': notificationsEnabled,
-    'push_notifications_enabled': pushNotificationsEnabled,
-    'email_notifications_enabled': emailNotificationsEnabled,
-    'default_reminder_minutes': defaultReminderMinutes,
-    'default_topic_reminder_minutes': defaultTopicReminderMinutes,
-    'default_task_priority': defaultTaskPriority,
-    'default_task_duration': defaultTaskDuration,
-    'preferred_learning_duration': preferredLearningDuration,
-    'google_calendar_sync_enabled': googleCalendarSyncEnabled,
-    'allow_friend_requests': allowFriendRequests,
-    'show_last_active': showLastActive,
-    'quiet_hours_enabled': quietHoursEnabled,
-    'quiet_hours': quietHours.map((qh) => qh.toJson()).toList(),
-    'behavioral_analytics_enabled': behavioralAnalyticsEnabled,
-    'analytics_min_tasks_threshold': analyticsMinTasksThreshold,
-    'theme': theme,
-    //  'language': language,
-  };
+  Map<String, dynamic> toJson() {
+    return {
+      'theme': theme,
+      'google_calendar_sync_enabled': googleCalendarSyncEnabled,
+      'behavioral_analytics_enabled': behavioralAnalyticsEnabled,
+      'notifications_enabled': notificationsEnabled,
+      'push_notifications_enabled': pushNotificationsEnabled,
+      'email_notifications_enabled': emailNotificationsEnabled,
+      'quiet_hours_enabled': quietHoursEnabled,
+      'quiet_hours': quietHours.map((e) => e.toJson()).toList(),
+      'default_reminder_minutes': defaultReminderMinutes,
+      'default_task_duration': defaultTaskDuration,
+      'default_learning_reminder_minutes': defaultLearningReminderMinutes,
+      // Do NOT include preferred_learning_schedules – updates go via separate endpoints
+      'allow_friend_requests': allowFriendRequests,
+    };
+  }
+
+  SettingsModel copyWith({
+    String? theme,
+    bool? googleCalendarSyncEnabled,
+    bool? behavioralAnalyticsEnabled,
+    bool? notificationsEnabled,
+    bool? pushNotificationsEnabled,
+    bool? emailNotificationsEnabled,
+    bool? quietHoursEnabled,
+    List<QuietHourInterval>? quietHours,
+    int? defaultReminderMinutes,
+    int? defaultTaskDuration,
+    int? defaultLearningReminderMinutes,
+    List<LearningSchedule>? learningSchedules,
+    bool? allowFriendRequests,
+  }) {
+    return SettingsModel(
+      theme: theme ?? this.theme,
+      googleCalendarSyncEnabled: googleCalendarSyncEnabled ?? this.googleCalendarSyncEnabled,
+      behavioralAnalyticsEnabled: behavioralAnalyticsEnabled ?? this.behavioralAnalyticsEnabled,
+      notificationsEnabled: notificationsEnabled ?? this.notificationsEnabled,
+      pushNotificationsEnabled: pushNotificationsEnabled ?? this.pushNotificationsEnabled,
+      emailNotificationsEnabled: emailNotificationsEnabled ?? this.emailNotificationsEnabled,
+      quietHoursEnabled: quietHoursEnabled ?? this.quietHoursEnabled,
+      quietHours: quietHours ?? this.quietHours,
+      defaultReminderMinutes: defaultReminderMinutes ?? this.defaultReminderMinutes,
+      defaultTaskDuration: defaultTaskDuration ?? this.defaultTaskDuration,
+      defaultLearningReminderMinutes: defaultLearningReminderMinutes ?? this.defaultLearningReminderMinutes,
+      learningSchedules: learningSchedules ?? this.learningSchedules,
+      allowFriendRequests: allowFriendRequests ?? this.allowFriendRequests,
+    );
+  }
 }
 
 class QuietHourInterval {
   String label;
   TimeOfDay startTime;
   TimeOfDay endTime;
-  bool enabled;  // new field
-
+  bool enabled;
 
   QuietHourInterval({
     required this.label,
     required this.startTime,
     required this.endTime,
-    this.enabled = true,  // default to enabled
+    this.enabled = true,
   });
 
-  Map<String, dynamic> toJson() => {
-    'label': label,
-    'startHour': startTime.hour,
-    'startMinute': startTime.minute,
-    'endHour': endTime.hour,
-    'endMinute': endTime.minute,
-    'enabled': enabled,
-  };
+  static TimeOfDay _parseTime(String time) {
+    final parts = time.split(':');
+    return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+  }
 
-  factory QuietHourInterval.fromJson(Map<String, dynamic> json) =>
-      QuietHourInterval(
-        label: json['label'],
-        startTime: TimeOfDay(
-          hour: json['startHour'],
-          minute: json['startMinute'],
-        ),
-        endTime: TimeOfDay(hour: json['endHour'], minute: json['endMinute']),
-        enabled: json['enabled'] ?? true,
-      );
+  static String _formatTime(TimeOfDay time) {
+    final hour = time.hour.toString().padLeft(2, '0');
+    final minute = time.minute.toString().padLeft(2, '0');
+    return '$hour:$minute';
+  }
+
+  factory QuietHourInterval.fromJson(Map<String, dynamic> json) {
+    return QuietHourInterval(
+      label: json['label'] ?? '',
+      startTime: _parseTime(json['start']),
+      endTime: _parseTime(json['end']),
+      enabled: json['enabled'] ?? true,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'label': label,
+      'start': _formatTime(startTime),
+      'end': _formatTime(endTime),
+      'enabled': enabled,
+    };
+  }
 }
 
 class LearningSchedule {
-  String label;
-  List<String> days; // 'monday', 'tuesday', ...
-  TimeOfDay startTime;
-  int durationMinutes; // can be > 60
+  final String id;
+  final String label;
+  final List<ScheduleSlot> slots;
 
   LearningSchedule({
+    required this.id,
     required this.label,
-    required this.days,
-    required this.startTime,
+    required this.slots,
+  });
+
+  factory LearningSchedule.fromJson(Map<String, dynamic> json) {
+    return LearningSchedule(
+      id: json['id'] ?? '',
+      label: json['label'] ?? '',
+      slots: (json['slots'] as List?)
+              ?.map((e) => ScheduleSlot.fromJson(e as Map<String, dynamic>))
+              .toList() ??
+          [],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'label': label,
+      'slots': slots.map((e) => e.toJson()).toList(),
+    };
+  }
+}
+
+class ScheduleSlot {
+  final int day;
+  final String time;
+  final int durationMinutes;
+
+  ScheduleSlot({
+    required this.day,
+    required this.time,
     required this.durationMinutes,
   });
 
-  Map<String, dynamic> toJson() => {
-    'label': label,
-    'days': days,
-    'startHour': startTime.hour,
-    'startMinute': startTime.minute,
-    'durationMinutes': durationMinutes,
-  };
+  factory ScheduleSlot.fromJson(Map<String, dynamic> json) {
+    return ScheduleSlot(
+      day: json['day'] ?? 0,
+      time: json['time'] ?? '',
+      durationMinutes: json['duration_minutes'] ?? 15,
+    );
+  }
 
-  factory LearningSchedule.fromJson(Map<String, dynamic> json) =>
-      LearningSchedule(
-        label: json['label'],
-        days: List<String>.from(json['days']),
-        startTime: TimeOfDay(
-          hour: json['startHour'],
-          minute: json['startMinute'],
-        ),
-        durationMinutes: json['durationMinutes'],
-      );
+  Map<String, dynamic> toJson() {
+    return {
+      'day': day,
+      'time': time,
+      'duration_minutes': durationMinutes,
+    };
+  }
 }
