@@ -18,6 +18,7 @@ from pipeline.delete_entity_fallback import extract_delete_entities_fallback
 from pipeline.entity_postprocess import apply_entity_fallbacks
 from pipeline.learning_entity_fallback import extract_learning_entities_fallback
 from pipeline.spell_correction import apply_spell_corrections
+from pipeline.transformer_inputs import pop_non_model_inputs
 from pipeline.update_entity_fallback import extract_update_entities_fallback
 
 
@@ -255,9 +256,10 @@ class NERExtractor:
         )
 
         offsets = encoded.pop("offset_mapping")[0].tolist()
+        model_inputs = pop_non_model_inputs(encoded, self.model)
 
         with torch.no_grad():
-            logits = self.model(**encoded).logits
+            logits = self.model(**model_inputs).logits
             pred_ids = torch.argmax(logits, dim=-1)[0].tolist()
 
         tags_with_offsets: List[Tuple[str, int, int]] = []
