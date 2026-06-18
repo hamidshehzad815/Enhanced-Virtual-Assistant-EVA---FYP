@@ -3,7 +3,7 @@
 This folder is a **standalone workflow** to improve EVA's two text classifiers:
 
 - **CLF1** (input type): `command`, `general`, `out_of_scope`, `confirmation`, `multiple_command`
-- **CLF2** (intent for commands): `scheduling_add`, `scheduling_delete`, `scheduling_update`, `scheduling_show`, `learning_create`, `learning_update`, `learning_delete`, `learning_show`, `behavioral`
+- **CLF2**: `scheduling_add`, `scheduling_delete`, `scheduling_update`, `scheduling_show`, `learning_create`, `learning_update`, `learning_delete`, `behavioral`
 
 The goal is to make the classifiers robust to **ambiguous “show” sentences**, e.g.
 - "show physics exam task" → `scheduling_show`
