@@ -40,11 +40,30 @@ def _write_jsonl(path: Path, rows: List[Dict[str, Any]]) -> None:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
+ROOT = Path(__file__).resolve().parents[1]
+LABELS_PATH = ROOT / "config" / "labels.json"
+
+
+def _allowed_labels_for_path(path: Path) -> set[str] | None:
+    if not LABELS_PATH.exists():
+        return None
+    data = json.loads(LABELS_PATH.read_text(encoding="utf-8"))
+    if "clf1" in path.name:
+        return set(data.get("clf1_labels") or [])
+    if "clf2" in path.name:
+        return set(data.get("clf2_labels") or [])
+    return None
+
+
 def _balance(path: Path) -> Dict[str, int]:
     rows = _read_jsonl(path)
+    allowed = _allowed_labels_for_path(path)
     buckets: DefaultDict[str, List[Dict[str, Any]]] = defaultdict(list)
     for r in rows:
-        buckets[str(r.get("label") or "")].append(r)
+        label = str(r.get("label") or "")
+        if allowed is not None and label not in allowed:
+            continue
+        buckets[label].append(r)
 
     counts = {k: len(v) for k, v in buckets.items() if k}
     if not counts:

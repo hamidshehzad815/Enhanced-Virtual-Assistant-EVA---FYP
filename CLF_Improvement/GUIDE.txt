@@ -6,85 +6,34 @@ Goal
 Improve EVA's two classifiers so they handle:
 - ambiguous "show" messages
 - behavioral vs scheduling confusion
+- learning_create vs wrong intent ("I need to learn python")
 - multi-command vs single command
 - confirmations ("yes", "no") vs commands
-- casual general questions vs commands
 
-CLF1 (Input type) labels
------------------------
-- command
-- general
-- out_of_scope
-- confirmation
-- multiple_command
+CLF2 labels (8 intents — production router)
+-------------------------------------------
+scheduling_add, scheduling_delete, scheduling_update, scheduling_show,
+learning_create, learning_update, learning_delete, behavioral
 
-CLF2 (Intent) labels (router-supported)
---------------------------------------
-- scheduling_add
-- scheduling_delete
-- scheduling_update
-- scheduling_show
-- learning_create
-- learning_update
-- learning_delete
-- learning_show
-- behavioral
+Key confusion fixes
+-------------------
+- "show physics exam task" -> scheduling_show
+- "show my behavioral summary" -> behavioral
+- "I need to learn python" -> learning_create
+- "I need to learning python" -> learning_create (typo/noise)
 
-Key best practices (high impact)
---------------------------------
-1) Hard negatives for "show"
-   - scheduling_show: show/list/calendar/tasks/today/tomorrow/this week + task nouns
-   - behavioral: "behavioral summary", "my habits", "weekly insights", "productivity report"
-   - learning_show: "show my roadmap", "progress in python", "learning progress", "study plan status"
+Generate datasets
+-----------------
+cd CLF_Improvement/generators
+python3 sync_slots_from_notebooks.py
+PER_TEMPLATE=150 AUGMENT_PER_ROW=3 python3 build_dataset.py
+python3 balance_dataset.py
 
-2) Multi-command realism (CLF1 multiple_command)
-   - Use conjunctions: "and", "then", commas, semicolons
-   - Mix domains: "add meeting ... and show my behavioral summary"
-   - Include polite wrappers: "please", "can you", "hey eva"
+Templates: generators/template_library.py
+Slots: config/scheduling_slots.json + config/learning_slots.json
+Hard negatives: generators/hard_negatives.json
 
-3) Confirmation realism (CLF1 confirmation)
-   - Short: "yes", "no", "yep", "nah"
-   - With context words: "yes do it", "no keep it", "confirm", "cancel it"
-   Note: In production, confirmation is most common when Redis is waiting for yes/no.
-
-4) General vs command boundary (CLF1)
-   - general: "what can you do?", "how does scheduling work?"
-   - command: "show my tasks", "add exam on friday"
-
-5) Coverage
-   - Include typos, casing, punctuation, emojis (optional), Urdu/roman-urdu snippets if you expect them.
-   - Include very short commands ("show", "delete", "update") + more specific ones.
-
-Data generation approach
-------------------------
-Templates live in:
-  templates/clf1/*.json
-  templates/clf2/*.json
-
-Generators live in:
-  generators/build_dataset.py
-  generators/balance_dataset.py
-  generators/validate_dataset.py
-
-Output datasets:
-  datasets/clf1/final/clf1.jsonl
-  datasets/clf2/final/clf2.jsonl
-
-Training (Colab)
-----------------
-Use:
-  training/colab/Train_CLF1.ipynb
-  training/colab/Train_CLF2.ipynb
-
-Train one at a time, download final model zip, and deploy:
-  CLF1 -> Eva_AI_Server/models/clf1/
-  CLF2 -> Eva_AI_Server/models/intent_classifier/
-
-After deploy
-------------
-Restart EVA AI Server.
-Test the exact confusion cases:
-- "show physics exam task" (scheduling_show)
-- "show my behavioral summary" (behavioral)
-- "show my learning progress in python" (learning_show)
-
+Train on Colab
+--------------
+Train_CLF1.ipynb -> Eva_AI_Server/models/clf1/
+Train_CLF2.ipynb -> Eva_AI_Server/models/intent_classifier/
