@@ -346,16 +346,6 @@ const parseDateRange = (dateValue, timezoneValue) => {
   return { start: range.start, end: range.end };
 };
 
-const CALENDAR_MAX_RANGE_DAYS = 93;
-
-const parseDateOnlyParam = (value, fieldName) => {
-  const trimmed = String(value || "").trim();
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    throw new BadRequestError(`${fieldName} must be a date in YYYY-MM-DD format`);
-  }
-  return trimmed;
-};
-
 const applyTaskListFilters = (query, req, { skipUpcomingOnly = false } = {}) => {
   let normalizedStatus = null;
 
@@ -455,38 +445,15 @@ const getTasks = async (req, res, next) => {
 
 /**
  * GET /api/tasks/calendar
- * Fetch all user tasks in a calendar date range (inclusive, user timezone).
+ * Fetch all user tasks for calendar view (no date-range params).
  */
 const getCalendarTasks = async (req, res, next) => {
   try {
     const timezone = resolveUserTimezone(req);
-    const from = parseDateOnlyParam(req.query.from, "from");
-    const to = parseDateOnlyParam(req.query.to, "to");
-
-    const startRange = toLocalDayRangeUtc(from, timezone);
-    const endRange = toLocalDayRangeUtc(to, timezone);
-    if (!startRange || !endRange) {
-      throw new BadRequestError("Invalid calendar date range");
-    }
-
-    if (startRange.start.getTime() > endRange.end.getTime()) {
-      throw new BadRequestError("from must be on or before to");
-    }
-
-    const maxRangeMs = CALENDAR_MAX_RANGE_DAYS * 24 * 60 * 60 * 1000;
-    if (endRange.end.getTime() - startRange.start.getTime() > maxRangeMs) {
-      throw new BadRequestError(
-        `Date range cannot exceed ${CALENDAR_MAX_RANGE_DAYS} days`,
-      );
-    }
 
     const query = {
       owner_id: req.userId,
       is_deleted: false,
-      due_datetime: {
-        $gte: startRange.start,
-        $lte: endRange.end,
-      },
     };
 
     applyTaskListFilters(query, req, { skipUpcomingOnly: true });
@@ -502,10 +469,6 @@ const getCalendarTasks = async (req, res, next) => {
       data: withApiTimezone(
         {
           tasks: tasks.map((task) => serializeTaskForApi(task, now, timezone)),
-          range: {
-            from,
-            to,
-          },
           total: tasks.length,
         },
         timezone,
