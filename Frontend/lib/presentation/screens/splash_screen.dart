@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colours.dart';
 import '../../data/services/storage_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import '../../data/services/push_notification_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -35,6 +36,10 @@ class _SplashScreenState extends State<SplashScreen> {
     } else {
       context.go('/');
     }
+    await PushNotificationService.requestPermission();
+    await PushNotificationService.registerToken();
+    PushNotificationService.listenTokenRefresh();
+    PushNotificationService.handleForegroundMessages();
   }
 
   @override
