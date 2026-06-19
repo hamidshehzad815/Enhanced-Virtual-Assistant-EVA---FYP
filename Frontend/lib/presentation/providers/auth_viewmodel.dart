@@ -64,10 +64,7 @@ class AuthViewModel extends ChangeNotifier {
 
         // Push setup – best effort; don't fail login if it fails
         try {
-          await PushNotificationService.requestPermission();
-          await PushNotificationService.registerToken();
-          PushNotificationService.listenTokenRefresh();
-          PushNotificationService.handleForegroundMessages();
+          await PushNotificationService.init();
         } catch (pushError) {
           // Log but don't rethrow – login is still successful
           print('Push notification setup failed: $pushError');

@@ -158,6 +158,12 @@ def _format_date_display(date_str: str) -> str:
         return date_str
 
 
+def _notification_display_name(user_name: Optional[str]) -> str:
+    if not user_name or not str(user_name).strip():
+        return "there"
+    return str(user_name).strip().split()[0]
+
+
 def _weekday_from_date_text(date_str: str) -> Optional[int]:
     try:
         return datetime.strptime(str(date_str)[:10], "%Y-%m-%d").weekday()
@@ -1335,9 +1341,10 @@ async def handle_scheduling_add(
             "type": "task_scheduled",
             "reference_type": "task",
             "reference_id": str(task_id),
-            "title": "Task scheduled",
+            "title": "Task reminder",
             "message": (
-                f"{task_name} is scheduled for {scheduled_date_display} at "
+                f"Hey {_notification_display_name(user_name)}, you have a "
+                f"{task_name} scheduled on {scheduled_date_display} at "
                 f"{scheduled_time_display}."
             ),
             "action_required": False,

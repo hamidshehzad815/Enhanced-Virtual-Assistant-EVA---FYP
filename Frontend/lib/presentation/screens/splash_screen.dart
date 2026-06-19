@@ -27,6 +27,14 @@ class _SplashScreenState extends State<SplashScreen> {
 
     final token = await StorageService.getAccessToken();
 
+    if (token != null) {
+      try {
+        await PushNotificationService.init();
+      } catch (_) {
+        // Best effort; don't block splash navigation.
+      }
+    }
+
     if (!mounted) return;
 
     if (!onboardingDone) {
@@ -36,10 +44,6 @@ class _SplashScreenState extends State<SplashScreen> {
     } else {
       context.go('/');
     }
-    await PushNotificationService.requestPermission();
-    await PushNotificationService.registerToken();
-    PushNotificationService.listenTokenRefresh();
-    PushNotificationService.handleForegroundMessages();
   }
 
   @override
