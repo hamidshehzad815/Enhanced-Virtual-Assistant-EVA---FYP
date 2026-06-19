@@ -362,14 +362,7 @@ describe("Tasks API", () => {
     });
   });
 
-  test("GET /api/tasks/calendar -> returns tasks in inclusive date range", async () => {
-    User.findById.mockResolvedValue({
-      _id: USER_ID,
-      is_active: true,
-      timezone: "Asia/Karachi",
-      toPublicProfile: jest.fn(),
-    });
-
+  test("GET /api/tasks/calendar -> returns all user tasks", async () => {
     const tasks = [
       {
         _id: TASK_ID,
@@ -389,21 +382,17 @@ describe("Tasks API", () => {
     Task.find.mockReturnValue(findChain);
 
     const response = await request(app)
-      .get("/api/tasks/calendar?from=2026-06-19&to=2026-06-30")
+      .get("/api/tasks/calendar")
       .set("Authorization", `Bearer ${makeToken()}`);
 
     expect(response.status).toBe(200);
     expect(response.body.data.tasks).toHaveLength(1);
-    expect(response.body.data.range).toEqual({
-      from: "2026-06-19",
-      to: "2026-06-30",
-    });
+    expect(response.body.data.total).toBe(1);
     expect(Task.find).toHaveBeenCalledTimes(1);
     const query = Task.find.mock.calls[0][0];
     expect(query.owner_id).toBe(USER_ID);
     expect(query.is_deleted).toBe(false);
-    expect(query.due_datetime.$gte.toISOString()).toBe("2026-06-18T19:00:00.000Z");
-    expect(query.due_datetime.$lte.toISOString()).toBe("2026-06-30T18:59:59.999Z");
+    expect(query.due_datetime).toBeUndefined();
   });
 
   test("PATCH /api/tasks/:id -> updates task fields", async () => {

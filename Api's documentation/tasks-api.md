@@ -14,19 +14,16 @@ Base path: `/api/tasks`
 | **Method** | `GET` |
 | **Path** | `/api/tasks/calendar` |
 
-Returns **all non-deleted tasks owned by the user** whose `due_datetime` falls within an inclusive calendar range (user timezone). Use this on the **calendar screen** — unlike `GET /api/tasks`, it includes past and completed tasks in the range.
+Returns **all non-deleted tasks owned by the user**, sorted by `due_datetime`. Use on the **calendar screen** — unlike `GET /api/tasks`, it includes past and completed tasks (not limited to upcoming).
 
-### Query params
+### Query params (all optional)
 
-| Param | Required | Description |
-|-------|----------|-------------|
-| `from` | Yes | Start date `YYYY-MM-DD` (user timezone) |
-| `to` | Yes | End date `YYYY-MM-DD` (user timezone, inclusive) |
-| `status` | No | `pending` or `complete` |
-| `priority` | No | `low`, `medium`, or `high` |
-| `subject` | No | Case-insensitive title search |
-
-Max range: **93 days**.
+| Param | Description |
+|-------|-------------|
+| `status` | `pending` or `complete` |
+| `priority` | `low`, `medium`, or `high` |
+| `subject` | Case-insensitive title search |
+| `date` | Single day `YYYY-MM-DD` (user timezone) |
 
 ### Success `200`
 
@@ -35,10 +32,6 @@ Max range: **93 days**.
   "status": "success",
   "data": {
     "timezone": "Asia/Karachi",
-    "range": {
-      "from": "2026-06-01",
-      "to": "2026-06-30"
-    },
     "total": 2,
     "tasks": [
       {
@@ -61,7 +54,6 @@ Max range: **93 days**.
 
 | HTTP | When |
 |------|------|
-| `400` | Missing/invalid `from` or `to`, `from` after `to`, or range > 93 days |
 | `401` | Missing/invalid token |
 
 ---
@@ -206,8 +198,8 @@ Soft-deletes the task (`is_deleted: true`).
 
 ## Calendar frontend flow
 
-1. `GET /api/tasks/calendar?from=2026-06-01&to=2026-06-30` — load month/week
-2. Group `tasks[]` by local date from `due_datetime`
+1. `GET /api/tasks/calendar` — load all tasks
+2. Group `tasks[]` by local date from `due_datetime` on the client
 3. Tap task → `GET /api/tasks/:id` for detail
 4. Edit → `PATCH /api/tasks/:id`
 5. Delete → `DELETE /api/tasks/:id`
