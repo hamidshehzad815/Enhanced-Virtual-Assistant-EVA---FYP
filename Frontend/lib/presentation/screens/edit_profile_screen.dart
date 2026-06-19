@@ -270,7 +270,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 style: TextStyle(color: Colors.grey[600]),
               ),
               const SizedBox(height: 30),
-
               // ─── Save Button ──────────────────────────────────
               SizedBox(
                 width: double.infinity,

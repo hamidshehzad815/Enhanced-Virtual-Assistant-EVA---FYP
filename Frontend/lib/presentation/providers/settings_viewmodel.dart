@@ -3,6 +3,7 @@ import '../../data/models/setting_model.dart';
 import '../../data/repositories/settings_repository.dart';
 import '../../data/services/storage_service.dart';
 import '../../data/services/auth_service.dart';
+import '../../data/services/push_notification_service.dart';
 
 class SettingsViewModel extends ChangeNotifier {
   final SettingsRepository _repository;
@@ -308,6 +309,7 @@ class SettingsViewModel extends ChangeNotifier {
 
   // ----- Logout & Delete Account -----
   Future<void> logout() async {
+    await PushNotificationService.removeToken();
     try {
       final token = await StorageService.getAccessToken();
       if (token != null) {

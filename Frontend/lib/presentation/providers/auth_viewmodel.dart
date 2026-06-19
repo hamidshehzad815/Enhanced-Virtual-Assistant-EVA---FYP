@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import '../../data/models/user_model.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/storage_service.dart';
+import '../../data/services/push_notification_service.dart';
 
 class AuthResult {
   final bool success;
@@ -43,44 +44,53 @@ class AuthViewModel extends ChangeNotifier {
   String? get generalError => _generalError;
   AuthResult? get lastResult => _lastResult;
 
-Future<AuthResult> login(String email, String password) async {
-  _clearErrors();
-  _setLoading(true);
+  Future<AuthResult> login(String email, String password) async {
+    _clearErrors();
+    _setLoading(true);
 
-  try {
-    final response = await AuthService.loginUser(email, password);
+    try {
+      final response = await AuthService.loginUser(email, password);
 
-    if (response['success'] == true) {
-      final accessToken =
-          response['data']['tokens']['access_token'];
+      if (response['success'] == true) {
+        final accessToken = response['data']?['tokens']?['access_token'];
+        final refreshToken = response['data']?['tokens']?['refresh_token'];
 
-      final refreshToken =
-          response['data']['tokens']['refresh_token'];
+        if (accessToken == null) {
+          throw Exception('Access token missing in login response');
+        }
 
-      await StorageService.saveAccessToken(accessToken);
-      await StorageService.saveRefreshToken(refreshToken);
+        await StorageService.saveAccessToken(accessToken);
+        await StorageService.saveRefreshToken(refreshToken);
+
+        // Push setup – best effort; don't fail login if it fails
+        try {
+          await PushNotificationService.requestPermission();
+          await PushNotificationService.registerToken();
+          PushNotificationService.listenTokenRefresh();
+          PushNotificationService.handleForegroundMessages();
+        } catch (pushError) {
+          // Log but don't rethrow – login is still successful
+          print('Push notification setup failed: $pushError');
+          // Optionally, you could set a flag to show a user-friendly message later.
+        }
+      }
+
+      final result = AuthResult.fromMap(response);
+      _lastResult = result;
+
+      if (!result.success) {
+        _applyFieldError(result);
+      }
+
+      return result;
+    } catch (e) {
+      _generalError = e.toString();
+      notifyListeners();
+      return AuthResult(success: false, message: "Something went wrong");
+    } finally {
+      _setLoading(false);
     }
-
-    final result = AuthResult.fromMap(response);
-    _lastResult = result;
-
-    if (!result.success) {
-      _applyFieldError(result);
-    }
-
-    return result;
-  } catch (e) {
-    _generalError = e.toString();
-    notifyListeners();
-
-    return AuthResult(
-      success: false,
-      message: "Something went wrong",
-    );
-  } finally {
-    _setLoading(false); 
   }
-}
 
   Future<AuthResult> signup(UserModel user) async {
     _clearErrors();

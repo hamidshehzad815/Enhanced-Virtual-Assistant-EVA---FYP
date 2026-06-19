@@ -9,7 +9,6 @@ import '../../data/models/focus_data.dart';
 import '../../data/models/schedule_item.dart';
 import '../providers/home_screen_viewmodel.dart';
 import '../providers/profile_viewmodel.dart';
-
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 

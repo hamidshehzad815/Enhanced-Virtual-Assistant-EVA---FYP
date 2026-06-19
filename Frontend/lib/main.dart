@@ -11,11 +11,22 @@ import 'presentation/providers/calendar_viewmodel.dart';
 import 'presentation/providers/settings_viewmodel.dart';
 import 'presentation/providers/theme_provider.dart';
 import 'presentation/providers/profile_viewmodel.dart';
+import 'package:firebase_core/firebase_core.dart';
+import '../../data/services/push_notification_service.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
+  // Initialize Firebase with platform-specific options
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+
+  // Register background message handler for push
+  FirebaseMessaging.onBackgroundMessage(
+    PushNotificationService.onBackgroundMessage,
+  );
   // Load theme FIRST
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();

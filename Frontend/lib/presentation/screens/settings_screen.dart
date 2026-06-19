@@ -1309,7 +1309,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 }
 
-// Add this StatefulWidget class inside your settings_screen.dart (outside _SettingsScreenState)
+class _SlotData {
+  final int day;
+  TimeOfDay time;
+  int durationMinutes;
+
+  _SlotData({
+    required this.day,
+    required this.time,
+    required this.durationMinutes,
+  });
+}
+
 class _EditableScheduleTile extends StatefulWidget {
   final LearningSchedule schedule;
   final SettingsViewModel vm;
@@ -1329,10 +1340,8 @@ class _EditableScheduleTile extends StatefulWidget {
 
 class _EditableScheduleTileState extends State<_EditableScheduleTile> {
   late String label;
-  late Set<int> selectedDays;
-  late TimeOfDay startTime;
-  late int durationMinutes;
-  final fullDayNames = [
+  late List<_SlotData> slots; // List of slot data for selected days
+  final List<String> fullDayNames = [
     'Monday',
     'Tuesday',
     'Wednesday',
@@ -1346,9 +1355,27 @@ class _EditableScheduleTileState extends State<_EditableScheduleTile> {
   void initState() {
     super.initState();
     label = widget.schedule.label;
-    selectedDays = widget.schedule.slots.map((s) => s.day).toSet();
-    startTime = _parseTime(widget.schedule.slots.first.time);
-    durationMinutes = widget.schedule.slots.first.durationMinutes;
+
+    // Initialize slots from existing schedule slots
+    slots = widget.schedule.slots.map((s) {
+      final time = _parseTime(s.time);
+      return _SlotData(
+        day: s.day,
+        time: time,
+        durationMinutes: s.durationMinutes,
+      );
+    }).toList();
+
+    // If no slots exist, add a default slot for Monday (day 0) as a starting point
+    if (slots.isEmpty) {
+      slots.add(
+        _SlotData(
+          day: 0,
+          time: const TimeOfDay(hour: 9, minute: 0),
+          durationMinutes: 60,
+        ),
+      );
+    }
   }
 
   TimeOfDay _parseTime(String timeStr) {
@@ -1360,9 +1387,58 @@ class _EditableScheduleTileState extends State<_EditableScheduleTile> {
     return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 
+  // Toggle a day: add or remove a slot
+  void _toggleDay(int day, bool selected) {
+    setState(() {
+      if (selected) {
+        // Add a default slot if not already present
+        if (!slots.any((s) => s.day == day)) {
+          slots.add(
+            _SlotData(
+              day: day,
+              time: const TimeOfDay(hour: 9, minute: 0),
+              durationMinutes: 60,
+            ),
+          );
+        }
+      } else {
+        slots.removeWhere((s) => s.day == day);
+      }
+    });
+  }
+
+  bool _isDaySelected(int day) {
+    return slots.any((s) => s.day == day);
+  }
+
+  void _updateSlotTime(int day, TimeOfDay newTime) {
+    setState(() {
+      final index = slots.indexWhere((s) => s.day == day);
+      if (index != -1) {
+        slots[index].time = newTime;
+      }
+    });
+  }
+
+  void _updateSlotDuration(int day, int newDuration) {
+    setState(() {
+      final index = slots.indexWhere((s) => s.day == day);
+      if (index != -1) {
+        slots[index].durationMinutes = newDuration;
+      }
+    });
+  }
+
+  void _removeSlot(int day) {
+    setState(() {
+      slots.removeWhere((s) => s.day == day);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final labelController = TextEditingController(text: label);
+
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
       color: widget.isDark ? Colors.grey[850] : Colors.grey[50],
@@ -1372,6 +1448,7 @@ class _EditableScheduleTileState extends State<_EditableScheduleTile> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ---- Label row ----
             Row(
               children: [
                 Expanded(
@@ -1394,98 +1471,59 @@ class _EditableScheduleTileState extends State<_EditableScheduleTile> {
               ],
             ),
             const SizedBox(height: 8),
-            const Text('Days', style: TextStyle(fontWeight: FontWeight.bold)),
+
+            // ---- Day selection chips ----
+            const Text(
+              'Select days',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 6),
             Wrap(
               spacing: 6,
               runSpacing: 6,
               children: List.generate(7, (day) {
-                final isSelected = selectedDays.contains(day);
+                final isSelected = _isDaySelected(day);
                 return FilterChip(
                   label: Text(fullDayNames[day]),
                   selected: isSelected,
-                  onSelected: (selected) {
-                    setState(() {
-                      if (selected) {
-                        selectedDays.add(day);
-                      } else {
-                        selectedDays.remove(day);
-                      }
-                    });
-                  },
+                  onSelected: (selected) => _toggleDay(day, selected),
                 );
               }),
             ),
             const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: InkWell(
-                    onTap: () async {
-                      final picked = await showTimePicker(
-                        context: context,
-                        initialTime: startTime,
-                      );
-                      if (picked != null) setState(() => startTime = picked);
-                    },
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.access_time, size: 18),
-                          const SizedBox(width: 8),
-                          Text('Start: ${startTime.format(context)}'),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: InkWell(
-                    onTap: () => _showDurationPicker(),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(vertical: 12),
-                      decoration: BoxDecoration(
-                        border: Border.all(color: Colors.grey.shade300),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          const Icon(Icons.timer_outlined, size: 18),
-                          const SizedBox(width: 8),
-                          Text('$durationMinutes min'),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            ),
+
+            // ---- Slots for selected days ----
+            if (slots.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 12),
+                child: Text('Select at least one day above'),
+              )
+            else
+              Column(
+                children: slots.map((slot) {
+                  return _buildSlotRow(slot);
+                }).toList(),
+              ),
             const SizedBox(height: 12),
+
+            // ---- Save button ----
             SizedBox(
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: () async {
-                  final slots = selectedDays
-                      .map(
-                        (day) => ScheduleSlot(
-                          day: day,
-                          time: _formatTime(startTime),
-                          durationMinutes: durationMinutes,
-                        ),
-                      )
-                      .toList();
+                  // Build list of ScheduleSlot from the slots data
+                  final scheduleSlots = slots.map((s) {
+                    return ScheduleSlot(
+                      day: s.day,
+                      time: _formatTime(s.time),
+                      durationMinutes: s.durationMinutes,
+                    );
+                  }).toList();
+
                   await widget.vm.updateLearningSchedule(
                     widget.schedule.id,
                     label: label,
-                    slots: slots,
+                    slots: scheduleSlots,
                   );
                   widget.onRefresh();
                   ScaffoldMessenger.of(context).showSnackBar(
@@ -1501,8 +1539,96 @@ class _EditableScheduleTileState extends State<_EditableScheduleTile> {
     );
   }
 
-  void _showDurationPicker() {
-    int temp = durationMinutes;
+  // Build a single slot row with day label, time picker, duration picker, and remove button
+  Widget _buildSlotRow(_SlotData slot) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: widget.isDark ? Colors.grey[800] : Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Row(
+        children: [
+          // Day label (fixed width)
+          SizedBox(
+            width: 80,
+            child: Text(
+              fullDayNames[slot.day],
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Time picker
+          Expanded(
+            child: InkWell(
+              onTap: () async {
+                final picked = await showTimePicker(
+                  context: context,
+                  initialTime: slot.time,
+                );
+                if (picked != null) {
+                  _updateSlotTime(slot.day, picked);
+                }
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.access_time, size: 16),
+                    const SizedBox(width: 4),
+                    Text(slot.time.format(context)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+
+          // Duration picker
+          Expanded(
+            child: InkWell(
+              onTap: () => _showDurationPickerForSlot(slot),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 8),
+                decoration: BoxDecoration(
+                  border: Border.all(color: Colors.grey.shade300),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.timer_outlined, size: 16),
+                    const SizedBox(width: 4),
+                    Text('${slot.durationMinutes} min'),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          // Remove this slot button
+          IconButton(
+            icon: const Icon(Icons.close, size: 18),
+            onPressed: () => _removeSlot(slot.day),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+            color: Colors.red,
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showDurationPickerForSlot(_SlotData slot) {
+    int temp = slot.durationMinutes;
     showModalBottomSheet(
       context: context,
       builder: (_) => StatefulBuilder(
@@ -1535,7 +1661,7 @@ class _EditableScheduleTileState extends State<_EditableScheduleTile> {
               const SizedBox(height: 20),
               ElevatedButton(
                 onPressed: () {
-                  setState(() => durationMinutes = temp);
+                  _updateSlotDuration(slot.day, temp);
                   Navigator.pop(ctx);
                 },
                 child: const Text('Set'),
