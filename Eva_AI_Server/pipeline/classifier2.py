@@ -11,6 +11,7 @@ import torch
 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
 from config.settings import settings
+from pipeline.transformer_inputs import filter_model_inputs
 
 
 class Classifier2:
@@ -98,8 +99,10 @@ class Classifier2:
             max_length=64,
         )
 
+        model_inputs = filter_model_inputs(self.model, inputs)
+
         with torch.no_grad():
-            logits = self.model(**inputs).logits
+            logits = self.model(**model_inputs).logits
             probabilities = torch.softmax(logits, dim=-1)[0]
 
         pred_id = int(torch.argmax(probabilities).item())

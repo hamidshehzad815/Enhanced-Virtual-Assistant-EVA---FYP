@@ -3,14 +3,20 @@ Settings module - loads environment variables
 """
 import os
 from pathlib import Path
-from dotenv import load_dotenv
 
 # Load .env file from Eva_AI_Server directory
 BASE_DIR = Path(__file__).resolve().parent.parent
 WORKSPACE_ROOT = BASE_DIR.parent
-# Use override=True so local .env values are not shadowed by stale exported
-# shell variables during development/testing runs.
-load_dotenv(BASE_DIR / ".env", override=True)
+
+try:
+    from dotenv import load_dotenv
+
+    # Use override=True so local .env values are not shadowed by stale exported
+    # shell variables during development/testing runs.
+    load_dotenv(BASE_DIR / ".env", override=True)
+except ImportError:
+    # Notebooks / minimal test envs may omit python-dotenv; defaults still apply.
+    pass
 
 
 def get_roadmaps_json_path() -> Path:
