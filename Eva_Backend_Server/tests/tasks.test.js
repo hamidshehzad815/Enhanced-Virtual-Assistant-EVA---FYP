@@ -361,4 +361,95 @@ describe("Tasks API", () => {
       is_deleted: true,
     });
   });
+
+  test("GET /api/tasks/calendar -> returns tasks in inclusive date range", async () => {
+    User.findById.mockResolvedValue({
+      _id: USER_ID,
+      is_active: true,
+      timezone: "Asia/Karachi",
+      toPublicProfile: jest.fn(),
+    });
+
+    const tasks = [
+      {
+        _id: TASK_ID,
+        title: "Physics quiz",
+        status: "pending",
+        priority: "medium",
+        due_datetime: new Date("2026-06-19T15:00:00.000Z"),
+      },
+    ];
+
+    const findChain = {
+      select: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(tasks),
+    };
+
+    Task.find.mockReturnValue(findChain);
+
+    const response = await request(app)
+      .get("/api/tasks/calendar?from=2026-06-19&to=2026-06-30")
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.tasks).toHaveLength(1);
+    expect(response.body.data.range).toEqual({
+      from: "2026-06-19",
+      to: "2026-06-30",
+    });
+    expect(Task.find).toHaveBeenCalledTimes(1);
+    const query = Task.find.mock.calls[0][0];
+    expect(query.owner_id).toBe(USER_ID);
+    expect(query.is_deleted).toBe(false);
+    expect(query.due_datetime.$gte.toISOString()).toBe("2026-06-18T19:00:00.000Z");
+    expect(query.due_datetime.$lte.toISOString()).toBe("2026-06-30T18:59:59.999Z");
+  });
+
+  test("PATCH /api/tasks/:id -> updates task fields", async () => {
+    const existingTask = {
+      _id: TASK_ID,
+      title: "Physics quiz",
+      status: "pending",
+      priority: "medium",
+      owner_id: USER_ID,
+      due_datetime: new Date("2026-06-12T08:00:00.000Z"),
+      duration: 60,
+      description: "Old notes",
+    };
+    const updatedTask = {
+      ...existingTask,
+      title: "Physics exam",
+      description: "New notes",
+      priority: "high",
+    };
+
+    Task.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(existingTask),
+    });
+    Task.findOneAndUpdate.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(updatedTask),
+    });
+
+    const response = await request(app)
+      .patch(`/api/tasks/${TASK_ID}`)
+      .set("Authorization", `Bearer ${makeToken()}`)
+      .send({
+        title: "Physics exam",
+        description: "New notes",
+        priority: "high",
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.status).toBe("success");
+    expect(response.body.message).toBe("Task updated");
+    expect(response.body.data.task).toEqual(
+      expect.objectContaining({
+        id: TASK_ID,
+        title: "Physics exam",
+        description: "New notes",
+        priority: "high",
+      }),
+    );
+  });
 });
