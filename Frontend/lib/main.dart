@@ -14,6 +14,8 @@ import 'presentation/providers/profile_viewmodel.dart';
 import 'package:firebase_core/firebase_core.dart';
 import '../../data/services/push_notification_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
+import '../../data/services/calendar_service.dart';
+import '../../data/repositories/calendar_screen_repository.dart';
 import 'firebase_options.dart';
 
 void main() async {
@@ -37,11 +39,18 @@ void main() async {
         ChangeNotifierProvider(create: (_) => HomeScreenViewModel()),
         ChangeNotifierProvider(create: (_) => ProfileViewModel()),
         ChangeNotifierProvider(create: (_) => ChatViewModel()),
-        ChangeNotifierProvider(create: (_) => CalendarViewModel()),
+        ChangeNotifierProvider(
+          create: (_) {
+            final service = CalendarService();
+            final repository = CalendarRepository(service);
+            return CalendarViewModel(repository);
+          },
+        ),
         ChangeNotifierProvider(create: (_) => AuthViewModel()),
         ChangeNotifierProvider(create: (_) => SettingsViewModel()),
         ChangeNotifierProvider.value(value: themeProvider),
       ],
+
       child: const MyApp(),
     ),
   );

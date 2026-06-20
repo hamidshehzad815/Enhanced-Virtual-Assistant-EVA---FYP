@@ -9,6 +9,7 @@ import '../../data/models/focus_data.dart';
 import '../../data/models/schedule_item.dart';
 import '../providers/home_screen_viewmodel.dart';
 import '../providers/profile_viewmodel.dart';
+import 'calendar_screen.dart';
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -659,7 +660,29 @@ class _HomeScreenState extends State<HomeScreen>
 
   Widget _buildScheduleItem(ScheduleItem item, bool isDark) {
     final tagColor = _getTagColor(item.status);
-    return Container(
+    return GestureDetector(
+    onTap: () {
+      if (item.taskId != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CalendarScreen(
+              initialDate: item.taskDate ?? DateTime.now(),
+              initialTaskId: item.taskId,
+            ),
+          ),
+        );
+      } else {
+        // Optional: show a snackbar if taskId is missing
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Task details not available'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    },
+    child: Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
         color: isDark ? Colors.black12 : Colors.white.withValues(alpha: 0.7),
@@ -717,6 +740,7 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ],
       ),
+    ),
     );
   }
 
