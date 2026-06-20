@@ -9,7 +9,10 @@ import '../providers/calendar_viewmodel.dart';
 import 'package:lottie/lottie.dart';
 
 class CalendarScreen extends StatefulWidget {
-  const CalendarScreen({super.key});
+  final DateTime? initialDate;
+  final String? initialTaskId;
+
+  const CalendarScreen({super.key, this.initialDate, this.initialTaskId});
 
   @override
   State<CalendarScreen> createState() => _CalendarScreenState();
@@ -19,6 +22,7 @@ class _CalendarScreenState extends State<CalendarScreen>
     with SingleTickerProviderStateMixin {
   late final AnimationController _listAnimController;
   late final Animation<double> _listFadeAnim;
+  bool _dialogShown = false;
 
   @override
   void initState() {
@@ -42,124 +46,49 @@ class _CalendarScreenState extends State<CalendarScreen>
 
   @override
   Widget build(BuildContext context) {
-    return ChangeNotifierProvider<CalendarViewModel>(
-      create: (_) => CalendarViewModel(),
-      child: Builder(
-        builder: (context) {
-          final vm = context.watch<CalendarViewModel>();
-          final isDark = Theme.of(context).brightness == Brightness.dark;
+    final vm = context.watch<CalendarViewModel>();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      // Show edit dialog if initialTaskId provided
+      if (!_dialogShown &&
+          widget.initialTaskId != null &&
+          vm.tasks.isNotEmpty) {
+        try {
+          final task = vm.tasks.firstWhere((t) => t.id == widget.initialTaskId);
+          _showEditDialog(context, vm, task);
+          _dialogShown = true;
+        } catch (_) {}
+      }
+    });
 
-          return Scaffold(
-            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-            body: SafeArea(
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Column(
-                    children: [
-                      _buildScreenHeader(isDark),
-                      _buildCalendar(context, vm, isDark),
-                    ],
-                  ),
-                  Positioned(
-                    left: 16,
-                    right: 16,
-                    top: 515,
-                    bottom: 0,
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(32),
-                          topRight: Radius.circular(32),
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(
-                              isDark ? 0.20 : 0.08,
-                            ),
-                            blurRadius: 18,
-                            offset: const Offset(0, -2),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: const BorderRadius.only(
-                          topLeft: Radius.circular(32),
-                          topRight: Radius.circular(32),
-                        ),
-                        child: CustomScrollView(
-                          slivers: [
-                            SliverToBoxAdapter(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const SizedBox(height: 14),
-                                  Center(
-                                    child: Container(
-                                      width: 42,
-                                      height: 4,
-                                      decoration: BoxDecoration(
-                                        color:
-                                            (isDark
-                                                    ? Colors.white
-                                                    : Colors.grey)
-                                                .withOpacity(0.28),
-                                        borderRadius: BorderRadius.circular(99),
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 18),
-                                  _buildTaskListHeader(context, vm, isDark),
-                                ],
-                              ),
-                            ),
-                            vm.filteredTasks.isEmpty
-                                ? SliverToBoxAdapter(
-                                    child: _buildEmptyState(isDark),
-                                  )
-                                : SliverPadding(
-                                    padding: const EdgeInsets.only(bottom: 120),
-                                    sliver: SliverList(
-                                      delegate: SliverChildBuilderDelegate(
-                                        (_, i) => FadeTransition(
-                                          opacity: _listFadeAnim,
-                                          child: _buildTaskTile(
-                                            context,
-                                            vm,
-                                            vm.filteredTasks[i],
-                                            isDark,
-                                            i,
-                                          ),
-                                        ),
-                                        childCount: vm.filteredTasks.length,
-                                      ),
-                                    ),
-                                  ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
+    return Scaffold(
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _buildScreenHeader(isDark),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: _buildCalendar(context, vm, isDark),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _buildTaskListCard(context, vm, isDark),
               ),
             ),
-          );
-        },
+          ],
+        ),
       ),
     );
   }
 
-  // --------------------------------------------------------------------------
-  // NEWLY DESIGNED HEADER
-  // --------------------------------------------------------------------------
+  // ========== HEADER ==========
   Widget _buildScreenHeader(bool isDark) {
     final titleColor = isDark ? Colors.white : AppColors.primaryTextLight;
     final subtitleColor = isDark
         ? Colors.white70
         : AppColors.secondaryTextLight;
-
-    // Format current day for a nice accent chip
     final today = DateTime.now();
     const monthNames = [
       'Jan',
@@ -242,21 +171,21 @@ class _CalendarScreenState extends State<CalendarScreen>
     );
   }
 
-  // --------------------------------------------------------------------------
-  // REFINED CALENDAR CARD (light + dark friendly, no empty trailing space)
-  // --------------------------------------------------------------------------
+  // ========== CALENDAR – Full Width, No Side Padding ==========
   Widget _buildCalendar(
     BuildContext context,
     CalendarViewModel vm,
     bool isDark,
   ) {
-    // Card background: light → soft white, dark → deep navy
     final cardBg = isDark
         ? const Color(0xFF1A1F2E)
-        : const Color.fromARGB(255, 173, 216, 238);
-
+        : const Color.fromARGB(
+            255,
+            163,
+            211,
+            230,
+          ); // white background like reference image
     final borderColor = isDark ? AppColors.borderDark : Colors.grey.shade200;
-
     final textColorLight = isDark ? Colors.white : const Color(0xFF1F2937);
     final weekdayColor = isDark
         ? Colors.white.withOpacity(0.65)
@@ -280,234 +209,292 @@ class _CalendarScreenState extends State<CalendarScreen>
       'Dec',
     ];
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-      child: Container(
-        height: 490,
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(32),
-          border: Border.all(color: borderColor, width: isDark ? 0.5 : 1),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(isDark ? 0.25 : 0.04),
-              blurRadius: 20,
-              offset: const Offset(0, 6),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(32),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
-            child: Column(
-              children: [
-                // Custom month selector row
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    IconButton(
-                      onPressed: () {
-                        vm.setFocusedDay(
-                          DateTime(
-                            vm.focusedDay.year,
-                            vm.focusedDay.month - 1,
-                            1,
-                          ),
-                        );
-                      },
-                      icon: Icon(
-                        Icons.chevron_left_rounded,
-                        color: isDark
-                            ? Colors.white70
-                            : const Color(0xFF4B5563),
-                        size: 28,
-                      ),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
+    return Container(
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(32),
+        border: Border.all(color: borderColor, width: isDark ? 0.5 : 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.25 : 0.04),
+            blurRadius: 20,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(32),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  IconButton(
+                    onPressed: () => vm.setFocusedDay(
+                      DateTime(vm.focusedDay.year, vm.focusedDay.month - 1, 1),
                     ),
-                    Text(
-                      '${monthNames[vm.focusedDay.month - 1]} ${vm.focusedDay.year}',
-                      style: AppTextStyles.body.copyWith(
-                        fontSize: 16,
-                        fontWeight: FontWeight.w700,
-                        color: textColorLight,
-                      ),
+                    icon: Icon(
+                      Icons.chevron_left_rounded,
+                      color: isDark ? Colors.white70 : const Color(0xFF4B5563),
+                      size: 28,
                     ),
-                    IconButton(
-                      onPressed: () {
-                        vm.setFocusedDay(
-                          DateTime(
-                            vm.focusedDay.year,
-                            vm.focusedDay.month + 1,
-                            1,
-                          ),
-                        );
-                      },
-                      icon: Icon(
-                        Icons.chevron_right_rounded,
-                        color: isDark
-                            ? Colors.white70
-                            : const Color(0xFF4B5563),
-                        size: 28,
-                      ),
-                      padding: EdgeInsets.zero,
-                      constraints: const BoxConstraints(),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                // TableCalendar
-                TableCalendar<CalendarTask>(
-                  firstDay: DateTime.utc(2024, 1, 1),
-                  lastDay: DateTime.utc(2027, 12, 31),
-                  focusedDay: vm.focusedDay,
-                  selectedDayPredicate: (day) => isSameDay(vm.selectedDay, day),
-                  calendarFormat: vm.calendarFormat,
-                  eventLoader: vm.eventLoader,
-                  startingDayOfWeek: StartingDayOfWeek.sunday,
-                  availableGestures: AvailableGestures.all,
-                  daysOfWeekHeight: 28,
-                  rowHeight: 44,
-                  onDaySelected: (selected, focused) {
-                    HapticFeedback.selectionClick();
-                    vm.onDaySelected(selected, focused);
-                    _listAnimController
-                      ..reset()
-                      ..forward();
-                  },
-                  onPageChanged: (focused) => vm.setFocusedDay(focused),
-                  onFormatChanged: (format) => vm.setCalendarFormat(format),
-                  headerVisible: false,
-                  daysOfWeekStyle: DaysOfWeekStyle(
-                    weekdayStyle: AppTextStyles.body.copyWith(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: weekdayColor,
-                    ),
-                    weekendStyle: AppTextStyles.body.copyWith(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: weekdayColor,
-                    ),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
                   ),
-                  calendarStyle: CalendarStyle(
-                    todayDecoration: BoxDecoration(
-                      color: isDark
-                          ? Colors.white.withOpacity(0.15)
-                          : AppColors.primary.withOpacity(0.12),
-                      shape: BoxShape.circle,
-                    ),
-                    todayTextStyle: AppTextStyles.body.copyWith(
-                      color: isDark ? Colors.white : AppColors.primary,
+                  Text(
+                    '${monthNames[vm.focusedDay.month - 1]} ${vm.focusedDay.year}',
+                    style: AppTextStyles.body.copyWith(
+                      fontSize: 16,
                       fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
-                    selectedDecoration: const BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    selectedTextStyle: AppTextStyles.body.copyWith(
-                      color: Colors.white,
-                      fontWeight: FontWeight.w700,
-                      fontSize: 14,
-                    ),
-                    defaultTextStyle: AppTextStyles.body.copyWith(
                       color: textColorLight,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
                     ),
-                    weekendTextStyle: AppTextStyles.body.copyWith(
-                      color: textColorLight.withOpacity(0.85),
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    outsideDaysVisible: true,
-                    outsideTextStyle: AppTextStyles.body.copyWith(
-                      color: outsideText,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                    ),
-                    markerDecoration: BoxDecoration(
-                      color: AppColors.primary,
-                      shape: BoxShape.circle,
-                    ),
-                    markerSize: 5,
-                    markersMaxCount: 1,
-                    markerMargin: const EdgeInsets.only(top: 3),
-                    cellMargin: const EdgeInsets.all(2),
-                    tableBorder: TableBorder.all(color: Colors.transparent),
                   ),
-                  calendarBuilders: CalendarBuilders(
-                    defaultBuilder: (context, day, focusedDay) {
-                      final isSelected = isSameDay(day, vm.selectedDay);
-                      final isToday = isSameDay(day, DateTime.now());
-                      final isCurrentMonth = day.month == vm.focusedDay.month;
+                  IconButton(
+                    onPressed: () => vm.setFocusedDay(
+                      DateTime(vm.focusedDay.year, vm.focusedDay.month + 1, 1),
+                    ),
+                    icon: Icon(
+                      Icons.chevron_right_rounded,
+                      color: isDark ? Colors.white70 : const Color(0xFF4B5563),
+                      size: 28,
+                    ),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              TableCalendar<CalendarTask>(
+                firstDay: DateTime.utc(2024, 1, 1),
+                lastDay: DateTime.utc(2027, 12, 31),
+                focusedDay: vm.focusedDay,
+                selectedDayPredicate: (day) => isSameDay(vm.selectedDay, day),
+                calendarFormat: vm.calendarFormat,
+                eventLoader: vm.eventLoader,
+                startingDayOfWeek: StartingDayOfWeek.sunday,
+                availableGestures: AvailableGestures.all,
+                daysOfWeekHeight: 28,
+                rowHeight: 44,
+                onDaySelected: (selected, focused) {
+                  HapticFeedback.selectionClick();
+                  vm.onDaySelected(selected, focused);
+                  _listAnimController.reset();
+                  _listAnimController.forward();
+                },
+                onPageChanged: (focused) => vm.setFocusedDay(focused),
+                onFormatChanged: (format) => vm.setCalendarFormat(format),
+                headerVisible: false,
+                daysOfWeekStyle: DaysOfWeekStyle(
+                  weekdayStyle: AppTextStyles.body.copyWith(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: weekdayColor,
+                  ),
+                  weekendStyle: AppTextStyles.body.copyWith(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    color: weekdayColor,
+                  ),
+                ),
+                calendarStyle: CalendarStyle(
+                  todayDecoration: BoxDecoration(
+                    color: isDark
+                        ? Colors.white.withOpacity(0.15)
+                        : AppColors.primary.withOpacity(0.12),
+                    shape: BoxShape.circle,
+                  ),
+                  todayTextStyle: AppTextStyles.body.copyWith(
+                    color: isDark ? Colors.white : AppColors.primary,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                  selectedDecoration: const BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  selectedTextStyle: AppTextStyles.body.copyWith(
+                    color: Colors.white,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 14,
+                  ),
+                  defaultTextStyle: AppTextStyles.body.copyWith(
+                    color: textColorLight,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  weekendTextStyle: AppTextStyles.body.copyWith(
+                    color: textColorLight.withOpacity(0.85),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  outsideDaysVisible: true,
+                  outsideTextStyle: AppTextStyles.body.copyWith(
+                    color: outsideText,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
+                  markerDecoration: BoxDecoration(
+                    color: AppColors.primary,
+                    shape: BoxShape.circle,
+                  ),
+                  markerSize: 5,
+                  markersMaxCount: 1,
+                  markerMargin: const EdgeInsets.only(top: 3),
+                  cellMargin: const EdgeInsets.all(2),
+                  tableBorder: TableBorder.all(color: Colors.transparent),
+                ),
+                calendarBuilders: CalendarBuilders(
+                  defaultBuilder: (context, day, focusedDay) {
+                    final isSelected = isSameDay(day, vm.selectedDay);
+                    final isToday = isSameDay(day, DateTime.now());
+                    final isCurrentMonth = day.month == vm.focusedDay.month;
 
-                      Color textColor;
-                      if (isSelected) {
-                        textColor = Colors.white;
-                      } else if (isToday) {
-                        textColor = isDark ? Colors.white : AppColors.primary;
-                      } else {
-                        textColor = isCurrentMonth
-                            ? textColorLight
-                            : outsideText;
-                      }
+                    Color textColor;
+                    if (isSelected) {
+                      textColor = Colors.white;
+                    } else if (isToday) {
+                      textColor = isDark ? Colors.white : AppColors.primary;
+                    } else {
+                      textColor = isCurrentMonth ? textColorLight : outsideText;
+                    }
 
-                      Widget? background;
-                      if (isSelected) {
-                        background = Container(
-                          width: 34,
-                          height: 34,
-                          decoration: const BoxDecoration(
-                            color: AppColors.primary,
-                            shape: BoxShape.circle,
-                          ),
-                        );
-                      } else if (isToday) {
-                        background = Container(
-                          width: 34,
-                          height: 34,
-                          decoration: BoxDecoration(
-                            color: isDark
-                                ? Colors.white.withOpacity(0.15)
-                                : AppColors.primary.withOpacity(0.12),
-                            shape: BoxShape.circle,
-                          ),
-                        );
-                      }
-
-                      return Center(
-                        child: Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            if (background != null) background,
-                            Text(
-                              '${day.day}',
-                              style: AppTextStyles.body.copyWith(
-                                fontSize: 14,
-                                fontWeight: (isSelected || isToday)
-                                    ? FontWeight.w700
-                                    : FontWeight.w500,
-                                color: textColor,
-                              ),
-                            ),
-                          ],
+                    Widget? background;
+                    if (isSelected) {
+                      background = Container(
+                        width: 34,
+                        height: 34,
+                        decoration: const BoxDecoration(
+                          color: AppColors.primary,
+                          shape: BoxShape.circle,
                         ),
                       );
-                    },
-                  ),
+                    } else if (isToday) {
+                      background = Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: isDark
+                              ? Colors.white.withOpacity(0.15)
+                              : AppColors.primary.withOpacity(0.12),
+                          shape: BoxShape.circle,
+                        ),
+                      );
+                    }
+
+                    return Center(
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          if (background != null) background,
+                          Text(
+                            '${day.day}',
+                            style: AppTextStyles.body.copyWith(
+                              fontSize: 14,
+                              fontWeight: (isSelected || isToday)
+                                  ? FontWeight.w700
+                                  : FontWeight.w500,
+                              color: textColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       ),
     );
   }
 
-  Widget _buildTaskListHeader(
+  // ========== TASK LIST CARD – Flat Top, Only Bottom Corners Rounded ==========
+  Widget _buildTaskListCard(
+    BuildContext context,
+    CalendarViewModel vm,
+    bool isDark,
+  ) {
+    return Container(
+      decoration: BoxDecoration(
+        color: isDark ? const Color(0xFF1E1E1E) : Colors.white,
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(32),
+          topRight: Radius.circular(32),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.20 : 0.08),
+            blurRadius: 18,
+            offset: const Offset(0, -2),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: const BorderRadius.only(
+          topLeft: Radius.circular(32),
+          topRight: Radius.circular(32),
+        ),
+        child: CustomScrollView(
+          slivers: [
+            SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Grey drag handle – kept for visual cue
+                  const SizedBox(height: 6),
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: (isDark ? Colors.white : Colors.grey)
+                            .withOpacity(0.28),
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Header – now with less top padding
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: _buildTaskListHeaderContent(context, vm, isDark),
+                  ),
+                ],
+              ),
+            ),
+            if (vm.filteredTasks.isEmpty)
+              SliverToBoxAdapter(child: _buildEmptyState(isDark))
+            else
+              SliverPadding(
+                padding: const EdgeInsets.only(bottom: 20),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                    (_, i) => FadeTransition(
+                      opacity: _listFadeAnim,
+                      child: _buildTaskTile(
+                        context,
+                        vm,
+                        vm.filteredTasks[i],
+                        isDark,
+                        i,
+                      ),
+                    ),
+                    childCount: vm.filteredTasks.length,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ========== TASK LIST HEADER CONTENT (extracted to avoid duplication) ==========
+  Widget _buildTaskListHeaderContent(
     BuildContext context,
     CalendarViewModel vm,
     bool isDark,
@@ -518,7 +505,6 @@ class _CalendarScreenState extends State<CalendarScreen>
     final secondary = isDark
         ? AppColors.secondaryTextDark
         : AppColors.secondaryTextLight;
-
     const months = [
       'Jan',
       'Feb',
@@ -533,36 +519,33 @@ class _CalendarScreenState extends State<CalendarScreen>
       'Nov',
       'Dec',
     ];
-
     final isToday = isSameDay(vm.selectedDay, DateTime.now());
     final dateLabel = isToday
         ? 'Today'
         : '${_dayName(vm.selectedDay.weekday)}, ${vm.selectedDay.day} ${months[vm.selectedDay.month - 1]}';
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            dateLabel,
-            style: AppTextStyles.body.copyWith(
-              fontSize: 20,
-              fontWeight: FontWeight.w700,
-              color: primary,
-              letterSpacing: -0.3,
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          dateLabel,
+          style: AppTextStyles.body.copyWith(
+            fontSize: 20,
+            fontWeight: FontWeight.w700,
+            color: primary,
+            letterSpacing: -0.3,
           ),
-          const SizedBox(height: 4),
-          Text(
-            '${vm.selectedTotal} task${vm.selectedTotal != 1 ? 's' : ''}',
-            style: AppTextStyles.subtitleMedium.copyWith(color: secondary),
-          ),
-        ],
-      ),
+        ),
+        const SizedBox(height: 4),
+        Text(
+          '${vm.selectedTotal} task${vm.selectedTotal != 1 ? 's' : ''}',
+          style: AppTextStyles.subtitleMedium.copyWith(color: secondary),
+        ),
+      ],
     );
   }
 
+  // ========== TASK TILE (unchanged) ==========
   Widget _buildTaskTile(
     BuildContext context,
     CalendarViewModel vm,
@@ -577,8 +560,7 @@ class _CalendarScreenState extends State<CalendarScreen>
         ? const Color(0xFFB8C2D9)
         : AppColors.secondaryTextLight;
     final priorityColor = _priorityColor(task.priority);
-    final categoryIcon = _categoryIcon(task.category);
-    final categoryColor = _categoryColor(task.category);
+    final statusColor = _statusColor(task.displayStatus);
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
@@ -603,10 +585,7 @@ class _CalendarScreenState extends State<CalendarScreen>
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('${task.title} removed'),
-              action: SnackBarAction(
-                label: 'Undo',
-                onPressed: () => vm.restoreTask(task),
-              ),
+              duration: const Duration(seconds: 1),
               behavior: SnackBarBehavior.floating,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(12),
@@ -615,146 +594,150 @@ class _CalendarScreenState extends State<CalendarScreen>
             ),
           );
         },
-        child: AnimatedOpacity(
-          duration: const Duration(milliseconds: 300),
-          opacity: task.isCompleted ? 0.65 : 1.0,
-          child: Container(
-            decoration: BoxDecoration(
-              color: bg,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: border),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(isDark ? 0.16 : 0.04),
-                  blurRadius: 10,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(16),
-              child: IntrinsicHeight(
-                child: Row(
-                  children: [
-                    Container(width: 4, color: priorityColor),
-                    Expanded(
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 38,
-                              height: 38,
-                              decoration: BoxDecoration(
-                                color: categoryColor.withOpacity(
-                                  isDark ? 0.18 : 0.10,
+        child: GestureDetector(
+          onTap: () => _showEditDialog(context, vm, task),
+          child: AnimatedOpacity(
+            duration: const Duration(milliseconds: 300),
+            opacity: task.status == TaskStatus.completed ? 0.65 : 1.0,
+            child: Container(
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: border),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(isDark ? 0.16 : 0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(16),
+                child: IntrinsicHeight(
+                  child: Row(
+                    children: [
+                      Container(width: 4, color: priorityColor),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Container(
+                                width: 38,
+                                height: 38,
+                                decoration: BoxDecoration(
+                                  color: _categoryColor(
+                                    task.priority,
+                                  ).withOpacity(isDark ? 0.18 : 0.10),
+                                  borderRadius: BorderRadius.circular(10),
                                 ),
-                                borderRadius: BorderRadius.circular(10),
+                                child: Icon(
+                                  _categoryIcon(task.priority),
+                                  size: 18,
+                                  color: _categoryColor(task.priority),
+                                ),
                               ),
-                              child: Icon(
-                                categoryIcon,
-                                size: 18,
-                                color: categoryColor,
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      task.title,
+                                      style: AppTextStyles.body.copyWith(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.w600,
+                                        color: primary,
+                                        decoration:
+                                            task.status == TaskStatus.completed
+                                            ? TextDecoration.lineThrough
+                                            : null,
+                                        decorationColor: secondary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      children: [
+                                        Icon(
+                                          Icons.schedule_rounded,
+                                          size: 12,
+                                          color: secondary,
+                                        ),
+                                        const SizedBox(width: 3),
+                                        Text(
+                                          vm.formatTimeRange(task, context),
+                                          style: AppTextStyles.body.copyWith(
+                                            fontSize: 11,
+                                            color: secondary,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 6,
+                                            vertical: 2,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: statusColor.withOpacity(
+                                              0.12,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                          ),
+                                          child: Text(
+                                            task.displayStatus.toUpperCase(),
+                                            style: AppTextStyles.body.copyWith(
+                                              fontSize: 9,
+                                              fontWeight: FontWeight.w700,
+                                              color: statusColor,
+                                              letterSpacing: 0.3,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    task.title,
-                                    style: AppTextStyles.body.copyWith(
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
-                                      color: primary,
-                                      decoration: task.isCompleted
-                                          ? TextDecoration.lineThrough
-                                          : null,
-                                      decorationColor: secondary,
+                              GestureDetector(
+                                onTap: () => vm.toggleTask(task),
+                                child: AnimatedContainer(
+                                  duration: const Duration(milliseconds: 250),
+                                  width: 28,
+                                  height: 28,
+                                  decoration: BoxDecoration(
+                                    color: task.status == TaskStatus.completed
+                                        ? const Color(0xFF22C55E)
+                                        : Colors.transparent,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(
+                                      color: task.status == TaskStatus.completed
+                                          ? const Color(0xFF22C55E)
+                                          : (isDark
+                                                ? const Color(0xFF3A3A3A)
+                                                : AppColors.borderLight),
+                                      width: 2,
                                     ),
                                   ),
-                                  const SizedBox(height: 6),
-                                  Row(
-                                    children: [
-                                      Icon(
-                                        Icons.schedule_rounded,
-                                        size: 12,
-                                        color: secondary,
-                                      ),
-                                      const SizedBox(width: 3),
-                                      Text(
-                                        vm.formatTimeRange(task, context),
-                                        style: AppTextStyles.body.copyWith(
-                                          fontSize: 11,
-                                          color: secondary,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(
-                                          horizontal: 6,
-                                          vertical: 2,
-                                        ),
-                                        decoration: BoxDecoration(
-                                          color: priorityColor.withOpacity(
-                                            0.12,
-                                          ),
-                                          borderRadius: BorderRadius.circular(
-                                            6,
-                                          ),
-                                        ),
-                                        child: Text(
-                                          _priorityLabel(task.priority),
-                                          style: AppTextStyles.body.copyWith(
-                                            fontSize: 9,
-                                            fontWeight: FontWeight.w700,
-                                            color: priorityColor,
-                                            letterSpacing: 0.3,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                            GestureDetector(
-                              onTap: () => vm.toggleTask(task),
-                              child: AnimatedContainer(
-                                duration: const Duration(milliseconds: 250),
-                                width: 28,
-                                height: 28,
-                                decoration: BoxDecoration(
-                                  color: task.isCompleted
-                                      ? const Color(0xFF22C55E)
-                                      : Colors.transparent,
-                                  shape: BoxShape.circle,
-                                  border: Border.all(
-                                    color: task.isCompleted
-                                        ? const Color(0xFF22C55E)
-                                        : (isDark
-                                              ? const Color(0xFF3A3A3A)
-                                              : AppColors.borderLight),
-                                    width: 2,
-                                  ),
+                                  child: task.status == TaskStatus.completed
+                                      ? const Icon(
+                                          Icons.check_rounded,
+                                          color: Colors.white,
+                                          size: 16,
+                                        )
+                                      : null,
                                 ),
-                                child: task.isCompleted
-                                    ? const Icon(
-                                        Icons.check_rounded,
-                                        color: Colors.white,
-                                        size: 16,
-                                      )
-                                    : null,
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -764,6 +747,7 @@ class _CalendarScreenState extends State<CalendarScreen>
     );
   }
 
+  // ========== EMPTY STATE ==========
   Widget _buildEmptyState(bool isDark) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 40),
@@ -791,6 +775,227 @@ class _CalendarScreenState extends State<CalendarScreen>
     );
   }
 
+  // ========== EDIT DIALOG ==========
+  void _showEditDialog(
+    BuildContext context,
+    CalendarViewModel vm,
+    CalendarTask task,
+  ) {
+    CalendarTask editedTask = task.copyWith();
+
+    showDialog(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.edit_note_rounded, color: AppColors.primary),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Edit Task',
+                    style: AppTextStyles.body.copyWith(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w700,
+                      color: Theme.of(context).textTheme.bodyMedium!.color,
+                    ),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextFormField(
+                      initialValue: editedTask.title,
+                      decoration: const InputDecoration(
+                        labelText: 'Title',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (val) => setState(
+                        () => editedTask = editedTask.copyWith(title: val),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    TextFormField(
+                      initialValue: editedTask.description ?? '',
+                      decoration: const InputDecoration(
+                        labelText: 'Description (optional)',
+                        border: OutlineInputBorder(),
+                      ),
+                      onChanged: (val) => setState(
+                        () => editedTask = editedTask.copyWith(
+                          description: val.isEmpty ? null : val,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<TaskPriority>(
+                      value: editedTask.priority,
+                      items: TaskPriority.values
+                          .map(
+                            (p) => DropdownMenuItem(
+                              value: p,
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    p == TaskPriority.high
+                                        ? Icons.priority_high
+                                        : p == TaskPriority.medium
+                                        ? Icons.flag
+                                        : Icons.flag_outlined,
+                                    color: _priorityColor(p),
+                                    size: 18,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(p.name.toUpperCase()),
+                                ],
+                              ),
+                            ),
+                          )
+                          .toList(),
+                      onChanged: (val) => setState(
+                        () => editedTask = editedTask.copyWith(priority: val!),
+                      ),
+                      decoration: const InputDecoration(
+                        labelText: 'Priority',
+                        border: OutlineInputBorder(),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            onTap: () async {
+                              final date = await showDatePicker(
+                                context: context,
+                                initialDate: editedTask.dueDateTime,
+                                firstDate: DateTime(2024),
+                                lastDate: DateTime(2027),
+                              );
+                              if (date != null) {
+                                final time = await showTimePicker(
+                                  context: context,
+                                  initialTime: TimeOfDay.fromDateTime(
+                                    editedTask.dueDateTime,
+                                  ),
+                                );
+                                if (time != null) {
+                                  final newDateTime = DateTime(
+                                    date.year,
+                                    date.month,
+                                    date.day,
+                                    time.hour,
+                                    time.minute,
+                                  );
+                                  setState(
+                                    () => editedTask = editedTask.copyWith(
+                                      dueDateTime: newDateTime,
+                                    ),
+                                  );
+                                }
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                vertical: 12,
+                                horizontal: 8,
+                              ),
+                              decoration: BoxDecoration(
+                                border: Border.all(color: Colors.grey.shade300),
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                              child: Row(
+                                children: [
+                                  Icon(
+                                    Icons.calendar_today,
+                                    color: AppColors.primary,
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: Text(
+                                      'Due: ${editedTask.dueDateTime.toLocal().toString().substring(0, 16)}',
+                                      style: AppTextStyles.body,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    TextFormField(
+                      initialValue: editedTask.durationMinutes.toString(),
+                      keyboardType: TextInputType.number,
+                      decoration: const InputDecoration(
+                        labelText: 'Duration (minutes)',
+                        border: OutlineInputBorder(),
+                        hintText: 'e.g. 60',
+                      ),
+                      onChanged: (val) {
+                        final minutes = int.tryParse(val);
+                        if (minutes != null &&
+                            minutes >= 5 &&
+                            minutes <= 1440) {
+                          setState(
+                            () => editedTask = editedTask.copyWith(
+                              durationMinutes: minutes,
+                            ),
+                          );
+                        }
+                      },
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(color: Colors.grey.shade600),
+                  ),
+                ),
+                ElevatedButton(
+                  onPressed: () {
+                    if (editedTask.durationMinutes < 5) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Duration must be at least 5 minutes'),
+                        ),
+                      );
+                      return;
+                    }
+                    vm.updateTask(editedTask);
+                    Navigator.pop(context);
+                    _listAnimController.reset();
+                    _listAnimController.forward();
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                  ),
+                  child: const Text('Save'),
+                ),
+              ],
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // ========== HELPERS ==========
   Color _priorityColor(TaskPriority p) {
     switch (p) {
       case TaskPriority.high:
@@ -802,48 +1007,40 @@ class _CalendarScreenState extends State<CalendarScreen>
     }
   }
 
-  String _priorityLabel(TaskPriority p) {
+  Color _statusColor(String displayStatus) {
+    switch (displayStatus) {
+      case 'pending':
+        return Colors.orange;
+      case 'ongoing':
+        return Colors.blue;
+      case 'overdue':
+        return Colors.red;
+      case 'complete':
+        return Colors.green;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  IconData _categoryIcon(TaskPriority p) {
     switch (p) {
       case TaskPriority.high:
-        return 'HIGH';
+        return Icons.priority_high;
       case TaskPriority.medium:
-        return 'MED';
+        return Icons.flag;
       case TaskPriority.low:
-        return 'LOW';
+        return Icons.flag_outlined;
     }
   }
 
-  IconData _categoryIcon(TaskCategory c) {
-    switch (c) {
-      case TaskCategory.exam:
-        return Icons.edit_note_rounded;
-      case TaskCategory.assignment:
-        return Icons.assignment_outlined;
-      case TaskCategory.lecture:
-        return Icons.school_outlined;
-      case TaskCategory.study:
-        return Icons.menu_book_rounded;
-      case TaskCategory.meeting:
-        return Icons.people_outline_rounded;
-      case TaskCategory.personal:
-        return Icons.person_outline_rounded;
-    }
-  }
-
-  Color _categoryColor(TaskCategory c) {
-    switch (c) {
-      case TaskCategory.exam:
+  Color _categoryColor(TaskPriority p) {
+    switch (p) {
+      case TaskPriority.high:
         return const Color(0xFFEF4444);
-      case TaskCategory.assignment:
-        return const Color(0xFF8B5CF6);
-      case TaskCategory.lecture:
-        return const Color(0xFF3B82F6);
-      case TaskCategory.study:
-        return const Color(0xFF22C55E);
-      case TaskCategory.meeting:
+      case TaskPriority.medium:
         return const Color(0xFFF59E0B);
-      case TaskCategory.personal:
-        return const Color(0xFFEC4899);
+      case TaskPriority.low:
+        return const Color(0xFF22C55E);
     }
   }
 
