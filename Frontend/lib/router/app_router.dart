@@ -94,8 +94,13 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: AppRoutes.calendar,
-          pageBuilder: (context, state) =>
-              MaterialPage(child: CalendarScreen()),
+          builder: (context, state) {
+            final extra = state.extra as Map<String, dynamic>?;
+            return CalendarScreen(
+              initialTaskId: extra?['taskId'] as String?,
+              initialDate: extra?['date'] as DateTime?,
+            );
+          },
         ),
         GoRoute(
           path: AppRoutes.roadmap,

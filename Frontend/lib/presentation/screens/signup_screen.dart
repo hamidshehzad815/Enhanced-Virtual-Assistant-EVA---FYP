@@ -16,8 +16,6 @@ class SignupScreen extends StatefulWidget {
 }
 
 class _SignupScreenState extends State<SignupScreen> {
-  final _formKey = GlobalKey<FormState>();
-
   final _nameController = TextEditingController();
   final _userNameController = TextEditingController();
   final _emailController = TextEditingController();
@@ -168,142 +166,145 @@ class _SignupScreenState extends State<SignupScreen> {
     final iconColor = Theme.of(context).textTheme.bodySmall!.color!;
 
     return Form(
-      key: _formKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Full Name
-          _label('Full Name'),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _nameController,
-            forceErrorText: auth.nameError,
-            textCapitalization: TextCapitalization.words,
-            style: AppTextStyles.body.copyWith(
-              fontSize: 14,
-              color: primaryText,
-            ),
-            decoration: _inputDecoration('Enter your name', isDark),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Please enter your full name';
-              }
-              return null;
-            },
-            autovalidateMode: AutovalidateMode.onUserInteraction,
-          ),
-          const SizedBox(height: 16),
-
-          //username instead of major
-
-          // User Name
-          _label('User Name'),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _userNameController,
-            forceErrorText: auth.userNameError,
-            textCapitalization: TextCapitalization.words,
-            style: AppTextStyles.body.copyWith(
-              fontSize: 14,
-              color: primaryText,
-            ),
-            decoration: _inputDecoration('e.g. johndoe', isDark),
-            validator: (value) {
-              if (value == null || value.trim().isEmpty) {
-                return 'Please enter your user name';
-              }
-
-              final regex = RegExp(r'^[a-z]+$');
-
-              if (!regex.hasMatch(value)) {
-                return 'Only small letters allowed';
-              }
-
-              return null;
-            },
-            autovalidateMode: AutovalidateMode.onUserInteraction,
-          ),
-          const SizedBox(height: 16),
-          //username small , no char
-
-          // Email
-          _label('Email Address'),
-          const SizedBox(height: 8),
-          TextFormField(
-            forceErrorText: auth.emailError,
-            controller: _emailController,
-            keyboardType: TextInputType.emailAddress,
-            style: AppTextStyles.body.copyWith(
-              fontSize: 14,
-              color: primaryText,
-            ),
-            decoration: _inputDecoration('Your email', isDark),
-            validator: Validations.emailValidation,
-            autovalidateMode: AutovalidateMode.onUnfocus,
-          ),
-          const SizedBox(height: 16),
-
-          // Password
-          _label('Password'),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _passwordController,
-            forceErrorText: auth.passwordError,
-            obscureText: _obscurePassword,
-            style: AppTextStyles.body.copyWith(
-              fontSize: 14,
-              color: primaryText,
-            ),
-            decoration: _inputDecoration('8 characters minimum', isDark)
-                .copyWith(
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword
-                          ? Icons.visibility_off_outlined
-                          : Icons.visibility_outlined,
-                      color: iconColor,
-                      size: 20,
-                    ),
-                    onPressed: () =>
-                        setState(() => _obscurePassword = !_obscurePassword),
-                  ),
+      child: Builder(
+        builder: (context) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Full Name
+              _label('Full Name'),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _nameController,
+                forceErrorText: auth.nameError,
+                textCapitalization: TextCapitalization.words,
+                style: AppTextStyles.body.copyWith(
+                  fontSize: 14,
+                  color: primaryText,
                 ),
-            validator: (value) => Validations.strongPassword(value),
-            autovalidateMode: AutovalidateMode.onUnfocus,
-          ),
-          const SizedBox(height: 24),
-
-          // Create Account Button
-          ElevatedButton(
-            onPressed: auth.isLoading
-                ? null
-                : () {
-                    if (_formKey.currentState!.validate()) {
-                      _performSignup();
-                    }
-                  },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
+                decoration: _inputDecoration('Enter your name', isDark),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter your full name';
+                  }
+                  return null;
+                },
+                autovalidateMode: AutovalidateMode.onUserInteraction,
               ),
-              elevation: 0,
-            ),
-            child: auth.isLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(Colors.white),
+              const SizedBox(height: 16),
+          
+              //username instead of major
+          
+              // User Name
+              _label('User Name'),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _userNameController,
+                forceErrorText: auth.userNameError,
+                textCapitalization: TextCapitalization.words,
+                style: AppTextStyles.body.copyWith(
+                  fontSize: 14,
+                  color: primaryText,
+                ),
+                decoration: _inputDecoration('e.g. johndoe', isDark),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return 'Please enter your user name';
+                  }
+          
+                  final regex = RegExp(r'^[a-z]+$');
+          
+                  if (!regex.hasMatch(value)) {
+                    return 'Only small letters allowed';
+                  }
+          
+                  return null;
+                },
+                autovalidateMode: AutovalidateMode.onUserInteraction,
+              ),
+              const SizedBox(height: 16),
+              //username small , no char
+          
+              // Email
+              _label('Email Address'),
+              const SizedBox(height: 8),
+              TextFormField(
+                forceErrorText: auth.emailError,
+                controller: _emailController,
+                keyboardType: TextInputType.emailAddress,
+                style: AppTextStyles.body.copyWith(
+                  fontSize: 14,
+                  color: primaryText,
+                ),
+                decoration: _inputDecoration('Your email', isDark),
+                validator: Validations.emailValidation,
+                autovalidateMode: AutovalidateMode.onUnfocus,
+              ),
+              const SizedBox(height: 16),
+          
+              // Password
+              _label('Password'),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _passwordController,
+                forceErrorText: auth.passwordError,
+                obscureText: _obscurePassword,
+                style: AppTextStyles.body.copyWith(
+                  fontSize: 14,
+                  color: primaryText,
+                ),
+                decoration: _inputDecoration('8 characters minimum', isDark)
+                    .copyWith(
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility_off_outlined
+                              : Icons.visibility_outlined,
+                          color: iconColor,
+                          size: 20,
+                        ),
+                        onPressed: () =>
+                            setState(() => _obscurePassword = !_obscurePassword),
+                      ),
                     ),
-                  )
-                : Text('Create Account', style: AppTextStyles.button),
-          ),
-        ],
+                validator: (value) => Validations.strongPassword(value),
+                autovalidateMode: AutovalidateMode.onUnfocus,
+              ),
+              const SizedBox(height: 24),
+          
+              // Create Account Button
+              ElevatedButton(
+                onPressed: auth.isLoading
+                    ? null
+                    : () {
+                        if (Form.of(context)?.validate() ?? false) {
+                          _performSignup();
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 0,
+                ),
+                child: auth.isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation(Colors.white),
+                        ),
+                      )
+                    : Text('Create Account', style: AppTextStyles.button),
+              ),
+            ],
+          );
+        }
       ),
     );
   }

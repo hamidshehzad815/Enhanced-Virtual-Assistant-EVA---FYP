@@ -13,7 +13,6 @@ class EditProfileScreen extends StatefulWidget {
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
-  final _formKey = GlobalKey<FormState>();
   late TextEditingController _nameController;
   late TextEditingController _usernameController;
   late TextEditingController _timezoneController;
@@ -64,7 +63,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _saveChanges() async {
-    if (_formKey.currentState!.validate()) {
+    if (Form.of(context)?.validate() ?? false) {
       try {
         await widget.viewModel.updateProfile(
           name: _nameController.text.trim(),
@@ -140,7 +139,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Form(
-          key: _formKey,
           child: Column(
             children: [
               // ─── Avatar Section ──────────────────────────────
