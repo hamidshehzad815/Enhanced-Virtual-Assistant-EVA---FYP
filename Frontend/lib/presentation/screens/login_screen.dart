@@ -14,8 +14,6 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _formKey = GlobalKey<FormState>();
-
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _rememberMe = true;
@@ -120,137 +118,140 @@ class _LoginScreenState extends State<LoginScreen> {
     final iconColor = secondaryText;
 
     return Form(
-      key: _formKey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Email
-          _label('Email Address', isDark),
-          const SizedBox(height: 8),
-          TextFormField(
-            controller: _emailController,
-            forceErrorText: auth.emailError,
-            keyboardType: TextInputType.emailAddress,
-            style: AppTextStyles.body.copyWith(
-              fontSize: 14,
-              color: primaryText,
-            ),
-            decoration: _inputDecoration('Your email', isDark),
-            validator: Validations.emailValidation,
-            autovalidateMode: AutovalidateMode.onUnfocus,
-          ),
-          const SizedBox(height: 16),
-
-          // Password
-          _label('Password', isDark),
-          const SizedBox(height: 8),
-          TextFormField(
-            forceErrorText: auth.passwordError,
-            controller: _passwordController,
-            obscureText: _obscurePassword,
-            style: AppTextStyles.body.copyWith(
-              fontSize: 14,
-              color: primaryText,
-            ),
-            decoration: _inputDecoration('Password', isDark).copyWith(
-              suffixIcon: IconButton(
-                icon: Icon(
-                  _obscurePassword
-                      ? Icons.visibility_off_outlined
-                      : Icons.visibility_outlined,
-                  color: iconColor,
-                  size: 20,
-                ),
-                onPressed: () =>
-                    setState(() => _obscurePassword = !_obscurePassword),
-              ),
-            ),
-            validator: (value) => Validations.strongPassword(value),
-            autovalidateMode: AutovalidateMode.onUnfocus,
-          ),
-          const SizedBox(height: 14),
-
-          // Remember Me + Forgot Password
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      child: Builder(
+        builder: (context) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: Checkbox(
-                      value: _rememberMe,
-                      onChanged: (val) =>
-                          setState(() => _rememberMe = val ?? false),
-                      activeColor: AppColors.primary,
-                      checkColor: Colors.white,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(4),
-                      ),
-                      side: BorderSide(
-                        color: isDark
-                            ? AppColors.borderDark
-                            : AppColors.borderLight,
-                      ),
+              // Email
+              _label('Email Address', isDark),
+              const SizedBox(height: 8),
+              TextFormField(
+                controller: _emailController,
+                forceErrorText: auth.emailError,
+                keyboardType: TextInputType.emailAddress,
+                style: AppTextStyles.body.copyWith(
+                  fontSize: 14,
+                  color: primaryText,
+                ),
+                decoration: _inputDecoration('Your email', isDark),
+                validator: Validations.emailValidation,
+                autovalidateMode: AutovalidateMode.onUnfocus,
+              ),
+              const SizedBox(height: 16),
+
+              // Password
+              _label('Password', isDark),
+              const SizedBox(height: 8),
+              TextFormField(
+                forceErrorText: auth.passwordError,
+                controller: _passwordController,
+                obscureText: _obscurePassword,
+                style: AppTextStyles.body.copyWith(
+                  fontSize: 14,
+                  color: primaryText,
+                ),
+                decoration: _inputDecoration('Password', isDark).copyWith(
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword
+                          ? Icons.visibility_off_outlined
+                          : Icons.visibility_outlined,
+                      color: iconColor,
+                      size: 20,
                     ),
+                    onPressed: () =>
+                        setState(() => _obscurePassword = !_obscurePassword),
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Remember me',
-                    style: AppTextStyles.subtitleSmall.copyWith(
-                      fontSize: 13,
-                      color: primaryText,
+                ),
+                validator: (value) => Validations.strongPassword(value),
+                autovalidateMode: AutovalidateMode.onUnfocus,
+              ),
+              const SizedBox(height: 14),
+
+              // Remember Me + Forgot Password
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    children: [
+                      SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: Checkbox(
+                          value: _rememberMe,
+                          onChanged: (val) =>
+                              setState(() => _rememberMe = val ?? false),
+                          activeColor: AppColors.primary,
+                          checkColor: Colors.white,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          side: BorderSide(
+                            color: isDark
+                                ? AppColors.borderDark
+                                : AppColors.borderLight,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Remember me',
+                        style: AppTextStyles.subtitleSmall.copyWith(
+                          fontSize: 13,
+                          color: primaryText,
+                        ),
+                      ),
+                    ],
+                  ),
+                  GestureDetector(
+                    onTap: () {},
+                    child: Text(
+                      'Forgot password?',
+                      style: AppTextStyles.subtitleMedium.copyWith(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.primary,
+                      ),
                     ),
                   ),
                 ],
               ),
-              GestureDetector(
-                onTap: () {},
-                child: Text(
-                  'Forgot password?',
-                  style: AppTextStyles.subtitleMedium.copyWith(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.primary,
+              const SizedBox(height: 24),
+
+              // Sign In Button
+              ElevatedButton(
+                onPressed: auth.isLoading
+                    ? null
+                    : () {
+                        if (Form.of(context).validate()) {
+                          _performLogin();
+                        }
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.primary,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
                   ),
+                  elevation: 0,
                 ),
+                child: auth.isLoading
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation(Colors.white),
+                        ),
+                      )
+                    : Text('Sign In', style: AppTextStyles.button),
               ),
             ],
-          ),
-          const SizedBox(height: 24),
-
-          // Sign In Button
-          ElevatedButton(
-            onPressed: auth.isLoading
-                ? null
-                : () {
-                    if (_formKey.currentState!.validate()) {
-                      _performLogin();
-                    }
-                  },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.primary,
-              foregroundColor: Colors.white,
-              padding: const EdgeInsets.symmetric(vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14),
-              ),
-              elevation: 0,
-            ),
-            child: auth.isLoading
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(
-                      strokeWidth: 2,
-                      valueColor: AlwaysStoppedAnimation(Colors.white),
-                    ),
-                  )
-                : Text('Sign In', style: AppTextStyles.button),
-          ),
-        ],
+          );
+        },
       ),
     );
   }

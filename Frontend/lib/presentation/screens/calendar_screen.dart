@@ -23,6 +23,8 @@ class _CalendarScreenState extends State<CalendarScreen>
   late final AnimationController _listAnimController;
   late final Animation<double> _listFadeAnim;
   bool _dialogShown = false;
+  bool _dialogOpenScheduled = false;
+  VoidCallback? _viewModelListener;
 
   @override
   void initState() {
@@ -39,27 +41,55 @@ class _CalendarScreenState extends State<CalendarScreen>
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_viewModelListener == null) {
+      _viewModelListener = _tryOpenDialog;
+      context.read<CalendarViewModel>().addListener(_viewModelListener!);
+    }
+    _scheduleDialogTry();
+  }
+
+  @override
   void dispose() {
+    if (_viewModelListener != null) {
+      context.read<CalendarViewModel>().removeListener(_viewModelListener!);
+    }
     _listAnimController.dispose();
     super.dispose();
+  }
+
+  void _tryOpenDialog() {
+    if (!mounted || _dialogShown || widget.initialTaskId == null) return;
+
+    final vm = context.read<CalendarViewModel>();
+    if (vm.tasks.isEmpty) {
+      _scheduleDialogTry();
+      return;
+    }
+
+    try {
+      final task = vm.tasks.firstWhere((t) => t.id == widget.initialTaskId);
+      _showEditDialog(context, vm, task);
+      _dialogShown = true;
+    } catch (_) {
+      // Task not found – ignore
+    }
+  }
+
+  void _scheduleDialogTry() {
+    if (!mounted || _dialogOpenScheduled) return;
+    _dialogOpenScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _dialogOpenScheduled = false;
+      _tryOpenDialog();
+    });
   }
 
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<CalendarViewModel>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      // Show edit dialog if initialTaskId provided
-      if (!_dialogShown &&
-          widget.initialTaskId != null &&
-          vm.tasks.isNotEmpty) {
-        try {
-          final task = vm.tasks.firstWhere((t) => t.id == widget.initialTaskId);
-          _showEditDialog(context, vm, task);
-          _dialogShown = true;
-        } catch (_) {}
-      }
-    });
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
@@ -223,7 +253,10 @@ class _CalendarScreenState extends State<CalendarScreen>
         ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(32),
+        borderRadius: BorderRadius.only(
+          topLeft: Radius.circular(20),
+          topRight: Radius.circular(20),
+        ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(18, 18, 18, 12),
           child: Column(
@@ -580,19 +613,27 @@ class _CalendarScreenState extends State<CalendarScreen>
             size: 22,
           ),
         ),
-        onDismissed: (_) {
-          vm.deleteTask(task);
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('${task.title} removed'),
-              duration: const Duration(seconds: 1),
-              behavior: SnackBarBehavior.floating,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
+        onDismissed: (_) async {
+          try {
+            await vm.deleteTask(task);
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('${task.title} removed'),
+                duration: const Duration(seconds: 1),
+                behavior: SnackBarBehavior.floating,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                margin: const EdgeInsets.all(12),
               ),
-              margin: const EdgeInsets.all(12),
-            ),
-          );
+            );
+          } catch (e) {
+            if (!mounted) return;
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to delete task: $e')),
+            );
+          }
         },
         child: GestureDetector(
           onTap: () => _showEditDialog(context, vm, task),
@@ -704,7 +745,20 @@ class _CalendarScreenState extends State<CalendarScreen>
                                 ),
                               ),
                               GestureDetector(
-                                onTap: () => vm.toggleTask(task),
+                                onTap: () async {
+                                  try {
+                                    await vm.toggleTask(task);
+                                  } catch (e) {
+                                    if (!mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Failed to update task: $e',
+                                        ),
+                                      ),
+                                    );
+                                  }
+                                },
                                 child: AnimatedContainer(
                                   duration: const Duration(milliseconds: 250),
                                   width: 28,
@@ -961,7 +1015,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                   ),
                 ),
                 ElevatedButton(
-                  onPressed: () {
+                  onPressed: () async {
                     if (editedTask.durationMinutes < 5) {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(
@@ -970,10 +1024,18 @@ class _CalendarScreenState extends State<CalendarScreen>
                       );
                       return;
                     }
-                    vm.updateTask(editedTask);
-                    Navigator.pop(context);
-                    _listAnimController.reset();
-                    _listAnimController.forward();
+                    try {
+                      await vm.updateTask(editedTask);
+                      if (!mounted) return;
+                      Navigator.pop(context);
+                      _listAnimController.reset();
+                      _listAnimController.forward();
+                    } catch (e) {
+                      if (!mounted) return;
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(content: Text('Failed to save task: $e')),
+                      );
+                    }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
