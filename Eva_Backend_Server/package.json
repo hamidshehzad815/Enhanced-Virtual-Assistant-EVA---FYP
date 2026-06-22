@@ -7,7 +7,10 @@
     "start": "node app.js",
     "dev": "nodemon app.js",
     "test": "NODE_ENV=test jest --runInBand",
-    "seed:areej": "node scripts/seed-areej-user.js"
+    "seed:areej": "node scripts/seed-areej-user.js",
+    "seed:roadmaps": "node scripts/seed-roadmaps.js",
+    "seed:learning-plan": "node scripts/seed-learning-plan.js",
+    "seed:areej-python": "node scripts/seed-roadmaps.js && node scripts/seed-areej-user.js && node scripts/seed-learning-plan.js --replace --seed-roadmaps"
   },
   "keywords": [
     "eva",
