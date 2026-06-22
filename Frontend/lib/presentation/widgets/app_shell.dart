@@ -17,9 +17,6 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell>
     with SingleTickerProviderStateMixin {
-  bool _navVisible = true;
-  double _lastOffset = 0;
-
   late final AnimationController _navController;
   late final Animation<double> _navAnimation;
 
@@ -29,7 +26,7 @@ class _AppShellState extends State<AppShell>
     _navController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 260),
-      value: 1.0, // starts visible
+      value: 1.0, // always visible by default
     );
     _navAnimation = CurvedAnimation(
       parent: _navController,
@@ -41,28 +38,6 @@ class _AppShellState extends State<AppShell>
   void dispose() {
     _navController.dispose();
     super.dispose();
-  }
-
-  bool _handleScrollNotification(ScrollNotification notification) {
-    if (notification is ScrollUpdateNotification) {
-      final currentOffset = notification.metrics.pixels;
-      final delta = currentOffset - _lastOffset;
-      _lastOffset = currentOffset;
-
-      if (delta.abs() < 5) return false;
-
-      final isScrollingDown = delta > 0;
-      final isNearTop = currentOffset < 40;
-
-      if (isScrollingDown && _navVisible && !isNearTop) {
-        _navVisible = false;
-        _navController.reverse();
-      } else if (!isScrollingDown && !_navVisible) {
-        _navVisible = true;
-        _navController.forward();
-      }
-    }
-    return false;
   }
 
   // ── Tab definitions ───────────────────────────────────────────────────────
@@ -129,7 +104,11 @@ class _AppShellState extends State<AppShell>
     if (_tabs[index].route == '__more__') {
       _showMoreSheet(ctx);
     } else {
-      ctx.go(_tabs[index].route);
+      if (index == 2) {
+        ctx.push('/chat');
+      } else {
+        ctx.go(_tabs[index].route);
+      }
     }
   }
 
@@ -194,11 +173,7 @@ class _AppShellState extends State<AppShell>
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      body: NotificationListener<ScrollNotification>(
-        onNotification: _handleScrollNotification,
-        child: widget.child,
-      ),
-
+      body: widget.child,
       bottomNavigationBar: SizeTransition(
         sizeFactor: _navAnimation,
         axisAlignment: -1,

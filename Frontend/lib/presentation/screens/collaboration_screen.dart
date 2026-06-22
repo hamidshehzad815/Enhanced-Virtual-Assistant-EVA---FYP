@@ -15,7 +15,6 @@ class CollaborationScreen extends StatefulWidget {
 
 class _CollaborationScreenState extends State<CollaborationScreen> {
   final TextEditingController _searchController = TextEditingController();
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
 
   String _quoteOfDay =
       '"Study hard, for the well is deep and our brains are shallow."';
@@ -63,55 +62,58 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      key: _scaffoldKey,
       drawer: const AppDrawer(),
       body: SafeArea(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildHeader(isDark),
-            const SizedBox(height: 15),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => _scaffoldKey.currentState?.openDrawer(),
-                    child: Container(
-                      width: 44,
-                      height: 44,
-                      decoration: BoxDecoration(
-                        color: Theme.of(context).cardColor,
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                          color: Theme.of(context).dividerColor,
+        child: Builder(
+          builder: (context) {
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildHeader(isDark),
+                const SizedBox(height: 15),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: Row(
+                    children: [
+                      GestureDetector(
+                        onTap: () => Scaffold.of(context).openDrawer(),
+                        child: Container(
+                          width: 44,
+                          height: 44,
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).cardColor,
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(
+                              color: Theme.of(context).dividerColor,
+                            ),
+                          ),
+                          child: Icon(
+                            Icons.menu_rounded,
+                            size: 22,
+                            color: Theme.of(context).hintColor,
+                          ),
                         ),
                       ),
-                      child: Icon(
-                        Icons.menu_rounded,
-                        size: 22,
-                        color: Theme.of(context).hintColor,
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: CollaborationSearchBar(
+                          controller: _searchController,
+                        ),
                       ),
-                    ),
+                    ],
                   ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: CollaborationSearchBar(
-                      controller: _searchController,
-                    ),
+                ),
+                const SizedBox(height: 16),
+                ProfileQuoteRow(quote: _quoteOfDay, onEditQuote: _onEditQuote),
+                Expanded(
+                  child: MessagesSection(
+                    conversations: _conversations,
+                    onConversationTap: _onConversationTap,
                   ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 16),
-            ProfileQuoteRow(quote: _quoteOfDay, onEditQuote: _onEditQuote),
-            Expanded(
-              child: MessagesSection(
-                conversations: _conversations,
-                onConversationTap: _onConversationTap,
-              ),
-            ),
-          ],
+                ),
+              ],
+            );
+          }
         ),
       ),
     );

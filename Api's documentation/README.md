@@ -83,6 +83,7 @@ Conflict responses (`409`) may include extra context:
 | [settings-learning-schedules-api.md](./settings-learning-schedules-api.md) | Learning schedule CRUD under `/api/settings/learning-schedules` |
 | [profile-api.md](./profile-api.md) | `GET` / `PATCH /api/profile`, `POST` / `DELETE /api/profile/avatar`, `DELETE /api/profile/account` |
 | [roadmaps-api.md](./roadmaps-api.md) | `GET /api/roadmaps/*`, `PATCH /api/learning/:goalId/sessions/:sessionId`, `PATCH /api/learning/:goalId/status` |
+| [tasks-api.md](./tasks-api.md) | `GET /api/tasks/calendar`, `GET /api/tasks/:id`, `PATCH /api/tasks/:id`, `DELETE /api/tasks/:id` |
 | [push-notifications-frontend-setup.md](./push-notifications-frontend-setup.md) | FCM / push token registration (Flutter setup guide) |
 
 ## Quick frontend map
@@ -97,5 +98,6 @@ Conflict responses (`409`) may include extra context:
 | Settings (toggles, quiet hours, reminders) | `GET /api/settings` | `PATCH /api/settings` |
 | Push device token (after login) | — | `PATCH /api/settings` with `push_token` — see [push-notifications-frontend-setup.md](./push-notifications-frontend-setup.md) |
 | Learning schedules UI | `GET /api/settings` or `GET /api/settings/learning-schedules` | `POST` / `PATCH` / `DELETE` on `/api/settings/learning-schedules` |
+| Calendar | `GET /api/tasks/calendar`, `GET /api/tasks/:id` | `PATCH /api/tasks/:id`, `DELETE /api/tasks/:id` — see [tasks-api.md](./tasks-api.md) |
 
 **Do not** update `preferred_learning_schedules` via `PATCH /api/settings`. Use the learning-schedules CRUD routes only.

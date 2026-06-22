@@ -1,124 +1,50 @@
 import 'package:flutter/material.dart';
 import 'package:table_calendar/table_calendar.dart';
 import '../../data/models/calendar_task_model.dart';
-
-List<CalendarTask> _buildPlaceholderTasks() {
-  final now = DateTime.now();
-  final today = DateTime(now.year, now.month, now.day);
-  final tomorrow = today.add(const Duration(days: 1));
-  final dayAfter = today.add(const Duration(days: 2));
-  final yesterday = today.subtract(const Duration(days: 1));
-  final nextWeek = today.add(const Duration(days: 5));
-
-  return [
-    CalendarTask(
-      id: '1',
-      title: 'Math Lecture',
-      date: today,
-      startTime: const TimeOfDay(hour: 8, minute: 0),
-      endTime: const TimeOfDay(hour: 9, minute: 30),
-      priority: TaskPriority.medium,
-      category: TaskCategory.lecture,
-      isCompleted: true,
-    ),
-    CalendarTask(
-      id: '2',
-      title: 'Intro to AI',
-      date: today,
-      startTime: const TimeOfDay(hour: 10, minute: 0),
-      endTime: const TimeOfDay(hour: 11, minute: 30),
-      priority: TaskPriority.high,
-      category: TaskCategory.lecture,
-    ),
-    CalendarTask(
-      id: '3',
-      title: 'NLP Assignment Submission',
-      date: today,
-      startTime: const TimeOfDay(hour: 13, minute: 0),
-      priority: TaskPriority.high,
-      category: TaskCategory.assignment,
-    ),
-    CalendarTask(
-      id: '4',
-      title: 'Group Study Session',
-      date: today,
-      startTime: const TimeOfDay(hour: 15, minute: 30),
-      endTime: const TimeOfDay(hour: 17, minute: 0),
-      priority: TaskPriority.low,
-      category: TaskCategory.study,
-    ),
-    CalendarTask(
-      id: '5',
-      title: 'Physics Lab',
-      date: today,
-      startTime: const TimeOfDay(hour: 13, minute: 0),
-      endTime: const TimeOfDay(hour: 15, minute: 0),
-      priority: TaskPriority.medium,
-      category: TaskCategory.lecture,
-    ),
-    CalendarTask(
-      id: '6',
-      title: 'NLP Mid Exam',
-      date: tomorrow,
-      startTime: const TimeOfDay(hour: 17, minute: 0),
-      endTime: const TimeOfDay(hour: 19, minute: 0),
-      priority: TaskPriority.high,
-      category: TaskCategory.exam,
-    ),
-    CalendarTask(
-      id: '7',
-      title: 'Python Roadmap – Module 3',
-      date: tomorrow,
-      startTime: const TimeOfDay(hour: 10, minute: 0),
-      endTime: const TimeOfDay(hour: 11, minute: 30),
-      priority: TaskPriority.medium,
-      category: TaskCategory.study,
-    ),
-    CalendarTask(
-      id: '8',
-      title: 'FYP Meeting',
-      date: dayAfter,
-      startTime: const TimeOfDay(hour: 14, minute: 0),
-      endTime: const TimeOfDay(hour: 15, minute: 0),
-      priority: TaskPriority.high,
-      category: TaskCategory.meeting,
-    ),
-    CalendarTask(
-      id: '9',
-      title: 'Database Quiz',
-      date: yesterday,
-      startTime: const TimeOfDay(hour: 9, minute: 0),
-      priority: TaskPriority.high,
-      category: TaskCategory.exam,
-      isCompleted: true,
-    ),
-    CalendarTask(
-      id: '10',
-      title: 'Software Engineering Presentation',
-      date: nextWeek,
-      startTime: const TimeOfDay(hour: 11, minute: 0),
-      endTime: const TimeOfDay(hour: 12, minute: 0),
-      priority: TaskPriority.high,
-      category: TaskCategory.assignment,
-    ),
-  ];
-}
+import '../../data/repositories/calendar_screen_repository.dart';
 
 class CalendarViewModel extends ChangeNotifier {
+  final CalendarRepository _repository;
+
+  // state
   DateTime _focusedDay = DateTime.now();
   DateTime _selectedDay = DateTime.now();
   CalendarFormat _calendarFormat = CalendarFormat.month;
-  final List<CalendarTask> _allTasks = _buildPlaceholderTasks();
+  List<CalendarTask> _allTasks = [];
+  bool _isLoading = false;
+  String? _error;
+
+  // filters
   TaskPriority? _filterPriority;
-  TaskCategory? _filterCategory;
   bool _showPendingOnly = false;
 
+  // getters
   DateTime get focusedDay => _focusedDay;
   DateTime get selectedDay => _selectedDay;
   CalendarFormat get calendarFormat => _calendarFormat;
-  TaskPriority? get filterPriority => _filterPriority;
-  TaskCategory? get filterCategory => _filterCategory;
-  bool get showPendingOnly => _showPendingOnly;
+  List<CalendarTask> get tasks => _allTasks;
+  bool get isLoading => _isLoading;
+  String? get error => _error;
+
+  CalendarViewModel(this._repository) {
+     loadTasks();
+  }
+
+  Future<void> loadTasks() async {
+    _isLoading = true;
+    _error = null;
+    notifyListeners();
+
+    try {
+      _allTasks = await _repository.fetchCalendarTasks();
+    } catch (e) {
+      _error = e.toString();
+      _allTasks = [];
+    } finally {
+      _isLoading = false;
+      notifyListeners();
+    }
+  }
 
   List<CalendarTask> get filteredTasks {
     var tasks = _tasksForDay(_selectedDay);
@@ -126,20 +52,18 @@ class CalendarViewModel extends ChangeNotifier {
     if (_filterPriority != null) {
       tasks = tasks.where((t) => t.priority == _filterPriority).toList();
     }
-    if (_filterCategory != null) {
-      tasks = tasks.where((t) => t.category == _filterCategory).toList();
-    }
+    // if you have category field, filter here
     if (_showPendingOnly) {
-      tasks = tasks.where((t) => !t.isCompleted).toList();
+      tasks = tasks.where((t) => t.status != TaskStatus.completed).toList();
     }
 
     tasks.sort((a, b) {
-      if (a.isCompleted != b.isCompleted) {
-        return a.isCompleted ? 1 : -1;
-      }
-      final aMin = a.startTime.hour * 60 + a.startTime.minute;
-      final bMin = b.startTime.hour * 60 + b.startTime.minute;
-      return aMin.compareTo(bMin);
+      // completed last
+      if (a.status == TaskStatus.completed && b.status != TaskStatus.completed)
+        return 1;
+      if (b.status == TaskStatus.completed && a.status != TaskStatus.completed)
+        return -1;
+      return a.dueDateTime.compareTo(b.dueDateTime);
     });
 
     return tasks;
@@ -170,44 +94,170 @@ class CalendarViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void setFilterCategory(TaskCategory? category) {
-    _filterCategory = category;
-    notifyListeners();
-  }
-
   void togglePendingOnly() {
     _showPendingOnly = !_showPendingOnly;
     notifyListeners();
   }
 
-  void toggleTask(CalendarTask task) {
-    task.isCompleted = !task.isCompleted;
+  // ---- API operations ----
+  Future<void> toggleTask(CalendarTask task) async {
+    final oldStatus = task.status;
+    final newStatus = oldStatus == TaskStatus.completed
+        ? TaskStatus.pending
+        : TaskStatus.completed;
+    final index = _allTasks.indexWhere((t) => t.id == task.id);
+    if (index == -1) return;
+
+    _allTasks[index] = task.copyWith(status: newStatus);
     notifyListeners();
+
+    try {
+      await _repository.updateTask(_allTasks[index]);
+    } catch (e) {
+      _allTasks[index] = task.copyWith(status: oldStatus);
+      notifyListeners();
+      rethrow;
+    }
   }
 
-  void deleteTask(CalendarTask task) {
-    _allTasks.removeWhere((t) => t.id == task.id);
+  Future<void> deleteTask(CalendarTask task) async {
+    final index = _allTasks.indexWhere((t) => t.id == task.id);
+    if (index == -1) return;
+    final removed = _allTasks.removeAt(index);
     notifyListeners();
+
+    try {
+      await _repository.deleteTask(task.id);
+    } catch (e) {
+      _allTasks.insert(index, removed);
+      notifyListeners();
+      rethrow;
+    }
   }
 
-  void restoreTask(CalendarTask task) {
-    _allTasks.add(task);
+  Future<void> updateTask(CalendarTask updatedTask) async {
+    final index = _allTasks.indexWhere((t) => t.id == updatedTask.id);
+    if (index == -1) return;
+    final old = _allTasks[index];
+    _allTasks[index] = updatedTask;
     notifyListeners();
+
+    try {
+      await _repository.updateTask(updatedTask);
+    } catch (e) {
+      _allTasks[index] = old;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  // ---- helpers ----
+  List<CalendarTask> _tasksForDay(DateTime day) {
+    final norm = DateTime(day.year, day.month, day.day);
+    return _allTasks.where((t) {
+      final d = DateTime(
+        t.dueDateTime.year,
+        t.dueDateTime.month,
+        t.dueDateTime.day,
+      );
+      return d == norm;
+    }).toList();
   }
 
   String formatTimeRange(CalendarTask task, BuildContext context) {
     final start = task.startTime.format(context);
-    if (task.endTime != null) {
-      final end = task.endTime!.format(context);
-      return '$start – $end';
-    }
-    return start;
+    final end = task.endTime.format(context);
+    return '$start – $end';
   }
 
-  List<CalendarTask> _tasksForDay(DateTime day) {
-    final norm = _normalize(day);
-    return _allTasks.where((t) => _normalize(t.date) == norm).toList();
-  }
+  // void injectDummyTasks() {
+  //   if (_allTasks.isNotEmpty) return
 
-  DateTime _normalize(DateTime d) => DateTime(d.year, d.month, d.day);
+  //   final today = DateTime.now();
+  //   final todayDate = DateTime(today.year, today.month, today.day);
+
+  //   _allTasks = [
+  //     CalendarTask(
+  //       id: 'd1',
+  //       title: 'Meeting Teams',
+  //       description: 'Discuss project status',
+  //       dueDateTime: DateTime(
+  //         todayDate.year,
+  //         todayDate.month,
+  //         todayDate.day,
+  //         9,
+  //         0,
+  //       ),
+  //       durationMinutes: 60,
+  //       priority: TaskPriority.high,
+  //       status: TaskStatus.pending,
+  //       displayStatus: 'pending',
+  //     ),
+  //     CalendarTask(
+  //       id: 'd2',
+  //       title: 'Landing Page - Project 1',
+  //       description: 'Design review',
+  //       dueDateTime: DateTime(
+  //         todayDate.year,
+  //         todayDate.month,
+  //         todayDate.day,
+  //         10,
+  //         0,
+  //       ),
+  //       durationMinutes: 150,
+  //       priority: TaskPriority.medium,
+  //       status: TaskStatus.pending,
+  //       displayStatus: 'ongoing',
+  //     ),
+  //     CalendarTask(
+  //       id: 'd3',
+  //       title: 'Lunch with Emma',
+  //       description: 'Cafe near office',
+  //       dueDateTime: DateTime(
+  //         todayDate.year,
+  //         todayDate.month,
+  //         todayDate.day,
+  //         13,
+  //         30,
+  //       ),
+  //       durationMinutes: 45,
+  //       priority: TaskPriority.low,
+  //       status: TaskStatus.pending,
+  //       displayStatus: 'pending',
+  //     ),
+  //     CalendarTask(
+  //       id: 'd4',
+  //       title: 'Code Review – Eva App',
+  //       description: 'Review pull requests',
+  //       dueDateTime: DateTime(
+  //         todayDate.year,
+  //         todayDate.month,
+  //         todayDate.day,
+  //         15,
+  //         0,
+  //       ),
+  //       durationMinutes: 90,
+  //       priority: TaskPriority.medium,
+  //       status: TaskStatus.pending,
+  //       displayStatus: 'pending',
+  //     ),
+  //     CalendarTask(
+  //       id: 'd5',
+  //       title: 'Gym Workout',
+  //       description: 'Evening session',
+  //       dueDateTime: DateTime(
+  //         todayDate.year,
+  //         todayDate.month,
+  //         todayDate.day,
+  //         18,
+  //         30,
+  //       ),
+  //       durationMinutes: 60,
+  //       priority: TaskPriority.low,
+  //       status: TaskStatus.pending,
+  //       displayStatus: 'pending',
+  //     ),
+  //   ];
+  //   notifyListeners();
+  // }
 }
