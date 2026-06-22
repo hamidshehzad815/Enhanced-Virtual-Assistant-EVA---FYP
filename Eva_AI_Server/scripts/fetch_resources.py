@@ -2,8 +2,8 @@
 """
 Fetch YouTube resources for roadmap_topics with fetched_at=null.
 
-Stops immediately if the YouTube API fails (quota, auth, network) instead of
-silently burning through the rest of the batch.
+Uses multiple API keys (rotates when daily quota is hit).
+Stores top 3 videos per topic ranked by view count.
 
 Usage:
   cd Eva_AI_Server
@@ -24,6 +24,24 @@ from config.database import database  # noqa: E402
 from config.settings import settings  # noqa: E402
 from db.roadmap_resources import count_unfetched, get_unfetched_topics  # noqa: E402
 from services.roadmap_youtube_worker import fetch_and_store_for_documents  # noqa: E402
+from services.youtube import resolve_youtube_api_keys  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# Add all your YouTube Data API keys here (used in order; rotates on quota).
+# Leave empty strings out — only non-empty keys are used.
+# Falls back to YOUTUBE_API_KEYS / YOUTUBE_API_KEY in .env when this list is empty.
+# ---------------------------------------------------------------------------
+YOUTUBE_API_KEYS: list[str] = [
+   "AIzaSyAd8Or7CL6gYrDk5eD6fUFJJwkQdzyc0Cw",
+   "AIzaSyAELI4hxQ4EtS-BeiXDi_ChGtOHRmnBchQ"
+]
+
+
+def _configured_api_keys() -> list[str]:
+    script_keys = [k.strip() for k in YOUTUBE_API_KEYS if k and str(k).strip()]
+    if script_keys:
+        return script_keys
+    return resolve_youtube_api_keys(None)
 
 
 def _resource_fetch_paused_banner(reason: str) -> str:
@@ -35,12 +53,22 @@ def _resource_fetch_paused_banner(reason: str) -> str:
         "  │  The resource train is parked until YouTube cooperates.     │\n"
         "  ╰────────────────────────────────────────────────────────────╯\n"
         f"\n  What went wrong:\n    {reason}\n\n"
-        "  What to do: fix the issue above, then run this script again.\n"
-        "  Rows already saved in Mongo are untouched; nothing was half-written for this topic.\n"
+        "  What to do: add another API key to YOUTUBE_API_KEYS in this script,\n"
+        "  or wait until quota resets, then run again.\n"
+        "  Rows already saved in Mongo are untouched.\n"
     )
 
 
 async def run() -> None:
+    api_keys = _configured_api_keys()
+    if not api_keys:
+        raise SystemExit(
+            "No YouTube API keys configured. Add keys to YOUTUBE_API_KEYS in "
+            "scripts/fetch_resources.py or set YOUTUBE_API_KEY / YOUTUBE_API_KEYS in .env",
+        )
+
+    print(f"YouTube API keys loaded: {len(api_keys)}")
+
     ok = await database.connect()
     if not ok:
         raise SystemExit("MongoDB connection failed")
@@ -67,6 +95,7 @@ async def run() -> None:
                 delay_seconds=settings.RESOURCE_FETCH_DELAY_SECONDS,
                 progress_every=10,
                 log_prefix="fetch_resources ",
+                api_keys=api_keys,
             )
             total_updated += updated
 
