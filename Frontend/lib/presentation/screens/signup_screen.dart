@@ -278,7 +278,7 @@ class _SignupScreenState extends State<SignupScreen> {
                 onPressed: auth.isLoading
                     ? null
                     : () {
-                        if (Form.of(context)?.validate() ?? false) {
+                        if (Form.of(context).validate()) {
                           _performSignup();
                         }
                       },
