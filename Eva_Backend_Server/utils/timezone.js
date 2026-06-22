@@ -178,6 +178,8 @@ const formatDateInTimezone = (value, timezoneValue, options = {}) => {
 module.exports = {
   resolveTimezone,
   normalizeTimezone,
+  parseDateOnly,
+  toUtcFromLocalParts,
   toLocalDayRangeUtc,
   formatDateInTimezone,
 };
