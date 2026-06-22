@@ -65,29 +65,29 @@ class CalendarTask {
     );
   }
 
-  factory CalendarTask.fromJson(Map<String, dynamic> json) {
-    return CalendarTask(
-      id: json['id'],
-      title: json['title'],
-      description: json['description'],
-      dueDateTime: DateTime.parse(json['due_datetime']),
-      durationMinutes: json['duration'] ?? 0,
-      priority: TaskPriority.values.firstWhere(
-        (e) => e.name == json['priority'],
-        orElse: () => TaskPriority.medium,
-      ),
-      status: TaskStatus.values.firstWhere(
-        (e) => e.name == json['status'],
-        orElse: () => TaskStatus.pending,
-      ),
-      displayStatus: json['display_status'] ?? 'pending',
-      isLearningTask: json['is_learning_task'] ?? false,
-      learningGoalId: json['learning_goal_id'],
-      completedAt: json['completed_at'] != null
-          ? DateTime.parse(json['completed_at'])
-          : null,
-    );
-  }
+factory CalendarTask.fromJson(Map<String, dynamic> json) {
+  return CalendarTask(
+    id: json['id'],
+    title: json['title'],
+    description: json['description'],
+    dueDateTime: DateTime.parse(json['due_datetime']).toLocal(), //fix no 4
+    durationMinutes: json['duration'] ?? 0,
+    priority: TaskPriority.values.firstWhere(
+      (e) => e.name == json['priority'],
+      orElse: () => TaskPriority.medium,
+    ),
+    status: TaskStatus.values.firstWhere(
+      (e) => e.name == json['status'],
+      orElse: () => TaskStatus.pending,
+    ),
+    displayStatus: json['display_status'] ?? 'pending',
+    isLearningTask: json['is_learning_task'] ?? false,
+    learningGoalId: json['learning_goal_id'],
+    completedAt: json['completed_at'] != null
+        ? DateTime.parse(json['completed_at'])
+        : null,
+  );
+}
 
   Map<String, dynamic> toJson() => {
     'title': title,
