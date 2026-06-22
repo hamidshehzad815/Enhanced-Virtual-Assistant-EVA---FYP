@@ -9,7 +9,7 @@ import '../../data/models/focus_data.dart';
 import '../../data/models/schedule_item.dart';
 import '../providers/home_screen_viewmodel.dart';
 import '../providers/profile_viewmodel.dart';
-import 'calendar_screen.dart';
+
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
 
@@ -661,86 +661,76 @@ class _HomeScreenState extends State<HomeScreen>
   Widget _buildScheduleItem(ScheduleItem item, bool isDark) {
     final tagColor = _getTagColor(item.status);
     return GestureDetector(
-    onTap: () {
-      if (item.taskId != null) {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => CalendarScreen(
-              initialDate: item.taskDate ?? DateTime.now(),
-              initialTaskId: item.taskId,
+      onTap: () {
+        if (item.taskId != null) {
+          context.push(
+            '/calendar',
+            extra: {
+              'taskId': item.taskId,
+              'date': item.taskDate ?? DateTime.now(),
+            },
+          );
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: isDark ? Colors.black12 : Colors.white.withValues(alpha: 0.7),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: isDark ? AppColors.borderDark : AppColors.borderLight,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          children: [
+            SizedBox(
+              width: 60,
+              child: Text(
+                item.time,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: isDark
+                      ? AppColors.secondaryTextDark
+                      : AppColors.secondaryTextLight,
+                ),
+              ),
             ),
-          ),
-        );
-      } else {
-        // Optional: show a snackbar if taskId is missing
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Task details not available'),
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    },
-    child: Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      decoration: BoxDecoration(
-        color: isDark ? Colors.black12 : Colors.white.withValues(alpha: 0.7),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: isDark ? AppColors.borderDark : AppColors.borderLight,
-          width: 1,
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                item.title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: isDark
+                      ? AppColors.primaryTextDark
+                      : AppColors.primaryTextLight,
+                ),
+              ),
+            ),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              decoration: BoxDecoration(
+                color: tagColor.withValues(alpha: isDark ? 0.2 : 0.1),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: tagColor, width: 1),
+              ),
+              child: Text(
+                item.status.toUpperCase(),
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.bold,
+                  color: tagColor,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 60,
-            child: Text(
-              item.time,
-              style: TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: isDark
-                    ? AppColors.secondaryTextDark
-                    : AppColors.secondaryTextLight,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              item.title,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: isDark
-                    ? AppColors.primaryTextDark
-                    : AppColors.primaryTextLight,
-              ),
-            ),
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: tagColor.withValues(alpha: isDark ? 0.2 : 0.1),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: tagColor, width: 1),
-            ),
-            child: Text(
-              item.status.toUpperCase(),
-              style: TextStyle(
-                fontSize: 10,
-                fontWeight: FontWeight.bold,
-                color: tagColor,
-              ),
-            ),
-          ),
-        ],
-      ),
-    ),
     );
   }
 

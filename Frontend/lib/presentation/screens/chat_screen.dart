@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../../core/theme/app_colours.dart';
+import '../../router/app_router.dart';
 import '../../core/theme/app_text_style.dart';
 import '../../data/models/conversation_model.dart';
 import '../providers/chat_viewmodel.dart';
@@ -53,7 +54,7 @@ const _kSuggestions = [
 //  CHAT SCREEN
 // ═════════════════════════════════════════════════════════════════════════════
 class ChatScreen extends StatefulWidget {
-  ChatScreen({super.key});
+  const ChatScreen({super.key});
 
   @override
   State<ChatScreen> createState() => _ChatScreenState();
@@ -62,15 +63,16 @@ class ChatScreen extends StatefulWidget {
 class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   // ── Message state ─────────────────────────────────────────────────────────
   final ScrollController _scrollController = ScrollController();
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   bool _isEvaTyping = false;
   String? _activeConvoId;
+  bool _disposed = false;
+  bool _dotAnimationCancelled = false;
 
   // ── Input state ───────────────────────────────────────────────────────────
   final TextEditingController _textController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   bool _hasText = false;
-  bool _isInitialized = false;
+  VoidCallback? _textListener; // stored to remove
 
   // ── Speech to text ────────────────────────────────────────────────────────
   final stt.SpeechToText _speech = stt.SpeechToText();
@@ -117,55 +119,60 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         )
         .toList();
 
-    // Text field listener
-    _textController.addListener(() {
+    // ── Text field listener – stored and removed in dispose ──────────────
+    _textListener = () {
+      if (_disposed || !mounted) return;
       final has = _textController.text.trim().isNotEmpty;
       if (has != _hasText) setState(() => _hasText = has);
-    });
+    };
+    _textController.addListener(_textListener!);
 
     // Init speech
     _initSpeech();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      final vm = context.read<ChatViewModel>();
-      vm.subscribeToMessages();
-      vm.loadMessages();
+      if (_disposed || !mounted) return;
+      context.read<ChatViewModel>().subscribeToMessages();
+      context.read<ChatViewModel>().loadMessages();
     });
   }
 
   Future<void> _initSpeech() async {
     _speechAvailable = await _speech.initialize(
       onStatus: (status) {
+        if (_disposed || !mounted) return;
         if (status == 'done' || status == 'notListening') {
           _stopListening();
         }
       },
-      onError: (error) => _stopListening(),
+      onError: (error) {
+        if (_disposed || !mounted) return;
+        _stopListening();
+      },
     );
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    if (!_isInitialized) {
-      _isInitialized = true;
-      final vm = context.read<ChatViewModel>();
-      vm.subscribeToMessages();
-      vm.loadMessages();
-    }
+    if (!_disposed && mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    _scrollController.dispose();
+    _disposed = true;
+    _dotAnimationCancelled = true;
+
+    // Remove text listener
+    if (_textListener != null) {
+      _textController.removeListener(_textListener!);
+      _textListener = null;
+    }
+
+    _speech.stop();
     _textController.dispose();
     _focusNode.dispose();
+    _scrollController.dispose();
     _pulseController.dispose();
     for (final c in _dotControllers) {
       c.dispose();
     }
-    _speech.stop();
+
     super.dispose();
   }
 
@@ -173,15 +180,15 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   //  SPEECH TO TEXT
   // ─────────────────────────────────────────────────────────────────────────
   void _startListening() async {
-    if (!_speechAvailable || _isListening) return;
+    if (!_speechAvailable || _isListening || _disposed || !mounted) return;
     _focusNode.unfocus();
 
     await _speech.listen(
       onResult: (result) {
+        if (_disposed || !mounted) return;
         setState(() {
           _recognizedWords = result.recognizedWords;
           _textController.text = _recognizedWords;
-          // Move cursor to end
           _textController.selection = TextSelection.fromPosition(
             TextPosition(offset: _textController.text.length),
           );
@@ -194,15 +201,19 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       partialResults: true,
     );
 
-    setState(() => _isListening = true);
-    _pulseController.repeat(reverse: true);
+    if (!_disposed && mounted) {
+      setState(() => _isListening = true);
+      _pulseController.repeat(reverse: true);
+    }
   }
 
   void _stopListening() {
     _speech.stop();
     _pulseController.stop();
     _pulseController.reset();
-    if (mounted) setState(() => _isListening = false);
+    if (!_disposed && mounted) {
+      setState(() => _isListening = false);
+    }
   }
 
   void _toggleRecording() {
@@ -217,6 +228,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   //  MESSAGING
   // ─────────────────────────────────────────────────────────────────────────
   void _sendMessage(String text) async {
+    if (_disposed || !mounted) return;
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
 
@@ -231,8 +243,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
     try {
       await context.read<ChatViewModel>().sendMessage(trimmed);
+    } catch (e) {
+      // ignore
     } finally {
-      if (!mounted) return;
+      if (_disposed || !mounted) return;
       _stopDotAnimation();
       setState(() => _isEvaTyping = false);
       _scrollToBottom();
@@ -241,6 +255,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   void _scrollToBottom({bool animated = true}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_disposed || !mounted) return;
       if (!_scrollController.hasClients) return;
       final max = _scrollController.position.maxScrollExtent;
       animated
@@ -254,10 +269,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   void _startDotAnimation() async {
-    while (_isEvaTyping && mounted) {
+    while (_isEvaTyping && !_disposed && !_dotAnimationCancelled && mounted) {
       for (int i = 0; i < 3; i++) {
         await Future.delayed(const Duration(milliseconds: 150));
-        if (!mounted || !_isEvaTyping) return;
+        if (_disposed || _dotAnimationCancelled || !mounted || !_isEvaTyping)
+          return;
         _dotControllers[i].forward().then((_) => _dotControllers[i].reverse());
       }
       await Future.delayed(const Duration(milliseconds: 350));
@@ -265,6 +281,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   void _stopDotAnimation() {
+    _dotAnimationCancelled = true;
     for (final c in _dotControllers) {
       c.stop();
       c.reset();
@@ -272,6 +289,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   void _startNewChat() {
+    if (_disposed || !mounted) return;
     final vm = context.read<ChatViewModel>();
     vm.clearMessages();
     vm.loadMessages();
@@ -283,6 +301,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   void _loadConversation(ConversationModel convo) {
+    if (_disposed || !mounted) return;
     setState(() {
       _activeConvoId = convo.id;
     });
@@ -298,8 +317,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      key: _scaffoldKey,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      backgroundColor: isDark ? Colors.grey[900] : Colors.white,
       drawer: _buildDrawer(isDark),
       appBar: _buildAppBar(isDark),
       body: Column(
@@ -311,9 +329,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  //  APP BAR
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── App Bar ────────────────────────────────────────────────────────────────
   PreferredSizeWidget _buildAppBar(bool isDark) {
     final barBg = isDark ? AppColors.cardDark : Colors.transparent;
     final border = isDark ? AppColors.borderDark : const Color(0xFFE5E7EB);
@@ -344,16 +360,16 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             padding: const EdgeInsets.symmetric(horizontal: 4),
             child: Row(
               children: [
-                // Back
                 IconButton(
-                  onPressed: () => context.go('/'),
+                  onPressed: () {
+                    context.pop();
+                  },
                   icon: Icon(
                     Icons.arrow_back_ios_new_rounded,
                     size: 18,
                     color: primary,
                   ),
                 ),
-
                 // EVA avatar
                 Container(
                   width: 38,
@@ -381,10 +397,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     ),
                   ),
                 ),
-
                 const SizedBox(width: 10),
-
-                // Name + status
                 Expanded(
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -421,12 +434,31 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                     ],
                   ),
                 ),
-
-                // History icon
-                IconButton(
-                  onPressed: () => _scaffoldKey.currentState?.openDrawer(),
-                  icon: Icon(Icons.history_rounded, size: 22, color: secondary),
-                  tooltip: 'Chat history',
+                // ── HISTORY BUTTON – WRAPPED IN BUILDER ────────────────────
+                Builder(
+                  builder: (context) {
+                    return IconButton(
+                      onPressed: () {
+                        final scaffold = Scaffold.maybeOf(context);
+                        if (scaffold != null) {
+                          scaffold.openDrawer();
+                        } else {
+                          // Fallback: maybe the drawer is not attached
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text('Drawer not available'),
+                            ),
+                          );
+                        }
+                      },
+                      icon: Icon(
+                        Icons.history_rounded,
+                        size: 22,
+                        color: secondary,
+                      ),
+                      tooltip: 'Chat history',
+                    );
+                  },
                 ),
               ],
             ),
@@ -436,9 +468,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  //  DRAWER
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Drawer ─────────────────────────────────────────────────────────────────
   Widget _buildDrawer(bool isDark) {
     final bg = isDark ? AppColors.cardDark : Colors.white;
     final border = isDark ? AppColors.borderDark : const Color(0xFFE5E7EB);
@@ -462,7 +492,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Header
             Padding(
               padding: const EdgeInsets.fromLTRB(20, 20, 8, 0),
               child: Row(
@@ -482,15 +511,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ],
               ),
             ),
-
             const SizedBox(height: 12),
-
-            // New chat button
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: ElevatedButton.icon(
                 onPressed: () {
-                  Navigator.pop(context);
+                  context.go(AppRoutes.home);
                   _startNewChat();
                 },
                 icon: const Icon(Icons.add_rounded, size: 18),
@@ -506,11 +532,8 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
-
             const SizedBox(height: 14),
             Divider(color: border, height: 1),
-
-            // Conversation list
             Expanded(
               child: ListView.separated(
                 padding: const EdgeInsets.symmetric(vertical: 8),
@@ -524,10 +547,9 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 itemBuilder: (_, i) {
                   final convo = _kConversations[i];
                   final isActive = convo.id == _activeConvoId;
-
                   return InkWell(
                     onTap: () {
-                      Navigator.pop(context);
+                      context.go(AppRoutes.home);
                       _loadConversation(convo);
                     },
                     child: AnimatedContainer(
@@ -551,7 +573,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                       ),
                       child: Row(
                         children: [
-                          // Icon box
                           Container(
                             width: 36,
                             height: 36,
@@ -570,8 +591,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                             ),
                           ),
                           const SizedBox(width: 12),
-
-                          // Title + last message
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -604,8 +623,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                             ),
                           ),
                           const SizedBox(width: 8),
-
-                          // Time ago
                           Text(
                             convo.timeAgo,
                             style: AppTextStyles.subtitleSmall.copyWith(
@@ -620,8 +637,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 },
               ),
             ),
-
-            // Footer note
             Divider(color: border, height: 1),
             Padding(
               padding: const EdgeInsets.all(16),
@@ -639,9 +654,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  //  MESSAGE LIST
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Message List ────────────────────────────────────────────────────────────
   Widget _buildMessageList(BuildContext context, bool isDark) {
     final vm = context.watch<ChatViewModel>();
     final messages = vm.messages;
@@ -657,14 +670,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
       itemCount: messages.length + (_isEvaTyping ? 1 : 0),
       itemBuilder: (_, index) {
-        // Typing indicator as last item
         if (_isEvaTyping && index == messages.length) {
           return _buildTypingIndicator(isDark);
         }
 
         final msg = messages[index];
-
-        // Show timestamp if first message or 10+ min gap
         bool showTime = index == 0;
         if (index > 0) {
           final gap = msg.timestamp
@@ -695,7 +705,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final color = isDark
         ? AppColors.secondaryTextDark
         : AppColors.secondaryTextLight;
-
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -718,7 +727,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Three-dot typing indicator ────────────────────────────────────────────
+  // ── Typing indicator ──────────────────────────────────────────────────────
   Widget _buildTypingIndicator(bool isDark) {
     final bubbleBg = isDark
         ? AppColors.cardElevatedDark
@@ -732,7 +741,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.start,
         children: [
-          // EVA avatar
           CircleAvatar(
             radius: 14,
             backgroundColor: AppColors.primary,
@@ -746,8 +754,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             ),
           ),
           const SizedBox(width: 8),
-
-          // Bubble
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
@@ -785,7 +791,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ── Empty state with suggestion chips ─────────────────────────────────────
+  // ── Empty state ────────────────────────────────────────────────────────────
   Widget _buildEmptyState(bool isDark) {
     final primary = isDark
         ? AppColors.primaryTextDark
@@ -798,7 +804,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
       child: Column(
         children: [
-          // EVA logo ring
           Container(
             width: 72,
             height: 72,
@@ -822,9 +827,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
               ),
             ),
           ),
-
           const SizedBox(height: 20),
-
           Text(
             'How can I help you today?',
             style: AppTextStyles.headline.copyWith(
@@ -839,10 +842,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
             style: AppTextStyles.subtitleSmall.copyWith(color: secondary),
             textAlign: TextAlign.center,
           ),
-
           const SizedBox(height: 28),
-
-          // Suggestion chips — tap fills input field
           ..._kSuggestions.map((s) => _buildSuggestionChip(s, isDark)),
         ],
       ),
@@ -855,8 +855,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final color = isDark
         ? AppColors.primaryTextDark
         : AppColors.primaryTextLight;
-
-    // Strip emoji prefix to get clean prompt text
     final prompt = text.substring(text.indexOf('  ') + 2).trim();
 
     return Padding(
@@ -898,9 +896,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ─────────────────────────────────────────────────────────────────────────
-  //  INPUT BAR
-  // ─────────────────────────────────────────────────────────────────────────
+  // ── Input bar ──────────────────────────────────────────────────────────────
   Widget _buildInputBar(bool isDark) {
     final border = isDark
         ? AppColors.borderDark
@@ -921,7 +917,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
-            // ── Text field ────────────────────────────────────────────────
             Expanded(
               child: Container(
                 constraints: const BoxConstraints(maxHeight: 120),
@@ -963,16 +958,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                 ),
               ),
             ),
-
             const SizedBox(width: 8),
-
-            // ── Mic / Send button ─────────────────────────────────────────
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
               transitionBuilder: (child, anim) =>
                   ScaleTransition(scale: anim, child: child),
               child: _hasText
-                  // SEND
                   ? GestureDetector(
                       key: const ValueKey('send'),
                       onTap: () => _sendMessage(_textController.text),
@@ -981,7 +972,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         color: AppColors.primary,
                       ),
                     )
-                  // MIC — recording or idle
                   : _isListening
                   ? AnimatedBuilder(
                       animation: _pulseAnimation,
@@ -990,7 +980,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         onTap: _toggleRecording,
                         child: _buildActionButton(
                           icon: Icons.mic_rounded,
-                          // Hollow feel: fade the button colour while pulsing
                           color: AppColors.primary.withOpacity(
                             _pulseAnimation.value,
                           ),
