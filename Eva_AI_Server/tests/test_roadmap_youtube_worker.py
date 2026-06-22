@@ -53,7 +53,7 @@ class FetchAndStoreTests(unittest.IsolatedAsyncioTestCase):
             {"_id": "b", "language": "Python", "title": "decorators"},
         ]
 
-        async def fake_search(_q: str):
+        async def fake_search(_q: str, **kwargs):
             raise YouTubeSearchFailed("HTTP 403 simulated")
 
         with patch("services.roadmap_youtube_worker.search_topic", side_effect=fake_search):
