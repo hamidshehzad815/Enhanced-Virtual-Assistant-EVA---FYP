@@ -753,7 +753,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           children: [
             Row(
               children: [
-                Expanded(
+                Flexible(
+                  flex: 3,
                   child: TextField(
                     controller: controller,
                     decoration: const InputDecoration(
@@ -1553,7 +1554,7 @@ class _EditableScheduleTileState extends State<_EditableScheduleTile> {
         children: [
           // Day label (fixed width)
           SizedBox(
-            width: 80,
+            width: 70,
             child: Text(
               fullDayNames[slot.day],
               style: const TextStyle(fontWeight: FontWeight.w600),
@@ -1562,7 +1563,8 @@ class _EditableScheduleTileState extends State<_EditableScheduleTile> {
           const SizedBox(width: 8),
 
           // Time picker
-          Expanded(
+          Flexible(
+            flex: 1,
             child: InkWell(
               onTap: () async {
                 final picked = await showTimePicker(
@@ -1593,7 +1595,8 @@ class _EditableScheduleTileState extends State<_EditableScheduleTile> {
           const SizedBox(width: 8),
 
           // Duration picker
-          Expanded(
+          Flexible(
+            flex: 1,
             child: InkWell(
               onTap: () => _showDurationPickerForSlot(slot),
               child: Container(

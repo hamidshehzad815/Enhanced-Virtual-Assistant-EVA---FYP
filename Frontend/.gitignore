@@ -44,6 +44,9 @@ app.*.map.json
 /android/app/profile
 /android/app/release
 
+# FVM Version Cache
+.fvm/
+
 # Firebase client config (real files stay local — copy from .example or run flutterfire configure)
 /android/app/google-services.json
 /lib/firebase_options.dart

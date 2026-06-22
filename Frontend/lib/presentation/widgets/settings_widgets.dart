@@ -232,7 +232,7 @@ class _SettingsTileRow extends StatelessWidget {
   final SettingTileData tile;
   final bool isDark;
 
-  const _SettingsTileRow({required this.tile, required this.isDark, super.key});
+  const _SettingsTileRow({required this.tile, required this.isDark});
 
   @override
   Widget build(BuildContext context) {

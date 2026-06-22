@@ -346,6 +346,47 @@ const parseDateRange = (dateValue, timezoneValue) => {
   return { start: range.start, end: range.end };
 };
 
+const applyTaskListFilters = (query, req, { skipUpcomingOnly = false } = {}) => {
+  let normalizedStatus = null;
+
+  if (req.query.status) {
+    normalizedStatus = normalizeStatusValue(req.query.status);
+    if (!STATUS_VALUES.has(normalizedStatus)) {
+      throw new BadRequestError("Invalid status filter");
+    }
+    query.status = { $in: STORED_STATUS_FILTER[normalizedStatus] };
+  }
+
+  if (req.query.priority) {
+    const priority = normalizePriorityValue(req.query.priority);
+    if (!PRIORITY_VALUES.has(priority)) {
+      throw new BadRequestError("Invalid priority filter");
+    }
+    query.priority = priority;
+  }
+
+  if (req.query.date) {
+    const range = parseDateRange(req.query.date, req.user?.timezone);
+    query.due_datetime = {
+      $gte: range.start,
+      $lte: range.end,
+    };
+  } else if (!skipUpcomingOnly && normalizedStatus !== "complete") {
+    query.due_datetime = {
+      $gte: new Date(),
+    };
+  }
+
+  if (req.query.subject) {
+    const subject = String(req.query.subject).trim();
+    if (subject) {
+      query.title = { $regex: subject, $options: "i" };
+    }
+  }
+
+  return normalizedStatus;
+};
+
 /**
  * GET /api/tasks
  * Fetch paginated task list for authenticated user.
@@ -362,40 +403,7 @@ const getTasks = async (req, res, next) => {
       is_deleted: false,
     };
 
-    if (req.query.status) {
-      normalizedStatus = normalizeStatusValue(req.query.status);
-      if (!STATUS_VALUES.has(normalizedStatus)) {
-        throw new BadRequestError("Invalid status filter");
-      }
-      query.status = { $in: STORED_STATUS_FILTER[normalizedStatus] };
-    }
-
-    if (req.query.priority) {
-      const priority = normalizePriorityValue(req.query.priority);
-      if (!PRIORITY_VALUES.has(priority)) {
-        throw new BadRequestError("Invalid priority filter");
-      }
-      query.priority = priority;
-    }
-
-    if (req.query.date) {
-      const range = parseDateRange(req.query.date, req.user?.timezone);
-      query.due_datetime = {
-        $gte: range.start,
-        $lte: range.end,
-      };
-    } else if (normalizedStatus !== "complete") {
-      query.due_datetime = {
-        $gte: new Date(),
-      };
-    }
-
-    if (req.query.subject) {
-      const subject = String(req.query.subject).trim();
-      if (subject) {
-        query.title = { $regex: subject, $options: "i" };
-      }
-    }
+    normalizedStatus = applyTaskListFilters(query, req);
 
     const [tasks, total] = await Promise.all([
       Task.find(query)
@@ -436,6 +444,42 @@ const getTasks = async (req, res, next) => {
 };
 
 /**
+ * GET /api/tasks/calendar
+ * Fetch all user tasks for calendar view (no date-range params).
+ */
+const getCalendarTasks = async (req, res, next) => {
+  try {
+    const timezone = resolveUserTimezone(req);
+
+    const query = {
+      owner_id: req.userId,
+      is_deleted: false,
+    };
+
+    applyTaskListFilters(query, req, { skipUpcomingOnly: true });
+
+    const tasks = await Task.find(query)
+      .select(TASK_LIST_PROJECTION)
+      .sort({ due_datetime: 1 })
+      .lean();
+
+    const now = new Date();
+    res.json({
+      status: "success",
+      data: withApiTimezone(
+        {
+          tasks: tasks.map((task) => serializeTaskForApi(task, now, timezone)),
+          total: tasks.length,
+        },
+        timezone,
+      ),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
  * GET /api/tasks/:id
  * Fetch single task owned by authenticated user.
  */
@@ -461,6 +505,137 @@ const getTaskById = async (req, res, next) => {
     const timezone = resolveUserTimezone(req);
     res.json({
       status: "success",
+      data: withApiTimezone(
+        {
+          task: serializeTaskForApi(task, new Date(), timezone, {
+            includeDescription: true,
+          }),
+        },
+        timezone,
+      ),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * PATCH /api/tasks/:id
+ * Update editable task fields (calendar / task detail).
+ */
+const updateTask = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      throw new BadRequestError("Invalid task id");
+    }
+
+    const existingTask = await Task.findOne({
+      _id: id,
+      owner_id: req.userId,
+      is_deleted: false,
+    }).lean();
+
+    if (!existingTask) {
+      throw new NotFoundError("Task not found");
+    }
+
+    const update = {};
+    const body = req.body || {};
+
+    if (Object.prototype.hasOwnProperty.call(body, "title")) {
+      const title = String(body.title || "").trim();
+      if (!title) {
+        throw new BadRequestError("title cannot be empty");
+      }
+      if (title.length > 200) {
+        throw new BadRequestError("title cannot exceed 200 characters");
+      }
+      update.title = title;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "description")) {
+      if (body.description == null || body.description === "") {
+        update.description = null;
+      } else {
+        const description = String(body.description).trim();
+        if (description.length > 1000) {
+          throw new BadRequestError("description cannot exceed 1000 characters");
+        }
+        update.description = description;
+      }
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "due_datetime")) {
+      const dueDate = toDateOrNull(body.due_datetime);
+      if (!dueDate) {
+        throw new BadRequestError("due_datetime must be a valid datetime");
+      }
+      update.due_datetime = dueDate;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "duration")) {
+      const duration = Number(body.duration);
+      if (!Number.isFinite(duration) || duration < 5 || duration > 1440) {
+        throw new BadRequestError("duration must be between 5 and 1440 minutes");
+      }
+      update.duration = duration;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(body, "priority")) {
+      const priority = normalizePriorityValue(body.priority);
+      if (!PRIORITY_VALUES.has(priority)) {
+        throw new BadRequestError("priority must be one of low, medium, high");
+      }
+      update.priority = priority;
+    }
+
+    let normalizedStatus = null;
+    if (Object.prototype.hasOwnProperty.call(body, "status")) {
+      normalizedStatus = normalizeStatusValue(body.status);
+      if (!STATUS_VALUES.has(normalizedStatus)) {
+        throw new BadRequestError("status must be one of pending, complete");
+      }
+      update.status = normalizedStatus;
+      update.completed_at = normalizedStatus === "complete" ? new Date() : null;
+    }
+
+    if (!Object.keys(update).length) {
+      throw new BadRequestError("At least one updatable field is required");
+    }
+
+    update.updated_at = new Date();
+
+    const task = await Task.findOneAndUpdate(
+      { _id: id, owner_id: req.userId, is_deleted: false },
+      { $set: update },
+      { new: true },
+    ).lean();
+
+    if (!task) {
+      throw new NotFoundError("Task not found");
+    }
+
+    if (
+      normalizedStatus === "complete"
+      && String(existingTask.status || "").toLowerCase() !== "complete"
+    ) {
+      try {
+        const userSettings = await UserSetting.findOne({ user_id: req.userId }).lean();
+        if (isBehavioralAnalyticsEnabled(userSettings)) {
+          await ActivityLog.create(buildCompletedLogPayload(task));
+        }
+      } catch (error) {
+        console.warn(
+          `[TasksController] Failed to insert task_completed log for task ${task._id}: ${error.message}`,
+        );
+      }
+    }
+
+    const timezone = resolveUserTimezone(req);
+    res.json({
+      status: "success",
+      message: "Task updated",
       data: withApiTimezone(
         {
           task: serializeTaskForApi(task, new Date(), timezone, {
@@ -750,7 +925,9 @@ const respondToCollaborationInviteViaLink = async (req, res, next) => {
 
 module.exports = {
   getTasks,
+  getCalendarTasks,
   getTaskById,
+  updateTask,
   updateTaskStatus,
   deleteTask,
   respondToCollaborationInvite,

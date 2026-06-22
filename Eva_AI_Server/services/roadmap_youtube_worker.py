@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from db.roadmap_resources import update_resources
 from services.youtube import YouTubeSearchFailed, search_topic
@@ -49,6 +49,7 @@ async def fetch_and_store_for_documents(
     delay_seconds: float = 0.5,
     progress_every: int = 10,
     log_prefix: str = "",
+    api_keys: Optional[Sequence[str]] = None,
 ) -> Tuple[int, int, Optional[str]]:
     """
     For each document, search YouTube and update DB when there are results.
@@ -65,7 +66,7 @@ async def fetch_and_store_for_documents(
         search_q = build_youtube_search_query(doc)
         calls += 1
         try:
-            results = await search_topic(search_q)
+            results = await search_topic(search_q, api_keys=api_keys)
         except YouTubeSearchFailed as exc:
             err = str(exc)
             logger.warning("%sYouTube fetch halted on topic %s/%s: %s", log_prefix, i + 1, len(docs), err)
