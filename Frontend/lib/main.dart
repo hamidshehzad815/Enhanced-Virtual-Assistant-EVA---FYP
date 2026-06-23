@@ -22,13 +22,12 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
-  // Initialize Firebase with platform-specific options
-  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  if (Firebase.apps.isEmpty) {
+    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  }
 
-  // Register background message handler for push
-  FirebaseMessaging.onBackgroundMessage(
-    PushNotificationService.onBackgroundMessage,
-  );
+  FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+  await PushNotificationService.setup();
   // Load theme FIRST
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();

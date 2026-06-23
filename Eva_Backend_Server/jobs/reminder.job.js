@@ -26,14 +26,35 @@ const formatDue = (dueDate, timezoneValue = "UTC") => {
   return formatDateInTimezone(dueDate, timezoneValue);
 };
 
-const buildReminderNotification = (task, timezoneValue) => ({
+const resolveDisplayName = (user) => {
+  const name = String(user?.name || "").trim();
+  if (name) {
+    return name.split(/\s+/)[0];
+  }
+
+  const username = String(user?.username || "").trim();
+  if (username) {
+    return username;
+  }
+
+  return "there";
+};
+
+const buildTaskReminderMessage = (taskTitle, dueDatetime, user) => {
+  const who = resolveDisplayName(user);
+  const tz = resolveTimezone(user?.timezone);
+  const when = formatDue(dueDatetime, tz);
+  return `Hey ${who}, you have a ${taskTitle} scheduled on ${when}.`;
+};
+
+const buildReminderNotification = (task, user) => ({
   user_id: String(task.owner_id),
   sender_id: null,
   type: "task_reminder",
   reference_type: "task",
   reference_id: String(task._id),
   title: "Task reminder",
-  message: `Reminder: ${task.title} is coming up at ${formatDue(task.due_datetime, timezoneValue)}.`,
+  message: buildTaskReminderMessage(task.title, task.due_datetime, user),
   action_required: false,
   delivery_channel: ["push", "in_app", "email"],
   scheduled_at: new Date(),
@@ -96,23 +117,22 @@ const buildOverdueNotification = (task, timezoneValue) => ({
   scheduled_at: new Date(),
 });
 
-const loadUserTimezones = async (ownerIds) => {
+const loadUsersById = async (ownerIds) => {
   if (!ownerIds.length) {
     return new Map();
   }
 
   const users = await User.find(
     { _id: { $in: ownerIds } },
-    { _id: 1, timezone: 1 },
+    { _id: 1, timezone: 1, name: 1, username: 1 },
   ).lean();
 
-  const timezoneByUserId = new Map();
+  const usersById = new Map();
   users.forEach((user) => {
-    const userId = String(user._id);
-    timezoneByUserId.set(userId, resolveTimezone(user.timezone));
+    usersById.set(String(user._id), user);
   });
 
-  return timezoneByUserId;
+  return usersById;
 };
 
 const sendReminderNotifications = async (now) => {
@@ -155,7 +175,7 @@ const sendReminderNotifications = async (now) => {
   const ownerIds = [
     ...new Set(dueForReminder.map((task) => String(task.owner_id))),
   ];
-  const timezoneByUserId = await loadUserTimezones(ownerIds);
+  const usersById = await loadUsersById(ownerIds);
 
   const learningPlanIds = [
     ...new Set(
@@ -175,12 +195,13 @@ const sendReminderNotifications = async (now) => {
   }
 
   const payloads = dueForReminder.map((task) => {
-    const tz = timezoneByUserId.get(String(task.owner_id)) || "UTC";
+    const user = usersById.get(String(task.owner_id)) || null;
+    const tz = resolveTimezone(user?.timezone);
     if (task.learning_topic_id && task.learning_plan_id) {
       const planTitle = titleByPlanId.get(String(task.learning_plan_id)) || "";
       return buildLearningTopicReminderPayload(task, tz, planTitle);
     }
-    return buildReminderNotification(task, tz);
+    return buildReminderNotification(task, user);
   });
   const summary = await insert_and_dispatch(payloads);
 
@@ -223,11 +244,11 @@ const sendOverdueAlerts = async (now) => {
   const ownerIds = [
     ...new Set(overdueTasks.map((task) => String(task.owner_id))),
   ];
-  const timezoneByUserId = await loadUserTimezones(ownerIds);
+  const usersById = await loadUsersById(ownerIds);
   const payloads = overdueTasks.map((task) =>
     buildOverdueNotification(
       task,
-      timezoneByUserId.get(String(task.owner_id)) || "UTC",
+      resolveTimezone(usersById.get(String(task.owner_id))?.timezone),
     ),
   );
   const summary = await insert_and_dispatch(payloads);
@@ -285,10 +306,10 @@ const sendLearningOverdueAlerts = async (now) => {
   }
 
   const ownerIds = [...new Set(activeOnly.map((task) => String(task.owner_id)))];
-  const timezoneByUserId = await loadUserTimezones(ownerIds);
+  const usersById = await loadUsersById(ownerIds);
 
   const payloads = activeOnly.map((task) => {
-    const tz = timezoneByUserId.get(String(task.owner_id)) || "UTC";
+    const tz = resolveTimezone(usersById.get(String(task.owner_id))?.timezone);
     const plan = planById.get(String(task.learning_plan_id));
     return buildLearningOverduePayload(task, tz, plan?.title || null);
   });

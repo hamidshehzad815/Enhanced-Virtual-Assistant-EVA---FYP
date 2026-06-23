@@ -1,0 +1,35 @@
+import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
+
+/// Template only. Copy to lib/firebase_options.dart and fill from Firebase Console
+/// or run: flutterfire configure --project=evafirebase-c92ab
+class DefaultFirebaseOptions {
+  static const FirebaseOptions android = FirebaseOptions(
+    apiKey: 'YOUR_ANDROID_API_KEY',
+    appId: 'YOUR_ANDROID_APP_ID',
+    messagingSenderId: 'YOUR_PROJECT_NUMBER',
+    projectId: 'evafirebase-c92ab',
+    storageBucket: 'evafirebase-c92ab.firebasestorage.app',
+  );
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'YOUR_WEB_API_KEY',
+    authDomain: 'evafirebase-c92ab.firebaseapp.com',
+    projectId: 'evafirebase-c92ab',
+    storageBucket: 'evafirebase-c92ab.firebasestorage.app',
+    messagingSenderId: 'YOUR_PROJECT_NUMBER',
+    appId: 'YOUR_WEB_APP_ID',
+    measurementId: 'YOUR_MEASUREMENT_ID',
+  );
+
+  static FirebaseOptions get currentPlatform {
+    if (kIsWeb) return web;
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return android;
+      default:
+        throw UnsupportedError('Platform not supported');
+    }
+  }
+}
