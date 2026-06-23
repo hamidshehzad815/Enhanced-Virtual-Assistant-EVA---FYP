@@ -458,6 +458,10 @@ class _CalendarScreenState extends State<CalendarScreen>
           topLeft: Radius.circular(32),
           topRight: Radius.circular(32),
         ),
+        border: Border(
+          left: BorderSide(color: Colors.grey),
+          right: BorderSide(color: Colors.grey),
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(isDark ? 0.20 : 0.08),
@@ -600,17 +604,17 @@ class _CalendarScreenState extends State<CalendarScreen>
       child: Dismissible(
         key: Key(task.id),
         direction: DismissDirection.endToStart,
-        background: Container(
-          alignment: Alignment.centerRight,
-          padding: const EdgeInsets.only(right: 20),
-          decoration: BoxDecoration(
+        background: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            alignment: Alignment.centerRight,
+            padding: const EdgeInsets.only(right: 20),
             color: const Color(0xFFEF4444).withOpacity(0.12),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: const Icon(
-            Icons.delete_outline_rounded,
-            color: Color(0xFFEF4444),
-            size: 22,
+            child: const Icon(
+              Icons.delete_outline_rounded,
+              color: Color(0xFFEF4444),
+              size: 22,
+            ),
           ),
         ),
         onDismissed: (_) async {
@@ -635,162 +639,172 @@ class _CalendarScreenState extends State<CalendarScreen>
             );
           }
         },
-        child: GestureDetector(
-          onTap: () => _showEditDialog(context, vm, task),
-          child: AnimatedOpacity(
-            duration: const Duration(milliseconds: 300),
-            opacity: task.status == TaskStatus.completed ? 0.65 : 1.0,
-            child: Container(
-              decoration: BoxDecoration(
-                color: bg,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: border),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(isDark ? 0.16 : 0.04),
-                    blurRadius: 10,
-                    offset: const Offset(0, 3),
-                  ),
-                ],
-              ),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(16),
-                child: IntrinsicHeight(
-                  child: Row(
-                    children: [
-                      Container(width: 4, color: priorityColor),
-                      Expanded(
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
-                          child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Container(
-                                width: 38,
-                                height: 38,
-                                decoration: BoxDecoration(
-                                  color: _categoryColor(
-                                    task.priority,
-                                  ).withOpacity(isDark ? 0.18 : 0.10),
-                                  borderRadius: BorderRadius.circular(10),
-                                ),
-                                child: Icon(
-                                  _categoryIcon(task.priority),
-                                  size: 18,
-                                  color: _categoryColor(task.priority),
-                                ),
-                              ),
-                              const SizedBox(width: 12),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      task.title,
-                                      style: AppTextStyles.body.copyWith(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w600,
-                                        color: primary,
-                                        decoration:
-                                            task.status == TaskStatus.completed
-                                            ? TextDecoration.lineThrough
-                                            : null,
-                                        decorationColor: secondary,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Row(
-                                      children: [
-                                        Icon(
-                                          Icons.schedule_rounded,
-                                          size: 12,
-                                          color: secondary,
-                                        ),
-                                        const SizedBox(width: 3),
-                                        Text(
-                                          vm.formatTimeRange(task, context),
-                                          style: AppTextStyles.body.copyWith(
-                                            fontSize: 11,
-                                            color: secondary,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 6,
-                                            vertical: 2,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: statusColor.withOpacity(
-                                              0.12,
-                                            ),
-                                            borderRadius: BorderRadius.circular(
-                                              6,
-                                            ),
-                                          ),
-                                          child: Text(
-                                            task.displayStatus.toUpperCase(),
-                                            style: AppTextStyles.body.copyWith(
-                                              fontSize: 9,
-                                              fontWeight: FontWeight.w700,
-                                              color: statusColor,
-                                              letterSpacing: 0.3,
-                                            ),
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              GestureDetector(
-                                onTap: () async {
-                                  try {
-                                    await vm.toggleTask(task);
-                                  } catch (e) {
-                                    if (!mounted) return;
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
-                                          'Failed to update task: $e',
-                                        ),
-                                      ),
-                                    );
-                                  }
-                                },
-                                child: AnimatedContainer(
-                                  duration: const Duration(milliseconds: 250),
-                                  width: 28,
-                                  height: 28,
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: GestureDetector(
+            onTap: () => _showEditDialog(context, vm, task),
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 300),
+              opacity: task.status == TaskStatus.completed ? 0.65 : 1.0,
+              child: Container(
+                decoration: BoxDecoration(
+                  color: bg,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: border),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(isDark ? 0.16 : 0.04),
+                      blurRadius: 10,
+                      offset: const Offset(0, 3),
+                    ),
+                  ],
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: IntrinsicHeight(
+                    child: Row(
+                      children: [
+                        Container(width: 4, color: priorityColor),
+                        Expanded(
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Container(
+                                  width: 38,
+                                  height: 38,
                                   decoration: BoxDecoration(
-                                    color: task.status == TaskStatus.completed
-                                        ? const Color(0xFF22C55E)
-                                        : Colors.transparent,
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
+                                    color: _categoryColor(
+                                      task.priority,
+                                    ).withOpacity(isDark ? 0.18 : 0.10),
+                                    borderRadius: BorderRadius.circular(10),
+                                  ),
+                                  child: Icon(
+                                    _categoryIcon(task.priority),
+                                    size: 18,
+                                    color: _categoryColor(task.priority),
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        task.title,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: AppTextStyles.body.copyWith(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                          color: primary,
+                                          decoration:
+                                              task.status ==
+                                                  TaskStatus.completed
+                                              ? TextDecoration.lineThrough
+                                              : null,
+                                          decorationColor: secondary,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Row(
+                                        children: [
+                                          Icon(
+                                            Icons.schedule_rounded,
+                                            size: 12,
+                                            color: secondary,
+                                          ),
+                                          const SizedBox(width: 3),
+                                          Text(
+                                            vm.formatTimeRange(task, context),
+                                            style: AppTextStyles.body.copyWith(
+                                              fontSize: 11,
+                                              color: secondary,
+                                              fontWeight: FontWeight.w500,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 6,
+                                              vertical: 2,
+                                            ),
+                                            decoration: BoxDecoration(
+                                              color: statusColor.withOpacity(
+                                                0.12,
+                                              ),
+                                              borderRadius:
+                                                  BorderRadius.circular(6),
+                                            ),
+                                            child: Text(
+                                              task.displayStatus.toUpperCase(),
+                                              style: AppTextStyles.body
+                                                  .copyWith(
+                                                    fontSize: 9,
+                                                    fontWeight: FontWeight.w700,
+                                                    color: statusColor,
+                                                    letterSpacing: 0.3,
+                                                  ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                GestureDetector(
+                                  onTap: () async {
+                                    try {
+                                      await vm.toggleTask(task);
+                                    } catch (e) {
+                                      if (!mounted) return;
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Failed to update task: $e',
+                                          ),
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  child: AnimatedContainer(
+                                    duration: const Duration(milliseconds: 250),
+                                    width: 28,
+                                    height: 28,
+                                    decoration: BoxDecoration(
                                       color: task.status == TaskStatus.completed
                                           ? const Color(0xFF22C55E)
-                                          : (isDark
-                                                ? const Color(0xFF3A3A3A)
-                                                : AppColors.borderLight),
-                                      width: 2,
+                                          : Colors.transparent,
+                                      shape: BoxShape.circle,
+                                      border: Border.all(
+                                        color:
+                                            task.status == TaskStatus.completed
+                                            ? const Color(0xFF22C55E)
+                                            : (isDark
+                                                  ? const Color(0xFF3A3A3A)
+                                                  : AppColors.borderLight),
+                                        width: 2,
+                                      ),
                                     ),
+                                    child: task.status == TaskStatus.completed
+                                        ? const Icon(
+                                            Icons.check_rounded,
+                                            color: Colors.white,
+                                            size: 16,
+                                          )
+                                        : null,
                                   ),
-                                  child: task.status == TaskStatus.completed
-                                      ? const Icon(
-                                          Icons.check_rounded,
-                                          color: Colors.white,
-                                          size: 16,
-                                        )
-                                      : null,
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -861,21 +875,100 @@ class _CalendarScreenState extends State<CalendarScreen>
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
+                    // ── Title ──
                     TextFormField(
                       initialValue: editedTask.title,
                       decoration: const InputDecoration(
                         labelText: 'Title',
+                        hintText: 'Enter task title',
                         border: OutlineInputBorder(),
                       ),
                       onChanged: (val) => setState(
                         () => editedTask = editedTask.copyWith(title: val),
                       ),
                     ),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 12),
+
+                    // ── Row: Priority + Duration ──
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<TaskPriority>(
+                            value: editedTask.priority,
+                            isExpanded: true, // ✅ FIX: prevents overflow
+                            items: TaskPriority.values
+                                .map(
+                                  (p) => DropdownMenuItem(
+                                    value: p,
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          p == TaskPriority.high
+                                              ? Icons.priority_high
+                                              : p == TaskPriority.medium
+                                              ? Icons.flag
+                                              : Icons.flag_outlined,
+                                          color: _priorityColor(p),
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            p.name.toUpperCase(),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                )
+                                .toList(),
+                            onChanged: (val) => setState(
+                              () => editedTask = editedTask.copyWith(
+                                priority: val!,
+                              ),
+                            ),
+                            decoration: const InputDecoration(
+                              labelText: 'Priority',
+                              hintText: 'Select priority',
+                              border: OutlineInputBorder(),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: TextFormField(
+                            initialValue: editedTask.durationMinutes.toString(),
+                            keyboardType: TextInputType.number,
+                            decoration: const InputDecoration(
+                              labelText: 'Duration (min)',
+                              hintText: 'e.g. 60',
+                              border: OutlineInputBorder(),
+                            ),
+                            onChanged: (val) {
+                              final minutes = int.tryParse(val);
+                              if (minutes != null &&
+                                  minutes >= 5 &&
+                                  minutes <= 1440) {
+                                setState(
+                                  () => editedTask = editedTask.copyWith(
+                                    durationMinutes: minutes,
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Description ──
                     TextFormField(
                       initialValue: editedTask.description ?? '',
                       decoration: const InputDecoration(
-                        labelText: 'Description (optional)',
+                        labelText: 'Description',
+                        hintText: 'Add details (optional)',
                         border: OutlineInputBorder(),
                       ),
                       onChanged: (val) => setState(
@@ -884,124 +977,74 @@ class _CalendarScreenState extends State<CalendarScreen>
                         ),
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    DropdownButtonFormField<TaskPriority>(
-                      value: editedTask.priority,
-                      items: TaskPriority.values
-                          .map(
-                            (p) => DropdownMenuItem(
-                              value: p,
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    p == TaskPriority.high
-                                        ? Icons.priority_high
-                                        : p == TaskPriority.medium
-                                        ? Icons.flag
-                                        : Icons.flag_outlined,
-                                    color: _priorityColor(p),
-                                    size: 18,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Text(p.name.toUpperCase()),
-                                ],
-                              ),
-                            ),
-                          )
-                          .toList(),
-                      onChanged: (val) => setState(
-                        () => editedTask = editedTask.copyWith(priority: val!),
-                      ),
-                      decoration: const InputDecoration(
-                        labelText: 'Priority',
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: InkWell(
-                            onTap: () async {
-                              final date = await showDatePicker(
-                                context: context,
-                                initialDate: editedTask.dueDateTime,
-                                firstDate: DateTime(2024),
-                                lastDate: DateTime(2027),
-                              );
-                              if (date != null) {
-                                final time = await showTimePicker(
-                                  context: context,
-                                  initialTime: TimeOfDay.fromDateTime(
-                                    editedTask.dueDateTime,
-                                  ),
-                                );
-                                if (time != null) {
-                                  final newDateTime = DateTime(
-                                    date.year,
-                                    date.month,
-                                    date.day,
-                                    time.hour,
-                                    time.minute,
-                                  );
-                                  setState(
-                                    () => editedTask = editedTask.copyWith(
-                                      dueDateTime: newDateTime,
-                                    ),
-                                  );
-                                }
-                              }
-                            },
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                vertical: 12,
-                                horizontal: 8,
-                              ),
-                              decoration: BoxDecoration(
-                                border: Border.all(color: Colors.grey.shade300),
-                                borderRadius: BorderRadius.circular(8),
-                              ),
-                              child: Row(
-                                children: [
-                                  Icon(
-                                    Icons.calendar_today,
-                                    color: AppColors.primary,
-                                  ),
-                                  const SizedBox(width: 8),
-                                  Expanded(
-                                    child: Text(
-                                      'Due: ${editedTask.dueDateTime.toLocal().toString().substring(0, 16)}',
-                                      style: AppTextStyles.body,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
                     const SizedBox(height: 12),
-                    TextFormField(
-                      initialValue: editedTask.durationMinutes.toString(),
-                      keyboardType: TextInputType.number,
-                      decoration: const InputDecoration(
-                        labelText: 'Duration (minutes)',
-                        border: OutlineInputBorder(),
-                        hintText: 'e.g. 60',
-                      ),
-                      onChanged: (val) {
-                        final minutes = int.tryParse(val);
-                        if (minutes != null &&
-                            minutes >= 5 &&
-                            minutes <= 1440) {
-                          setState(
-                            () => editedTask = editedTask.copyWith(
-                              durationMinutes: minutes,
+
+                    // ── Date Picker (with border & hint, keeping original style) ──
+                    InkWell(
+                      onTap: () async {
+                        final date = await showDatePicker(
+                          context: context,
+                          initialDate: editedTask.dueDateTime,
+                          firstDate: DateTime(2024),
+                          lastDate: DateTime(2027),
+                        );
+                        if (date != null) {
+                          final time = await showTimePicker(
+                            context: context,
+                            initialTime: TimeOfDay.fromDateTime(
+                              editedTask.dueDateTime,
                             ),
                           );
+                          if (time != null) {
+                            final newDateTime = DateTime(
+                              date.year,
+                              date.month,
+                              date.day,
+                              time.hour,
+                              time.minute,
+                            );
+                            setState(
+                              () => editedTask = editedTask.copyWith(
+                                dueDateTime: newDateTime,
+                              ),
+                            );
+                          }
                         }
                       },
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 16,
+                          horizontal: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          border: Border.all(
+                            color: Colors.grey.shade400,
+                            width: 1,
+                          ),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.calendar_today,
+                              color: AppColors.primary,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Due: ${editedTask.dueDateTime.toLocal().toString().substring(0, 16)}',
+                                style: AppTextStyles.body.copyWith(
+                                  fontSize: 14,
+                                  color: Theme.of(
+                                    context,
+                                  ).textTheme.bodyMedium!.color,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -1050,6 +1093,7 @@ class _CalendarScreenState extends State<CalendarScreen>
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
               ),
+              constraints: const BoxConstraints(maxWidth: 480),
             );
           },
         );

@@ -47,7 +47,6 @@ class HomeScreenViewModel extends ChangeNotifier {
       final dashboardData = await _repository.getDashboard(token);
 
       _userProfile = UserProfile.fromJson(profileData['data']['user']);
-      // debugPrint(dashboardData.toString());
 
       final dashboard = dashboardData['data'];
       _dailyProgress = DailyProgress.fromJson(dashboard['daily_progress']);

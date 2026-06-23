@@ -21,10 +21,10 @@ class AppColors {
   /// Input field background
   static const inputFillLight = Colors.white;
 
-  /// Scaffold background as a plain Color 
+  /// Scaffold background as a plain Color
   static const scaffoldColorLight = Color(0xFFF4F0E6);
 
-// dark mode
+  // dark mode
 
   /// Scaffold background — used as fallback / opaque base
   /// The actual gradient is applied via AppGradients.darkBackground
@@ -51,7 +51,7 @@ class AppColors {
   /// Hint / placeholder text
   static const hintDark = Color(0xFF4A5578);
 
-// Same stuff
+  // Same stuff
 
   /// Primary amber — buttons, highlights, active states
   static const primary = Color(0xFFF59E0B);
@@ -59,8 +59,7 @@ class AppColors {
   /// Darker amber — pressed / gradient end
   static const primaryDark = Color(0xFFD97706);
 
-
-  /// Dark background gradient 
+  /// Dark background gradient
   static const darkBackgroundGradient = LinearGradient(
     begin: Alignment.topLeft,
     end: Alignment.bottomRight,

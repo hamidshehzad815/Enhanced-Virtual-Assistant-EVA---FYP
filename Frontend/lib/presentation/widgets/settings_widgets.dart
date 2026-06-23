@@ -72,6 +72,7 @@ class SettingsSearchBar extends StatelessWidget {
     );
   }
 }
+
 class SettingsProfileCard extends StatelessWidget {
   final bool isDark;
   final String searchQuery;
@@ -109,7 +110,10 @@ class SettingsProfileCard extends StatelessWidget {
               children: [
                 Text(
                   profile?.name ?? 'User Name',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
                 ),
                 // Optionally show email if you have it
                 // Text(profile?.email ?? ''),
@@ -117,10 +121,7 @@ class SettingsProfileCard extends StatelessWidget {
             ),
           ),
           if (onEditProfile != null)
-            IconButton(
-              icon: const Icon(Icons.edit),
-              onPressed: onEditProfile,
-            ),
+            IconButton(icon: const Icon(Icons.edit), onPressed: onEditProfile),
         ],
       ),
     );
@@ -156,7 +157,7 @@ class SettingsSection extends StatelessWidget {
     if (filteredTiles.isEmpty) return const SizedBox.shrink();
 
     final bg = isDark ? AppColors.cardDark : Colors.white;
-    final border = isDark ? AppColors.borderDark : AppColors.borderLight;
+    final border = isDark ? AppColors.borderDark : Colors.grey;
     final secondary = isDark
         ? AppColors.secondaryTextDark
         : AppColors.secondaryTextLight;
