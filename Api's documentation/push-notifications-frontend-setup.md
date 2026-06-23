@@ -78,6 +78,24 @@ If the user has no device token yet:
 
 ## 4. Flutter dependencies
 
+**Team build:** use **FVM Flutter 3.35.1** (see `Frontend/.fvmrc`). Run `fvm flutter pub get` / `fvm flutter run` — not global `flutter`.
+
+```yaml
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  firebase_core: ^4.11.0
+  firebase_messaging: ^16.4.0
+  flutter_local_notifications: ^20.1.0   # ^22.x needs Flutter 3.38+
+```
+
+```bash
+cd Frontend
+fvm install
+fvm flutter pub get
+```
+
 In `pubspec.yaml`:
 
 ```yaml
