@@ -588,7 +588,7 @@ class _HomeScreenState extends State<HomeScreen>
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: Text(
-                  f.nextTopicTime,
+                  f.nextTopicTime, // now shows "Jun 5, 7:00 PM"
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w500,

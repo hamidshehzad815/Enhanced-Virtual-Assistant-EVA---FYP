@@ -63,7 +63,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _saveChanges() async {
-    if (Form.of(context)?.validate() ?? false) {
+    if (Form.of(context).validate()) {
       try {
         await widget.viewModel.updateProfile(
           name: _nameController.text.trim(),

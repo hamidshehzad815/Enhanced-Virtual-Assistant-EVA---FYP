@@ -47,7 +47,7 @@ const buildTaskSeed = () => [
     status: "pending",
   },
   {
-    title: "Group project meeting",
+    title: "Group project meetings",
     description: "Sync with team on FYP progress",
     dayOffset: 0,
     hour: 18,
