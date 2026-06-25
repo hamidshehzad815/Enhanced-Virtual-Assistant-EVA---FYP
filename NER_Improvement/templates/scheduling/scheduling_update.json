@@ -2009,71 +2009,61 @@
         {
           "text": "complete {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         },
         {
           "text": "finish {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         },
         {
           "text": "done with {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         },
         {
           "text": "I finished {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         },
         {
           "text": "I completed {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         },
         {
           "text": "I am done with {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         },
         {
           "text": "start {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         },
         {
           "text": "I started {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         },
         {
           "text": "begin {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         },
         {
           "text": "I am working on {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         },
         {
@@ -2081,27 +2071,31 @@
           "entities": [
             "task_name",
             "new_status"
-          ]
+          ],
+          "literal_entities": {
+            "new_status": "done"
+          }
         },
         {
           "text": "mark {task_name} complete",
           "entities": [
             "task_name",
             "new_status"
-          ]
+          ],
+          "literal_entities": {
+            "new_status": "complete"
+          }
         },
         {
           "text": "tick off {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         },
         {
           "text": "check off {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         }
       ]
@@ -2185,8 +2179,7 @@
         {
           "text": "done {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         },
         {
@@ -2194,48 +2187,57 @@
           "entities": [
             "task_name",
             "new_status"
-          ]
+          ],
+          "literal_entities": {
+            "new_status": "done"
+          }
         },
         {
           "text": "{task_name} completed",
           "entities": [
             "task_name",
             "new_status"
-          ]
+          ],
+          "literal_entities": {
+            "new_status": "completed"
+          }
         },
         {
           "text": "mark {task_name} pending",
           "entities": [
             "task_name",
             "new_status"
-          ]
+          ],
+          "literal_entities": {
+            "new_status": "pending"
+          }
         },
         {
           "text": "set {task_name} in progress",
           "entities": [
             "task_name",
             "new_status"
-          ]
+          ],
+          "literal_entities": {
+            "new_status": "in progress"
+          }
         },
         {
           "text": "pause {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         },
         {
           "text": "resume {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         },
         {
           "text": "close {task_name}",
           "entities": [
-            "task_name",
-            "new_status"
+            "task_name"
           ]
         },
         {
@@ -2243,7 +2245,10 @@
           "entities": [
             "task_name",
             "new_status"
-          ]
+          ],
+          "literal_entities": {
+            "new_status": "done"
+          }
         }
       ]
     },
@@ -2280,7 +2285,10 @@
           "entities": [
             "task_name",
             "new_status"
-          ]
+          ],
+          "literal_entities": {
+            "new_status": "complete"
+          }
         },
         {
           "text": "what about changing {task_name} duration to {new_duration}",
@@ -2341,7 +2349,10 @@
           "entities": [
             "task_name",
             "new_status"
-          ]
+          ],
+          "literal_entities": {
+            "new_status": "complete"
+          }
         },
         {
           "text": "please set {task_name} duration to {new_duration}",
@@ -2393,7 +2404,10 @@
           "entities": [
             "task_name",
             "new_status"
-          ]
+          ],
+          "literal_entities": {
+            "new_status": "complete"
+          }
         },
         {
           "text": "change {task_name} priority to {new_priority} ok",
@@ -2430,7 +2444,10 @@
           "entities": [
             "task_name",
             "new_status"
-          ]
+          ],
+          "literal_entities": {
+            "new_status": "complete"
+          }
         },
         {
           "text": "EVA {task_name} rename to {new_taskname}",
@@ -2458,7 +2475,10 @@
           "entities": [
             "task_name",
             "new_status"
-          ]
+          ],
+          "literal_entities": {
+            "new_status": "done"
+          }
         }
       ]
     },

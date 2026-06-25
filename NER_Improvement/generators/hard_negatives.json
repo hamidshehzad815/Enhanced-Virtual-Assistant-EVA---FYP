@@ -48,6 +48,48 @@
       "intent": "scheduling_delete",
       "tokens": ["can", "you", "delete", "my", "tasks", "on", "Friday"],
       "labels": ["O", "O", "O", "O", "O", "O", "B-date"]
+    },
+    {
+      "text": "add physics exam with Usama today 5pm",
+      "intent": "scheduling_add",
+      "tokens": ["add", "physics", "exam", "with", "Usama", "today", "5pm"],
+      "labels": ["O", "B-task_name", "I-task_name", "O", "B-person", "B-date", "B-time"]
+    },
+    {
+      "text": "add physics exam with usama today 5pm",
+      "intent": "scheduling_add",
+      "tokens": ["add", "physics", "exam", "with", "usama", "today", "5pm"],
+      "labels": ["O", "B-task_name", "I-task_name", "O", "B-person", "B-date", "B-time"]
+    },
+    {
+      "text": "add exam with Hamid today 5pm",
+      "intent": "scheduling_add",
+      "tokens": ["add", "exam", "with", "Hamid", "today", "5pm"],
+      "labels": ["O", "B-task_name", "O", "B-person", "B-date", "B-time"]
+    },
+    {
+      "text": "schedule quiz with Sara tomorrow 3pm",
+      "intent": "scheduling_add",
+      "tokens": ["schedule", "quiz", "with", "Sara", "tomorrow", "3pm"],
+      "labels": ["O", "B-task_name", "O", "B-person", "B-date", "B-time"]
+    },
+    {
+      "text": "add viva with Ahmed Monday 10am",
+      "intent": "scheduling_add",
+      "tokens": ["add", "viva", "with", "Ahmed", "Monday", "10am"],
+      "labels": ["O", "B-task_name", "O", "B-person", "B-date", "B-time"]
+    },
+    {
+      "text": "thanks eva you're the best",
+      "intent": "scheduling_show",
+      "tokens": ["thanks", "eva", "you're", "the", "best"],
+      "labels": ["O", "O", "O", "O", "O"]
+    },
+    {
+      "text": "show my calendar",
+      "intent": "scheduling_show",
+      "tokens": ["show", "my", "calendar"],
+      "labels": ["O", "O", "O"]
     }
   ],
   "learning": [
@@ -140,6 +182,24 @@
       "intent": "learning_create",
       "tokens": ["I", "want", "to", "learn", "Python", "basics"],
       "labels": ["O", "O", "O", "O", "B-topic", "B-subtopic"]
+    },
+    {
+      "text": "create python basics plan starting today for 60days",
+      "intent": "learning_create",
+      "tokens": ["create", "python", "basics", "plan", "starting", "today", "for", "60days"],
+      "labels": ["O", "B-topic", "B-subtopic", "O", "O", "B-start_date", "O", "B-duration"]
+    },
+    {
+      "text": "I need to learning python",
+      "intent": "learning_create",
+      "tokens": ["I", "need", "to", "learning", "python"],
+      "labels": ["O", "O", "O", "O", "B-topic"]
+    },
+    {
+      "text": "learn python with Usama for 2 weeks",
+      "intent": "learning_create",
+      "tokens": ["learn", "python", "with", "Usama", "for", "2", "weeks"],
+      "labels": ["O", "B-topic", "O", "B-person", "O", "B-duration", "I-duration"]
     }
   ]
 }

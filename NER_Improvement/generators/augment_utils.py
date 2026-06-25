@@ -58,12 +58,13 @@ def chunks_to_example(chunks: Sequence[Chunk], intent: str) -> Dict[str, Any]:
 
 
 def _random_case(token: str, rng: random.Random) -> str:
-    mode = rng.randint(0, 3)
+    # Favour lower/mixed case — full UPPER breaks cased BERT at inference; uncased still prefers natural casing.
+    mode = rng.randint(0, 9)
     if mode == 0:
         return token.upper()
-    if mode == 1:
+    if mode <= 5:
         return token.lower()
-    if mode == 2:
+    if mode == 7:
         return token.capitalize()
     if len(token) <= 1:
         return token

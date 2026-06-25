@@ -27,8 +27,10 @@ sys.path.insert(0, str(ROOT / "generators"))
 from augment_utils import load_hard_negatives  # noqa: E402
 from balance_utils import (  # noqa: E402
     count_examples_per_entity,
+    is_zero_entity_example,
     merge_unique_examples,
     oversample_entities,
+    oversample_zero_entity,
 )
 
 CONFIG_PATH = ROOT / "config" / "balance.json"
@@ -95,7 +97,16 @@ def process_split(name: str, meta: Dict[str, Any], cfg: Dict[str, Any], seed: in
         seed=seed,
     )
 
+    zero_pct = float(cfg.get("zero_entity_target_pct", 0.12))
+    balanced, zero_plan = oversample_zero_entity(
+        balanced,
+        target_pct=zero_pct,
+        max_oversample=int(cfg.get("max_zero_entity_oversample", 2500)),
+        seed=seed + 17,
+    )
+
     after_counts = count_examples_per_entity(balanced)
+    zero_count = sum(1 for ex in balanced if is_zero_entity_example(ex))
     write_json(meta["output"], balanced)
 
     report = {
@@ -106,6 +117,9 @@ def process_split(name: str, meta: Dict[str, Any], cfg: Dict[str, Any], seed: in
         "after_merge": len(merged),
         "final_examples": len(balanced),
         "oversample_plan": plan,
+        "zero_entity_plan": zero_plan,
+        "zero_entity_count": zero_count,
+        "zero_entity_pct": round(zero_count / max(len(balanced), 1), 4),
         "entity_counts_before": dict(before_counts),
         "entity_counts_after": dict(after_counts),
     }
@@ -120,6 +134,8 @@ def process_split(name: str, meta: Dict[str, Any], cfg: Dict[str, Any], seed: in
         print("  oversampled entities:")
         for et, info in sorted(plan.items()):
             print(f"    {et}: {info.get('current')} -> +{info.get('added', 0)} (target {info.get('target')})")
+    if zero_plan.get("added"):
+        print(f"  zero-entity: {zero_plan.get('current')} -> +{zero_plan.get('added')} ({zero_count}/{len(balanced)} = {100*zero_count/len(balanced):.1f}%)")
 
     return report
 

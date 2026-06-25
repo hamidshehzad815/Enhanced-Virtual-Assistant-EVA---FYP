@@ -62,6 +62,24 @@
       "labels": ["O", "B-task_name", "I-task_name", "O", "B-person", "O", "B-date", "O", "B-time"]
     },
     {
+      "text": "add physics exam with usama today 5pm",
+      "intent": "scheduling_add",
+      "tokens": ["add", "physics", "exam", "with", "usama", "today", "5pm"],
+      "labels": ["O", "B-task_name", "I-task_name", "O", "B-person", "B-date", "B-time"]
+    },
+    {
+      "text": "add physics exam with Usama today 5pm",
+      "intent": "scheduling_add",
+      "tokens": ["add", "physics", "exam", "with", "Usama", "today", "5pm"],
+      "labels": ["O", "B-task_name", "I-task_name", "O", "B-person", "B-date", "B-time"]
+    },
+    {
+      "text": "add exam with Hamid today 5pm",
+      "intent": "scheduling_add",
+      "tokens": ["add", "exam", "with", "Hamid", "today", "5pm"],
+      "labels": ["O", "B-task_name", "O", "B-person", "B-date", "B-time"]
+    },
+    {
       "text": "schedule group study with Ahmed on Wednesday at 6pm",
       "intent": "scheduling_add",
       "tokens": ["schedule", "group", "study", "with", "Ahmed", "on", "Wednesday", "at", "6pm"],
@@ -128,6 +146,24 @@
       "intent": "learning_create",
       "tokens": ["learn", "Go", "intermediate", "starting", "next", "week", "for", "1", "month"],
       "labels": ["O", "B-topic", "B-subtopic", "O", "B-start_date", "I-start_date", "O", "B-duration", "I-duration"]
+    },
+    {
+      "text": "create python basics plan starting today for 60days",
+      "intent": "learning_create",
+      "tokens": ["create", "python", "basics", "plan", "starting", "today", "for", "60days"],
+      "labels": ["O", "B-topic", "B-subtopic", "O", "O", "B-start_date", "O", "B-duration"]
+    },
+    {
+      "text": "I need to learning python",
+      "intent": "learning_create",
+      "tokens": ["I", "need", "to", "learning", "python"],
+      "labels": ["O", "O", "O", "O", "B-topic"]
+    },
+    {
+      "text": "learn python with usama for 3 weeks",
+      "intent": "learning_create",
+      "tokens": ["learn", "python", "with", "usama", "for", "3", "weeks"],
+      "labels": ["O", "B-topic", "O", "B-person", "O", "B-duration", "I-duration"]
     },
     {
       "text": "delete my plan",

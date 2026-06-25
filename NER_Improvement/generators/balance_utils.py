@@ -89,6 +89,39 @@ def oversample_entities(
     return result, plan
 
 
+def is_zero_entity_example(ex: Dict[str, Any]) -> bool:
+    return all(lbl == "O" for lbl in ex.get("labels", []))
+
+
+def oversample_zero_entity(
+    examples: List[Dict[str, Any]],
+    target_pct: float,
+    max_oversample: int,
+    seed: int = 42,
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    """Upsample all-O examples so they reach target_pct of the final dataset."""
+    rng = random.Random(seed)
+    zero_indices = [i for i, ex in enumerate(examples) if is_zero_entity_example(ex)]
+    if not zero_indices:
+        return examples, {"current": 0, "target": 0, "added": 0}
+
+    current = len(zero_indices)
+    total = len(examples)
+    # target * (total + added) = current + added  =>  added = (target*total - current) / (1 - target)
+    target = float(target_pct)
+    needed = int((target * total - current) / max(1 - target, 0.01))
+    needed = max(0, min(max_oversample, needed))
+
+    result = list(examples)
+    for _ in range(needed):
+        src = copy.deepcopy(examples[rng.choice(zero_indices)])
+        src["balanced"] = True
+        src["balance_zero_entity"] = True
+        result.append(src)
+
+    return result, {"current": current, "target_pct": target_pct, "added": needed}
+
+
 def merge_unique_examples(
     batches: Sequence[List[Dict[str, Any]]],
 ) -> List[Dict[str, Any]]:

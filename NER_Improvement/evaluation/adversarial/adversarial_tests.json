@@ -24,6 +24,27 @@
       "tags": ["filler", "add"]
     },
     {
+      "id": "add_person_compact",
+      "text": "add physics exam with usama today 5pm",
+      "intent": "scheduling_add",
+      "expected": {"task_name": "physics exam", "person": "usama", "date": "today", "time": "5pm"},
+      "tags": ["person", "compact_order", "add"]
+    },
+    {
+      "id": "add_short_task",
+      "text": "add exam today 5pm",
+      "intent": "scheduling_add",
+      "expected": {"task_name": "exam", "date": "today", "time": "5pm"},
+      "tags": ["short_task", "add"]
+    },
+    {
+      "id": "add_no_entities",
+      "text": "thanks eva",
+      "intent": "scheduling_show",
+      "expected": {},
+      "tags": ["hard_negative"]
+    },
+    {
       "id": "add_caps",
       "text": "ADD PHYSICS EXAM ON MONDAY AT 5PM",
       "intent": "scheduling_add",
@@ -93,7 +114,19 @@
       "tags": ["filler", "delete"]
     },
     {
-      "id": "create_typo_duration",
+      "id": "create_60days",
+      "text": "create python basics plan starting today for 60days",
+      "intent": "learning_create",
+      "expected": {"topic": "python", "subtopic": "basics", "start_date": "today", "duration": "60days"},
+      "tags": ["duration", "create"]
+    },
+    {
+      "id": "create_typo_grammar",
+      "text": "I need to learning python",
+      "intent": "learning_create",
+      "expected": {"topic": "python"},
+      "tags": ["grammar", "create"]
+    },
       "text": "learn py begginer for 2 wks",
       "intent": "learning_create",
       "expected": {"topic": "py", "subtopic": "beginner", "duration": "2 wks"},
