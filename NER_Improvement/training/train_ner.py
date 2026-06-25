@@ -30,6 +30,7 @@ from transformers import (
     AutoModelForTokenClassification,
     AutoTokenizer,
     DataCollatorForTokenClassification,
+    EarlyStoppingCallback,
     Trainer,
     TrainingArguments,
 )
@@ -42,24 +43,26 @@ except ImportError as exc:  # pragma: no cover
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG_LABELS = ROOT / "config" / "labels.json"
 
-DEFAULT_BASE_MODEL = "bert-base-cased"
+DEFAULT_BASE_MODEL = "bert-base-uncased"
 DEFAULT_MAX_LEN = 128
-DEFAULT_EPOCHS = 10
+DEFAULT_EPOCHS = 5
 DEFAULT_BATCH_SIZE = 16
-DEFAULT_LR = 3e-5
+DEFAULT_LR = 2e-5
 DEFAULT_SEED = 42
+DEFAULT_DROPOUT = 0.2
+DEFAULT_EARLY_STOPPING_PATIENCE = 2
 VAL_RATIO = 0.1
 
 MODEL_CONFIG = {
     "scheduling": {
-        "dataset": ROOT / "datasets" / "scheduling" / "raw" / "scheduling_ner.json",
+        "dataset": ROOT / "datasets" / "scheduling" / "final" / "scheduling_ner.json",
         "label_key": "scheduling_ner",
         "output_dir": ROOT / "training" / "output" / "scheduling",
         "report_path": ROOT / "evaluation" / "baseline_f1_scheduling.json",
         "deploy_dir": ROOT.parent / "Eva_AI_Server" / "models" / "ner_model",
     },
     "learning": {
-        "dataset": ROOT / "datasets" / "learning" / "raw" / "learning_ner.json",
+        "dataset": ROOT / "datasets" / "learning" / "final" / "learning_ner.json",
         "label_key": "learning_ner",
         "output_dir": ROOT / "training" / "output" / "learning",
         "report_path": ROOT / "evaluation" / "baseline_f1_learning.json",
@@ -308,6 +311,9 @@ def train_model(args: argparse.Namespace) -> None:
         num_labels=len(label_maps.labels),
         id2label=label_maps.id2label,
         label2id=label_maps.label2id,
+        hidden_dropout_prob=args.dropout,
+        attention_probs_dropout_prob=max(0.1, args.dropout / 2),
+        classifier_dropout=args.dropout,
     )
 
     device = pick_device()
@@ -345,6 +351,9 @@ def train_model(args: argparse.Namespace) -> None:
         tokenizer=tokenizer,
         data_collator=data_collator,
         compute_metrics=make_compute_metrics(label_maps.id2label),
+        callbacks=[
+            EarlyStoppingCallback(early_stopping_patience=args.early_stopping_patience),
+        ],
     )
 
     print("\nStarting training...")
@@ -387,6 +396,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
     parser.add_argument("--max-length", type=int, default=DEFAULT_MAX_LEN)
     parser.add_argument("--lr", type=float, default=DEFAULT_LR)
+    parser.add_argument("--dropout", type=float, default=DEFAULT_DROPOUT)
+    parser.add_argument(
+        "--early-stopping-patience",
+        type=int,
+        default=DEFAULT_EARLY_STOPPING_PATIENCE,
+        help="Stop training if val F1 does not improve for N epochs",
+    )
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED)
     parser.add_argument("--max-samples", type=int, default=0, help="Limit dataset size (0 = all)")
     parser.add_argument("--output-dir", default="")

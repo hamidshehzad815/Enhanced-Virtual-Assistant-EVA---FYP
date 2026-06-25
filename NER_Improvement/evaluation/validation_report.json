@@ -3,61 +3,27 @@
   "all_valid": true,
   "datasets": [
     {
-      "path": "../datasets/scheduling/final/scheduling_ner.json",
-      "examples": 22160,
-      "intents": {
-        "scheduling_add": 7025,
-        "scheduling_delete": 3319,
-        "scheduling_update": 7157,
-        "scheduling_show": 2915,
-        "behavioral": 1744
-      },
-      "label_distribution": {
-        "O": 89111,
-        "B-task_name": 14904,
-        "I-task_name": 13011,
-        "B-date": 10114,
-        "B-time": 4478,
-        "B-priority": 3773,
-        "B-status": 2298,
-        "B-new_date": 2265,
-        "B-new_time": 2187,
-        "B-person": 1937,
-        "B-duration": 1761,
-        "B-day": 1744,
-        "B-new_priority": 1615,
-        "B-new_duration": 1407,
-        "B-new_status": 1282,
-        "I-duration": 1258,
-        "B-new_taskname": 1135,
-        "I-time": 1021,
-        "I-new_taskname": 998,
-        "I-new_duration": 992
-      },
-      "errors": [],
-      "valid": true
-    },
-    {
       "path": "../datasets/learning/final/learning_ner.json",
-      "examples": 9489,
+      "examples": 12131,
       "intents": {
-        "learning_create": 4747,
-        "learning_update": 2792,
-        "learning_delete": 1950
+        "learning_create": 6444,
+        "learning_update": 3301,
+        "learning_delete": 2386
       },
       "label_distribution": {
-        "O": 33992,
-        "B-topic": 9485,
-        "B-subtopic": 3919,
-        "I-subtopic": 2461,
-        "I-topic": 2130,
-        "B-duration": 2026,
-        "B-start_date": 1964,
-        "I-duration": 1433,
-        "B-person": 1256,
-        "B-date": 1122,
-        "I-start_date": 173,
-        "I-date": 89
+        "O": 43124,
+        "B-topic": 10614,
+        "I-subtopic": 5437,
+        "B-subtopic": 4500,
+        "I-topic": 2834,
+        "B-duration": 2496,
+        "B-start_date": 2465,
+        "I-start_date": 2117,
+        "I-duration": 2074,
+        "B-person": 1433,
+        "B-date": 1297,
+        "I-date": 1255,
+        "I-person": 7
       },
       "errors": [],
       "valid": true

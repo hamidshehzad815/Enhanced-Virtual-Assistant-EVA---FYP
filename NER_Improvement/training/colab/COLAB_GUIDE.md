@@ -1,89 +1,62 @@
-# Google Colab — Phase 3 NER Training
+# Google Colab — NER Training
 
-Train both NER models on Colab GPU. No local install needed.
+Train both NER models on Colab GPU.
 
-## Files you need
+## Upload
 
-Upload **one** of these options to Colab:
+Zip `NER_Improvement/` to Drive (recommended) or upload minimum:
 
-### Option A — Upload whole folder (recommended)
-
-Zip `NER_Improvement/` and upload to Google Drive, then unzip in Colab:
-
-```
-NER_Improvement/
-├── config/labels.json
-├── datasets/scheduling/final/scheduling_ner.json   # Phase 4 augmented (or raw/ for baseline)
-├── datasets/learning/final/learning_ner.json
-└── training/
-    ├── ner_training_utils.py
-    └── colab/
-        ├── Train_Scheduling_NER.ipynb
-        └── Train_Learning_NER.ipynb
-```
-
-### Option B — Minimum upload
-
-Upload these 3 files into a Colab folder (e.g. `/content/eva_ner/`):
-
-| File | From |
+| File | Path |
 |------|------|
-| `labels.json` | `NER_Improvement/config/labels.json` |
-| `scheduling_ner.json` | `NER_Improvement/datasets/scheduling/final/` (Phase 4) or `raw/` (baseline) |
-| `learning_ner.json` | `NER_Improvement/datasets/learning/final/` (Phase 4) or `raw/` (baseline) |
+| `labels.json` | `config/labels.json` |
+| **Scheduling dataset** | `datasets/scheduling/final/scheduling_ner.json` |
+| **Learning dataset** | `datasets/learning/final/learning_ner.json` |
+| Notebooks | `training/colab/Train_*_NER.ipynb` |
 
-Copy `ner_training_utils.py` code into the notebook (included in notebook cells).
-
----
+**Use `final/` datasets** — they include augmentation, negatives, and balancing. Do **not** train on `raw/`.
 
 ## Notebooks
 
-| Notebook | Model | Deploy to |
-|----------|-------|-----------|
-| `Train_Scheduling_NER.ipynb` | scheduling + behavioral | `Eva_AI_Server/models/ner_model/` |
-| `Train_Learning_NER.ipynb` | learning intents | `Eva_AI_Server/models/learning_ner/` |
+| Notebook | Deploy to |
+|----------|-----------|
+| `Train_Scheduling_NER.ipynb` | `Eva_AI_Server/models/ner_model/` |
+| `Train_Learning_NER.ipynb` | `Eva_AI_Server/models/learning_ner/` |
 
-Run **one notebook at a time**. Each takes ~15–30 min on Colab T4 GPU.
+Run **one at a time**. ~20–45 min each on T4.
 
----
-
-## After training
-
-1. Download the `final_model.zip` from Colab (last cell creates it)
-2. Unzip into your project:
-   - Scheduling → `Eva_AI_Server/models/ner_model/`
-   - Learning → `Eva_AI_Server/models/learning_ner/`
-3. Save the F1 report JSON to `NER_Improvement/evaluation/`
-
-Required files in model folder:
-```
-config.json
-model.safetensors  (or pytorch_model.bin)
-tokenizer.json
-tokenizer_config.json
-vocab.txt
-```
-
----
-
-## Hyperparameters (defaults in notebooks)
+## Hyperparameters (current)
 
 | Setting | Value |
 |---------|-------|
-| Base model | `bert-base-cased` |
+| Base model | `bert-base-uncased` |
 | Max length | 128 |
-| Epochs | 10 |
+| Epochs | 5 (max) |
+| Early stopping | patience **2** (stops if val F1 flat) |
 | Batch size | 16 |
-| Learning rate | 3e-5 |
-| Eval metric | entity F1 (seqeval) |
-| Best model | saved by highest val F1 |
+| Learning rate | 2e-5 |
+| Dropout | 0.2 |
+| Best checkpoint | highest val entity F1 |
 
----
+## After training
 
-## Phase 3 fix included
+1. Download `*_ner_model.zip` from last cell
+2. Unzip into `Eva_AI_Server/models/ner_model/` and `learning_ner/`
+3. Restart AI server
+4. Run adversarial eval locally:
+   ```bash
+   cd NER_Improvement/evaluation
+   python run_adversarial_eval.py
+   ```
 
-Both notebooks use **correct BIO subword alignment**:
-- `physics` → `physic` + `##s` → labels `B-task_name`, `I-task_name`
-- Old bug: `##s` got `-100` → partial extraction
+Target: **90–96% adversarial pass rate**, not 100% synthetic val F1.
 
-See `align_labels_with_tokens()` in `ner_training_utils.py`.
+## Regenerate datasets locally (if you change templates)
+
+```bash
+cd NER_Improvement/generators
+python3 build_dataset.py
+python3 augment_dataset.py
+python3 balance_dataset.py
+python3 validate_dataset.py --path ../datasets/scheduling/final/scheduling_ner.json
+python3 validate_dataset.py --path ../datasets/learning/final/learning_ner.json
+```

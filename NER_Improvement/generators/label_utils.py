@@ -71,20 +71,51 @@ def assign_bio_labels(
     return labels
 
 
+def apply_literal_entities(
+    text: str,
+    char_spans: Dict[str, Tuple[int, int]],
+    literal_entities: Dict[str, str],
+) -> Dict[str, Tuple[int, int]]:
+    """Attach character spans for entity values baked into template text (not {slots})."""
+    spans = dict(char_spans)
+    for etype, literal in literal_entities.items():
+        if etype in spans:
+            continue
+        idx = text.find(literal)
+        if idx < 0:
+            raise ValueError(
+                f"Literal entity {etype}={literal!r} not found in text {text!r}"
+            )
+        spans[etype] = (idx, idx + len(literal))
+    return spans
+
+
 def build_example(
     template_text: str,
     entity_slots: List[str],
     slot_values: Dict[str, str],
+    literal_entities: Dict[str, str] | None = None,
 ) -> Dict[str, object]:
     """Build one training example dict with text, tokens, and BIO labels."""
     placeholders = extract_placeholders(template_text)
-    if set(placeholders) != set(entity_slots):
+    literal_entities = literal_entities or {}
+    slot_entities = set(entity_slots) - set(literal_entities.keys())
+    if set(placeholders) != slot_entities:
         raise ValueError(
             f"Template entity mismatch. text={template_text!r} "
-            f"entities={entity_slots} placeholders={placeholders}"
+            f"entities={entity_slots} placeholders={placeholders} "
+            f"literals={list(literal_entities.keys())}"
         )
 
     text, char_spans = fill_template(template_text, slot_values)
+    if literal_entities:
+        char_spans = apply_literal_entities(text, char_spans, literal_entities)
+        missing = set(entity_slots) - set(char_spans.keys())
+        if missing:
+            raise ValueError(
+                f"Missing entity spans for {sorted(missing)} in text {text!r}"
+            )
+
     token_spans = tokenize_with_offsets(text)
     tokens = [t for t, _, _ in token_spans]
     labels = assign_bio_labels(token_spans, char_spans)

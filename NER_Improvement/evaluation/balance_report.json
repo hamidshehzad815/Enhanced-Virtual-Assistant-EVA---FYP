@@ -2,112 +2,126 @@
   "datasets": [
     {
       "dataset": "scheduling",
-      "input_examples": 18545,
-      "hard_negatives_added": 8,
-      "targeted_added": 15,
-      "after_merge": 18560,
-      "final_examples": 22160,
+      "input_examples": 21308,
+      "hard_negatives_added": 15,
+      "targeted_added": 18,
+      "after_merge": 21323,
+      "final_examples": 27423,
       "oversample_plan": {
         "new_taskname": {
-          "current": 535,
-          "target": 2227,
+          "current": 513,
+          "target": 2558,
           "oversample_add": 600,
           "added": 600
         },
         "new_status": {
-          "current": 682,
-          "target": 2227,
+          "current": 933,
+          "target": 2558,
           "oversample_add": 600,
           "added": 600
         },
         "new_duration": {
-          "current": 807,
-          "target": 2227,
+          "current": 805,
+          "target": 2558,
           "oversample_add": 600,
           "added": 600
         },
         "day": {
-          "current": 1144,
-          "target": 2227,
+          "current": 1142,
+          "target": 2558,
           "oversample_add": 600,
           "added": 600
         },
         "person": {
-          "current": 1262,
-          "target": 2227,
+          "current": 1673,
+          "target": 2558,
           "oversample_add": 600,
           "added": 600
         },
         "duration": {
-          "current": 1083,
-          "target": 2227,
+          "current": 1071,
+          "target": 2558,
           "oversample_add": 600,
           "added": 600
         }
       },
+      "zero_entity_plan": {
+        "current": 752,
+        "target_pct": 0.12,
+        "added": 2500
+      },
+      "zero_entity_count": 3252,
+      "zero_entity_pct": 0.1186,
       "entity_counts_before": {
-        "task_name": 12214,
-        "date": 8829,
-        "time": 3890,
-        "priority": 3441,
-        "person": 1262,
-        "duration": 1083,
-        "status": 2219,
-        "new_priority": 1368,
-        "new_status": 682,
-        "new_date": 2012,
-        "new_time": 1983,
-        "new_duration": 807,
-        "new_taskname": 535,
-        "day": 1144
+        "task_name": 14014,
+        "date": 10012,
+        "time": 4782,
+        "priority": 3425,
+        "person": 1673,
+        "duration": 1071,
+        "status": 2192,
+        "new_priority": 1371,
+        "new_status": 933,
+        "new_date": 2088,
+        "new_time": 2028,
+        "new_duration": 805,
+        "new_taskname": 513,
+        "day": 1142
       },
       "entity_counts_after": {
-        "task_name": 14904,
-        "date": 10114,
-        "time": 4478,
-        "priority": 3773,
-        "person": 1937,
-        "duration": 1761,
-        "status": 2298,
-        "new_priority": 1615,
-        "new_status": 1282,
-        "new_date": 2265,
-        "new_time": 2187,
-        "new_duration": 1407,
-        "new_taskname": 1135,
-        "day": 1744
+        "task_name": 16757,
+        "date": 11290,
+        "time": 5418,
+        "priority": 3709,
+        "person": 2360,
+        "duration": 1727,
+        "status": 2260,
+        "new_priority": 1593,
+        "new_status": 1533,
+        "new_date": 2351,
+        "new_time": 2249,
+        "new_duration": 1405,
+        "new_taskname": 1113,
+        "day": 1742
       }
     },
     {
       "dataset": "learning",
-      "input_examples": 9345,
-      "hard_negatives_added": 15,
-      "targeted_added": 12,
-      "after_merge": 9356,
-      "final_examples": 9489,
+      "input_examples": 10803,
+      "hard_negatives_added": 18,
+      "targeted_added": 15,
+      "after_merge": 10812,
+      "final_examples": 12131,
       "oversample_plan": {
         "date": {
-          "current": 989,
-          "target": 1122,
-          "oversample_add": 133,
-          "added": 133
+          "current": 991,
+          "target": 1297,
+          "oversample_add": 306,
+          "added": 306
         }
       },
+      "zero_entity_plan": {
+        "current": 442,
+        "target_pct": 0.12,
+        "added": 1013
+      },
+      "zero_entity_count": 1455,
+      "zero_entity_pct": 0.1199,
       "entity_counts_before": {
-        "topic": 9352,
-        "subtopic": 3889,
-        "start_date": 1964,
-        "duration": 2026,
-        "person": 1256,
-        "date": 989
+        "topic": 10308,
+        "subtopic": 4412,
+        "start_date": 2465,
+        "duration": 2496,
+        "person": 1433,
+        "date": 991
       },
       "entity_counts_after": {
-        "topic": 9485,
-        "subtopic": 3919,
-        "start_date": 1964,
-        "duration": 2026,
-        "person": 1256,
-        "date": 1122
+        "topic": 10614,
+        "subtopic": 4500,
+        "start_date": 2465,
+        "duration": 2496,
+        "person": 1433,
+        "date": 1297
       }
     }
   ]

@@ -1,0 +1,287 @@
+{
+  "intent": "scheduling_add",
+  "version": "1.0.0",
+  "note": "Entity-order variants — person/date/time without rigid on/at glue words.",
+  "groups": [
+    {
+      "id": "person_date_time_compact",
+      "label": "Compact person + date + time (no on)",
+      "templates": [
+        {
+          "text": "add {task_name} with {person} {date} {time}",
+          "entities": [
+            "task_name",
+            "person",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "schedule {task_name} with {person} {date} at {time}",
+          "entities": [
+            "task_name",
+            "person",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "add {task_name} {person} {date} {time}",
+          "entities": [
+            "task_name",
+            "person",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "create {task_name} with {person} {date} {time}",
+          "entities": [
+            "task_name",
+            "person",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "set {task_name} with {person} {date} {time}",
+          "entities": [
+            "task_name",
+            "person",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "add {task_name} alongside {person} {date} {time}",
+          "entities": [
+            "task_name",
+            "person",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "I need {task_name} with {person} {date} at {time}",
+          "entities": [
+            "task_name",
+            "person",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        }
+      ]
+    },
+    {
+      "id": "short_task_names",
+      "label": "Short 1-word task names",
+      "templates": [
+        {
+          "text": "add {task_name} on {date} at {time}",
+          "entities": [
+            "task_name",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "add {task_name} {date} {time}",
+          "entities": [
+            "task_name",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "schedule {task_name} for {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "delete {task_name}",
+          "entities": [
+            "task_name"
+          ],
+          "intent": "scheduling_delete"
+        },
+        {
+          "text": "remove {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ],
+          "intent": "scheduling_delete"
+        },
+        {
+          "text": "move {task_name} to {new_date}",
+          "entities": [
+            "task_name",
+            "new_date"
+          ],
+          "intent": "scheduling_update"
+        }
+      ]
+    },
+    {
+      "id": "long_task_names",
+      "label": "Long multi-word task names",
+      "templates": [
+        {
+          "text": "add {task_name} on {date} at {time}",
+          "entities": [
+            "task_name",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "schedule {task_name} for {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "delete {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ],
+          "intent": "scheduling_delete"
+        },
+        {
+          "text": "move {task_name} to {new_date}",
+          "entities": [
+            "task_name",
+            "new_date"
+          ],
+          "intent": "scheduling_update"
+        }
+      ]
+    },
+    {
+      "id": "shuffled_order",
+      "label": "Front-loaded / shuffled entity order",
+      "templates": [
+        {
+          "text": "{date} {time} add {task_name}",
+          "entities": [
+            "task_name",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "{date} add {task_name} at {time}",
+          "entities": [
+            "task_name",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "at {time} on {date} add {task_name}",
+          "entities": [
+            "task_name",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "{task_name} on {date} at {time} add",
+          "entities": [
+            "task_name",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "with {person} add {task_name} {date} {time}",
+          "entities": [
+            "task_name",
+            "person",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "{person} and I have {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "person",
+            "date"
+          ],
+          "intent": "scheduling_add"
+        }
+      ]
+    },
+    {
+      "id": "conversational_no_verb",
+      "label": "No leading action verb",
+      "templates": [
+        {
+          "text": "I have {task_name} on {date} at {time}",
+          "entities": [
+            "task_name",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "I've got {task_name} {date} at {time}",
+          "entities": [
+            "task_name",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "there is {task_name} on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "my {task_name} is on {date}",
+          "entities": [
+            "task_name",
+            "date"
+          ],
+          "intent": "scheduling_add"
+        },
+        {
+          "text": "remind me about {task_name} {date} {time}",
+          "entities": [
+            "task_name",
+            "date",
+            "time"
+          ],
+          "intent": "scheduling_add"
+        }
+      ]
+    }
+  ]
+}

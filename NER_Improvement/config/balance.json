@@ -1,5 +1,7 @@
 {
   "target_example_pct": 0.12,
+  "zero_entity_target_pct": 0.12,
+  "max_zero_entity_oversample": 2500,
   "max_oversample_per_entity": 600,
   "scheduling_priority_entities": [
     "new_taskname",
