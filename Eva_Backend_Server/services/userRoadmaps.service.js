@@ -2,10 +2,10 @@
  * User-created learning roadmaps (learning_goals collection).
  */
 
+const mongoose = require("mongoose");
 const { LearningGoal, RoadmapTopic } = require("../models");
-const { BadRequestError } = require("../middleware/errorHandler");
+const { BadRequestError, NotFoundError } = require("../middleware/errorHandler");
 const {
-  normalizeSubjectFilter,
   subjectToDisplay,
   formatTrackLabel,
 } = require("../utils/learningSubject");
@@ -17,13 +17,6 @@ const {
 } = require("../utils/apiDateTime");
 
 const GOAL_STATUSES = new Set(["active", "paused", "completed", "cancelled"]);
-
-const GOAL_STATUS_PRIORITY = {
-  active: 0,
-  paused: 1,
-  completed: 2,
-  cancelled: 3,
-};
 
 const GOAL_LIST_PROJECTION =
   "title subject roadmap_key status start_date end_date total_topics completed_topics created_at updated_at";
@@ -97,6 +90,97 @@ const serializeRoadmap = (goal, sessions = [], timezone = "UTC") => {
     sessions_summary: buildSessionsSummary(sessionList),
     sessions: sessionList,
   };
+};
+
+/** Roadmap header for session detail — no sessions[] list */
+const serializeRoadmapSummary = (goal, sessions = [], timezone = "UTC") => {
+  const full = serializeRoadmap(goal, sessions, timezone);
+  const { sessions: _sessions, ...summary } = full;
+  return summary;
+};
+
+/** Plan card / list item — roadmap metadata only (no sessions[]). */
+const serializeRoadmapPlan = (goal, sessionsSummary = null, timezone = "UTC") => {
+  const subject = String(goal.subject || "").trim().toLowerCase();
+  const total = Number(goal.total_topics || 0);
+  const completed = Number(goal.completed_topics || 0);
+  const summary = sessionsSummary || {
+    completed,
+    skipped: 0,
+    pending: Math.max(0, total - completed),
+    ongoing: 0,
+  };
+
+  return {
+    id: String(goal._id),
+    title: goal.title,
+    language: subjectToDisplay(subject),
+    language_key: subject,
+    track_label: formatTrackLabel(goal.roadmap_key),
+    status: goal.status,
+    start_date: goal.start_date
+      ? serializeDateOnlyForApi(goal.start_date, timezone)
+      : null,
+    end_date: goal.end_date
+      ? serializeDateOnlyForApi(goal.end_date, timezone)
+      : null,
+    completed_topics: completed,
+    total_topics: total,
+    progress_percent: toProgressPercent(goal),
+    session_count: total,
+    sessions_summary: summary,
+  };
+};
+
+const loadSessionsSummaryByGoalId = async (goalIds) => {
+  const map = new Map();
+  goalIds.forEach((id) => {
+    map.set(String(id), {
+      completed: 0,
+      skipped: 0,
+      pending: 0,
+      ongoing: 0,
+    });
+  });
+
+  if (!goalIds.length) {
+    return map;
+  }
+
+  const rows = await RoadmapTopic.aggregate([
+    {
+      $match: {
+        goal_id: { $in: goalIds },
+        is_deleted: false,
+      },
+    },
+    {
+      $group: {
+        _id: { goal_id: "$goal_id", status: "$status" },
+        count: { $sum: 1 },
+      },
+    },
+  ]);
+
+  rows.forEach((row) => {
+    const goalId = String(row._id.goal_id);
+    const status = String(row._id.status || "").toLowerCase();
+    const bucket = map.get(goalId);
+    if (!bucket) {
+      return;
+    }
+    if (status === "completed") {
+      bucket.completed = row.count;
+    } else if (status === "skipped") {
+      bucket.skipped = row.count;
+    } else if (status === "ongoing") {
+      bucket.ongoing = row.count;
+    } else if (status === "pending") {
+      bucket.pending = row.count;
+    }
+  });
+
+  return map;
 };
 
 const loadSessionsByGoalId = async (goalIds, timezone = "UTC") => {
@@ -177,93 +261,30 @@ const buildGoalsQuery = (userId, filters = {}) => {
   return query;
 };
 
-const goalSortKey = (goal) => {
-  const priority = GOAL_STATUS_PRIORITY[goal.status] ?? 99;
-  const updated = new Date(goal.updated_at || goal.created_at || 0).getTime();
-  return { priority, updated };
-};
-
 /**
- * Prefer active/paused over completed when multiple goals share a language.
+ * Single roadmap with sessions for one learning goal (by goal id).
  */
-const pickPreferredGoal = (goals) => {
-  if (!Array.isArray(goals) || goals.length === 0) {
-    return null;
+const getUserRoadmapForGoalId = async (userId, goalIdInput, timezone = "UTC") => {
+  const goalId = String(goalIdInput || "").trim();
+  if (!mongoose.Types.ObjectId.isValid(goalId)) {
+    throw new BadRequestError("Invalid goal id");
   }
 
-  const sorted = [...goals].sort((a, b) => {
-    const ka = goalSortKey(a);
-    const kb = goalSortKey(b);
-    if (ka.priority !== kb.priority) {
-      return ka.priority - kb.priority;
-    }
-    return kb.updated - ka.updated;
-  });
-
-  return sorted[0];
-};
-
-/**
- * Distinct languages (subjects) the user has at least one non-deleted roadmap for.
- */
-const listUserLanguages = async (userId) => {
-  const subjects = await LearningGoal.distinct("subject", {
+  const goal = await LearningGoal.findOne({
+    _id: goalId,
     user_id: userId,
     is_deleted: false,
-    subject: { $nin: [null, ""] },
-  });
-
-  return subjects
-    .map((subject) => {
-      const key = String(subject).trim().toLowerCase();
-      return {
-        key,
-        label: subjectToDisplay(key),
-      };
-    })
-    .sort((a, b) => a.label.localeCompare(b.label));
-};
-
-/**
- * Single roadmap for a language (Approach B: language required on fetch).
- * When multiple goals exist, returns active/paused over completed/cancelled.
- */
-const getUserRoadmapForLanguage = async (userId, languageInput, timezone = "UTC", filters = {}) => {
-  const subject = normalizeSubjectFilter(languageInput);
-  if (!subject) {
-    throw new BadRequestError(
-      "language query parameter is required (e.g. ?language=python)",
-    );
-  }
-
-  const statuses = parseStatusFilter(filters.statusInput);
-
-  const query = buildGoalsQuery(userId, {
-    subject,
-    statuses,
-  });
-
-  const goals = await LearningGoal.find(query)
+  })
     .select(GOAL_LIST_PROJECTION)
-    .sort({ updated_at: -1, created_at: -1 })
     .lean();
 
-  const chosen = pickPreferredGoal(goals);
-  if (!chosen) {
-    return withApiTimezone(
-      {
-        language: {
-          key: subject,
-          label: subjectToDisplay(subject),
-        },
-        roadmap: null,
-      },
-      timezone,
-    );
+  if (!goal) {
+    throw new NotFoundError("Learning goal not found");
   }
 
-  const sessionsByGoal = await loadSessionsByGoalId([chosen._id], timezone);
-  const sessions = sessionsByGoal.get(String(chosen._id)) || [];
+  const subject = String(goal.subject || "").trim().toLowerCase();
+  const sessionsByGoal = await loadSessionsByGoalId([goal._id], timezone);
+  const sessions = sessionsByGoal.get(String(goal._id)) || [];
 
   return withApiTimezone(
     {
@@ -271,10 +292,37 @@ const getUserRoadmapForLanguage = async (userId, languageInput, timezone = "UTC"
         key: subject,
         label: subjectToDisplay(subject),
       },
-      roadmap: serializeRoadmap(chosen, sessions, timezone),
+      roadmap: serializeRoadmap(goal, sessions, timezone),
     },
     timezone,
   );
+};
+
+/**
+ * All learning plans for the user (no sessions[] — use GET /api/roadmaps/:goalId for sessions).
+ */
+const listUserRoadmapPlans = async (userId, timezone = "UTC", filters = {}) => {
+  const statuses = parseStatusFilter(filters.statusInput);
+
+  const query = buildGoalsQuery(userId, { statuses });
+
+  const goals = await LearningGoal.find(query)
+    .select(GOAL_LIST_PROJECTION)
+    .sort({ updated_at: -1, created_at: -1 })
+    .lean();
+
+  const goalIds = goals.map((goal) => goal._id);
+  const summariesByGoal = await loadSessionsSummaryByGoalId(goalIds);
+
+  const roadmaps = goals.map((goal) =>
+    serializeRoadmapPlan(
+      goal,
+      summariesByGoal.get(String(goal._id)),
+      timezone,
+    ),
+  );
+
+  return withApiTimezone({ roadmaps }, timezone);
 };
 
 /**
@@ -313,14 +361,45 @@ const buildRoadmapMutationPayload = async (
   );
 };
 
+/**
+ * Single session detail for GET popup — session + slim roadmap (no sessions[]).
+ */
+const buildSessionDetailPayload = async (
+  goalDoc,
+  sessionId,
+  timezone = "UTC",
+) => {
+  if (!goalDoc) {
+    return { language: null, roadmap: null, session: null };
+  }
+
+  const subject = String(goalDoc.subject || "").trim().toLowerCase();
+  const sessionsByGoal = await loadSessionsByGoalId([goalDoc._id], timezone);
+  const sessions = sessionsByGoal.get(String(goalDoc._id)) || [];
+  const session = sessions.find((row) => row.id === String(sessionId)) || null;
+
+  return withApiTimezone(
+    {
+      language: subject
+        ? { key: subject, label: subjectToDisplay(subject) }
+        : null,
+      roadmap: serializeRoadmapSummary(goalDoc, sessions, timezone),
+      session,
+    },
+    timezone,
+  );
+};
+
 module.exports = {
   GOAL_STATUSES,
-  listUserLanguages,
-  getUserRoadmapForLanguage,
+  listUserRoadmapPlans,
+  getUserRoadmapForGoalId,
   buildRoadmapMutationPayload,
+  buildSessionDetailPayload,
   serializeRoadmap,
+  serializeRoadmapSummary,
+  serializeRoadmapPlan,
   serializeSession,
   buildGoalsQuery,
-  pickPreferredGoal,
   loadSessionsByGoalId,
 };

@@ -7,11 +7,11 @@ const router = express.Router();
 
 const { protect } = require("../middleware/auth");
 const {
-  getUserLanguages,
-  getUserRoadmap,
+  getUserRoadmapPlans,
+  getUserRoadmapByGoalId,
 } = require("../controllers/roadmaps.controller");
 
-router.get("/languages", protect, getUserLanguages);
-router.get("/", protect, getUserRoadmap);
+router.get("/plans", protect, getUserRoadmapPlans);
+router.get("/:goalId", protect, getUserRoadmapByGoalId);
 
 module.exports = router;

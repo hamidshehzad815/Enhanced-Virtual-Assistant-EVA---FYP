@@ -2,7 +2,8 @@
 
 User learning roadmaps (goals + sessions).
 
-See [README.md](./README.md) for auth and error envelopes.
+See [README.md](./README.md) for auth and error envelopes.  
+**Frontend UI (buttons, popup, all cases):** [roadmaps-frontend-actions-guide.md](./roadmaps-frontend-actions-guide.md)
 
 ---
 
@@ -10,33 +11,31 @@ See [README.md](./README.md) for auth and error envelopes.
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| `GET` | `/api/roadmaps/languages` | Language dropdown |
-| `GET` | `/api/roadmaps?language=<key>` | Roadmap + sessions for one language |
+| `GET` | `/api/roadmaps/plans` | **All user plans** (no `sessions[]`) |
+| `GET` | `/api/roadmaps/:goalId` | Roadmap + sessions for one plan |
+| `GET` | `/api/learning/:goalId/sessions/:sessionId` | Single session detail (popup / detail screen) |
 | `PATCH` | `/api/learning/:goalId/sessions/:sessionId` | Reschedule, complete, or skip a session |
 | `PATCH` | `/api/learning/:goalId/status` | Pause, resume, or cancel a plan |
 
 ---
 
-## UX flow (Approach B)
+## UX flow
 
-1. Open Roadmap screen → show **“Select language”** placeholder (no roadmap fetch yet).
-2. `GET /api/roadmaps/languages` → populate dropdown.
-3. User picks language → `GET /api/roadmaps?language=<key>` → render roadmap + sessions.
-4. Tap session → session detail (data from `roadmap.sessions[]`).
-5. After any mutation → use response `data.roadmap` / `data.session` to refresh UI.
+1. `GET /api/roadmaps/plans` → show list of user's learning plans.
+2. User picks a plan → `GET /api/roadmaps/:goalId` → render roadmap + sessions.
+3. Tap session → `GET /api/learning/:goalId/sessions/:sessionId` → session detail popup.
+4. After any mutation → use response `data.roadmap` / `data.session` to refresh UI.
 
 ---
 
 ## Resolution rules
 
-
-| Rule                         | Behavior                                                                                              |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------- |
-| One language at a time in UI | API returns **one** `roadmap` object per language query                                               |
-| Chat create (same language)  | Blocked while any **active** or **paused** plan exists; complete, cancel, or delete first           |
-| Multiple goals same language | Prefer **active** → **paused** → **completed** → **cancelled** (newest `updated_at` within same tier) |
-| Only completed exists        | Return that completed roadmap                                                                         |
-| No roadmap for language      | `roadmap: null`                                                                                       |
+| Rule | Behavior |
+| ---- | -------- |
+| Fetch roadmap | Use **`goalId`** from `GET /api/roadmaps/plans` → `roadmap.id` |
+| Chat create (same language) | Blocked while any **active** or **paused** plan exists for that language |
+| Multiple plans | User may have Python, JavaScript, SQL, etc. at the same time (different `goalId`) |
+| Deleted / cancelled | `404` on `GET /api/roadmaps/:goalId` |
 
 
 ---
@@ -72,23 +71,31 @@ Use `status` + `session_state` to decide what the session detail screen may offe
 
 ---
 
-## `GET /api/roadmaps/languages`
+## `GET /api/roadmaps/plans`
 
-Languages the user has at least one roadmap for.
+List **all learning plans** the user has created. Returns roadmap metadata only — **no `sessions[]`**.
+
+Use this for a “My learning plans” screen. Load sessions with `GET /api/roadmaps/:goalId`.
 
 
-|            |                           |
-| ---------- | ------------------------- |
-| **Auth**   | Required                  |
-| **Method** | `GET`                     |
-| **Path**   | `/api/roadmaps/languages` |
-| **Body**   | None                      |
+|                      |                                                                          |
+| -------------------- | ------------------------------------------------------------------------ |
+| **Auth**             | Required                                                                 |
+| **Method**           | `GET`                                                                    |
+| **Path**             | `/api/roadmaps/plans`                                                    |
+| **Query (optional)** | `status` — comma-separated: `active`, `paused`, `completed`, `cancelled` |
+| **Body**             | None                                                                     |
 
 
 ### Example request
 
 ```http
-GET /api/roadmaps/languages HTTP/1.1
+GET /api/roadmaps/plans HTTP/1.1
+Authorization: Bearer <access_token>
+```
+
+```http
+GET /api/roadmaps/plans?status=active,paused HTTP/1.1
 Authorization: Bearer <access_token>
 ```
 
@@ -98,44 +105,65 @@ Authorization: Bearer <access_token>
 {
   "status": "success",
   "data": {
-    "languages": [
-      { "key": "python", "label": "Python" },
-      { "key": "javascript", "label": "JavaScript" }
+    "timezone": "Asia/Karachi",
+    "roadmaps": [
+      {
+        "id": "674a1b2c3d4e5f6789012301",
+        "title": "Python basics",
+        "language": "Python",
+        "language_key": "python",
+        "track_label": "Basics",
+        "status": "active",
+        "start_date": "2026-06-01",
+        "end_date": "2026-07-15",
+        "completed_topics": 2,
+        "total_topics": 8,
+        "progress_percent": 25,
+        "session_count": 8,
+        "sessions_summary": {
+          "completed": 2,
+          "skipped": 0,
+          "pending": 6,
+          "ongoing": 0
+        }
+      }
     ]
   }
 }
 ```
 
+No `sessions` array on each item. Cancelled / deleted plans are excluded (`is_deleted: false`).
+
+### Errors
+
+| Status | When |
+| ------ | ---- |
+| `400`  | Invalid `status` filter |
+| `401`  | Auth failure |
+
 ---
 
-## `GET /api/roadmaps?language=<key>`
+## `GET /api/roadmaps/:goalId`
 
-Load the roadmap for one language. **`language` is required** (Approach B).
-
-
-|                      |                                                                          |
-| -------------------- | ------------------------------------------------------------------------ |
-| **Auth**             | Required                                                                 |
-| **Method**           | `GET`                                                                    |
-| **Path**             | `/api/roadmaps`                                                          |
-| **Query**            | `language` (required) — also accepts `lang` or `subject` as alias        |
-| **Query (optional)** | `status` — comma-separated: `active`, `paused`, `completed`, `cancelled` |
-| **Body**             | None                                                                     |
+Load one learning plan with **all sessions**. Use `id` from `GET /api/roadmaps/plans`.
 
 
-### Example requests
+|            |                           |
+| ---------- | ------------------------- |
+| **Auth**   | Required                  |
+| **Method** | `GET`                     |
+| **Path**   | `/api/roadmaps/:goalId`   |
+| **Body**   | None                      |
+
+
+### Example request
 
 ```http
-GET /api/roadmaps?language=python HTTP/1.1
+GET /api/roadmaps/674a1b2c3d4e5f6789012301 HTTP/1.1
 Authorization: Bearer <access_token>
 ```
 
-```http
-GET /api/roadmaps?language=python&status=active,paused HTTP/1.1
-Authorization: Bearer <access_token>
-```
-
-### Success `200` — roadmap found
+### Success `200`
 
 ```json
 {
@@ -209,7 +237,43 @@ Authorization: Bearer <access_token>
 }
 ```
 
-### Success `200` — no roadmap for language
+### Errors
+
+| Status | When |
+| ------ | ---- |
+| `400`  | Invalid `goalId` |
+| `401`  | Auth failure |
+| `404`  | Goal not found or not owned by user |
+
+
+---
+
+## `GET /api/learning/:goalId/sessions/:sessionId`
+
+Load **one session** with full detail for the roadmap popup / detail screen.
+
+Uses the same session shape as `roadmap.sessions[]` (including `session_state`, `is_current`, `unlock_at`, `resources`).
+
+
+|                  |                                             |
+| ---------------- | ------------------------------------------- |
+| **Auth**         | Required                                    |
+| **Method**       | `GET`                                       |
+| **Path**         | `/api/learning/:goalId/sessions/:sessionId` |
+| **Body**         | None                                        |
+
+
+`:goalId` = `roadmap.id` from `GET /api/roadmaps`.  
+`:sessionId` = `sessions[].id` from the same roadmap.
+
+### Example request
+
+```http
+GET /api/learning/674a1b2c3d4e5f6789012301/sessions/674a1b2c3d4e5f6789012303 HTTP/1.1
+Authorization: Bearer <access_token>
+```
+
+### Success `200`
 
 ```json
 {
@@ -217,19 +281,59 @@ Authorization: Bearer <access_token>
   "data": {
     "timezone": "Asia/Karachi",
     "language": { "key": "python", "label": "Python" },
-    "roadmap": null
+    "roadmap": {
+      "id": "674a1b2c3d4e5f6789012301",
+      "title": "Python basics",
+      "language": "Python",
+      "language_key": "python",
+      "track_label": "Basics",
+      "status": "active",
+      "start_date": "2026-06-01",
+      "end_date": "2026-07-15",
+      "completed_topics": 1,
+      "total_topics": 8,
+      "progress_percent": 13,
+      "session_count": 8,
+      "sessions_summary": {
+        "completed": 1,
+        "skipped": 0,
+        "pending": 7,
+        "ongoing": 0
+      }
+    },
+    "session": {
+      "id": "674a1b2c3d4e5f6789012303",
+      "order": 2,
+      "title": "Control flow",
+      "status": "pending",
+      "scheduled_date": "2026-06-05T18:00:00+05:00",
+      "estimated_duration": 90,
+      "resources": [
+        {
+          "title": "If else in Python",
+          "url": "https://www.youtube.com/watch?v=example2"
+        }
+      ],
+      "session_state": "locked",
+      "is_current": true,
+      "unlock_at": "2026-06-04T18:00:00+05:00"
+    }
   }
 }
 ```
 
+**Use `data.session` for the popup.**  
+`data.roadmap` is a **summary only** (plan title, progress, status) — **no `sessions[]` list**.  
+For the full list, use `GET /api/roadmaps/:goalId` or the `PATCH` session response (which still returns the full roadmap for refresh).
+
 ### Errors
 
 
-| Status | When                                          |
-| ------ | --------------------------------------------- |
-| `400`  | Missing `language` or invalid `status` filter |
-| `401`  | Auth failure                                  |
-
+| Status | When |
+| ------ | ---- |
+| `400`  | Invalid goal or session id |
+| `401`  | Auth failure |
+| `404`  | Goal or session not found (or not owned by user) |
 
 ---
 
@@ -490,10 +594,10 @@ On resume (`status: "active"`), response may include optional `rebuild` from AI 
 
 | Screen action          | API | Example body |
 | ---------------------- | --- | ------------ |
-| Open roadmap tab       | — | — |
-| Load language dropdown | `GET /api/roadmaps/languages` | — |
-| User selects language  | `GET /api/roadmaps?language=python` | — |
-| Show session detail    | Use `roadmap.sessions[]` (match `id`) | — |
+| Load all user plans | `GET /api/roadmaps/plans` | — |
+| Open roadmap (sessions) | `GET /api/roadmaps/:goalId` | — |
+| Open session popup     | `GET /api/learning/:goalId/sessions/:sessionId` | — |
+| Show session detail    | Use `data.session` (or `roadmap.sessions[]` from list) | — |
 | Change session date    | `PATCH /api/learning/:goalId/sessions/:sessionId` | `{ "scheduled_date": "2026-06-15" }` |
 | Complete session       | `PATCH /api/learning/:goalId/sessions/:sessionId` | `{ "status": "completed" }` |
 | Skip session           | `PATCH /api/learning/:goalId/sessions/:sessionId` | `{ "status": "skipped" }` |

@@ -5,6 +5,8 @@
  *   node scripts/seed-learning-plan.js
  *   node scripts/seed-learning-plan.js --email areejFatima@gmail.com --topic Python --level basics --days 60 --start today --replace
  *
+ * Default (no --topic): seeds Python, JavaScript, and SQL basics for the user.
+ *
  * Prerequisites:
  *   - User exists (run seed-areej-user.js first if needed)
  *   - roadmap_resources seeded (use --seed-roadmaps or npm run seed:roadmaps)
@@ -33,9 +35,15 @@ const {
 const DEFAULT_DURATION_MINUTES = 90;
 const DEFAULT_LEARNING_REMINDER_MINUTES = 15;
 const DEFAULT_EMAIL = "areejFatima@gmail.com";
-const DEFAULT_TOPIC = "Python";
 const DEFAULT_LEVEL = "basics";
 const DEFAULT_DURATION_DAYS = 60;
+
+/** Default seed: three learning plans (different languages can coexist). */
+const DEFAULT_PLANS = [
+  { topic: "Python", level: "basics" },
+  { topic: "JavaScript", level: "basics" },
+  { topic: "SQL", level: "basics" },
+];
 
 const DEFAULT_LEARNING_SCHEDULE = {
   id: "seed-weekday-evenings",
@@ -59,7 +67,7 @@ const parseArgs = () => {
 
   return {
     email: String(getFlag("--email") || DEFAULT_EMAIL).trim().toLowerCase(),
-    topic: String(getFlag("--topic") || DEFAULT_TOPIC).trim(),
+    topic: getFlag("--topic") ? String(getFlag("--topic")).trim() : null,
     level: String(getFlag("--level") || DEFAULT_LEVEL).trim().toLowerCase(),
     days: Number.parseInt(String(getFlag("--days") || DEFAULT_DURATION_DAYS), 10),
     start: String(getFlag("--start") || "today").trim(),
@@ -67,6 +75,13 @@ const parseArgs = () => {
     replace: argv.includes("--replace"),
     seedRoadmaps: argv.includes("--seed-roadmaps"),
   };
+};
+
+const resolvePlansToSeed = (options) => {
+  if (options.topic) {
+    return [{ topic: options.topic, level: options.level }];
+  }
+  return DEFAULT_PLANS;
 };
 
 const getTodayInTimezone = (timezone) => {
@@ -307,7 +322,7 @@ const removeConflictingGoals = async (userId, subject) => {
   return goalIds.length;
 };
 
-const createLearningPlan = async (options) => {
+const createLearningPlan = async (options, shared = {}) => {
   const {
     email,
     topic,
@@ -323,38 +338,56 @@ const createLearningPlan = async (options) => {
     throw new Error("--days must be an integer of at least 7");
   }
 
-  const connected = await connectDB();
-  if (!connected) {
-    throw new Error("MongoDB connection failed");
+  let shouldDisconnect = false;
+  if (!shared.connected) {
+    const connected = await connectDB();
+    if (!connected) {
+      throw new Error("MongoDB connection failed");
+    }
+    shouldDisconnect = true;
   }
 
   try {
-    const templateInfo = await ensureRoadmapTemplates(seedRoadmaps);
-    if (templateInfo.seeded) {
-      console.log(
-        `Seeded roadmap_resources: inserted ${templateInfo.inserted}, skipped ${templateInfo.skipped}`,
-      );
+    if (!shared.templateChecked) {
+      const templateInfo = await ensureRoadmapTemplates(seedRoadmaps);
+      if (templateInfo.seeded) {
+        console.log(
+          `Seeded roadmap_resources: inserted ${templateInfo.inserted}, skipped ${templateInfo.skipped}`,
+        );
+      }
+      shared.templateChecked = true;
     }
 
-    const user = await User.findOne({ email });
+    let user = shared.user;
     if (!user) {
-      throw new Error(
-        `User not found for ${email}. Run node scripts/seed-areej-user.js first or register the user.`,
-      );
+      user = await User.findOne({ email });
+      if (!user) {
+        throw new Error(
+          `User not found for ${email}. Run node scripts/seed-areej-user.js first or register the user.`,
+        );
+      }
+      shared.user = user;
     }
 
-    let settings = await UserSetting.findOne({ user_id: user._id });
+    let settings = shared.settings;
     if (!settings) {
-      settings = await UserSetting.createDefaultSettings(user._id);
+      settings = await UserSetting.findOne({ user_id: user._id });
+      if (!settings) {
+        settings = await UserSetting.createDefaultSettings(user._id);
+      }
+
+      const scheduleState = await ensureLearningSchedule(settings);
+      settings = scheduleState.settings;
+      shared.settings = settings;
+      if (scheduleState.createdSchedule) {
+        console.log(`Added default learning schedule: ${DEFAULT_LEARNING_SCHEDULE.label}`);
+      }
     }
 
-    const scheduleState = await ensureLearningSchedule(settings);
-    settings = scheduleState.settings;
-    if (scheduleState.createdSchedule) {
-      console.log(`Added default learning schedule: ${DEFAULT_LEARNING_SCHEDULE.label}`);
-    }
-
-    const chosenSchedule = pickSchedule(scheduleState.schedules, scheduleId);
+    const schedules = Array.isArray(settings.preferred_learning_schedules)
+      ? settings.preferred_learning_schedules
+      : [];
+    const chosenSchedule = pickSchedule(schedules, scheduleId);
     if (!chosenSchedule) {
       throw new Error(
         scheduleId
@@ -496,14 +529,55 @@ const createLearningPlan = async (options) => {
     tasks.slice(0, 3).forEach((task) => {
       console.log(`    - ${task.title}: ${task.due_datetime.toISOString()}`);
     });
+
+    return {
+      goalId: String(goal._id),
+      title: goal.title,
+      topic,
+      level,
+      sessions: insertedTopics.length,
+      tasks: tasks.length,
+    };
   } finally {
-    await disconnectDB();
+    if (shouldDisconnect) {
+      await disconnectDB();
+    }
   }
 };
 
 const main = async () => {
   const options = parseArgs();
-  await createLearningPlan(options);
+  const plans = resolvePlansToSeed(options);
+
+  const connected = await connectDB();
+  if (!connected) {
+    throw new Error("MongoDB connection failed");
+  }
+
+  try {
+    const results = [];
+    const shared = { connected: true };
+
+    for (const plan of plans) {
+      const result = await createLearningPlan(
+        { ...options, topic: plan.topic, level: plan.level },
+        shared,
+      );
+      results.push(result);
+      if (plans.length > 1) {
+        console.log("");
+      }
+    }
+
+    if (plans.length > 1) {
+      console.log(`Seeded ${results.length} learning plan(s) for ${options.email}:`);
+      results.forEach((row) => {
+        console.log(`  - ${row.topic} / ${row.level}: ${row.sessions} sessions (${row.goalId})`);
+      });
+    }
+  } finally {
+    await disconnectDB();
+  }
 };
 
 if (require.main === module) {
