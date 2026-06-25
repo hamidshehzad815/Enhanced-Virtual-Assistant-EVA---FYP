@@ -14,7 +14,7 @@ const { applyLearningCollaborationAction } = require("../services/learningCollab
 const { softDeleteLearningGoalById } = require("../services/learningDelete.service");
 const { insert_and_dispatch } = require("../services/notification.service");
 const { callAIInternal } = require("../services/ai.service");
-const { buildRoadmapMutationPayload } = require("../services/userRoadmaps.service");
+const { buildRoadmapMutationPayload, buildSessionDetailPayload } = require("../services/userRoadmaps.service");
 const { validateTopicAction } = require("../utils/learningSessionState");
 const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
 
@@ -144,6 +144,34 @@ const loadOwnedTopic = async (goalOid, topicId, userId) => {
   }
 
   return { topicOid, topic };
+};
+
+/**
+ * GET /api/learning/:goalId/sessions/:sessionId
+ * Single session detail for roadmap session popup / detail screen.
+ */
+const getSession = async (req, res, next) => {
+  try {
+    const { oid: goalOid, goal } = await loadOwnedGoal(req.params.goalId, req.userId);
+    await loadOwnedTopic(goalOid, req.params.sessionId, req.userId);
+
+    const payload = await buildSessionDetailPayload(
+      goal,
+      String(req.params.sessionId),
+      userTimezone(req),
+    );
+
+    if (!payload.session) {
+      throw new NotFoundError("Session not found");
+    }
+
+    res.json({
+      status: "success",
+      data: buildApiData(req, payload),
+    });
+  } catch (error) {
+    next(error);
+  }
 };
 
 /**
@@ -460,6 +488,7 @@ const respondToLearningCollaborationInviteViaLink = async (req, res, next) => {
 };
 
 module.exports = {
+  getSession,
   updateSession,
   updateStatus,
   respondToLearningCollaborationInvite,

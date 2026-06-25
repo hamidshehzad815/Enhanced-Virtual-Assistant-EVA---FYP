@@ -82,7 +82,8 @@ Conflict responses (`409`) may include extra context:
 | [settings-api.md](./settings-api.md) | `GET /api/settings`, `PATCH /api/settings` |
 | [settings-learning-schedules-api.md](./settings-learning-schedules-api.md) | Learning schedule CRUD under `/api/settings/learning-schedules` |
 | [profile-api.md](./profile-api.md) | `GET` / `PATCH /api/profile`, `POST` / `DELETE /api/profile/avatar`, `DELETE /api/profile/account` |
-| [roadmaps-api.md](./roadmaps-api.md) | `GET /api/roadmaps/*`, `PATCH /api/learning/:goalId/sessions/:sessionId`, `PATCH /api/learning/:goalId/status` |
+| [roadmaps-api.md](./roadmaps-api.md) | `GET /api/roadmaps/*`, `GET /api/learning/:goalId/sessions/:sessionId`, `PATCH /api/learning/:goalId/sessions/:sessionId`, `PATCH /api/learning/:goalId/status` |
+| [roadmaps-frontend-actions-guide.md](./roadmaps-frontend-actions-guide.md) | **UI tables:** plan/session actions, buttons by `session_state`, popup fields (frontend) |
 | [tasks-api.md](./tasks-api.md) | `GET /api/tasks/calendar`, `GET /api/tasks/:id`, `PATCH /api/tasks/:id`, `DELETE /api/tasks/:id` |
 | [push-notifications-frontend-setup.md](./push-notifications-frontend-setup.md) | FCM / push token registration (Flutter setup guide) |
 
@@ -94,7 +95,7 @@ Conflict responses (`409`) may include extra context:
 | App bootstrap (after login) | `GET /api/auth/me` | `POST /api/auth/logout` |
 | Home / Dashboard | `GET /api/dashboard` | — |
 | Profile (name, username, photo, timezone, delete account) | `GET /api/profile` | `PATCH /api/profile`, `POST` / `DELETE /api/profile/avatar`, `DELETE /api/profile/account` |
-| Roadmap (select language first) | `GET /api/roadmaps/languages`, `GET /api/roadmaps?language=` | `PATCH /api/learning/:goalId/sessions/:sessionId`, `PATCH /api/learning/:goalId/status` |
+| Roadmap (plans list) | `GET /api/roadmaps/plans`, `GET /api/roadmaps/:goalId`, `GET /api/learning/:goalId/sessions/:sessionId` | `PATCH /api/learning/:goalId/sessions/:sessionId`, `PATCH /api/learning/:goalId/status` — see [roadmaps-frontend-actions-guide.md](./roadmaps-frontend-actions-guide.md) |
 | Settings (toggles, quiet hours, reminders) | `GET /api/settings` | `PATCH /api/settings` |
 | Push device token (after login) | — | `PATCH /api/settings` with `push_token` — see [push-notifications-frontend-setup.md](./push-notifications-frontend-setup.md) |
 | Learning schedules UI | `GET /api/settings` or `GET /api/settings/learning-schedules` | `POST` / `PATCH` / `DELETE` on `/api/settings/learning-schedules` |

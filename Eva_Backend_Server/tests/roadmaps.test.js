@@ -31,9 +31,11 @@ jest.mock("../models", () => ({
   LearningGoal: {
     distinct: jest.fn(),
     find: jest.fn(),
+    findOne: jest.fn(),
   },
   RoadmapTopic: {
     find: jest.fn(),
+    aggregate: jest.fn(),
   },
 }));
 
@@ -83,37 +85,88 @@ describe("User roadmaps API", () => {
     });
   });
 
-  test("GET /api/roadmaps/languages returns only user's languages", async () => {
-    LearningGoal.distinct.mockResolvedValue(["python", "javascript"]);
+  test("GET /api/roadmaps/plans returns all plans without sessions", async () => {
+    const goalChain = {
+      select: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue([pythonGoal, completedPythonGoal]),
+    };
+    LearningGoal.find.mockReturnValue(goalChain);
+    RoadmapTopic.aggregate.mockResolvedValue([
+      {
+        _id: { goal_id: pythonGoal._id, status: "completed" },
+        count: 2,
+      },
+      {
+        _id: { goal_id: pythonGoal._id, status: "pending" },
+        count: 6,
+      },
+    ]);
 
     const response = await request(app)
-      .get("/api/roadmaps/languages")
+      .get("/api/roadmaps/plans")
       .set("Authorization", `Bearer ${makeToken()}`);
 
     expect(response.status).toBe(200);
-    expect(response.body.data.languages).toEqual([
-      { key: "javascript", label: "JavaScript" },
-      { key: "python", label: "Python" },
-    ]);
+    expect(response.body.data.roadmaps).toHaveLength(2);
+    expect(response.body.data.roadmaps[0]).toEqual(
+      expect.objectContaining({
+        title: "Python basics",
+        language_key: "python",
+        status: "active",
+        session_count: 8,
+      }),
+    );
+    expect(response.body.data.roadmaps[0].sessions).toBeUndefined();
+    expect(response.body.data.roadmaps[0].sessions_summary).toEqual(
+      expect.objectContaining({
+        completed: 2,
+        pending: 6,
+      }),
+    );
+    expect(RoadmapTopic.find).not.toHaveBeenCalled();
   });
 
-  test("GET /api/roadmaps without language -> 400", async () => {
-    const response = await request(app)
-      .get("/api/roadmaps")
-      .set("Authorization", `Bearer ${makeToken()}`);
-
-    expect(response.status).toBe(400);
-    expect(response.body.message).toMatch(/language query parameter is required/i);
-    expect(LearningGoal.find).not.toHaveBeenCalled();
-  });
-
-  test("GET /api/roadmaps?language=python returns single roadmap with sessions", async () => {
+  test("GET /api/roadmaps/plans?status=active filters plans", async () => {
     const goalChain = {
       select: jest.fn().mockReturnThis(),
       sort: jest.fn().mockReturnThis(),
       lean: jest.fn().mockResolvedValue([pythonGoal]),
     };
     LearningGoal.find.mockReturnValue(goalChain);
+    RoadmapTopic.aggregate.mockResolvedValue([]);
+
+    const response = await request(app)
+      .get("/api/roadmaps/plans?status=active")
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(response.status).toBe(200);
+    expect(LearningGoal.find).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: USER_ID,
+        is_deleted: false,
+        status: { $in: ["active"] },
+      }),
+    );
+  });
+
+  test("GET /api/roadmaps/:goalId invalid id -> 400", async () => {
+    const response = await request(app)
+      .get("/api/roadmaps/not-a-valid-id")
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/invalid goal id/i);
+    expect(LearningGoal.findOne).not.toHaveBeenCalled();
+  });
+
+  test("GET /api/roadmaps/:goalId returns roadmap with sessions", async () => {
+    const goalId = String(pythonGoal._id);
+
+    LearningGoal.findOne.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(pythonGoal),
+    });
 
     const topicChain = {
       select: jest.fn().mockReturnThis(),
@@ -144,14 +197,22 @@ describe("User roadmaps API", () => {
     RoadmapTopic.find.mockReturnValue(topicChain);
 
     const response = await request(app)
-      .get("/api/roadmaps?language=python")
+      .get(`/api/roadmaps/${goalId}`)
       .set("Authorization", `Bearer ${makeToken()}`);
 
     expect(response.status).toBe(200);
+    expect(LearningGoal.findOne).toHaveBeenCalledWith(
+      expect.objectContaining({
+        _id: goalId,
+        user_id: USER_ID,
+        is_deleted: false,
+      }),
+    );
     expect(response.body.data.language).toEqual({ key: "python", label: "Python" });
     const roadmap = response.body.data.roadmap;
     expect(roadmap).toEqual(
       expect.objectContaining({
+        id: goalId,
         title: "Python basics",
         language: "Python",
         language_key: "python",
@@ -164,66 +225,30 @@ describe("User roadmaps API", () => {
     expect(roadmap.sessions[1].is_current).toBe(true);
   });
 
-  test("prefers active roadmap over completed for same language", async () => {
-    const activeGoal = { ...pythonGoal, updated_at: new Date("2026-02-01") };
-    const goalChain = {
+  test("GET /api/roadmaps/:goalId not found -> 404", async () => {
+    const goalId = String(pythonGoal._id);
+
+    LearningGoal.findOne.mockReturnValue({
       select: jest.fn().mockReturnThis(),
-      sort: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockResolvedValue([completedPythonGoal, activeGoal]),
-    };
-    LearningGoal.find.mockReturnValue(goalChain);
-    RoadmapTopic.find.mockReturnValue({
-      select: jest.fn().mockReturnThis(),
-      sort: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockResolvedValue([]),
+      lean: jest.fn().mockResolvedValue(null),
     });
 
     const response = await request(app)
-      .get("/api/roadmaps?language=python")
+      .get(`/api/roadmaps/${goalId}`)
       .set("Authorization", `Bearer ${makeToken()}`);
 
-    expect(response.status).toBe(200);
-    expect(response.body.data.roadmap.title).toBe("Python basics");
-    expect(response.body.data.roadmap.status).toBe("active");
-  });
-
-  test("returns completed roadmap when only completed exists", async () => {
-    const goalChain = {
-      select: jest.fn().mockReturnThis(),
-      sort: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockResolvedValue([completedPythonGoal]),
-    };
-    LearningGoal.find.mockReturnValue(goalChain);
-    RoadmapTopic.find.mockReturnValue({
-      select: jest.fn().mockReturnThis(),
-      sort: jest.fn().mockReturnThis(),
-      lean: jest.fn().mockResolvedValue([]),
-    });
-
-    const response = await request(app)
-      .get("/api/roadmaps?language=python")
-      .set("Authorization", `Bearer ${makeToken()}`);
-
-    expect(response.status).toBe(200);
-    expect(response.body.data.roadmap.status).toBe("completed");
-  });
-
-  test("GET /api/roadmaps?status=invalid -> 400", async () => {
-    const response = await request(app)
-      .get("/api/roadmaps?language=python&status=running")
-      .set("Authorization", `Bearer ${makeToken()}`);
-
-    expect(response.status).toBe(400);
-    expect(LearningGoal.find).not.toHaveBeenCalled();
+    expect(response.status).toBe(404);
+    expect(response.body.message).toMatch(/learning goal not found/i);
   });
 
   test("roadmaps routes require auth -> 401", async () => {
-    const [languages, list] = await Promise.all([
-      request(app).get("/api/roadmaps/languages"),
-      request(app).get("/api/roadmaps?language=python"),
+    const goalId = String(pythonGoal._id);
+    const [plans, roadmap] = await Promise.all([
+      request(app).get("/api/roadmaps/plans"),
+      request(app).get(`/api/roadmaps/${goalId}`),
     ]);
 
-    expect(languages.status).toBe(401);
-    expect(list.status).toBe(401);
+    expect(plans.status).toBe(401);
+    expect(roadmap.status).toBe(401);
   });
 });

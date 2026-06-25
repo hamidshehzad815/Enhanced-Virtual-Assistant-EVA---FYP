@@ -144,6 +144,108 @@ describe("Learning API", () => {
     expect(res.status).toBe(404);
   });
 
+  test("GET /api/learning/:goalId/sessions/:sessionId returns session detail", async () => {
+    const savedGoal = {
+      _id: GOAL_ID,
+      user_id: USER_ID,
+      subject: "python",
+      title: "Python basics",
+      roadmap_key: "basics",
+      status: "active",
+      start_date: new Date("2026-06-01"),
+      end_date: new Date("2026-07-01"),
+      total_topics: 2,
+      completed_topics: 1,
+      is_deleted: false,
+    };
+
+    const topics = [
+      {
+        _id: "507f1f77bcf86cd799439010",
+        goal_id: GOAL_ID,
+        order: 1,
+        title: "Session 1",
+        status: "completed",
+        scheduled_date: new Date("2026-06-02T18:00:00Z"),
+        estimated_duration: 90,
+        completed_at: new Date("2026-06-03T18:00:00Z"),
+        resources: [{ title: "Intro", url: "https://youtu.be/x" }],
+      },
+      {
+        _id: TOPIC_ID,
+        goal_id: GOAL_ID,
+        order: 2,
+        title: "Session 2",
+        status: "pending",
+        scheduled_date: new Date("2026-06-10T18:00:00Z"),
+        estimated_duration: 90,
+        resources: [{ title: "Control flow", url: "https://youtu.be/y" }],
+      },
+    ];
+
+    LearningGoal.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(savedGoal),
+    });
+
+    RoadmapTopic.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(topics[1]),
+    });
+
+    RoadmapTopic.find.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      sort: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue(topics),
+      }),
+    });
+
+    const res = await request(app)
+      .get(`/api/learning/${GOAL_ID}/sessions/${TOPIC_ID}`)
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.data.session).toEqual(
+      expect.objectContaining({
+        id: TOPIC_ID,
+        order: 2,
+        title: "Session 2",
+        status: "pending",
+        resources: [{ title: "Control flow", url: "https://youtu.be/y" }],
+      }),
+    );
+    expect(res.body.data.session.is_current).toBe(true);
+    expect(res.body.data.session.session_state).toBeDefined();
+    expect(res.body.data.roadmap).toEqual(
+      expect.objectContaining({
+        id: GOAL_ID,
+        title: "Python basics",
+        language_key: "python",
+      }),
+    );
+    expect(res.body.data.roadmap.sessions).toBeUndefined();
+    expect(res.body.data.sessions).toBeUndefined();
+    expect(res.body.data.language).toEqual({ key: "python", label: "Python" });
+  });
+
+  test("GET /api/learning/:goalId/sessions/:sessionId not found → 404", async () => {
+    LearningGoal.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: GOAL_ID,
+        user_id: USER_ID,
+        is_deleted: false,
+      }),
+    });
+
+    RoadmapTopic.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(null),
+    });
+
+    const res = await request(app)
+      .get(`/api/learning/${GOAL_ID}/sessions/${TOPIC_ID}`)
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(res.status).toBe(404);
+  });
+
   test("PATCH /api/learning/:goalId/sessions/:sessionId reschedules via AI", async () => {
     const savedGoal = {
       _id: GOAL_ID,

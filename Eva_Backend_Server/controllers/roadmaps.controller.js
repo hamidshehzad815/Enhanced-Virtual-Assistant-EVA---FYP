@@ -1,47 +1,20 @@
 /**
- * User roadmap APIs — language dropdown + single roadmap per selected language.
+ * User roadmap APIs — plans list + single roadmap by goal id.
  */
 
 const { BadRequestError } = require("../middleware/errorHandler");
 const {
-  listUserLanguages,
-  getUserRoadmapForLanguage,
+  listUserRoadmapPlans,
+  getUserRoadmapForGoalId,
   GOAL_STATUSES,
 } = require("../services/userRoadmaps.service");
 
-const pickLanguageQuery = (req) =>
-  req.query.language || req.query.lang || req.query.subject || "";
-
 /**
- * GET /api/roadmaps/languages
- * Languages the user has at least one roadmap for (filter dropdown).
+ * GET /api/roadmaps/plans
+ * All learning plans for the user (roadmap metadata only — no sessions[]).
  */
-const getUserLanguages = async (req, res, next) => {
+const getUserRoadmapPlans = async (req, res, next) => {
   try {
-    const languages = await listUserLanguages(req.userId);
-    res.json({
-      status: "success",
-      data: { languages },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * GET /api/roadmaps?language=python
- * Returns one roadmap for the language (active/paused preferred over completed).
- * Approach B: language is required — show placeholder until user selects.
- */
-const getUserRoadmap = async (req, res, next) => {
-  try {
-    const languageInput = pickLanguageQuery(req);
-    if (!languageInput) {
-      throw new BadRequestError(
-        "language query parameter is required (e.g. ?language=python)",
-      );
-    }
-
     const statusInput = req.query.status || req.query.statuses || "";
     if (statusInput) {
       const parts = String(statusInput)
@@ -56,9 +29,8 @@ const getUserRoadmap = async (req, res, next) => {
       }
     }
 
-    const data = await getUserRoadmapForLanguage(
+    const data = await listUserRoadmapPlans(
       req.userId,
-      languageInput,
       req.user?.timezone || "UTC",
       { statusInput },
     );
@@ -72,7 +44,28 @@ const getUserRoadmap = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/roadmaps/:goalId
+ * Returns one roadmap with all sessions for the given learning goal id.
+ */
+const getUserRoadmapByGoalId = async (req, res, next) => {
+  try {
+    const data = await getUserRoadmapForGoalId(
+      req.userId,
+      req.params.goalId,
+      req.user?.timezone || "UTC",
+    );
+
+    res.json({
+      status: "success",
+      data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
-  getUserLanguages,
-  getUserRoadmap,
+  getUserRoadmapPlans,
+  getUserRoadmapByGoalId,
 };

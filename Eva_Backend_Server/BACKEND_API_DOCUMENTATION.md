@@ -549,9 +549,11 @@ Notes:
 - Owner-only.
 - Returns roadmap topics ordered by `order`.
 
-### `GET /api/roadmaps` and `GET /api/roadmaps/languages`
+### `GET /api/roadmaps/plans` and `GET /api/roadmaps/:goalId`
 - Auth: Yes
 - Returns user learning goals (not static catalog).
+- `GET /api/roadmaps/plans` — all plans (metadata only, no `sessions[]`).
+- `GET /api/roadmaps/:goalId` — one roadmap with full `sessions[]`.
 
 **Roadmap shape** (`data.roadmaps[]`):
 - `id`, `title`, `language`, `track_label`, `status`
