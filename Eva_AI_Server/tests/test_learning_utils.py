@@ -429,6 +429,31 @@ class ComputeSessionStateTests(unittest.TestCase):
         self.assertEqual(state, "unlocked_future")
 
 
+class NextRebaseStartDateTests(unittest.TestCase):
+    def test_uses_same_day_when_slot_still_upcoming(self):
+        # Saturday 01:27, slot Saturday 01:50
+        now = datetime(2026, 6, 27, 1, 27, 0)
+        schedule = [
+            {"day": 5, "time": "01:50", "duration_minutes": 15},
+            {"day": 0, "time": "08:00", "duration_minutes": 60},
+        ]
+        self.assertEqual(lu.next_rebase_start_date(now, schedule), date(2026, 6, 27))
+
+    def test_skips_same_day_when_slot_already_passed(self):
+        # Saturday 01:55, slot Saturday 01:50 -> next Monday
+        now = datetime(2026, 6, 27, 1, 55, 0)
+        schedule = [
+            {"day": 5, "time": "01:50", "duration_minutes": 15},
+            {"day": 0, "time": "08:00", "duration_minutes": 60},
+        ]
+        self.assertEqual(lu.next_rebase_start_date(now, schedule), date(2026, 6, 29))
+
+    def test_uses_today_when_slot_is_later_same_day(self):
+        now = datetime(2026, 6, 27, 1, 10, 0)
+        schedule = [{"day": 5, "time": "01:15", "duration_minutes": 60}]
+        self.assertEqual(lu.next_rebase_start_date(now, schedule), date(2026, 6, 27))
+
+
 class ResolveLearningReminderMinutesTests(unittest.TestCase):
     def test_uses_learning_setting(self):
         self.assertEqual(

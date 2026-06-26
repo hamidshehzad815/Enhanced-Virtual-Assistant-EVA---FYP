@@ -171,6 +171,67 @@ class LearningUpdateInternalEndpointsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["status"], "success")
         self.assertEqual(out["goals_updated"], 1)
 
+    async def test_rebuild_schedule_with_goal_id_only_rebases_that_goal(self):
+        uid = str(ObjectId())
+        gid = str(ObjectId())
+        other_gid = str(ObjectId())
+        goal = {"_id": gid, "user_id": uid, "subject": "python", "status": "active", "is_deleted": False}
+        pending_topics = [
+            {"_id": str(ObjectId()), "order": 1, "title": "A", "resources": [], "task_id": str(ObjectId())},
+        ]
+        schedule = [{"day": 4, "time": "23:30", "duration_minutes": 60}]
+
+        with patch.object(ai_main, "get_goal_by_id", new=AsyncMock(return_value=goal)), patch.object(
+            ai_main,
+            "get_active_goals_for_user",
+            new=AsyncMock(return_value=[{"_id": other_gid}]),
+        ) as mock_active, patch.object(
+            ai_main,
+            "get_all_pending_sessions",
+            new=AsyncMock(return_value=pending_topics),
+        ) as mock_pending, patch.object(
+            ai_main,
+            "build_schedule",
+            return_value=[
+                {"scheduled_date": datetime(2026, 6, 26, 23, 30, tzinfo=timezone.utc).replace(tzinfo=None)},
+            ],
+        ), patch.object(
+            ai_main,
+            "reschedule_topic",
+            new=AsyncMock(return_value=True),
+        ), patch.object(
+            ai_main,
+            "update_task",
+            new=AsyncMock(return_value=True),
+        ), patch.object(
+            ai_main,
+            "update_end_date",
+            new=AsyncMock(return_value=True),
+        ), patch.object(
+            ai_main,
+            "fetch_user_settings",
+            new=AsyncMock(return_value={}),
+        ), patch.object(
+            ai_main,
+            "fetch_integrations",
+            new=AsyncMock(return_value=[]),
+        ), patch.object(
+            ai_main,
+            "fetch_user",
+            new=AsyncMock(return_value={"timezone": "Asia/Karachi"}),
+        ):
+            req = ai_main.RebuildScheduleRequest(
+                user_id=uid,
+                goal_id=gid,
+                new_schedule=schedule,
+            )
+            out = await ai_main.internal_rebuild_schedule(req)
+
+        self.assertEqual(out["status"], "success")
+        self.assertEqual(out["goals_updated"], 1)
+        mock_active.assert_not_called()
+        mock_pending.assert_awaited_once_with(gid)
+
 
 if __name__ == "__main__":
     unittest.main()

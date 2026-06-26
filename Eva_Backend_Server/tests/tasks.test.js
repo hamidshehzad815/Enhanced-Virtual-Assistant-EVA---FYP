@@ -261,6 +261,7 @@ describe("Tasks API", () => {
       priority: "medium",
       description: "Review chapter 1",
       learning_plan_id: "507f1f77bcf86cd799439099",
+      learning_topic_id: "507f1f77bcf86cd799439088",
     };
 
     Task.findOne.mockReturnValue({
@@ -283,6 +284,8 @@ describe("Tasks API", () => {
         description: "Review chapter 1",
         is_learning_task: true,
         learning_goal_id: "507f1f77bcf86cd799439099",
+        learning_session_id: "507f1f77bcf86cd799439088",
+        editable: false,
       }),
     );
     expect(response.body.data.task).not.toHaveProperty("owner_id");
@@ -440,5 +443,61 @@ describe("Tasks API", () => {
         priority: "high",
       }),
     );
+  });
+
+  const learningTask = {
+    _id: TASK_ID,
+    title: "Learn: Python",
+    status: "pending",
+    priority: "medium",
+    owner_id: USER_ID,
+    due_datetime: new Date("2026-06-12T08:00:00.000Z"),
+    duration: 60,
+    learning_plan_id: "507f1f77bcf86cd799439099",
+    learning_topic_id: "507f1f77bcf86cd799439088",
+  };
+
+  test("PATCH /api/tasks/:id -> 409 for learning session task", async () => {
+    Task.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(learningTask),
+    });
+
+    const response = await request(app)
+      .patch(`/api/tasks/${TASK_ID}`)
+      .set("Authorization", `Bearer ${makeToken()}`)
+      .send({ title: "Changed" });
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toMatch(/roadmap/i);
+    expect(Task.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test("PATCH /api/tasks/:id/status -> 409 for learning session task", async () => {
+    Task.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(learningTask),
+    });
+
+    const response = await request(app)
+      .patch(`/api/tasks/${TASK_ID}/status`)
+      .set("Authorization", `Bearer ${makeToken()}`)
+      .send({ status: "complete" });
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toMatch(/roadmap/i);
+    expect(Task.findOneAndUpdate).not.toHaveBeenCalled();
+  });
+
+  test("DELETE /api/tasks/:id -> 409 for learning session task", async () => {
+    Task.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(learningTask),
+    });
+
+    const response = await request(app)
+      .delete(`/api/tasks/${TASK_ID}`)
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(response.status).toBe(409);
+    expect(response.body.message).toMatch(/roadmap/i);
+    expect(Task.findOneAndUpdate).not.toHaveBeenCalled();
   });
 });

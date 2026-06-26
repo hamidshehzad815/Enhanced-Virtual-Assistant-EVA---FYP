@@ -289,9 +289,10 @@ class LearningUpdatePhase3DbLayerTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(ok_skip)
             self.assertEqual(fake.roadmap_topics.docs[0]["status"], "skipped")
 
-            ok_res = await rt.reschedule_topic(str(t2), new_dt1)
+            ok_res = await rt.reschedule_topic(str(t2), new_dt1, estimated_duration_minutes=45)
             self.assertTrue(ok_res)
             self.assertEqual(fake.roadmap_topics.docs[1]["scheduled_date"], new_dt1)
+            self.assertEqual(fake.roadmap_topics.docs[1]["estimated_duration"], 45)
 
             updated = await rt.bulk_reschedule_topics(
                 [

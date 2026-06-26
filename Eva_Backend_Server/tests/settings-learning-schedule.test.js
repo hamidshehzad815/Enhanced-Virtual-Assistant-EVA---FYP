@@ -44,6 +44,7 @@ jest.mock("../models", () => ({
   },
   LearningGoal: {
     exists: jest.fn(),
+    find: jest.fn(),
   },
   ChatSession: {},
   ConversationHistory: {},
@@ -119,6 +120,11 @@ describe("learning-schedules CRUD", () => {
   beforeEach(() => {
     jest.clearAllMocks();
     LearningGoal.exists.mockResolvedValue(null);
+    LearningGoal.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([]),
+      }),
+    });
     User.findById.mockResolvedValue({
       _id: USER_ID,
       is_active: true,
@@ -330,6 +336,51 @@ describe("learning-schedules CRUD", () => {
       });
 
     expect(response.status).toBe(409);
+    expect(LearningGoal.exists).toHaveBeenCalledWith(
+      expect.objectContaining({
+        learning_schedule_id: "s1",
+        status: "active",
+        is_deleted: false,
+      }),
+    );
+  });
+
+  test("PATCH slots when only paused goal uses schedule → 200", async () => {
+    LearningGoal.exists.mockResolvedValue(null);
+    LearningGoal.find.mockReturnValue({
+      select: jest.fn().mockReturnValue({
+        lean: jest.fn().mockResolvedValue([{ _id: "goal1" }]),
+      }),
+    });
+    const mockSettings = {
+      user_id: USER_ID,
+      preferred_learning_schedules: [
+        {
+          id: "s1",
+          label: "Morning",
+          slots: [{ day: 0, time: "09:00", duration_minutes: 60 }],
+        },
+      ],
+      save: jest.fn().mockResolvedValue(),
+    };
+    UserSetting.findOne.mockResolvedValue(mockSettings);
+
+    const response = await request(app)
+      .patch("/api/settings/learning-schedules/s1")
+      .set(authHeaders())
+      .send({
+        slots: [{ day: 0, time: "10:00", duration_minutes: 60 }],
+      });
+
+    expect(response.status).toBe(200);
+    expect(LearningGoal.exists).toHaveBeenCalledWith(
+      expect.objectContaining({
+        learning_schedule_id: "s1",
+        status: "active",
+        is_deleted: false,
+      }),
+    );
+    expect(mockSettings.preferred_learning_schedules[0].slots[0].time).toBe("10:00");
   });
 
   test("DELETE when active goal uses schedule → 409", async () => {

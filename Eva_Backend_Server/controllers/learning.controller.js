@@ -16,6 +16,7 @@ const { insert_and_dispatch } = require("../services/notification.service");
 const { callAIInternal } = require("../services/ai.service");
 const { buildRoadmapMutationPayload, buildSessionDetailPayload } = require("../services/userRoadmaps.service");
 const { validateTopicAction } = require("../utils/learningSessionState");
+const { resolveLearningSlotsForGoal } = require("../utils/learningSchedules");
 const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
 
 const buildApiData = (req, payload) => {
@@ -352,7 +353,7 @@ const updateStatus = async (req, res, next) => {
       { new: true },
     ).lean();
 
-    // On resume, ask AI to rebase sessions (non-blocking).
+    // On resume, rebase pending sessions using the plan's linked learning schedule.
     let rebuildSummary = null;
     if (raw === "active") {
       try {
@@ -360,14 +361,19 @@ const updateStatus = async (req, res, next) => {
         const settingsDoc = query && typeof query.lean === "function"
           ? await query.lean()
           : await query;
-        const schedules = Array.isArray(settingsDoc?.preferred_learning_schedules)
-          ? settingsDoc.preferred_learning_schedules
-          : [];
-        const primarySlots = schedules[0]?.slots || [];
-        rebuildSummary = await callAIInternal("/internal/rebuild-schedule", {
-          user_id: String(req.userId),
-          new_schedule: primarySlots,
-        });
+        const scheduleSlots = resolveLearningSlotsForGoal(settingsDoc, goal);
+        if (!scheduleSlots.length) {
+          rebuildSummary = {
+            status: "error",
+            message: "Linked learning schedule not found for this plan.",
+          };
+        } else {
+          rebuildSummary = await callAIInternal("/internal/rebuild-schedule", {
+            user_id: String(req.userId),
+            goal_id: String(goal._id),
+            new_schedule: scheduleSlots,
+          });
+        }
       } catch (err) {
         rebuildSummary = { status: "error", message: err.message };
       }
