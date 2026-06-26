@@ -134,10 +134,7 @@ Notes:
 - `GET /api/integrations` (protected)
 
 ### Analytics
-- `GET /api/analytics/productivity` (protected)
-- `GET /api/analytics/hours` (protected)
-- `GET /api/analytics/days` (protected)
-- `GET /api/analytics/completion-trend` (protected)
+- `GET /api/analytics/dashboard` (protected) — unified payload (`?days=7|30|90`)
 
 ### Friends
 - `POST /api/friends/request` (protected)
@@ -725,41 +722,30 @@ Notes:
 
 ## 4.9 Analytics APIs
 
-### `GET /api/analytics/productivity`
-- Auth: Yes
-- Behavior:
-  - Proxies AI server analytics (`type=full`) for current user.
+The analytics page uses a **single endpoint**. Full field reference: [`docs/ANALYTICS_DASHBOARD_API.md`](docs/ANALYTICS_DASHBOARD_API.md).
 
-### `GET /api/analytics/hours`
+### `GET /api/analytics/dashboard`
 - Auth: Yes
 - Query:
-  - `day` optional (`0..6` or weekday name/abbr)
+  - `days` optional: `7`, `30` (default), or `90`
 - Behavior:
-  - Validates day format
-  - Proxies AI analytics (`type=hours`, day optional)
+  - Unified payload for the web analytics page.
+  - Heatmap uses `days` lookback; completion trend is always last **3 weeks**.
+  - `behavioral` and `best_slots` require AI server (`/analytics?type=full`).
+- Response sections:
 
-### `GET /api/analytics/days`
-- Auth: Yes
-- Behavior: proxies AI analytics (`type=days`).
+| Key | Source | Notes |
+|-----|--------|-------|
+| `hero` | `activity_logs`, `tasks` | Week stats, streak, on-time % |
+| `behavioral` | AI server + backend | `top_days`, `hour_windows`, `strength_summary` |
+| `heatmap` | `activity_logs` | 6AM–11PM grid; `peak`, `weakest` |
+| `tasks` | `tasks` | Counts + `due_within_48h` (max 10) |
+| `completion_trend` | `activity_logs` | `{ weeks: 3, trend: [...] }` |
+| `best_slots` | AI hours data | Top 3 scored slots |
 
-### `GET /api/analytics/completion-trend`
-- Auth: Yes
-- Query:
-  - `weeks` optional integer `1..52` (default 4)
-- Behavior:
-  - Aggregates from `activity_logs` (`task_completed`) by `week_number`.
-- Response:
-```json
-{
-  "status": "success",
-  "data": {
-    "weeks": 4,
-    "trend": [
-      { "week": 17, "count": 10, "on_time": 8 }
-    ]
-  }
-}
-```
+- Errors:
+  - `400` — invalid `days` value
+  - `401` — missing/invalid token
 
 ---
 
