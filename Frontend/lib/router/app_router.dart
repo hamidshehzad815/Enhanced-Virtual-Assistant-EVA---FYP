@@ -8,7 +8,7 @@ import '../presentation/screens/auth_screen.dart';
 import '../presentation/screens/home_screen.dart';
 import '../presentation/screens/chat_screen.dart';
 import '../presentation/screens/calendar_screen.dart';
-import '../presentation/screens/roadmap_screen.dart';
+import '../presentation/screens/roadmap_session_screen.dart';
 import '../presentation/screens/settings_screen.dart';
 import '../presentation/widgets/app_shell.dart';
 import '../presentation/screens/analytics_screen.dart';
@@ -16,6 +16,7 @@ import '../presentation/screens/collaboration_screen.dart';
 import '../presentation/screens/splash_screen.dart';
 import '../presentation/screens/edit_profile_screen.dart';
 import '../presentation/providers/profile_viewmodel.dart';
+import '../presentation/screens/roadmap_screen.dart';
 
 // ── Route path constants ──────────────────────────────────────────────────────
 class AppRoutes {
@@ -34,6 +35,7 @@ class AppRoutes {
   static const analytics = '/analytics';
   static const collaboration = '/collaboration';
   static const editProfile = '/edit-profile';
+  static const roadmapSession = '/roadmap-detail';
 
   // Chat is PUSHED on top of the shell (no nav bar on chat)
   static const chat = '/chat';
@@ -82,6 +84,15 @@ final appRouter = GoRouter(
         child: EditProfileScreen(viewModel: context.read<ProfileViewModel>()),
       ),
     ),
+GoRoute(
+  name: 'roadmap-detail', 
+  path: '/roadmap-detail/:goalId',
+  pageBuilder: (context, state) {
+    final goalId = state.pathParameters['goalId']!;
+    return MaterialPage(child: RoadmapSessionScreen(goalId: goalId));
+  },
+),
+
 
     // ── Main shell (shows bottom nav bar) ─────────────────────────────────────
     ShellRoute(
@@ -103,8 +114,9 @@ final appRouter = GoRouter(
           },
         ),
         GoRoute(
-          path: AppRoutes.roadmap,
-          pageBuilder: (context, state) => MaterialPage(child: RoadmapScreen()),
+          path: AppRoutes.roadmap, // define constant '/plans'
+          pageBuilder: (context, state) =>
+              MaterialPage(child: const RoadmapScreen()),
         ),
         GoRoute(
           path: AppRoutes.settings,

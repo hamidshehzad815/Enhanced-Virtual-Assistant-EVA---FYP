@@ -13,6 +13,8 @@ class EditProfileScreen extends StatefulWidget {
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
+  final _formKey = GlobalKey<FormState>(); // ✅ ADD THIS
+
   late TextEditingController _nameController;
   late TextEditingController _usernameController;
   late TextEditingController _timezoneController;
@@ -63,7 +65,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _saveChanges() async {
-    if (Form.of(context).validate()) {
+    // ✅ Use the key to validate
+    if (_formKey.currentState?.validate() ?? false) {
       try {
         await widget.viewModel.updateProfile(
           name: _nameController.text.trim(),
@@ -139,9 +142,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
         child: Form(
+          key: _formKey, // ✅ ADD THIS
           child: Column(
             children: [
-              // ─── Avatar Section ──────────────────────────────
+              // ─── Avatar ──────────────────────────────────────────
               Stack(
                 alignment: Alignment.bottomRight,
                 children: [
@@ -157,7 +161,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                           )
                         : null,
                   ),
-                  // Upload icon
                   Container(
                     decoration: BoxDecoration(
                       color: AppColors.primary,
@@ -178,7 +181,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       ),
                     ),
                   ),
-                  // Loading overlay
                   if (_isUploading)
                     Container(
                       width: 120,
@@ -196,8 +198,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 'Tap camera icon to change photo',
                 style: TextStyle(fontSize: 12, color: Colors.grey[600]),
               ),
-
-              // ─── Remove Picture Button (outside Stack) ────────
               if (profile?.profilePicture != null)
                 TextButton(
                   onPressed: _isDeletingPicture ? null : _removeProfilePicture,
@@ -212,7 +212,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
               const SizedBox(height: 16),
 
-              // ─── Email (read-only) ────────────────────────────
+              // ─── Email (read‑only) ─────────────────────────────
               TextFormField(
                 initialValue: profile?.email ?? '',
                 decoration: const InputDecoration(
@@ -225,7 +225,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
               const SizedBox(height: 16),
 
-              // ─── Name ──────────────────────────────────────────
+              // ─── Name ───────────────────────────────────────────
               TextFormField(
                 controller: _nameController,
                 decoration: const InputDecoration(
@@ -238,7 +238,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               ),
               const SizedBox(height: 16),
 
-              // ─── Username ──────────────────────────────────────
+              // ─── Username ───────────────────────────────────────
               TextFormField(
                 controller: _usernameController,
                 decoration: const InputDecoration(
@@ -257,6 +257,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 },
               ),
               const SizedBox(height: 16),
+
+              // ─── Timezone (read‑only) ──────────────────────────
               TextFormField(
                 initialValue: profile?.timezone ?? '',
                 decoration: const InputDecoration(
@@ -268,7 +270,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 style: TextStyle(color: Colors.grey[600]),
               ),
               const SizedBox(height: 30),
-              // ─── Save Button ──────────────────────────────────
+
+              // ─── Save Button ────────────────────────────────────
               SizedBox(
                 width: double.infinity,
                 height: 50,

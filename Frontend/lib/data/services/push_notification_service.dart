@@ -1,4 +1,3 @@
-import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -6,7 +5,6 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import '../../core/constants/api_constants.dart';
 import '../../data/services/storage_service.dart';
-import '../../firebase_options.dart';
 
 const String _androidChannelId = 'eva_high_importance';
 const String _androidChannelName = 'EVA Notifications';
@@ -38,9 +36,10 @@ Future<void> _ensureLocalNotificationsReady() async {
     enableVibration: true,
   );
 
-  final androidPlugin =
-      _localNotifications.resolvePlatformSpecificImplementation<
-          AndroidFlutterLocalNotificationsPlugin>();
+  final androidPlugin = _localNotifications
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >();
   await androidPlugin?.createNotificationChannel(channel);
   final granted = await androidPlugin?.requestNotificationsPermission();
   if (kDebugMode) {
@@ -98,9 +97,7 @@ Future<void> _showLocalNotification(RemoteMessage message) async {
 
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  if (Firebase.apps.isEmpty) {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
-  }
+  // Firebase already initialized in main.dart – no need to init again
   await _showLocalNotification(message);
 }
 
@@ -130,11 +127,7 @@ class PushNotificationService {
   }
 
   static Future<void> requestPermission() async {
-    await _fcm.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
+    await _fcm.requestPermission(alert: true, badge: true, sound: true);
   }
 
   static Future<void> registerToken() async {

@@ -19,7 +19,7 @@ class SettingsSearchBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final bg = isDark ? AppColors.cardDark : Colors.white;
-    final border = isDark ? AppColors.borderDark : AppColors.borderLight;
+    final border = isDark ? AppColors.borderDark : Colors.grey;
     final hint = isDark ? AppColors.hintDark : AppColors.secondaryTextLight;
     final text = isDark
         ? AppColors.primaryTextDark

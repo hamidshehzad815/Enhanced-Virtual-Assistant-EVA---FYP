@@ -16,7 +16,7 @@ class AppColors {
   static const cardLight = Colors.white;
 
   /// Borders & dividers
-  static const borderLight = Color(0xFFE5E7EB);
+  static const borderLight = Colors.grey;
 
   /// Input field background
   static const inputFillLight = Colors.white;
