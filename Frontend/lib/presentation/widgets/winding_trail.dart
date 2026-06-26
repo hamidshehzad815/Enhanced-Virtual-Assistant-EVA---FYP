@@ -31,19 +31,13 @@ class WindingTrail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // ─── Original order (1, 2, 3...) – first node at bottom ───
     final nodes = sessions;
-
     const pillWidth = 240.0;
     const pillHeight = 70.0;
-    const nodeSpacing = 240.0; // increased for better spacing
-    const topPadding = 60.0;
-    const bottomPadding = 40.0;
-
-    final totalHeight = max(
-      nodes.length * nodeSpacing + topPadding + bottomPadding + 200.0,
-      860.0,
-    );
+    const nodeSpacing = 190.0;
+    const topPadding = 20.0;
+    const bottomPadding = 16.0;
+    final totalHeight = max(nodes.length * nodeSpacing + 10.0, 700.0);
 
     return LayoutBuilder(
       builder: (ctx, constraints) {
@@ -114,7 +108,7 @@ class WindingTrail extends StatelessWidget {
   }
 }
 
-// ─── _SessionPill ──────────────────────────────────────────────────────────
+// ─── _SessionPill
 class _SessionPill extends StatelessWidget {
   final Session session;
   final bool isDark;
