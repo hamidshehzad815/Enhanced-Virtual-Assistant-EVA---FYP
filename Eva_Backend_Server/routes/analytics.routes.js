@@ -1,22 +1,14 @@
 /**
  * Analytics Routes
- * Behavioral analytics dashboard APIs.
+ * Web analytics dashboard API.
  */
 
 const express = require("express");
 const router = express.Router();
 
 const { protect } = require("../middleware/auth");
-const {
-  getProductivity,
-  getHoursDistribution,
-  getDaysDistribution,
-  getCompletionTrend,
-} = require("../controllers/analytics.controller");
+const { getDashboard } = require("../controllers/analytics.controller");
 
-router.get("/productivity", protect, getProductivity);
-router.get("/hours", protect, getHoursDistribution);
-router.get("/days", protect, getDaysDistribution);
-router.get("/completion-trend", protect, getCompletionTrend);
+router.get("/dashboard", protect, getDashboard);
 
 module.exports = router;
