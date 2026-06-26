@@ -1,0 +1,794 @@
+{
+  "meta": {
+    "description": "EVA manual E2E chat test cases — send each message via chat UI",
+    "format_version": "1.0",
+    "recommended_user": "areejFatima@gmail.com",
+    "password_hint": "areejFatima@1234",
+    "prerequisites": [
+      "Backend + AI server running",
+      "User logged in with active chat session",
+      "For behavioral tests: run seed-areej-behavioral-analytics.js --clean",
+      "For delete/update/show tests: seed tasks exist or create them first via add tests"
+    ],
+    "fields": {
+      "test_name": "Human-readable label",
+      "message": "First message to send in chat",
+      "category": "Intent / area (CLF1 or CLF2)",
+      "expected_intent": "Optional — expected routing intent",
+      "follow_ups": "Optional — reply messages in order for multi-turn flows",
+      "notes": "Optional — setup or what to verify"
+    }
+  },
+  "tests": [
+    {
+      "test_name": "General — Greeting",
+      "category": "general",
+      "message": "Hi Eva"
+    },
+    {
+      "test_name": "General — What can you do",
+      "category": "general",
+      "message": "What can you do?"
+    },
+    {
+      "test_name": "General — Thanks",
+      "category": "general",
+      "message": "Thanks for your help"
+    },
+    {
+      "test_name": "Out of scope — Weather",
+      "category": "out_of_scope",
+      "message": "What is the weather today?"
+    },
+    {
+      "test_name": "Out of scope — Code request",
+      "category": "out_of_scope",
+      "message": "Write me a Python function to sort a list"
+    },
+    {
+      "test_name": "Multiple command — Rejected",
+      "category": "multiple_command",
+      "message": "Add physics exam on Monday and delete chemistry lab",
+      "notes": "Should ask user to send one request at a time"
+    },
+    {
+      "test_name": "Too short input",
+      "category": "command",
+      "message": "Add",
+      "notes": "Should ask user to be more specific"
+    },
+    {
+      "test_name": "Add — All entities in one message",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Add Physics exam on Monday at 5PM"
+    },
+    {
+      "test_name": "Add — Priority and duration",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Add Chemistry lab on Tuesday at 3PM with high priority for 2 hours"
+    },
+    {
+      "test_name": "Add — Salutation prefix",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Hey Eva, add Physics exam on Monday at 5PM"
+    },
+    {
+      "test_name": "Add — Long task name",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Add Islamiyat research paper presentation on Friday at 3PM"
+    },
+    {
+      "test_name": "Add — With collaborator",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Add Physics exam on Monday at 5PM with Ahmed",
+      "notes": "Ahmed must be in friends list"
+    },
+    {
+      "test_name": "Add — Collaborator not a friend",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Add Physics exam on Monday at 5PM with Stranger",
+      "notes": "Should reject — not in friends list"
+    },
+    {
+      "test_name": "Add — Person name Usama today",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "add physics exam with usama today 5pm"
+    },
+    {
+      "test_name": "Add — Missing task name (multi-turn)",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Add a task on Wednesday at 6PM",
+      "follow_ups": [
+        "Biology assignment"
+      ],
+      "notes": "EVA asks for task name first"
+    },
+    {
+      "test_name": "Add — Missing date (multi-turn)",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Add Math quiz at 4PM",
+      "follow_ups": [
+        "Next Friday"
+      ],
+      "notes": "EVA asks for date"
+    },
+    {
+      "test_name": "Add — Missing time (multi-turn)",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Add Biology lab on Thursday",
+      "follow_ups": [
+        "2PM"
+      ],
+      "notes": "EVA asks for time or may suggest behavioral slot"
+    },
+    {
+      "test_name": "Add — All fields missing (multi-turn)",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Add a task",
+      "follow_ups": [
+        "Statistics exam",
+        "Thursday",
+        "10AM"
+      ],
+      "notes": "Collects name, date, time one by one"
+    },
+    {
+      "test_name": "Add — Duplicate confirm yes",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Add Physics exam on Monday at 5PM",
+      "follow_ups": [
+        "yes"
+      ],
+      "notes": "Precondition: Physics exam already exists on Monday"
+    },
+    {
+      "test_name": "Add — Duplicate confirm no",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Add Physics exam on Monday at 5PM",
+      "follow_ups": [
+        "no"
+      ],
+      "notes": "Precondition: Physics exam already exists on Monday"
+    },
+    {
+      "test_name": "Add — Cancel mid-flow",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Add a task on Monday at 6PM",
+      "follow_ups": [
+        "cancel"
+      ]
+    },
+    {
+      "test_name": "Add — Overlap conflict",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Add Chemistry exam on Monday at 6PM",
+      "notes": "Precondition: task exists Monday 5PM with 120 min duration"
+    },
+    {
+      "test_name": "Add — Quiet hours warning",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Add Physics exam on Monday at 11PM",
+      "follow_ups": [
+        "yes"
+      ],
+      "notes": "Precondition: quiet hours configured e.g. 22:00–07:00"
+    },
+    {
+      "test_name": "Add — Behavioral time suggestion",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "Add review notes on Monday",
+      "notes": "Omit time; requires behavioral seed data + thresholds met"
+    },
+    {
+      "test_name": "Delete — Single match confirm yes",
+      "category": "scheduling_delete",
+      "expected_intent": "scheduling_delete",
+      "message": "Delete physics exam",
+      "follow_ups": [
+        "yes"
+      ],
+      "notes": "Precondition: one Physics exam exists"
+    },
+    {
+      "test_name": "Delete — Single match confirm no",
+      "category": "scheduling_delete",
+      "expected_intent": "scheduling_delete",
+      "message": "Delete physics exam",
+      "follow_ups": [
+        "no"
+      ]
+    },
+    {
+      "test_name": "Delete — Task not found",
+      "category": "scheduling_delete",
+      "expected_intent": "scheduling_delete",
+      "message": "Delete calculus exam"
+    },
+    {
+      "test_name": "Delete — Multiple matches pick number",
+      "category": "scheduling_delete",
+      "expected_intent": "scheduling_delete",
+      "message": "Delete my physics tasks",
+      "follow_ups": [
+        "2",
+        "yes"
+      ],
+      "notes": "Precondition: 3 tasks with physics in title"
+    },
+    {
+      "test_name": "Delete — Multiple matches pick all",
+      "category": "scheduling_delete",
+      "expected_intent": "scheduling_delete",
+      "message": "Delete high priority tasks",
+      "follow_ups": [
+        "all",
+        "yes"
+      ],
+      "notes": "Precondition: 3 high priority tasks"
+    },
+    {
+      "test_name": "Delete — Bulk confirm no",
+      "category": "scheduling_delete",
+      "expected_intent": "scheduling_delete",
+      "message": "Delete high priority tasks",
+      "follow_ups": [
+        "all",
+        "no"
+      ]
+    },
+    {
+      "test_name": "Delete — Too broad",
+      "category": "scheduling_delete",
+      "expected_intent": "scheduling_delete",
+      "message": "Delete all my tasks",
+      "notes": "Precondition: 6+ tasks in DB"
+    },
+    {
+      "test_name": "Delete — No entity given",
+      "category": "scheduling_delete",
+      "expected_intent": "scheduling_delete",
+      "message": "Delete a task",
+      "follow_ups": [
+        "Chemistry lab"
+      ]
+    },
+    {
+      "test_name": "Delete — By date",
+      "category": "scheduling_delete",
+      "expected_intent": "scheduling_delete",
+      "message": "Delete my tasks on Tuesday",
+      "follow_ups": [
+        "1",
+        "yes"
+      ],
+      "notes": "Precondition: 2 tasks on Tuesday"
+    },
+    {
+      "test_name": "Delete — Cancel after list",
+      "category": "scheduling_delete",
+      "expected_intent": "scheduling_delete",
+      "message": "Delete physics tasks",
+      "follow_ups": [
+        "cancel"
+      ],
+      "notes": "Precondition: multiple physics tasks"
+    },
+    {
+      "test_name": "Delete — Out of range number retry",
+      "category": "scheduling_delete",
+      "expected_intent": "scheduling_delete",
+      "message": "Delete physics tasks",
+      "follow_ups": [
+        "5",
+        "2",
+        "yes"
+      ],
+      "notes": "Precondition: 3 physics tasks in list"
+    },
+    {
+      "test_name": "Show — By specific day",
+      "category": "scheduling_show",
+      "expected_intent": "scheduling_show",
+      "message": "Show my tasks for Monday"
+    },
+    {
+      "test_name": "Show — By priority",
+      "category": "scheduling_show",
+      "expected_intent": "scheduling_show",
+      "message": "Show high priority tasks"
+    },
+    {
+      "test_name": "Show — Pending only",
+      "category": "scheduling_show",
+      "expected_intent": "scheduling_show",
+      "message": "Show my pending tasks"
+    },
+    {
+      "test_name": "Show — Completed tasks",
+      "category": "scheduling_show",
+      "expected_intent": "scheduling_show",
+      "message": "Show completed tasks"
+    },
+    {
+      "test_name": "Show — This week",
+      "category": "scheduling_show",
+      "expected_intent": "scheduling_show",
+      "message": "Show my tasks for this week"
+    },
+    {
+      "test_name": "Show — By task name filter",
+      "category": "scheduling_show",
+      "expected_intent": "scheduling_show",
+      "message": "Show my physics tasks"
+    },
+    {
+      "test_name": "Show — All upcoming tasks",
+      "category": "scheduling_show",
+      "expected_intent": "scheduling_show",
+      "message": "What are my tasks"
+    },
+    {
+      "test_name": "Show — Zero results",
+      "category": "scheduling_show",
+      "expected_intent": "scheduling_show",
+      "message": "Show my tasks for next Sunday",
+      "notes": "Precondition: no tasks on next Sunday"
+    },
+    {
+      "test_name": "Show — Combined filters",
+      "category": "scheduling_show",
+      "expected_intent": "scheduling_show",
+      "message": "Show high priority tasks for this week"
+    },
+    {
+      "test_name": "Show — Today timezone boundary",
+      "category": "scheduling_show",
+      "expected_intent": "scheduling_show",
+      "message": "Show my tasks for today",
+      "notes": "User timezone Asia/Karachi"
+    },
+    {
+      "test_name": "Update — Priority change",
+      "category": "scheduling_update",
+      "expected_intent": "scheduling_update",
+      "message": "Change physics exam priority to high",
+      "follow_ups": [
+        "yes"
+      ],
+      "notes": "Precondition: Physics exam exists"
+    },
+    {
+      "test_name": "Update — Reschedule date and time",
+      "category": "scheduling_update",
+      "expected_intent": "scheduling_update",
+      "message": "Reschedule chemistry lab to next Friday at 2PM",
+      "follow_ups": [
+        "yes"
+      ]
+    },
+    {
+      "test_name": "Update — Mark complete",
+      "category": "scheduling_update",
+      "expected_intent": "scheduling_update",
+      "message": "Mark biology assignment as complete",
+      "follow_ups": [
+        "yes"
+      ]
+    },
+    {
+      "test_name": "Update — No field given (multi-turn)",
+      "category": "scheduling_update",
+      "expected_intent": "scheduling_update",
+      "message": "Update physics exam",
+      "follow_ups": [
+        "priority to high",
+        "yes"
+      ]
+    },
+    {
+      "test_name": "Update — No identifier (multi-turn)",
+      "category": "scheduling_update",
+      "expected_intent": "scheduling_update",
+      "message": "Update a task",
+      "follow_ups": [
+        "Physics exam",
+        "change date to Monday",
+        "yes"
+      ]
+    },
+    {
+      "test_name": "Update — Multiple matches pick one",
+      "category": "scheduling_update",
+      "expected_intent": "scheduling_update",
+      "message": "Change physics task priority to high",
+      "follow_ups": [
+        "2",
+        "yes"
+      ],
+      "notes": "Precondition: 3 physics tasks"
+    },
+    {
+      "test_name": "Update — Overlap conflict",
+      "category": "scheduling_update",
+      "expected_intent": "scheduling_update",
+      "message": "Move physics exam to Monday at 6PM",
+      "notes": "Precondition: task at Monday 5PM with 120 min duration"
+    },
+    {
+      "test_name": "Update — Cancel mid-flow",
+      "category": "scheduling_update",
+      "expected_intent": "scheduling_update",
+      "message": "Change physics exam priority to high",
+      "follow_ups": [
+        "cancel"
+      ]
+    },
+    {
+      "test_name": "Update — Status backwards blocked",
+      "category": "scheduling_update",
+      "expected_intent": "scheduling_update",
+      "message": "Change physics exam status to pending",
+      "notes": "Precondition: Physics exam already complete"
+    },
+    {
+      "test_name": "Update — Rename task",
+      "category": "scheduling_update",
+      "expected_intent": "scheduling_update",
+      "message": "Rename physics exam to physics final exam",
+      "follow_ups": [
+        "yes"
+      ]
+    },
+    {
+      "test_name": "Update — Duration change",
+      "category": "scheduling_update",
+      "expected_intent": "scheduling_update",
+      "message": "Change physics exam duration to 3 hours",
+      "follow_ups": [
+        "yes"
+      ]
+    },
+    {
+      "test_name": "Update — Multi-field date and priority",
+      "category": "scheduling_update",
+      "expected_intent": "scheduling_update",
+      "message": "Move physics exam to Tuesday with high priority",
+      "follow_ups": [
+        "yes"
+      ]
+    },
+    {
+      "test_name": "Update — From Monday to Wednesday",
+      "category": "scheduling_update",
+      "expected_intent": "scheduling_update",
+      "message": "Move physics exam from Monday to Wednesday",
+      "follow_ups": [
+        "yes"
+      ]
+    },
+    {
+      "test_name": "Update — Natural finished shortcut",
+      "category": "scheduling_update",
+      "expected_intent": "scheduling_update",
+      "message": "I finished physics exam",
+      "follow_ups": [
+        "yes"
+      ]
+    },
+    {
+      "test_name": "Behavioral — Productive hours general",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "show my productive hours",
+      "notes": "Run seed-areej-behavioral-analytics.js first; expect Tue/Thu afternoon peak"
+    },
+    {
+      "test_name": "Behavioral — When am I most productive",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "when am I most productive"
+    },
+    {
+      "test_name": "Behavioral — Peak hours phrasing",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "what are my peak hours"
+    },
+    {
+      "test_name": "Behavioral — When do I work best",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "when do I work best"
+    },
+    {
+      "test_name": "Behavioral — Productive hours Tuesday filter",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "when am I productive on Tuesday"
+    },
+    {
+      "test_name": "Behavioral — Best hours Thursday",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "what are my best hours on Thursday"
+    },
+    {
+      "test_name": "Behavioral — Productive days",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "which days am I most focused"
+    },
+    {
+      "test_name": "Behavioral — Best days of week",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "what are my best days of the week"
+    },
+    {
+      "test_name": "Behavioral — Best time for Thursday",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "find the best time for me on Thursday"
+    },
+    {
+      "test_name": "Behavioral — Schedule on Tuesday",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "when should I schedule on Tuesday"
+    },
+    {
+      "test_name": "Behavioral — Best time day missing (multi-turn)",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "find the best time for me",
+      "follow_ups": [
+        "Tuesday"
+      ],
+      "notes": "EVA should ask which day first"
+    },
+    {
+      "test_name": "Behavioral — Best time invalid day reply",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "find the best time for me",
+      "follow_ups": [
+        "5PM",
+        "Tuesday"
+      ],
+      "notes": "5PM is not a weekday — EVA should ask again"
+    },
+    {
+      "test_name": "Behavioral — Cancel while day pending",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "find the best time for me",
+      "follow_ups": [
+        "cancel"
+      ]
+    },
+    {
+      "test_name": "Behavioral — Completion rate",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "show my completion rate"
+    },
+    {
+      "test_name": "Behavioral — On-time rate phrasing",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "how many tasks do I finish on time"
+    },
+    {
+      "test_name": "Behavioral — Full productivity report",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "show my productivity report"
+    },
+    {
+      "test_name": "Behavioral — Productivity overview",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "give me a productivity overview"
+    },
+    {
+      "test_name": "Behavioral — How am I doing this week",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "how am I doing this week"
+    },
+    {
+      "test_name": "Behavioral — Not enough data edge case",
+      "category": "behavioral",
+      "expected_intent": "behavioral",
+      "message": "when am I most productive",
+      "notes": "Use a fresh user with fewer than 20 completed tasks"
+    },
+    {
+      "test_name": "Learning create — Python basics plan",
+      "category": "learning_create",
+      "expected_intent": "learning_create",
+      "message": "create python basics plan starting today for 60 days"
+    },
+    {
+      "test_name": "Learning create — Java roadmap with collaborator",
+      "category": "learning_create",
+      "expected_intent": "learning_create",
+      "message": "create Java roadmap with Ali starting Monday",
+      "notes": "Ali must be in friends list"
+    },
+    {
+      "test_name": "Learning create — Learn Python duration",
+      "category": "learning_create",
+      "expected_intent": "learning_create",
+      "message": "learn Python with Sara for 3 weeks"
+    },
+    {
+      "test_name": "Learning create — Go intermediate",
+      "category": "learning_create",
+      "expected_intent": "learning_create",
+      "message": "learn Go intermediate starting next week for 1 month"
+    },
+    {
+      "test_name": "Learning create — NLP topic (natural)",
+      "category": "learning_create",
+      "expected_intent": "learning_create",
+      "message": "create a new topic for NLP models"
+    },
+    {
+      "test_name": "Learning create — Missing start date (multi-turn)",
+      "category": "learning_create",
+      "expected_intent": "learning_create",
+      "message": "learn Python basics for 4 weeks",
+      "follow_ups": [
+        "next Monday"
+      ],
+      "notes": "EVA may ask for start date"
+    },
+    {
+      "test_name": "Learning create — Add deadline style phrasing",
+      "category": "scheduling_add",
+      "expected_intent": "scheduling_add",
+      "message": "submit final project draft by next Thursday at 5pm",
+      "notes": "May route to scheduling_add depending on CLF2 — verify intent"
+    },
+    {
+      "test_name": "Learning update — Reschedule session",
+      "category": "learning_update",
+      "expected_intent": "learning_update",
+      "message": "reschedule my Python session to Friday",
+      "notes": "Precondition: active Python learning plan"
+    },
+    {
+      "test_name": "Learning update — Move basics session",
+      "category": "learning_update",
+      "expected_intent": "learning_update",
+      "message": "move Python basics session to next Monday",
+      "notes": "Precondition: Python basics plan exists"
+    },
+    {
+      "test_name": "Learning update — Shift roadmap session",
+      "category": "learning_update",
+      "expected_intent": "learning_update",
+      "message": "shift JavaScript roadmap session to Thursday"
+    },
+    {
+      "test_name": "Learning update — Skip topic",
+      "category": "learning_update",
+      "expected_intent": "learning_update",
+      "message": "skip the next Python topic",
+      "notes": "Precondition: active Python plan with pending topic"
+    },
+    {
+      "test_name": "Learning delete — Python roadmap",
+      "category": "learning_delete",
+      "expected_intent": "learning_delete",
+      "message": "delete my Python roadmap",
+      "follow_ups": [
+        "yes"
+      ],
+      "notes": "Precondition: Python learning goal exists"
+    },
+    {
+      "test_name": "Learning delete — Python basics subtopic",
+      "category": "learning_delete",
+      "expected_intent": "learning_delete",
+      "message": "delete Python basics",
+      "follow_ups": [
+        "yes"
+      ]
+    },
+    {
+      "test_name": "Learning delete — MySQL learning",
+      "category": "learning_delete",
+      "expected_intent": "learning_delete",
+      "message": "cancel my MySQL learning",
+      "follow_ups": [
+        "yes"
+      ]
+    },
+    {
+      "test_name": "Learning delete — No topic (multi-turn)",
+      "category": "learning_delete",
+      "expected_intent": "learning_delete",
+      "message": "delete my roadmap",
+      "follow_ups": [
+        "Python",
+        "yes"
+      ]
+    },
+    {
+      "test_name": "Learning delete — Not found",
+      "category": "learning_delete",
+      "expected_intent": "learning_delete",
+      "message": "delete my MySQL roadmap"
+    },
+    {
+      "test_name": "Learning delete — Cancel mid-flow",
+      "category": "learning_delete",
+      "expected_intent": "learning_delete",
+      "message": "delete my Python roadmap",
+      "follow_ups": [
+        "cancel"
+      ]
+    },
+    {
+      "test_name": "Cross — Add then show then delete",
+      "category": "cross_command",
+      "message": "Add Biology quiz on Wednesday at 3PM",
+      "notes": "Then send: Show my tasks for Wednesday → Delete biology quiz → yes → Show again"
+    },
+    {
+      "test_name": "Cross — Add then update then show",
+      "category": "cross_command",
+      "message": "Add Physics exam on Monday at 5PM",
+      "notes": "Then: Change physics exam priority to high → yes → Show high priority tasks"
+    },
+    {
+      "test_name": "Cross — Pending blocks new command",
+      "category": "cross_command",
+      "message": "Add a task on Monday at 6PM",
+      "follow_ups": [
+        "Show my tasks for tomorrow"
+      ],
+      "notes": "Show should be blocked while add is pending"
+    },
+    {
+      "test_name": "Cross — Show blocked during add pending",
+      "category": "cross_command",
+      "message": "Add a task on Monday at 6PM",
+      "follow_ups": [
+        "Show my tasks for today"
+      ],
+      "notes": "Same as above — EVA reminds user of pending reply"
+    },
+    {
+      "test_name": "Cross — Confirmation yes during flow",
+      "category": "confirmation",
+      "message": "yes",
+      "notes": "Only meaningful when a yes/no confirmation is pending"
+    },
+    {
+      "test_name": "Cross — Confirmation no during flow",
+      "category": "confirmation",
+      "message": "no",
+      "notes": "Only meaningful when a yes/no confirmation is pending"
+    }
+  ]
+}
