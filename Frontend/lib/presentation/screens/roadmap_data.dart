@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import '../../data/models/roadmap_model.dart';
 
-// ---------- SAMPLE DATA ----------
+// ---------- COLORS ----------
 const _c1 = Color(0xFF534AB7);
 const _c2 = Color(0xFF185FA5);
 const _c3 = Color(0xFF993C1D);
@@ -19,8 +18,34 @@ const _b5 = Color(0xFFFAEEDA);
 const _b6 = Color(0xFFFBEAF0);
 const _b7 = Color(0xFFEAF3DE);
 
-final List<RoadmapData> kAllRoadmaps = [
-  RoadmapData(
+// ---------- INFO CLASS (only for the sheet) ----------
+class RoadmapInfo {
+  final String id;
+  final String name;
+  final String category;
+  final IconData icon;
+  final Color color;
+  final Color bg;
+  final String desc;
+  final String topicsLabel;
+  final String level;
+
+  const RoadmapInfo({
+    required this.id,
+    required this.name,
+    required this.category,
+    required this.icon,
+    required this.color,
+    required this.bg,
+    required this.desc,
+    this.topicsLabel = '',
+    this.level = '',
+  });
+}
+
+// ---------- AVAILABLE ROADMAPS (for info sheet only) ----------
+final List<RoadmapInfo> kAllRoadmaps = [
+  RoadmapInfo(
     id: '1',
     name: 'Python',
     category: 'Programming Language',
@@ -28,11 +53,8 @@ final List<RoadmapData> kAllRoadmaps = [
     color: _c1,
     bg: _b1,
     desc: 'Python basics, data handling, OOP, and practical scripting.',
-    topicsLabel: '',
-    level: '',
-    nodes: [],
   ),
-  RoadmapData(
+  RoadmapInfo(
     id: '2',
     name: 'JavaScript',
     category: 'Programming Language',
@@ -40,11 +62,8 @@ final List<RoadmapData> kAllRoadmaps = [
     color: _c3,
     bg: _b3,
     desc: 'JavaScript fundamentals, DOM, async programming, and APIs.',
-    topicsLabel: '',
-    level: '',
-    nodes: [],
   ),
-  RoadmapData(
+  RoadmapInfo(
     id: '3',
     name: 'TypeScript',
     category: 'Programming Language',
@@ -52,11 +71,8 @@ final List<RoadmapData> kAllRoadmaps = [
     color: _c2,
     bg: _b2,
     desc: 'Typed JavaScript, interfaces, generics, and modern frontend use.',
-    topicsLabel: '',
-    level: '',
-    nodes: [],
   ),
-  RoadmapData(
+  RoadmapInfo(
     id: '4',
     name: 'Java',
     category: 'Programming Language',
@@ -64,11 +80,8 @@ final List<RoadmapData> kAllRoadmaps = [
     color: _c4,
     bg: _b4,
     desc: 'Java syntax, OOP, collections, streams, and backend foundations.',
-    topicsLabel: '',
-    level: '',
-    nodes: [],
   ),
-  RoadmapData(
+  RoadmapInfo(
     id: '5',
     name: 'C#',
     category: '.NET Language',
@@ -76,11 +89,8 @@ final List<RoadmapData> kAllRoadmaps = [
     color: _c5,
     bg: _b5,
     desc: 'C# syntax, OOP, LINQ, and .NET development basics.',
-    topicsLabel: '',
-    level: '',
-    nodes: [],
   ),
-  RoadmapData(
+  RoadmapInfo(
     id: '6',
     name: 'C++',
     category: 'Programming Language',
@@ -88,11 +98,8 @@ final List<RoadmapData> kAllRoadmaps = [
     color: _c6,
     bg: _b6,
     desc: 'C++ fundamentals, memory, STL, OOP, and performance-focused coding.',
-    topicsLabel: '',
-    level: '',
-    nodes: [],
   ),
-  RoadmapData(
+  RoadmapInfo(
     id: '7',
     name: 'Go (Golang)',
     category: 'Programming Language',
@@ -100,11 +107,8 @@ final List<RoadmapData> kAllRoadmaps = [
     color: _c7,
     bg: _b7,
     desc: 'Go syntax, concurrency, packages, and backend service development.',
-    topicsLabel: '',
-    level: '',
-    nodes: [],
   ),
-  RoadmapData(
+  RoadmapInfo(
     id: '8',
     name: 'Rust',
     category: 'Programming Language',
@@ -112,11 +116,8 @@ final List<RoadmapData> kAllRoadmaps = [
     color: _c1,
     bg: _b1,
     desc: 'Rust ownership, borrowing, safety, and systems programming.',
-    topicsLabel: '',
-    level: '',
-    nodes: [],
   ),
-  RoadmapData(
+  RoadmapInfo(
     id: '9',
     name: 'SQL',
     category: 'Database Language',
@@ -124,11 +125,8 @@ final List<RoadmapData> kAllRoadmaps = [
     color: _c2,
     bg: _b2,
     desc: 'SQL queries, joins, filtering, grouping, and database fundamentals.',
-    topicsLabel: '',
-    level: '',
-    nodes: [],
   ),
-  RoadmapData(
+  RoadmapInfo(
     id: '10',
     name: 'PHP',
     category: 'Programming Language',
@@ -136,24 +134,17 @@ final List<RoadmapData> kAllRoadmaps = [
     color: _c3,
     bg: _b3,
     desc: 'PHP syntax, web basics, forms, sessions, and backend scripting.',
-    topicsLabel: '',
-    level: '',
-    nodes: [],
   ),
-  RoadmapData(
+  RoadmapInfo(
     id: '11',
     name: 'Kotlin',
     category: 'Programming Language',
     icon: FontAwesomeIcons.code,
     color: _c4,
     bg: _b4,
-    desc:
-        'Kotlin basics, null safety, OOP, and Android development foundations.',
-    topicsLabel: '',
-    level: '',
-    nodes: [],
+    desc: 'Kotlin basics, null safety, OOP, and Android development foundations.',
   ),
-  RoadmapData(
+  RoadmapInfo(
     id: '12',
     name: 'Swift',
     category: 'Programming Language',
@@ -161,11 +152,8 @@ final List<RoadmapData> kAllRoadmaps = [
     color: _c5,
     bg: _b5,
     desc: 'Swift syntax, optionals, structs, classes, and iOS basics.',
-    topicsLabel: '',
-    level: '',
-    nodes: [],
   ),
-  RoadmapData(
+  RoadmapInfo(
     id: '13',
     name: 'Ruby',
     category: 'Programming Language',
@@ -173,11 +161,8 @@ final List<RoadmapData> kAllRoadmaps = [
     color: _c6,
     bg: _b6,
     desc: 'Ruby syntax, OOP, scripting, and web development fundamentals.',
-    topicsLabel: '',
-    level: '',
-    nodes: [],
   ),
-  RoadmapData(
+  RoadmapInfo(
     id: '14',
     name: 'Dart',
     category: 'Programming Language',
@@ -185,11 +170,8 @@ final List<RoadmapData> kAllRoadmaps = [
     color: _c7,
     bg: _b7,
     desc: 'Dart syntax, null safety, async code, and Flutter foundations.',
-    topicsLabel: '',
-    level: '',
-    nodes: [],
   ),
-  RoadmapData(
+  RoadmapInfo(
     id: '15',
     name: 'C',
     category: 'Programming Language',
@@ -197,135 +179,43 @@ final List<RoadmapData> kAllRoadmaps = [
     color: _c1,
     bg: _b1,
     desc: 'C language basics, pointers, memory, and low-level programming.',
-    topicsLabel: '',
-    level: '',
-    nodes: [],
   ),
 ];
 
-final List<RoadmapData> kUserRoadmaps = [
-  RoadmapData(
-    id: '1',
-    name: 'Python',
-    category: 'Programming Language',
-    icon: FontAwesomeIcons.python,
-    color: _c1,
-    bg: _b1,
-    desc: 'Python basics, data handling, OOP, and practical scripting.',
-    topicsLabel: '',
-    level: '',
-    nodes: [
-      RoadmapNode(
-        id: 'py1',
-        label: 'Basics',
-        sub: 'Syntax, variables',
-        icon: Icons.code_outlined,
-        color: _c1,
-        bg: _b1,
-        status: NodeStatus.completed,
-        time: 'Mon · 9:00 AM',
-        duration: '60 min',
-        desc: 'Learn variables, conditions, loops, and functions.',
-        ytUrl: 'https://youtube.com',
-        schedule: 'Week 1 · Session 1',
-      ),
-      RoadmapNode(
-        id: 'py2',
-        label: 'Data Structures',
-        sub: 'Lists, dicts',
-        icon: Icons.storage_outlined,
-        color: _c2,
-        bg: _b2,
-        status: NodeStatus.active,
-        time: 'Tue · 10:00 AM',
-        duration: '90 min',
-        desc: 'Work with lists, dictionaries, sets, and tuples.',
-        ytUrl: 'https://youtube.com',
-        schedule: 'Week 1 · Session 2',
-      ),
-      RoadmapNode(
-        id: 'py3',
-        label: 'Functions',
-        sub: 'Args, lambdas',
-        icon: Icons.functions_outlined,
-        color: _c3,
-        bg: _b3,
-        status: NodeStatus.active,
-        time: 'Wed · 11:00 AM',
-        duration: '75 min',
-        desc: 'Define and use functions, understand scope and lambdas.',
-        ytUrl: 'https://youtube.com',
-        schedule: 'Week 2 · Session 1',
-      ),
-    ],
-  ),
-  RoadmapData(
-    id: '2',
-    name: 'JavaScript',
-    category: 'Programming Language',
-    icon: FontAwesomeIcons.js,
-    color: _c3,
-    bg: _b3,
-    desc: 'JavaScript fundamentals, DOM, async programming, and APIs.',
-    topicsLabel: '',
-    level: '',
-    nodes: [
-      RoadmapNode(
-        id: 'js1',
-        label: 'Basics',
-        sub: 'Syntax, variables',
-        icon: Icons.library_books_outlined,
-        color: _c3,
-        bg: _b3,
-        status: NodeStatus.completed,
-        time: 'Mon · 11:00 AM',
-        duration: '60 min',
-        desc: 'Learn syntax, variables, and control flow.',
-        ytUrl: 'https://youtube.com',
-        schedule: 'Week 1 · Session 1',
-      ),
-      RoadmapNode(
-        id: 'js2',
-        label: 'DOM',
-        sub: 'Events, manipulation',
-        icon: Icons.wifi_outlined,
-        color: _c4,
-        bg: _b4,
-        status: NodeStatus.active,
-        time: 'Wed · 1:00 PM',
-        duration: '90 min',
-        desc: 'Manipulate elements and handle browser events.',
-        ytUrl: 'https://youtube.com',
-        schedule: 'Week 1 · Session 2',
-      ),
-      RoadmapNode(
-        id: 'js3',
-        label: 'Data Structures',
-        sub: 'Arrays, objects',
-        icon: Icons.code_outlined,
-        color: _c3,
-        bg: _b3,
-        status: NodeStatus.completed,
-        time: 'Mon · 11:00 AM',
-        duration: '60 min',
-        desc: 'Learn arrays, objects, maps, and sets in JavaScript.',
-        ytUrl: 'https://youtube.com',
-        schedule: 'Week 2 · Session 1',
-      ),
-      RoadmapNode(
-        id: 'js4',
-        label: 'Async & Promises',
-        sub: 'Async/await, fetch',
-        icon: Icons.wifi_outlined,
-        color: _c4,
-        bg: _b4,
-        status: NodeStatus.active,
-        time: 'Wed · 1:00 PM',
-        duration: '90 min',
-        desc: 'Handle async operations with promises and async/await.',
-        ytUrl: 'https://youtube.com',
-        schedule: 'Week 2 · Session 2',
-      ),
-    ],
-  ),
-];
+// ─── Helper functions to get icon and color from kAllRoadmaps ───
+IconData? getLanguageIcon(String? languageKey) {
+  if (languageKey == null) return null;
+  final found = kAllRoadmaps.firstWhere(
+    (r) => r.name.toLowerCase() == languageKey.toLowerCase(),
+    orElse: () => kAllRoadmaps.first, // fallback
+  );
+  return found.icon;
+}
+
+Color? getLanguageColor(String? languageKey) {
+  if (languageKey == null) return null;
+  final found = kAllRoadmaps.firstWhere(
+    (r) => r.name.toLowerCase() == languageKey.toLowerCase(),
+    orElse: () => kAllRoadmaps.first, // fallback
+  );
+  return found.color;
+}
+
+// ─── For language key like "python", "javascript" etc. ───
+IconData? getLanguageIconByKey(String? key) {
+  if (key == null) return null;
+  final found = kAllRoadmaps.firstWhere(
+    (r) => r.name.toLowerCase() == key.toLowerCase(),
+    orElse: () => kAllRoadmaps.first,
+  );
+  return found.icon;
+}
+
+Color? getLanguageColorByKey(String? key) {
+  if (key == null) return null;
+  final found = kAllRoadmaps.firstWhere(
+    (r) => r.name.toLowerCase() == key.toLowerCase(),
+    orElse: () => kAllRoadmaps.first,
+  );
+  return found.color;
+}
