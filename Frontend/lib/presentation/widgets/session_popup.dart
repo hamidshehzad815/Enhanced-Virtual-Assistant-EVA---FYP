@@ -87,6 +87,10 @@ class _SessionPopupState extends State<SessionPopup> {
       backgroundColor: bg,
       titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
       contentPadding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
+      constraints: BoxConstraints(
+        maxWidth: 480,
+        maxHeight: MediaQuery.of(context).size.height * 0.85,
+      ),
       title: Row(
         children: [
           Icon(Icons.school_rounded, color: AppColors.primary, size: 22),
@@ -133,7 +137,9 @@ class _SessionPopupState extends State<SessionPopup> {
               decoration: BoxDecoration(
                 color: isDark ? Colors.white10 : Colors.grey.shade50,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: isDark ? Colors.white12 : Colors.grey.shade200),
+                border: Border.all(
+                  color: isDark ? Colors.white12 : Colors.grey.shade200,
+                ),
               ),
               child: Column(
                 children: [
@@ -142,19 +148,26 @@ class _SessionPopupState extends State<SessionPopup> {
                   _buildDetailRow(
                     'Schedule',
                     _session.scheduledDate != null
-                        ? DateFormat('MMM d, y • h:mm a').format(_session.scheduledDate!.toLocal())
+                        ? DateFormat(
+                            'MMM d, y • h:mm a',
+                          ).format(_session.scheduledDate!.toLocal())
                         : 'Not scheduled',
                     isDark,
                   ),
                   _buildDivider(isDark),
-                  _buildDetailRow('Duration', '${_session.estimatedDuration} min', isDark),
+                  _buildDetailRow(
+                    'Duration',
+                    '${_session.estimatedDuration} min',
+                    isDark,
+                  ),
                 ],
               ),
             ),
             const SizedBox(height: 14),
 
             // ─── TIMER ──────────────────────────────────────────────────────
-            if (_session.sessionState == 'locked' && _session.unlockAt != null) ...[
+            if (_session.sessionState == 'locked' &&
+                _session.unlockAt != null) ...[
               _buildSectionTitle('Unlock Timer', isDark),
               const SizedBox(height: 6),
               Container(
@@ -174,7 +187,10 @@ class _SessionPopupState extends State<SessionPopup> {
                         children: [
                           Text(
                             'Unlocks in:',
-                            style: AppTextStyles.body.copyWith(fontSize: 11, color: subClr),
+                            style: AppTextStyles.body.copyWith(
+                              fontSize: 11,
+                              color: subClr,
+                            ),
                           ),
                           Text(
                             _getTimeRemaining(),
@@ -202,52 +218,68 @@ class _SessionPopupState extends State<SessionPopup> {
                 decoration: BoxDecoration(
                   color: isDark ? Colors.white10 : Colors.grey.shade50,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: isDark ? Colors.white12 : Colors.grey.shade200),
+                  border: Border.all(
+                    color: isDark ? Colors.white12 : Colors.grey.shade200,
+                  ),
                 ),
                 child: _buildActionDropdown(),
               ),
             ],
 
             // ─── RESOURCES ──────────────────────────────────────────────────
-            const SizedBox(height: 14),
-            _buildSectionTitle('Resources', isDark),
-            const SizedBox(height: 6),
-            if (_session.resources.isNotEmpty)
+            if (_session.resources.isNotEmpty) ...[
+              const SizedBox(height: 14),
+              _buildSectionTitle('Resources', isDark),
+              const SizedBox(height: 6),
               Container(
                 padding: const EdgeInsets.all(8),
                 decoration: BoxDecoration(
                   color: isDark ? Colors.white10 : Colors.grey.shade50,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: isDark ? Colors.white12 : Colors.grey.shade200),
+                  border: Border.all(
+                    color: isDark ? Colors.white12 : Colors.grey.shade200,
+                  ),
                 ),
                 child: Column(
                   children: _session.resources
                       .map((r) => _buildResourceTile(r, isDark))
                       .toList(),
                 ),
-              )
-            else
+              ),
+            ] else ...[
+              const SizedBox(height: 14),
+              _buildSectionTitle('Resources', isDark),
+              const SizedBox(height: 6),
               Container(
                 padding: const EdgeInsets.all(12),
                 decoration: BoxDecoration(
                   color: isDark ? Colors.white10 : Colors.grey.shade50,
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: isDark ? Colors.white12 : Colors.grey.shade200),
+                  border: Border.all(
+                    color: isDark ? Colors.white12 : Colors.grey.shade200,
+                  ),
                 ),
                 child: Center(
                   child: Text(
                     'No resources available',
-                    style: AppTextStyles.body.copyWith(fontSize: 12, color: subClr),
+                    style: AppTextStyles.body.copyWith(
+                      fontSize: 12,
+                      color: subClr,
+                    ),
                   ),
                 ),
               ),
+            ],
           ],
         ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: Text('Close', style: TextStyle(color: isDark ? Colors.white70 : Colors.black54)),
+          child: Text(
+            'Close',
+            style: TextStyle(color: isDark ? Colors.white70 : Colors.black54),
+          ),
         ),
       ],
     );
@@ -294,13 +326,15 @@ class _SessionPopupState extends State<SessionPopup> {
     );
   }
 
-  Widget _buildDivider(bool isDark) => Divider(height: 8, color: isDark ? Colors.white12 : Colors.grey.shade200);
+  Widget _buildDivider(bool isDark) =>
+      Divider(height: 8, color: isDark ? Colors.white12 : Colors.grey.shade200);
 
   // ─── Single Action Dropdown ──────────────────────────────────────────
   Widget _buildActionDropdown() {
     final actions = <String>[];
 
-    if (_session.sessionState == 'ongoing' || _session.sessionState == 'overdue') {
+    if (_session.sessionState == 'ongoing' ||
+        _session.sessionState == 'overdue') {
       actions.add('Complete');
     }
     if (_session.sessionState == 'unlocked_future') {
@@ -400,7 +434,8 @@ class _SessionPopupState extends State<SessionPopup> {
   Widget _buildResourceTile(Resource resource, bool isDark) {
     final textClr = isDark ? Colors.white : Colors.black87;
     final subClr = isDark ? Colors.white54 : Colors.black54;
-    final bool isActive = _session.sessionState == 'ongoing' ||
+    final bool isActive =
+        _session.sessionState == 'ongoing' ||
         _session.sessionState == 'overdue';
 
     return Opacity(
@@ -425,7 +460,9 @@ class _SessionPopupState extends State<SessionPopup> {
           decoration: BoxDecoration(
             color: isDark ? Colors.white10 : Colors.grey.shade50,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: isDark ? Colors.white12 : Colors.grey.shade200),
+            border: Border.all(
+              color: isDark ? Colors.white12 : Colors.grey.shade200,
+            ),
           ),
           child: Row(
             children: [
@@ -441,14 +478,22 @@ class _SessionPopupState extends State<SessionPopup> {
                           width: 80,
                           height: 56,
                           color: isDark ? Colors.white12 : Colors.grey.shade200,
-                          child: Icon(Icons.play_circle_filled_rounded, color: Colors.red, size: 30),
+                          child: Icon(
+                            Icons.play_circle_filled_rounded,
+                            color: Colors.red,
+                            size: 30,
+                          ),
                         ),
                       )
                     : Container(
                         width: 80,
                         height: 56,
                         color: isDark ? Colors.white12 : Colors.grey.shade200,
-                        child: Icon(Icons.play_circle_filled_rounded, color: Colors.red, size: 30),
+                        child: Icon(
+                          Icons.play_circle_filled_rounded,
+                          color: Colors.red,
+                          size: 30,
+                        ),
                       ),
               ),
               const SizedBox(width: 12),
@@ -477,7 +522,11 @@ class _SessionPopupState extends State<SessionPopup> {
                   ],
                 ),
               ),
-              Icon(Icons.open_in_new_rounded, size: 16, color: isActive ? Colors.grey : Colors.grey.shade400),
+              Icon(
+                Icons.open_in_new_rounded,
+                size: 16,
+                color: isActive ? Colors.grey : Colors.grey.shade400,
+              ),
             ],
           ),
         ),
