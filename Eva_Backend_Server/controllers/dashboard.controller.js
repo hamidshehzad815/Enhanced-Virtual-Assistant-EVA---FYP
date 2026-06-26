@@ -63,6 +63,8 @@ const buildDashboardTask = (task, timeZone, nowUtc = new Date()) => {
     due_datetime: due ? serializeInstantForApi(due, timeZone) : null,
     is_learning_task: Boolean(task.learning_plan_id),
     learning_goal_id: task.learning_plan_id ? String(task.learning_plan_id) : null,
+    learning_session_id: task.learning_topic_id ? String(task.learning_topic_id) : null,
+    editable: !task.learning_plan_id,
   };
 };
 

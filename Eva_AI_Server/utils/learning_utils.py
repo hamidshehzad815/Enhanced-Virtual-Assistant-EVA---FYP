@@ -813,6 +813,60 @@ def _parse_hhmm(value: str) -> time:
     return time(hour=h, minute=m)
 
 
+def _schedule_slots_by_weekday(
+    preferred_learning_schedule: List[Dict[str, Any]],
+    *,
+    default_duration_minutes: int = 90,
+) -> Dict[int, Dict[str, Any]]:
+    by_day: Dict[int, Dict[str, Any]] = {}
+    for slot in preferred_learning_schedule or []:
+        if not isinstance(slot, dict):
+            continue
+        try:
+            day = int(slot.get("day"))
+        except (TypeError, ValueError):
+            continue
+        dur = default_duration_minutes
+        if slot.get("duration_minutes") is not None:
+            try:
+                dur = int(slot.get("duration_minutes"))
+            except (TypeError, ValueError):
+                dur = default_duration_minutes
+        dur = max(15, min(240, dur))
+        by_day[day] = {
+            "time": str(slot.get("time") or "18:00"),
+            "duration_minutes": dur,
+        }
+    return by_day
+
+
+def next_rebase_start_date(
+    now_local: datetime,
+    preferred_learning_schedule: List[Dict[str, Any]],
+) -> date:
+    """
+    First calendar date whose schedule slot start is still at or after ``now_local``.
+
+    Walks forward from today so resume/rebuild can use a same-day slot when it has
+    not started yet (instead of always skipping to tomorrow).
+    """
+    by_day = _schedule_slots_by_weekday(preferred_learning_schedule)
+    if not by_day:
+        return now_local.date() + timedelta(days=1)
+
+    now_cmp = now_local.replace(tzinfo=None) if now_local.tzinfo is not None else now_local
+    current = now_local.date()
+    for _ in range(14):
+        wd = current.weekday()
+        if wd in by_day:
+            slot_start = datetime.combine(current, _parse_hhmm(str(by_day[wd]["time"])))
+            if now_cmp <= slot_start:
+                return current
+        current = current + timedelta(days=1)
+
+    return now_local.date() + timedelta(days=1)
+
+
 def build_schedule(
     start_date: date,
     topics: List[Dict[str, Any]],

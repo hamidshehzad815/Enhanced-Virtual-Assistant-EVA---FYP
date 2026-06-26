@@ -87,7 +87,7 @@ from handlers.learning.update import reschedule_session_for_api, skip_session_an
 from db.tasks import get_task_by_id, soft_delete_task, update_task
 from services.google_calendar import google_calendar_client
 from utils.google_calendar_sync import resolve_google_calendar_sync
-from utils.learning_utils import build_schedule, normalize_subtopic_entity
+from utils.learning_utils import build_schedule, next_rebase_start_date, normalize_subtopic_entity
 
 _COMMAND_VERBS = {
     "add",
@@ -213,6 +213,7 @@ class ProcessRequest(BaseModel):
 class RebuildScheduleRequest(BaseModel):
     user_id: str
     new_schedule: list
+    goal_id: Optional[str] = None
 
 
 class AutoCompleteTopicRequest(BaseModel):
@@ -562,27 +563,34 @@ def _next_learning_day(start: date, learning_days: set) -> date:
 @app.post("/internal/rebuild-schedule")
 async def internal_rebuild_schedule(payload: RebuildScheduleRequest):
     """
-    Rebuild remaining pending sessions for all active + paused goals when the user updates
-    preferred_learning_schedule in settings.
+    Rebuild remaining pending sessions.
+
+    When ``goal_id`` is set (plan resume), only that active goal is rebased with
+    ``new_schedule``. Otherwise all active goals for the user are rebuilt (settings change).
     """
     user_id = str(payload.user_id or "").strip()
     schedule = list(payload.new_schedule or [])
+    goal_id_filter = str(payload.goal_id or "").strip()
     if not user_id:
         return {"status": "error", "message": "user_id required"}
 
-    goals = await get_active_goals_for_user(user_id)
-    # include paused too by querying DB directly via get_active_goals_for_user + filtering is not enough
-    # We'll reuse find_goals_for_update without topic filtering by scanning topics list via active+paused:
-    # simplest: fetch active goals then also fetch paused goals by using find_goals_for_update per supported topic
-    # To keep Phase 5 minimal and deterministic, do a direct collection scan via get_db is avoided here.
-    # We instead rebuild only active goals now; paused goals will be rebuilt on resume flow.
-    learning_days = _learning_days_from_schedule(schedule)
+    if goal_id_filter:
+        goal_doc = await get_goal_by_id(goal_id_filter)
+        if not goal_doc:
+            return {"status": "error", "message": "goal not found"}
+        if str(goal_doc.get("user_id") or "") != user_id:
+            return {"status": "error", "message": "goal not found"}
+        if str(goal_doc.get("status") or "") != "active":
+            return {"status": "error", "message": "goal is not active"}
+        if goal_doc.get("is_deleted"):
+            return {"status": "error", "message": "goal not found"}
+        goals = [goal_doc]
+    else:
+        goals = await get_active_goals_for_user(user_id)
     user_doc = await fetch_user(user_id)
     tz_name = resolve_timezone_name((user_doc or {}).get("timezone"))
-    start_from = _next_learning_day(
-        datetime.now(get_zoneinfo(tz_name)).date() + timedelta(days=1),
-        learning_days,
-    )
+    now_local = datetime.now(get_zoneinfo(tz_name))
+    start_from = next_rebase_start_date(now_local, schedule)
 
     user_settings = await fetch_user_settings(user_id)
     integrations = await fetch_integrations(user_id)
@@ -607,11 +615,16 @@ async def internal_rebuild_schedule(payload: RebuildScheduleRequest):
         last_dt = None
         for topic, row in zip(pending_topics, rows):
             due_dt = row["scheduled_date"]
+            duration = int(row.get("duration_minutes") or 90)
             last_dt = due_dt
-            await reschedule_topic(str(topic.get("_id")), due_dt)
+            await reschedule_topic(
+                str(topic.get("_id")),
+                due_dt,
+                estimated_duration_minutes=duration,
+            )
             task_id = str(topic.get("task_id") or "").strip()
             if task_id:
-                await update_task(task_id, {"due_datetime": due_dt})
+                await update_task(task_id, {"due_datetime": due_dt, "duration": duration})
                 try:
                     task_doc = await get_task_by_id(task_id, user_id)
                     if google and task_doc:

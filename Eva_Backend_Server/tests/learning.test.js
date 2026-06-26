@@ -426,6 +426,7 @@ describe("Learning API", () => {
         user_id: USER_ID,
         is_deleted: false,
         status: "paused",
+        learning_schedule_id: "s2",
       }),
     });
 
@@ -434,7 +435,10 @@ describe("Learning API", () => {
     });
 
     const leanSettings = jest.fn().mockResolvedValue({
-      preferred_learning_schedules: [{ id: "s1", label: "Default", slots: [{ day: 0, time: "18:00" }] }],
+      preferred_learning_schedules: [
+        { id: "s1", label: "Default", slots: [{ day: 0, time: "18:00", duration_minutes: 90 }] },
+        { id: "s2", label: "Python", slots: [{ day: 4, time: "23:30", duration_minutes: 60 }] },
+      ],
     });
     const { UserSetting } = require("../models");
     UserSetting.findOne.mockReturnValue({ lean: leanSettings });
@@ -449,7 +453,8 @@ describe("Learning API", () => {
     expect(res.status).toBe(200);
     expect(callAIInternal).toHaveBeenCalledWith("/internal/rebuild-schedule", {
       user_id: USER_ID,
-      new_schedule: [{ day: 0, time: "18:00" }],
+      goal_id: GOAL_ID,
+      new_schedule: [{ day: 4, time: "23:30", duration_minutes: 60 }],
     });
   });
 

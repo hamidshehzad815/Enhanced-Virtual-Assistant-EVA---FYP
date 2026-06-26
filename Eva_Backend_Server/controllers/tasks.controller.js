@@ -13,10 +13,10 @@ const {
   NotFoundError,
   ConflictError,
 } = require("../middleware/errorHandler");
-const { serializeTaskForApi } = require("../utils/taskDisplayStatus");
+const { serializeTaskForApi, isLearningTask, LEARNING_TASK_EDIT_BLOCKED_MESSAGE } = require("../utils/taskDisplayStatus");
 
 const TASK_LIST_PROJECTION =
-  "title description due_datetime duration priority status learning_plan_id completed_at";
+  "title description due_datetime duration priority status learning_plan_id learning_topic_id completed_at";
 const { withApiTimezone } = require("../utils/apiDateTime");
 const {
   notifyOwnerOfCollaborationResponse,
@@ -33,6 +33,19 @@ const PRIORITY_VALUES = new Set(["low", "medium", "high"]);
 const COLLAB_ACTIONS = new Set(["accept", "reject"]);
 
 const resolveUserTimezone = (req) => req.user?.timezone || "UTC";
+
+const assertTaskIsEditable = (task) => {
+  if (!isLearningTask(task)) {
+    return;
+  }
+  throw new ConflictError(LEARNING_TASK_EDIT_BLOCKED_MESSAGE, {
+    conflict_type: "learning_session_read_only",
+    learning_goal_id: String(task.learning_plan_id),
+    learning_session_id: task.learning_topic_id
+      ? String(task.learning_topic_id)
+      : null,
+  });
+};
 
 const PRIORITY_ALIASES = new Map([
   ["high", "high"],
@@ -540,6 +553,8 @@ const updateTask = async (req, res, next) => {
       throw new NotFoundError("Task not found");
     }
 
+    assertTaskIsEditable(existingTask);
+
     const update = {};
     const body = req.body || {};
 
@@ -680,6 +695,8 @@ const updateTaskStatus = async (req, res, next) => {
       throw new NotFoundError("Task not found");
     }
 
+    assertTaskIsEditable(existingTask);
+
     const update = {
       status: normalizedStatus,
       updated_at: new Date(),
@@ -747,6 +764,18 @@ const deleteTask = async (req, res, next) => {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       throw new BadRequestError("Invalid task id");
     }
+
+    const existingTask = await Task.findOne({
+      _id: id,
+      owner_id: req.userId,
+      is_deleted: false,
+    }).lean();
+
+    if (!existingTask) {
+      throw new NotFoundError("Task not found");
+    }
+
+    assertTaskIsEditable(existingTask);
 
     const now = new Date();
     const task = await Task.findOneAndUpdate(
