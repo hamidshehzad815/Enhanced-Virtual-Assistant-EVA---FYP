@@ -1,0 +1,85 @@
+[
+  {
+    "test_name": "Productive hours — general",
+    "message": "show my productive hours"
+  },
+  {
+    "test_name": "Productive hours — most productive",
+    "message": "when am I most productive"
+  },
+  {
+    "test_name": "Productive hours — peak hours",
+    "message": "what are my peak hours"
+  },
+  {
+    "test_name": "Productive hours — work best",
+    "message": "when do I work best"
+  },
+  {
+    "test_name": "Productive hours — Tuesday filter",
+    "message": "when am I productive on Tuesday"
+  },
+  {
+    "test_name": "Productive hours — Thursday filter",
+    "message": "what are my best hours on Thursday"
+  },
+  {
+    "test_name": "Productive days — most focused",
+    "message": "which days am I most focused"
+  },
+  {
+    "test_name": "Productive days — best days",
+    "message": "what are my best days of the week"
+  },
+  {
+    "test_name": "Best time — Thursday",
+    "message": "find the best time for me on Thursday"
+  },
+  {
+    "test_name": "Best time — schedule Tuesday",
+    "message": "when should I schedule on Tuesday"
+  },
+  {
+    "test_name": "Best time — day missing",
+    "message": "find the best time for me",
+    "follow_ups": ["Tuesday"]
+  },
+  {
+    "test_name": "Best time — invalid day then retry",
+    "message": "find the best time for me",
+    "follow_ups": ["5PM", "Tuesday"]
+  },
+  {
+    "test_name": "Best time — cancel pending",
+    "message": "find the best time for me",
+    "follow_ups": ["cancel"]
+  },
+  {
+    "test_name": "Completion rate",
+    "message": "show my completion rate"
+  },
+  {
+    "test_name": "Completion rate — on-time phrasing",
+    "message": "how many tasks do I finish on time"
+  },
+  {
+    "test_name": "Productivity report",
+    "message": "show my productivity report"
+  },
+  {
+    "test_name": "Productivity report — overview",
+    "message": "give me a productivity overview"
+  },
+  {
+    "test_name": "Productivity report — this week",
+    "message": "how am I doing this week"
+  },
+  {
+    "test_name": "Best time — Monday",
+    "message": "find the best time for me on Monday"
+  },
+  {
+    "test_name": "Productive hours — Wednesday edge",
+    "message": "what are my best hours on Wednesday"
+  }
+]
