@@ -45,6 +45,30 @@ const DEFAULT_PLANS = [
   { topic: "SQL", level: "basics" },
 ];
 
+const DEMO_YOUTUBE_RESOURCES = [
+  {
+    title: "Python Tutorial - Python Full Course for Beginners",
+    url: "https://www.youtube.com/watch?v=_uQrJ0TkZlc",
+    thumbnail: "https://i.ytimg.com/vi/_uQrJ0TkZlc/hqdefault.jpg",
+    channel: "Programming with Mosh",
+    view_count: "42000000",
+  },
+  {
+    title: "Learn Python - Full Course for Beginners",
+    url: "https://www.youtube.com/watch?v=rfscVS0vtbw",
+    thumbnail: "https://i.ytimg.com/vi/rfscVS0vtbw/hqdefault.jpg",
+    channel: "freeCodeCamp.org",
+    view_count: "48000000",
+  },
+  {
+    title: "Python for Beginners - Learn Coding with Python",
+    url: "https://www.youtube.com/watch?v=b093aqAZiPU",
+    thumbnail: "https://i.ytimg.com/vi/b093aqAZiPU/hqdefault.jpg",
+    channel: "Programming with Mosh",
+    view_count: "1200000",
+  },
+];
+
 const DEFAULT_LEARNING_SCHEDULE = {
   id: "seed-weekday-evenings",
   label: "Weekday evenings",
@@ -74,6 +98,7 @@ const parseArgs = () => {
     scheduleId: getFlag("--schedule-id") ? String(getFlag("--schedule-id")).trim() : null,
     replace: argv.includes("--replace"),
     seedRoadmaps: argv.includes("--seed-roadmaps"),
+    pythonResources: argv.includes("--python-resources"),
   };
 };
 
@@ -164,6 +189,14 @@ const localDatetimeToUtcNaive = (dateIso, timeValue, timezone) => {
   );
 };
 
+const normalizeResources = (resources) =>
+  (Array.isArray(resources) ? resources : []).map((item) => ({
+    title: String(item?.title || ""),
+    url: String(item?.url || ""),
+    thumbnail: item?.thumbnail || null,
+    channel_name: item?.channel_name || item?.channel || null,
+  }));
+
 const buildSchedule = (startIso, topics, scheduleSlots, timezone) => {
   const byDay = new Map();
   for (const slot of scheduleSlots || []) {
@@ -205,7 +238,7 @@ const buildSchedule = (startIso, topics, scheduleSlots, timezone) => {
       out.push({
         order: Number(row.order || topicIndex + 1),
         title: String(row.title || ""),
-        resources: Array.isArray(row.resources) ? row.resources : [],
+        resources: normalizeResources(row.resources),
         scheduled_date: scheduledDate,
         duration_minutes: slot.duration_minutes,
       });
@@ -282,6 +315,38 @@ const ensureRoadmapTemplates = async (shouldSeed) => {
   return { seeded: true, count: result.expected, ...result };
 };
 
+/** Demo seed: fill Python basics resources; keep JavaScript/SQL basics empty. */
+const applyPythonOnlyDemoResources = async () => {
+  const collection = mongoose.connection.collection("roadmap_resources");
+  const now = new Date();
+
+  const pythonResult = await collection.updateMany(
+    { language: "Python", level: "basics" },
+    {
+      $set: {
+        resources: DEMO_YOUTUBE_RESOURCES,
+        fetched_at: now,
+        updated_at: now,
+      },
+    },
+  );
+
+  const clearedResult = await collection.updateMany(
+    { language: { $in: ["JavaScript", "SQL"] }, level: "basics" },
+    {
+      $set: {
+        resources: [],
+        fetched_at: null,
+        updated_at: now,
+      },
+    },
+  );
+
+  console.log(
+    `Demo resources: Python basics ${pythonResult.modifiedCount} row(s) updated; JS/SQL basics cleared ${clearedResult.modifiedCount} row(s).`,
+  );
+};
+
 const removeConflictingGoals = async (userId, subject) => {
   const goals = await LearningGoal.find({
     user_id: userId,
@@ -356,6 +421,11 @@ const createLearningPlan = async (options, shared = {}) => {
         );
       }
       shared.templateChecked = true;
+    }
+
+    if (options.pythonResources && !shared.pythonResourcesApplied) {
+      await applyPythonOnlyDemoResources();
+      shared.pythonResourcesApplied = true;
     }
 
     let user = shared.user;
