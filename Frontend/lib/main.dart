@@ -8,6 +8,7 @@ import 'presentation/providers/home_screen_viewmodel.dart';
 import 'package:provider/provider.dart';
 import 'presentation/providers/auth_viewmodel.dart';
 import 'presentation/providers/calendar_viewmodel.dart';
+import 'presentation/providers/roadmap_viewmodel.dart';
 import 'presentation/providers/settings_viewmodel.dart';
 import 'presentation/providers/theme_provider.dart';
 import 'presentation/providers/profile_viewmodel.dart';
@@ -17,21 +18,31 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../data/services/calendar_service.dart';
 import '../../data/repositories/calendar_screen_repository.dart';
 import 'firebase_options.dart';
+import '../../data/services/roadmap_service.dart';
+import '../../data/repositories/roadmap_repository.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
-  if (Firebase.apps.isEmpty) {
-    await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  print('🔥 Checking Firebase apps count: ${Firebase.apps.length}');
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+  } catch (e) {
+    if (e.toString().contains('duplicate-app')) {
+      print('🔥 Firebase already initialized (duplicate-app ignored).');
+    } else {
+      print('🔥 Firebase init error: $e');
+      rethrow;
+    }
   }
 
   FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
   await PushNotificationService.setup();
-  // Load theme FIRST
   final themeProvider = ThemeProvider();
   await themeProvider.loadTheme();
-
   runApp(
     MultiProvider(
       providers: [
@@ -48,6 +59,15 @@ void main() async {
         ChangeNotifierProvider(create: (_) => AuthViewModel()),
         ChangeNotifierProvider(create: (_) => SettingsViewModel()),
         ChangeNotifierProvider.value(value: themeProvider),
+        Provider<RoadmapService>(create: (_) => RoadmapService()),
+        Provider<RoadmapRepository>(
+          create: (context) =>
+              RoadmapRepository(service: context.read<RoadmapService>()),
+        ),
+        ChangeNotifierProvider(
+          create: (context) =>
+              RoadmapViewmodel(context.read<RoadmapRepository>()),
+        ),
       ],
 
       child: const MyApp(),
