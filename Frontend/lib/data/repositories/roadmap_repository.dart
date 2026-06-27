@@ -1,6 +1,7 @@
 import '../../data/models/roadmap_model.dart';
 import '../../data/services/roadmap_service.dart';
 import '../../data/services/storage_service.dart';
+import '../models/schedule_date_model.dart';
 
 class RoadmapRepository {
   final RoadmapService _service;
@@ -59,5 +60,18 @@ class RoadmapRepository {
       goalId: goalId,
       status: status,
     );
+  }
+
+  Future<ScheduleDatesResponse> getScheduleDates(
+    String goalId, {
+    int horizonWeeks = 12,
+  }) async {
+    final token = await _getToken();
+    final data = await _service.getScheduleDates(
+      token,
+      goalId,
+      horizonWeeks: horizonWeeks,
+    );
+    return ScheduleDatesResponse.fromJson(data);
   }
 }
