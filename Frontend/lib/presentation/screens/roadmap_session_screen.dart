@@ -324,6 +324,9 @@ class _RoadmapSessionScreenContentState
         return SessionPopup(
           session: session,
           isDark: isDark,
+          fetchLatestSession: (sessionId) async {
+    return await vm.getSessionDetail(sessionId);  
+  },
           onUpdate: (updatedSession) async {
             await vm.loadRoadmap();
           },
