@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../core/theme/app_text_style.dart';
 import '../../core/theme/app_colours.dart';
 import '../../data/models/roadmap_model.dart';
+import '../../data/models/schedule_date_model.dart';
 
 class SessionPopup extends StatefulWidget {
   final Session session;
@@ -14,12 +15,14 @@ class SessionPopup extends StatefulWidget {
   final Function(String, String) onReschedule;
   final Function(String) onComplete;
   final Function(String) onSkip;
+  final Future<ScheduleDatesResponse> Function() fetchScheduleDates;
 
   const SessionPopup({
     super.key,
     required this.session,
     required this.isDark,
     required this.fetchLatestSession,
+    required this.fetchScheduleDates,
     required this.onUpdate,
     required this.onReschedule,
     required this.onComplete,
@@ -427,18 +430,72 @@ class _SessionPopupState extends State<SessionPopup> {
           widget.onSkip(_session.id);
           if (context.mounted) Navigator.pop(context);
         } else if (value == 'Reschedule') {
-          final date = await showDatePicker(
-            context: context,
-            initialDate: _session.scheduledDate ?? DateTime.now(),
-            firstDate: DateTime(2024),
-            lastDate: DateTime(2027),
-          );
-          if (date != null) {
-            final formatted = DateFormat('yyyy-MM-dd').format(date);
-            widget.onReschedule(_session.id, formatted);
-            if (context.mounted) Navigator.pop(context);
+          try {
+            final response = await widget.fetchScheduleDates();
+            if (!mounted) return;
+            _showSchedulePicker(context, response);
+          } catch (e) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text('Failed to load available dates: $e')),
+            );
           }
         }
+      },
+    );
+  }
+
+  void _showSchedulePicker(
+    BuildContext context,
+    ScheduleDatesResponse response,
+  ) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return Container(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Select a new date',
+                style: AppTextStyles.headline.copyWith(
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Available slots (${response.range.from} – ${response.range.to})',
+                style: AppTextStyles.body.copyWith(color: Colors.grey),
+              ),
+              const SizedBox(height: 12),
+              Expanded(
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: response.dates.length,
+                  itemBuilder: (context, index) {
+                    final slot = response.dates[index];
+                    return ListTile(
+                      title: Text('${slot.dayLabel}, ${slot.date}'),
+                      subtitle: Text(
+                        '${slot.time} · ${slot.durationMinutes} min',
+                      ),
+                      onTap: () {
+                        Navigator.pop(context);
+                        widget.onReschedule(_session.id, slot.date);
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
       },
     );
   }
