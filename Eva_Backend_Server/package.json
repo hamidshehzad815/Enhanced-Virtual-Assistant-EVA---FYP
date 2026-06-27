@@ -11,7 +11,9 @@
     "seed:roadmaps": "node scripts/seed-roadmaps.js",
     "seed:learning-plan": "node scripts/seed-learning-plan.js",
     "seed:areej-python": "node scripts/seed-roadmaps.js && node scripts/seed-areej-user.js && node scripts/seed-learning-plan.js --replace --seed-roadmaps --python-resources",
-    "seed:areej-plans": "node scripts/seed-roadmaps.js && node scripts/seed-areej-user.js && node scripts/seed-learning-plan.js --replace --seed-roadmaps"
+    "seed:areej-plans": "node scripts/seed-roadmaps.js && node scripts/seed-areej-user.js && node scripts/seed-learning-plan.js --replace --seed-roadmaps",
+    "clear:database": "node scripts/clear-database-except-roadmap-resources.js --confirm",
+    "clear:database:dry-run": "node scripts/clear-database-except-roadmap-resources.js --dry-run"
   },
   "keywords": [
     "eva",

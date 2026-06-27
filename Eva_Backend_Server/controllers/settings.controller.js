@@ -485,11 +485,12 @@ const updateSettings = async (req, res, next) => {
     }
 
     if (pushToken !== undefined) {
+      // Replace tokens on register so stale emulator/old-project tokens do not accumulate.
       await User.updateOne(
         { _id: req.userId },
         {
-          $addToSet: {
-            push_tokens: pushToken,
+          $set: {
+            push_tokens: [pushToken],
           },
         },
       );
