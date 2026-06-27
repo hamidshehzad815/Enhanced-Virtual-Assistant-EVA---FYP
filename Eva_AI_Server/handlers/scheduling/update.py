@@ -895,11 +895,29 @@ async def _execute_confirmed_update(
         entities,
     )
 
+    notifications: List[Dict[str, Any]] = []
+    if "due_datetime" in update_data:
+        final_due_for_notice = _coerce_datetime(updated_task.get("due_datetime"))
+        if final_due_for_notice is not None:
+            from utils.task_notifications import build_task_rescheduled_notification
+
+            notifications.append(
+                build_task_rescheduled_notification(
+                    user_id=str(user_id),
+                    user_name=user_name,
+                    task_title=final_title,
+                    due_datetime=final_due_for_notice,
+                    timezone_name=timezone_name,
+                    reference_type="task",
+                    reference_id=str(updated_task.get("_id") or task_id),
+                )
+            )
+
     return {
         "status": "success",
         "intent": "scheduling_update",
         "response_text": response_text,
-        "notifications": [],
+        "notifications": notifications,
         "task": {
             "task_id": _coerce_text(updated_task.get("_id")) or task_id,
             "title": final_title,

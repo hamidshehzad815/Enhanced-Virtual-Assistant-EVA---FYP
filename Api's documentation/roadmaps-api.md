@@ -12,6 +12,7 @@ See [README.md](./README.md) for auth and error envelopes.
 | Method | Path | Purpose |
 |--------|------|---------|
 | `GET` | `/api/roadmaps/plans` | **All user plans** (no `sessions[]`) |
+| `GET` | `/api/roadmaps/:goalId/schedule-dates` | **Reschedule picker dates** (plan learning weekdays only) |
 | `GET` | `/api/roadmaps/:goalId` | Roadmap + sessions for one plan |
 | `GET` | `/api/learning/:goalId/sessions/:sessionId` | Single session detail (popup / detail screen) |
 | `PATCH` | `/api/learning/:goalId/sessions/:sessionId` | Reschedule, complete, or skip a session |
@@ -140,6 +141,79 @@ No `sessions` array on each item. Cancelled / deleted plans are excluded (`is_de
 | ------ | ---- |
 | `400`  | Invalid `status` filter |
 | `401`  | Auth failure |
+
+---
+
+## `GET /api/roadmaps/:goalId/schedule-dates`
+
+Returns **calendar dates** the user may pick when rescheduling the **current session** for a plan. Only dates that fall on the plan’s **learning schedule weekdays** are included (same rules as `PATCH /api/learning/:goalId/sessions/:sessionId` with `scheduled_date`).
+
+Use this to drive a **limited date picker** instead of a full calendar.
+
+
+|            |                                                              |
+| ---------- | ------------------------------------------------------------ |
+| **Auth**   | Required                                                     |
+| **Method** | `GET`                                                        |
+| **Path**   | `/api/roadmaps/:goalId/schedule-dates`                       |
+| **Query**  | `horizon_weeks` (optional, default `12`, max `52`) — how far ahead to list dates |
+| **Body**   | None                                                         |
+
+
+### Example request
+
+```http
+GET /api/roadmaps/674a1b2c3d4e5f6789012301/schedule-dates HTTP/1.1
+Authorization: Bearer <access_token>
+```
+
+### Success `200`
+
+```json
+{
+  "status": "success",
+  "data": {
+    "timezone": "Asia/Karachi",
+    "goal_id": "674a1b2c3d4e5f6789012301",
+    "schedule_id": "sched-evening",
+    "schedule_label": "Evening",
+    "weekdays": [
+      { "day": 0, "day_label": "Monday", "time": "18:00", "duration_minutes": 90 },
+      { "day": 4, "day_label": "Friday", "time": "18:00", "duration_minutes": 90 }
+    ],
+    "range": {
+      "from": "2026-06-27",
+      "to": "2026-09-19"
+    },
+    "dates": [
+      {
+        "date": "2026-06-30",
+        "day": 0,
+        "day_label": "Monday",
+        "time": "18:00",
+        "duration_minutes": 90,
+        "scheduled_datetime": "2026-06-30T18:00:00+05:00"
+      }
+    ]
+  }
+}
+```
+
+| Field | Notes |
+| ----- | ----- |
+| `weekdays` | Recurring slots from the plan’s linked learning schedule (`day` 0=Mon … 6=Sun) |
+| `dates[]` | Concrete **YYYY-MM-DD** values from **today** (user TZ) through `range.to` |
+| `scheduled_datetime` | Slot start in user timezone — pass to UI or use `date` with `PATCH` reschedule |
+
+Only **active** plans return dates. Pick a date from `dates[]`, then call `PATCH /api/learning/:goalId/sessions/:sessionId` with `{ "scheduled_date": "YYYY-MM-DD" }`.
+
+### Errors
+
+| Status | When |
+| ------ | ---- |
+| `400`  | Invalid goal id, non-active plan, invalid `horizon_weeks` |
+| `401`  | Auth failure |
+| `404`  | Goal or user settings not found |
 
 ---
 

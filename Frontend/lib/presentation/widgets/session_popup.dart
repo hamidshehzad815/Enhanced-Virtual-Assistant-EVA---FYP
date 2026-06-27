@@ -9,6 +9,7 @@ import '../../data/models/roadmap_model.dart';
 class SessionPopup extends StatefulWidget {
   final Session session;
   final bool isDark;
+  final Future<Session> Function(String) fetchLatestSession;
   final Function(Session) onUpdate;
   final Function(String, String) onReschedule;
   final Function(String) onComplete;
@@ -18,6 +19,7 @@ class SessionPopup extends StatefulWidget {
     super.key,
     required this.session,
     required this.isDark,
+    required this.fetchLatestSession,
     required this.onUpdate,
     required this.onReschedule,
     required this.onComplete,
@@ -30,32 +32,41 @@ class SessionPopup extends StatefulWidget {
 
 class _SessionPopupState extends State<SessionPopup> {
   late Session _session;
-  Timer? _timer;
+  Timer? _uiTimer;
+  Timer? _refreshTimer;
 
   @override
   void initState() {
     super.initState();
     _session = widget.session;
-    if (_session.sessionState == 'locked' && _session.unlockAt != null) {
-      _startTimer();
-    }
-  }
-
-  void _startTimer() {
-    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+    _uiTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (mounted) setState(() {});
     });
+    _refreshTimer = Timer.periodic(
+      const Duration(seconds: 60),
+      (_) => _refreshSession(),
+    );
+    _refreshSession();
   }
 
   @override
   void dispose() {
-    _timer?.cancel();
+    _uiTimer?.cancel();
+    _refreshTimer?.cancel();
     super.dispose();
   }
 
-  bool get _isActive {
-    return _session.sessionState == 'ongoing' ||
-        _session.sessionState == 'overdue';
+  Future<void> _refreshSession() async {
+    try {
+      final updated = await widget.fetchLatestSession(_session.id);
+      if (mounted) {
+        setState(() {
+          _session = updated;
+        });
+      }
+    } catch (e) {
+      // ignore
+    }
   }
 
   bool get _canAct {
@@ -110,15 +121,17 @@ class _SessionPopupState extends State<SessionPopup> {
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
             decoration: BoxDecoration(
-              color: _getStatusColor(_session.status).withOpacity(0.15),
+              color: _getSessionStateColor(
+                _session.sessionState,
+              ).withOpacity(0.15),
               borderRadius: BorderRadius.circular(12),
             ),
             child: Text(
-              _session.status.toUpperCase(),
+              _session.sessionState.toUpperCase(),
               style: AppTextStyles.body.copyWith(
                 fontSize: 8,
                 fontWeight: FontWeight.w700,
-                color: _getStatusColor(_session.status),
+                color: _getSessionStateColor(_session.sessionState),
               ),
             ),
           ),
@@ -208,7 +221,7 @@ class _SessionPopupState extends State<SessionPopup> {
               ),
             ],
 
-            // ─── ACTIONS (single dropdown) ──────────────────────────────────
+            // ─── ACTIONS ──────────────────────────────────────────────────
             if (_canAct) ...[
               const SizedBox(height: 14),
               _buildSectionTitle('Actions', isDark),
@@ -329,7 +342,7 @@ class _SessionPopupState extends State<SessionPopup> {
   Widget _buildDivider(bool isDark) =>
       Divider(height: 8, color: isDark ? Colors.white12 : Colors.grey.shade200);
 
-  // ─── Single Action Dropdown ──────────────────────────────────────────
+  // ─── Action Dropdown ──────────────────────────────────────────────────
   Widget _buildActionDropdown() {
     final actions = <String>[];
 
@@ -434,14 +447,18 @@ class _SessionPopupState extends State<SessionPopup> {
   Widget _buildResourceTile(Resource resource, bool isDark) {
     final textClr = isDark ? Colors.white : Colors.black87;
     final subClr = isDark ? Colors.white54 : Colors.black54;
-    final bool isActive =
+
+    // ─── Resources clickable only when active or terminal ──────────────
+    final bool isAccessible =
         _session.sessionState == 'ongoing' ||
-        _session.sessionState == 'overdue';
+        _session.sessionState == 'overdue' ||
+        _session.status == 'completed' ||
+        _session.status == 'skipped';
 
     return Opacity(
-      opacity: isActive ? 1.0 : 0.5,
+      opacity: isAccessible ? 1.0 : 0.5,
       child: InkWell(
-        onTap: isActive
+        onTap: isAccessible
             ? () async {
                 final uri = Uri.parse(resource.url);
                 if (await canLaunchUrl(uri)) {
@@ -525,7 +542,7 @@ class _SessionPopupState extends State<SessionPopup> {
               Icon(
                 Icons.open_in_new_rounded,
                 size: 16,
-                color: isActive ? Colors.grey : Colors.grey.shade400,
+                color: isAccessible ? Colors.grey : Colors.grey.shade400,
               ),
             ],
           ),
@@ -534,16 +551,22 @@ class _SessionPopupState extends State<SessionPopup> {
     );
   }
 
-  Color _getStatusColor(String status) {
-    switch (status) {
-      case 'completed':
-        return Colors.green;
+  Color _getSessionStateColor(String state) {
+    switch (state) {
+      case 'locked':
+        return Colors.grey;
+      case 'unlocked_future':
+        return Colors.orange;
       case 'ongoing':
         return Colors.blue;
-      case 'pending':
-        return Colors.orange;
+      case 'overdue':
+        return Colors.red;
+      case 'completed':
+        return Colors.green;
       case 'skipped':
-        return Colors.grey;
+        return Colors.grey.shade500;
+      case 'upcoming':
+        return Colors.grey.shade400;
       default:
         return Colors.grey;
     }

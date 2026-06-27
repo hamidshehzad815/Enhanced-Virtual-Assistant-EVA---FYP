@@ -57,6 +57,17 @@ class PlanCard extends StatelessWidget {
     final langColor =
         getLanguageColorByKey(plan.languageKey) ?? AppColors.primary;
 
+    // ─── Progress data from session summary ──────────────────────────
+    final total = plan.totalTopics;
+    final completed = plan.summary.completed;
+    final skipped = plan.summary.skipped;
+    final done = completed + skipped;
+    final remaining = total - done;
+
+    // ─── Text: "completed+skipped / total topics" ────────────────────
+    final progressText = '$done / $total topics';
+    final progressPercent = total > 0 ? (done / total * 100) : 0.0;
+
     return Card(
       elevation: 4,
       color: cardBg,
@@ -159,11 +170,11 @@ class PlanCard extends StatelessWidget {
               ),
               const SizedBox(height: 12),
 
-              // ─── Progress section ──────────────────────────────────────────
+              // ─── Progress text ─────────────────────────────────────────────
               Row(
                 children: [
                   Text(
-                    '${plan.completedTopics}/${plan.totalTopics} topics',
+                    progressText,
                     style: AppTextStyles.body.copyWith(
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
@@ -172,7 +183,7 @@ class PlanCard extends StatelessWidget {
                   ),
                   const Spacer(),
                   Text(
-                    '${plan.progressPercent.toStringAsFixed(0)}%',
+                    '${progressPercent.toStringAsFixed(0)}%',
                     style: AppTextStyles.body.copyWith(
                       fontSize: 13,
                       fontWeight: FontWeight.w700,
@@ -182,17 +193,32 @@ class PlanCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 6),
+
+              // ─── Multi‑coloured progress bar ──────────────────────────────
               ClipRRect(
                 borderRadius: BorderRadius.circular(6),
-                child: LinearProgressIndicator(
-                  value: plan.progressPercent / 100,
-                  minHeight: 8,
-                  backgroundColor: isDark
-                      ? Colors.white12
-                      : Colors.grey.shade200,
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    statusColor == Colors.red ? Colors.grey : AppColors.primary,
-                  ),
+                child: Row(
+                  children: [
+                    if (completed > 0)
+                      Expanded(
+                        flex: completed,
+                        child: Container(height: 8, color: AppColors.primary),
+                      ),
+                    // Skipped (green)
+                    if (skipped > 0)
+                      Expanded(
+                        flex: skipped,
+                        child: Container(height: 8, color: Colors.green),
+                      ),
+                    if (remaining > 0)
+                      Expanded(
+                        flex: remaining,
+                        child: Container(
+                          height: 8,
+                          color: isDark ? Colors.white12 : Colors.grey.shade200,
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],

@@ -31,7 +31,6 @@ jest.mock("../models", () => ({
   },
   UserSetting: {
     findOne: jest.fn(),
-    createDefaultSettings: jest.fn(),
   },
   ChatSession: {
     create: jest.fn(),
@@ -44,9 +43,6 @@ jest.mock("../models", () => ({
   ActivityLog: {
     create: jest.fn(),
   },
-  UserSetting: {
-    findOne: jest.fn(),
-  },
   Task: {
     find: jest.fn(),
     countDocuments: jest.fn(),
@@ -56,8 +52,13 @@ jest.mock("../models", () => ({
   Integration: {},
 }));
 
+jest.mock("../services/notification.service", () => ({
+  insert_and_dispatch: jest.fn(),
+}));
+
 const app = require("../app");
 const { User, Task, ActivityLog, UserSetting } = require("../models");
+const { insert_and_dispatch } = require("../services/notification.service");
 
 const USER_ID = "507f1f77bcf86cd799439011";
 const TASK_ID = "507f1f77bcf86cd799439012";
@@ -70,6 +71,15 @@ const makeToken = () =>
 describe("Tasks API", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    insert_and_dispatch.mockResolvedValue({
+      requested: 1,
+      inserted: 1,
+      dispatched_push: 1,
+      dispatched_email: 0,
+      skipped: 0,
+      failed: 0,
+      results: [],
+    });
     User.findById.mockResolvedValue({
       _id: USER_ID,
       is_active: true,
@@ -443,6 +453,56 @@ describe("Tasks API", () => {
         priority: "high",
       }),
     );
+  });
+
+  test("PATCH /api/tasks/:id -> due_datetime change sends reschedule notification", async () => {
+    const existingTask = {
+      _id: TASK_ID,
+      title: "Physics quiz",
+      status: "pending",
+      priority: "medium",
+      owner_id: USER_ID,
+      due_datetime: new Date("2026-06-12T08:00:00.000Z"),
+      duration: 60,
+    };
+    const updatedTask = {
+      ...existingTask,
+      due_datetime: new Date("2026-06-13T10:00:00.000Z"),
+      reminder_sent_at: null,
+      overdue_notified_at: null,
+    };
+
+    Task.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(existingTask),
+    });
+    Task.findOneAndUpdate.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(updatedTask),
+    });
+
+    const response = await request(app)
+      .patch(`/api/tasks/${TASK_ID}`)
+      .set("Authorization", `Bearer ${makeToken()}`)
+      .send({ due_datetime: "2026-06-13T10:00:00.000Z" });
+
+    expect(response.status).toBe(200);
+    expect(Task.findOneAndUpdate).toHaveBeenCalledWith(
+      { _id: TASK_ID, owner_id: USER_ID, is_deleted: false },
+      {
+        $set: expect.objectContaining({
+          due_datetime: expect.any(Date),
+          reminder_sent_at: null,
+          overdue_notified_at: null,
+        }),
+      },
+      { new: true },
+    );
+    expect(insert_and_dispatch).toHaveBeenCalledWith([
+      expect.objectContaining({
+        type: "task_rescheduled",
+        reference_type: "task",
+        reference_id: TASK_ID,
+      }),
+    ]);
   });
 
   const learningTask = {

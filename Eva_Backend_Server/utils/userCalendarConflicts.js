@@ -30,6 +30,7 @@ async function findOverlappingTaskForUser(userId, dueDate, durationMinutes) {
 
   const tasks = await Task.find({
     is_deleted: { $ne: true },
+    status: { $nin: ["complete", "completed"] },
     due_datetime: { $gte: searchStart, $lt: newEnd },
     $or: [
       { owner_id: userId },

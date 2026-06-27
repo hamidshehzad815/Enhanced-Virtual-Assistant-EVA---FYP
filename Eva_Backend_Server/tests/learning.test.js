@@ -51,6 +51,7 @@ jest.mock("../models", () => ({
     findOneAndUpdate: jest.fn(),
   },
   Task: {
+    findOne: jest.fn(),
     updateMany: jest.fn(),
     updateOne: jest.fn(),
   },
@@ -267,14 +268,22 @@ describe("Learning API", () => {
         lean: jest.fn().mockResolvedValue(savedGoal),
       });
 
-    RoadmapTopic.findOne.mockReturnValue({
-      lean: jest.fn().mockResolvedValue({
-        _id: TOPIC_ID,
-        goal_id: GOAL_ID,
-        order: 1,
-        status: "pending",
-      }),
-    });
+    const refreshedTopic = {
+      _id: TOPIC_ID,
+      goal_id: GOAL_ID,
+      order: 1,
+      status: "pending",
+      title: "Variables",
+      scheduled_date: new Date("2026-12-01T18:00:00.000Z"),
+    };
+
+    RoadmapTopic.findOne
+      .mockReturnValueOnce({
+        lean: jest.fn().mockResolvedValue(refreshedTopic),
+      })
+      .mockReturnValueOnce({
+        lean: jest.fn().mockResolvedValue(refreshedTopic),
+      });
 
     RoadmapTopic.find.mockReturnValue({
       select: jest.fn().mockReturnThis(),
@@ -297,6 +306,13 @@ describe("Learning API", () => {
       user_id: USER_ID,
       scheduled_date: "2026-12-01",
     });
+    expect(insert_and_dispatch).toHaveBeenCalledWith([
+      expect.objectContaining({
+        type: "task_rescheduled",
+        reference_type: "topic",
+        reference_id: TOPIC_ID,
+      }),
+    ]);
     expect(res.body.data.roadmap).toBeDefined();
   });
 

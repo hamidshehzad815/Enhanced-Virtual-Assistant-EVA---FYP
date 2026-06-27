@@ -32,8 +32,13 @@ from services.youtube import resolve_youtube_api_keys  # noqa: E402
 # Falls back to YOUTUBE_API_KEYS / YOUTUBE_API_KEY in .env when this list is empty.
 # ---------------------------------------------------------------------------
 YOUTUBE_API_KEYS: list[str] = [
-   "AIzaSyAd8Or7CL6gYrDk5eD6fUFJJwkQdzyc0Cw",
-   "AIzaSyAELI4hxQ4EtS-BeiXDi_ChGtOHRmnBchQ"
+#    "AIzaSyAd8Or7CL6gYrDk5eD6fUFJJwkQdzyc0Cw",
+#    "AIzaSyAELI4hxQ4EtS-BeiXDi_ChGtOHRmnBchQ",
+#    "AIzaSyDm1zRMi8V69rsGiokwe2hGMpdYFCkepmU",
+#    "AIzaSyCaHbKNzLXk1DnVhMTeggZN1sWk8SQvPTw",
+#    "AIzaSyA7Bwi4BF027JZ8cK5hKItEn37Lu8P8BY0",
+#    "AIzaSyD--i62NvQCOtYpjOMmSZKnppsLieIKiBw",
+    "AIzaSyAJ5FrLPyrrqgWd376ClL-pai5IY-F20p0"
 ]
 
 
