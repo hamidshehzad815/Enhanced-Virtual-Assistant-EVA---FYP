@@ -98,6 +98,7 @@ const softDeleteLearningGoalById = async (goalId, ownerUserId) => {
       $set: {
         is_deleted: true,
         deleted_at: now,
+        status: "cancelled",
         updated_at: now,
       },
     },
@@ -161,6 +162,7 @@ const softDeleteLearningGoalById = async (goalId, ownerUserId) => {
       ...goal,
       is_deleted: true,
       deleted_at: now,
+      status: "cancelled",
       updated_at: now,
     },
     notifications,

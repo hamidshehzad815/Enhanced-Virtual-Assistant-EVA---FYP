@@ -324,6 +324,7 @@ async def soft_delete_goal(goal_id: str) -> bool:
     payload = {
         "is_deleted": True,
         "deleted_at": now,
+        "status": "cancelled",
         "updated_at": now,
     }
     gid = _to_object_id(goal_id)
@@ -349,6 +350,7 @@ async def soft_delete_goals_bulk(goal_ids: List[str]) -> int:
     payload = {
         "is_deleted": True,
         "deleted_at": now,
+        "status": "cancelled",
         "updated_at": now,
     }
     object_ids = [_to_object_id(goal_id) for goal_id in goal_ids]

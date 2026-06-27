@@ -48,6 +48,7 @@ from utils.google_calendar_sync import resolve_google_calendar_sync
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
 from utils.learning_schedules import resolve_learning_slots
+from utils.task_notifications import build_task_rescheduled_notification
 from utils.quiet_hours import (
     find_quiet_hour_matches_for_datetime,
     format_quiet_hours_learning_block_message,
@@ -1108,7 +1109,22 @@ async def _execute_session_sub_intent(
             msg = "Done — I moved just your next session."
             if user_name:
                 msg = f"{msg} All set, {user_name}."
-            return await finish(msg, status="success", sub_intent="reschedule")
+            return await finish(
+                msg,
+                status="success",
+                sub_intent="reschedule",
+                notifications=[
+                    build_task_rescheduled_notification(
+                        user_id=str(user_id),
+                        user_name=user_name,
+                        task_title=str(current.get("title") or "Learning session"),
+                        due_datetime=new_dt,
+                        timezone_name=tz,
+                        reference_type="topic",
+                        reference_id=str(current.get("_id")),
+                    )
+                ],
+            )
 
         pending_all = [current] + later
         last_dt = await _rebuild_pending_schedule(
@@ -1125,7 +1141,22 @@ async def _execute_session_sub_intent(
         msg = "Done — I moved your next session and rebased the remaining sessions after it."
         if user_name:
             msg = f"{msg} You're all set, {user_name}."
-        return await finish(msg, status="success", sub_intent="reschedule")
+        return await finish(
+            msg,
+            status="success",
+            sub_intent="reschedule",
+            notifications=[
+                build_task_rescheduled_notification(
+                    user_id=str(user_id),
+                    user_name=user_name,
+                    task_title=str(current.get("title") or "Learning session"),
+                    due_datetime=new_dt,
+                    timezone_name=tz,
+                    reference_type="topic",
+                    reference_id=str(current.get("_id")),
+                )
+            ],
+        )
 
     return await finish("Ok.", status="ok", sub_intent=sub_intent)
 
