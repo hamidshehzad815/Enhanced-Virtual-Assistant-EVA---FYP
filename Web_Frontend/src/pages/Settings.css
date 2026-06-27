@@ -1,0 +1,637 @@
+/* Settings.css */
+
+.settings-workspace {
+  display: flex;
+  gap: 24px;
+  min-height: calc(100vh - 72px);
+  width: 100%;
+}
+
+/* ===========================================
+   1. Left Sidebar Column (Menu Nav)
+   =========================================== */
+.settings-left-pane {
+  width: 250px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  flex-shrink: 0;
+}
+
+.settings-profile-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+.settings-avatar-circle {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-primary) 0%, #764ba2 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+}
+
+.settings-profile-details h4 {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.settings-profile-details p {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+.settings-category-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings-cat-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  transition: all 0.2s ease;
+}
+
+.settings-cat-btn:hover {
+  background-color: var(--bg-card-elevated);
+  color: var(--color-primary);
+}
+
+.settings-cat-btn.active {
+  background-color: var(--color-primary-glow);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* ===========================================
+   2. Center/Right Panel Column (Form viewports)
+   =========================================== */
+.settings-center-pane {
+  flex: 1;
+  background-color: var(--bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 30px;
+  overflow-y: auto;
+}
+
+.settings-details-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.panel-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.panel-subtitle {
+  font-size: 13.5px;
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  margin-top: -12px;
+  margin-bottom: 8px;
+}
+
+.settings-card-saas {
+  background-color: var(--bg-card-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 24px;
+  display: flex;
+}
+
+.settings-card-saas.flex-column {
+  flex-direction: column;
+  padding: 12px 24px;
+}
+
+/* Form inputs styling */
+.profile-edit-saas-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.profile-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.profile-form-actions .btn {
+  padding: 10px 20px;
+  font-size: 13px;
+  border-radius: 8px;
+}
+
+.profile-identity-display {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 20px;
+}
+
+.identity-avatar {
+  width: 60px;
+  height: 60px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-primary) 0%, #764ba2 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 22px;
+  box-shadow: var(--shadow-sm);
+}
+
+.identity-info {
+  flex: 1;
+}
+
+.identity-info h4 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.identity-info .username {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
+.identity-info .email {
+  font-size: 13px;
+  color: var(--color-hint);
+  margin-top: 2px;
+}
+
+.edit-identity-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s;
+}
+
+.edit-identity-btn:hover {
+  background-color: var(--bg-card);
+  border-color: var(--color-text-secondary);
+}
+
+/* Rows styling */
+.settings-saas-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 0;
+}
+
+.settings-saas-row.border-top {
+  border-top: 1px solid var(--color-border);
+}
+
+.row-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 70%;
+}
+
+.row-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.row-title.danger {
+  color: var(--color-danger);
+}
+
+.row-desc {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+.row-select {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background-color: var(--bg-card);
+  color: var(--color-text-primary);
+  font-family: var(--font-body);
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+}
+
+/* Toggle Switch */
+.toggle-switch-saas {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+}
+
+.toggle-switch-saas input {
+  display: none;
+}
+
+.toggle-slider-saas {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--color-border);
+  border-radius: 34px;
+  transition: 0.22s;
+}
+
+.toggle-slider-saas::before {
+  position: absolute;
+  content: "";
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: white;
+  border-radius: 50%;
+  transition: 0.22s;
+}
+
+.toggle-switch-saas input:checked + .toggle-slider-saas {
+  background-color: var(--color-primary);
+}
+
+.toggle-switch-saas input:checked + .toggle-slider-saas::before {
+  transform: translateX(20px);
+}
+
+/* Inline Crud container for Quiet Hours/Learning slots */
+.inline-crud-container {
+  margin-top: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.inline-crud-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.quiet-hour-crud {
+  flex-direction: column;
+  padding: 20px;
+}
+
+.crud-header {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 12px;
+}
+
+.crud-add-form-saas {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.crud-text-field {
+  flex: 1;
+  min-width: 160px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background-color: var(--bg-card);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.time-pickers-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.crud-time-picker {
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background-color: var(--bg-card);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  outline: none;
+}
+
+.crud-add-btn {
+  background-color: var(--color-primary);
+  border: none;
+  color: white;
+  padding: 9px 16px;
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: background-color 0.2s;
+}
+
+.crud-add-btn:hover {
+  background-color: var(--color-primary-dark);
+}
+
+.crud-list-saas {
+  padding-top: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.crud-list-saas.border-top {
+  border-top: 1px solid var(--color-border);
+}
+
+.list-subtitle {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+}
+
+.quiet-hours-grid-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 10px;
+}
+
+.quiet-hour-tile-saas {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 12px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+}
+
+.tile-left {
+  display: flex;
+  flex-direction: column;
+}
+
+.tile-left strong {
+  font-size: 12px;
+  color: var(--color-text-primary);
+}
+
+.tile-left span {
+  font-size: 10.5px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
+.tile-delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-hint);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s;
+}
+
+.tile-delete-btn:hover {
+  color: var(--color-danger);
+}
+
+.no-items-lbl {
+  font-size: 12px;
+  color: var(--color-hint);
+  font-style: italic;
+}
+
+/* Study slots specific CRUD styling */
+.study-schedule-crud {
+  flex-direction: column;
+  padding: 20px;
+}
+
+.study-slots-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 20px;
+}
+
+.study-form-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.study-form-select, .study-form-time {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background-color: var(--bg-card);
+  color: var(--color-text-primary);
+  font-size: 13px;
+  outline: none;
+  font-family: var(--font-body);
+}
+
+.study-add-btn {
+  padding: 9px 20px;
+}
+
+.schedules-grid-list-saas {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.schedule-tile-saas {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 14px;
+  background-color: var(--bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.sched-left {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sched-left strong {
+  font-size: 13.5px;
+  color: var(--color-text-primary);
+}
+
+.sched-slot-span {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+/* Danger Zone */
+.danger-zone-saas {
+  margin-top: 30px;
+}
+
+.danger-zone-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-danger);
+  margin-bottom: 12px;
+}
+
+.danger-card-saas {
+  border-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+.danger-zone-action-btn {
+  background-color: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  padding: 8px 16px;
+  font-family: var(--font-body);
+  font-size: 12.5px;
+  font-weight: 700;
+  border-radius: 8px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  transition: all 0.2s;
+}
+
+.danger-zone-action-btn:hover {
+  background-color: var(--bg-card);
+  border-color: var(--color-text-secondary);
+}
+
+.danger-zone-action-btn.delete {
+  color: var(--color-danger);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.danger-zone-action-btn.delete:hover {
+  background-color: rgba(239, 68, 68, 0.05);
+  border-color: var(--color-danger);
+}
+
+.version-info-badge {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  background-color: var(--bg-card-elevated);
+  border: 1px solid var(--color-border);
+  padding: 4px 10px;
+  border-radius: 6px;
+}
+
+/* ===========================================
+   Responsive Design
+   =========================================== */
+
+@media (max-width: 992px) {
+  .settings-workspace {
+    flex-direction: column;
+  }
+  
+  .settings-left-pane {
+    width: 100%;
+  }
+  
+  .settings-category-menu {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  
+  .settings-cat-btn {
+    width: auto;
+    white-space: nowrap;
+  }
+  
+  .crud-add-form-saas {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .crud-text-field, .time-pickers-row, .crud-add-btn {
+    width: 100%;
+  }
+  
+  .study-form-row {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  
+  .study-form-select, .study-form-time, .study-add-btn {
+    width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .settings-center-pane {
+    padding: 16px;
+  }
+}
