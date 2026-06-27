@@ -722,7 +722,7 @@ Notes:
 
 ## 4.9 Analytics APIs
 
-The analytics page uses a **single endpoint**. Full field reference: [`docs/ANALYTICS_DASHBOARD_API.md`](docs/ANALYTICS_DASHBOARD_API.md).
+The analytics page uses a **single endpoint**. Full frontend reference: [`Api's documentation/analytics-api.md`](../Api's%20documentation/analytics-api.md).
 
 ### `GET /api/analytics/dashboard`
 - Auth: Yes
