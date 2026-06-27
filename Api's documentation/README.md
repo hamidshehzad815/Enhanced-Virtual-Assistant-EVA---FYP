@@ -1,6 +1,6 @@
 # EVA Backend API Documentation (Frontend)
 
-Focused reference for **Auth**, **Dashboard**, **Settings**, **Profile**, and **Roadmaps** APIs on the Node backend (`Eva_Backend_Server`).
+Focused reference for **Auth**, **Dashboard**, **Analytics**, **Settings**, **Profile**, **Tasks**, and **Roadmaps** APIs on the Node backend (`Eva_Backend_Server`).
 
 ## Base URL
 
@@ -79,6 +79,7 @@ Conflict responses (`409`) may include extra context:
 |------|----------------|
 | [auth-api.md](./auth-api.md) | `POST /api/auth/register`, `login`, `refresh`, `logout`, `forgot-password`, `reset-password`, `resend-verification`; `GET /api/auth/me`, `verify-email` |
 | [dashboard-api.md](./dashboard-api.md) | `GET /api/dashboard` |
+| [analytics-api.md](./analytics-api.md) | `GET /api/analytics/dashboard` |
 | [settings-api.md](./settings-api.md) | `GET /api/settings`, `PATCH /api/settings` |
 | [settings-learning-schedules-api.md](./settings-learning-schedules-api.md) | Learning schedule CRUD under `/api/settings/learning-schedules` |
 | [profile-api.md](./profile-api.md) | `GET` / `PATCH /api/profile`, `POST` / `DELETE /api/profile/avatar`, `DELETE /api/profile/account` |
@@ -94,6 +95,7 @@ Conflict responses (`409`) may include extra context:
 | Sign up / Login / Forgot password | — | [auth-api.md](./auth-api.md): `register`, `login`, `refresh`, `forgot-password`, `reset-password`, `resend-verification` |
 | App bootstrap (after login) | `GET /api/auth/me` | `POST /api/auth/logout` |
 | Home / Dashboard | `GET /api/dashboard` | — |
+| Analytics page | `GET /api/analytics/dashboard?days=7\|30\|90` | — |
 | Profile (name, username, photo, timezone, delete account) | `GET /api/profile` | `PATCH /api/profile`, `POST` / `DELETE /api/profile/avatar`, `DELETE /api/profile/account` |
 | Roadmap (plans list) | `GET /api/roadmaps/plans`, `GET /api/roadmaps/:goalId`, `GET /api/learning/:goalId/sessions/:sessionId` | `PATCH /api/learning/:goalId/sessions/:sessionId`, `PATCH /api/learning/:goalId/status` — see [roadmaps-frontend-actions-guide.md](./roadmaps-frontend-actions-guide.md) |
 | Settings (toggles, quiet hours, reminders) | `GET /api/settings` | `PATCH /api/settings` |
