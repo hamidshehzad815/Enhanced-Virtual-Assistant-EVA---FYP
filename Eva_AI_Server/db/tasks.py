@@ -61,6 +61,12 @@ def task_windows_overlap(
     return existing_start < new_end and existing_end > new_start
 
 
+# Only pending/ongoing tasks block new scheduling; completed sessions free the slot.
+_OVERLAP_BLOCKING_STATUS_FILTER: Dict[str, Any] = {
+    "status": {"$nin": ["complete", "completed"]},
+}
+
+
 async def insert_task(task_data: Dict[str, Any]) -> str:
     """Insert a task and return inserted id as string."""
     db = get_db()
@@ -82,10 +88,16 @@ async def update_task(task_id: str, update_data: Dict[str, Any]) -> bool:
 
     task_object_id = _to_object_id(task_id)
     query = {"_id": task_object_id}
-    result = await db.tasks.update_one(query, {"$set": payload})
+    update_doc: Dict[str, Any] = {"$set": payload}
+    if "due_datetime" in payload:
+        update_doc["$unset"] = {
+            "reminder_sent_at": "",
+            "overdue_notified_at": "",
+        }
+    result = await db.tasks.update_one(query, update_doc)
 
     if result.matched_count == 0 and task_object_id != task_id:
-        result = await db.tasks.update_one({"_id": task_id}, {"$set": payload})
+        result = await db.tasks.update_one({"_id": task_id}, update_doc)
 
     return result.matched_count > 0
 
@@ -147,6 +159,7 @@ async def has_hour_conflict(owner_id: str, due_date: Union[str, date, datetime],
     base_query = {
         "due_datetime": {"$gte": hour_start, "$lte": hour_end},
         "is_deleted": {"$ne": True},
+        **_OVERLAP_BLOCKING_STATUS_FILTER,
     }
 
     query = dict(base_query)
@@ -179,6 +192,7 @@ async def find_overlapping_task(
     base_query = {
         "due_datetime": {"$gte": search_start, "$lt": new_end},
         "is_deleted": {"$ne": True},
+        **_OVERLAP_BLOCKING_STATUS_FILTER,
     }
 
     async def _run(owner_value: Any) -> Optional[Dict[str, Any]]:
@@ -240,6 +254,7 @@ async def find_overlapping_task_for_user(
     base_query = {
         "due_datetime": {"$gte": search_start, "$lt": new_end},
         "is_deleted": {"$ne": True},
+        **_OVERLAP_BLOCKING_STATUS_FILTER,
     }
 
     for user_value in user_variants:
@@ -531,6 +546,7 @@ async def check_update_overlap(
     base_query: Dict[str, Any] = {
         "due_datetime": {"$gte": search_start, "$lt": new_end},
         "is_deleted": {"$ne": True},
+        **_OVERLAP_BLOCKING_STATUS_FILTER,
     }
 
     for owner_value in owner_variants:

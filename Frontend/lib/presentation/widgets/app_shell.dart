@@ -17,6 +17,7 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell>
     with SingleTickerProviderStateMixin {
+  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   late final AnimationController _navController;
   late final Animation<double> _navAnimation;
 
@@ -172,6 +173,7 @@ class _AppShellState extends State<AppShell>
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
+      key: _scaffoldKey,
       backgroundColor: Colors.transparent,
       body: widget.child,
       bottomNavigationBar: SizeTransition(

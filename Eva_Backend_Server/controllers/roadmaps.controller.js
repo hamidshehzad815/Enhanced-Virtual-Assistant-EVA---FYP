@@ -6,6 +6,7 @@ const { BadRequestError } = require("../middleware/errorHandler");
 const {
   listUserRoadmapPlans,
   getUserRoadmapForGoalId,
+  getPlanScheduleDatesForGoal,
   GOAL_STATUSES,
 } = require("../services/userRoadmaps.service");
 
@@ -65,7 +66,36 @@ const getUserRoadmapByGoalId = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/roadmaps/:goalId/schedule-dates
+ * Calendar dates (learning weekdays only) eligible for session reschedule.
+ */
+const getPlanScheduleDates = async (req, res, next) => {
+  try {
+    const horizonRaw = req.query.horizon_weeks;
+    const horizonWeeks =
+      horizonRaw === undefined || horizonRaw === null || horizonRaw === ""
+        ? undefined
+        : Number.parseInt(String(horizonRaw), 10);
+
+    const data = await getPlanScheduleDatesForGoal(
+      req.userId,
+      req.params.goalId,
+      req.user?.timezone || "UTC",
+      { horizonWeeks },
+    );
+
+    res.json({
+      status: "success",
+      data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getUserRoadmapPlans,
   getUserRoadmapByGoalId,
+  getPlanScheduleDates,
 };
