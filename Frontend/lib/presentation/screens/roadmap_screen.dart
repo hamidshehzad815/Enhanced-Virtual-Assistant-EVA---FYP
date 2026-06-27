@@ -5,6 +5,7 @@ import '../widgets/plan_card.dart';
 import 'package:go_router/go_router.dart';
 import 'roadmap_data.dart';
 import '../../core/theme/app_text_style.dart';
+import 'package:lottie/lottie.dart';
 
 class RoadmapScreen extends StatefulWidget {
   const RoadmapScreen({super.key});
@@ -58,10 +59,13 @@ class _RoadmapScreenState extends State<RoadmapScreen> {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Icon(
-                    Icons.school_outlined,
-                    size: 64,
-                    color: isDark ? Colors.white54 : Colors.grey.shade400,
+                  SizedBox(
+                    width: 300,
+                    height: 300,
+                    child: Lottie.asset(
+                      'assets/lottie/no_plan.json',
+                      fit: BoxFit.contain,
+                    ),
                   ),
                   const SizedBox(height: 16),
                   Text(
