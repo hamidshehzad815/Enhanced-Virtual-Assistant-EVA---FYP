@@ -11,6 +11,7 @@ from bson import ObjectId
 from db.activity_logs import increment_reschedule_count, insert_log
 from db.tasks import (
     check_update_overlap,
+    find_overlapping_task_for_user,
     find_tasks_for_update,
     update_task,
 )
@@ -61,6 +62,8 @@ class FakeTasksCollection:
                     return False
                 if op == "$in" and actual not in value:
                     return False
+                if op == "$nin" and actual in value:
+                    return False
                 if op == "$gte" and actual < value:
                     return False
                 if op == "$lte" and actual > value:
@@ -87,6 +90,8 @@ class FakeTasksCollection:
                 before = dict(doc)
                 for key, value in update.get("$set", {}).items():
                     doc[key] = value
+                for key in update.get("$unset", {}):
+                    doc.pop(key, None)
                 modified = 1 if doc != before else 0
                 return FakeResult(matched_count=1, modified_count=modified)
         return FakeResult()
@@ -201,6 +206,24 @@ class TestUpdatePhase24DbLayer(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(updated["priority"], "low")
         self.assertIsNotNone(updated.get("updated_at"))
 
+    async def test_update_task_due_datetime_clears_reminder_flags(self):
+        docs = [dict(self.docs[0])]
+        docs[0]["reminder_sent_at"] = datetime(2026, 4, 1, 16, 0, 0)
+        docs[0]["overdue_notified_at"] = datetime(2026, 4, 1, 18, 0, 0)
+        fake_tasks = FakeTasksCollection(docs)
+        fake_db = FakeDB(tasks_collection=fake_tasks)
+        with patch("db.tasks.get_db", return_value=fake_db):
+            ok = await update_task(
+                str(self.task1_id),
+                {"due_datetime": datetime(2026, 4, 2, 17, 0, 0)},
+            )
+
+        self.assertTrue(ok)
+        updated = next(doc for doc in fake_tasks.docs if doc["_id"] == self.task1_id)
+        self.assertEqual(updated["due_datetime"], datetime(2026, 4, 2, 17, 0, 0))
+        self.assertNotIn("reminder_sent_at", updated)
+        self.assertNotIn("overdue_notified_at", updated)
+
     async def test_update_task_status_complete_sets_completed_at(self):
         fake_tasks = FakeTasksCollection(self.docs)
         fake_db = FakeDB(tasks_collection=fake_tasks)
@@ -284,6 +307,33 @@ class TestUpdatePhase24DbLayer(unittest.IsolatedAsyncioTestCase):
             )
 
         self.assertFalse(has_conflict)
+
+    async def test_check_update_overlap_ignores_completed_tasks(self):
+        docs = [dict(doc) for doc in self.docs]
+        docs[1]["status"] = "complete"
+        fake_db = FakeDB(tasks_collection=FakeTasksCollection(docs))
+        with patch("db.tasks.get_db", return_value=fake_db):
+            has_conflict = await check_update_overlap(
+                str(self.owner_id),
+                str(self.task1_id),
+                datetime(2026, 4, 1, 19, 45, 0),
+                120,
+            )
+
+        self.assertFalse(has_conflict)
+
+    async def test_find_overlapping_task_for_user_ignores_completed_tasks(self):
+        docs = [dict(doc) for doc in self.docs]
+        docs[1]["status"] = "complete"
+        fake_db = FakeDB(tasks_collection=FakeTasksCollection(docs))
+        with patch("db.tasks.get_db", return_value=fake_db):
+            overlap = await find_overlapping_task_for_user(
+                str(self.owner_id),
+                datetime(2026, 4, 1, 19, 45, 0),
+                120,
+            )
+
+        self.assertIsNone(overlap)
 
     async def test_insert_log_accepts_task_updated_action(self):
         fake_db = FakeDB(activity_logs_collection=FakeActivityLogsCollection())

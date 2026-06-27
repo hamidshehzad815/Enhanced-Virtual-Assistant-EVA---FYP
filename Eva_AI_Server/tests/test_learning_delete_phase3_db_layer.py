@@ -247,6 +247,7 @@ class LearningDeletePhase3DbLayerTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(ok)
         doc = fake.learning_goals.docs[0]
         self.assertTrue(doc["is_deleted"])
+        self.assertEqual(doc.get("status"), "cancelled")
         self.assertIsNotNone(doc.get("deleted_at"))
         self.assertIsNotNone(doc.get("updated_at"))
 
@@ -269,6 +270,7 @@ class LearningDeletePhase3DbLayerTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(count, 2)
         self.assertTrue(all(d["is_deleted"] for d in fake.learning_goals.docs))
+        self.assertTrue(all(d.get("status") == "cancelled" for d in fake.learning_goals.docs))
 
     async def test_soft_delete_pending_topics_keeps_completed(self):
         fake = FakeDB()

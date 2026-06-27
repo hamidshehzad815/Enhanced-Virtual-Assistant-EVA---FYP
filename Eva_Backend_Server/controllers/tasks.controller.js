@@ -21,6 +21,8 @@ const { withApiTimezone } = require("../utils/apiDateTime");
 const {
   notifyOwnerOfCollaborationResponse,
 } = require("../services/collaborationNotifications");
+const { insert_and_dispatch } = require("../services/notification.service");
+const { buildTaskRescheduledNotification } = require("../utils/taskRescheduleNotification");
 const { resolveGoogleCalendarSync } = require("../utils/googleCalendarSync");
 const { deleteEvent } = require("../services/googleCalendar.service");
 
@@ -587,6 +589,8 @@ const updateTask = async (req, res, next) => {
         throw new BadRequestError("due_datetime must be a valid datetime");
       }
       update.due_datetime = dueDate;
+      update.reminder_sent_at = null;
+      update.overdue_notified_at = null;
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "duration")) {
@@ -629,6 +633,32 @@ const updateTask = async (req, res, next) => {
 
     if (!task) {
       throw new NotFoundError("Task not found");
+    }
+
+    const dueDatetimeChanged =
+      Object.prototype.hasOwnProperty.call(body, "due_datetime")
+      && toDateOrNull(existingTask.due_datetime)?.getTime()
+        !== toDateOrNull(task.due_datetime)?.getTime();
+
+    if (dueDatetimeChanged) {
+      try {
+        await insert_and_dispatch([
+          buildTaskRescheduledNotification({
+            userId: req.userId,
+            user: req.user,
+            taskTitle: task.title,
+            dueDatetime: task.due_datetime,
+            timezone: resolveUserTimezone(req),
+            referenceType: "task",
+            referenceId: String(task._id),
+            taskId: String(task._id),
+          }),
+        ]);
+      } catch (error) {
+        console.warn(
+          `[TasksController] Failed to dispatch reschedule notification for task ${task._id}: ${error.message}`,
+        );
+      }
     }
 
     if (
