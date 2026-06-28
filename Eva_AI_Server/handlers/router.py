@@ -8,6 +8,10 @@ from handlers.behavioral import handle_behavioral
 from handlers.learning.create import handle_learning_create
 from handlers.learning.delete import handle_learning_delete
 from handlers.learning.update import handle_learning_update
+from handlers.unsupported_chat_intents import (
+    build_unsupported_intent_response,
+    is_legacy_unsupported_intent,
+)
 from handlers.scheduling.add import handle_scheduling_add
 from handlers.scheduling.delete import handle_scheduling_delete
 from handlers.scheduling.show import handle_scheduling_show
@@ -35,7 +39,6 @@ _INTENT_ALIASES = {
     "add_roadmap": "learning_create",
     "update_roadmap": "learning_update",
     "delete_roadmap": "learning_delete",
-    "show_roadmap": "learning_show",
     "behavioral": "behavioral",
 }
 
@@ -58,6 +61,9 @@ async def route_intent(
     canonical_intent = normalize_intent(intent)
     entities = entities or {}
     context = context or {}
+
+    if is_legacy_unsupported_intent(canonical_intent):
+        return build_unsupported_intent_response(canonical_intent, context)
 
     if canonical_intent == "scheduling_add":
         return _localize_handler_response(
@@ -106,32 +112,6 @@ async def route_intent(
             await handle_learning_update(entities=entities, context=context),
             context,
         )
-
-    disabled_intents = {
-        "learning_show",
-        "update_roadmap",
-        "delete_roadmap",
-        "show_roadmap",
-    }
-    if canonical_intent in disabled_intents:
-        user = context.get("user") or {}
-        user_name = user.get("name")
-        history = context.get("history") or []
-        response_text = gemini_service.generate_reply(
-            {
-                "action": "out_of_scope",
-                "user_message": context.get("message", ""),
-            },
-            user_name,
-            history,
-        )
-        return {
-            "routed": False,
-            "intent": canonical_intent,
-            "status": "disabled",
-            "response_text": response_text,
-            "notifications": [],
-        }
 
     response_map = {
         "scheduling_add": "scheduling_add",

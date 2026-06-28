@@ -269,7 +269,7 @@ COLLECTION OWNERSHIP
   intent                  Enum                "scheduling_add" / "scheduling_delete" /
                                               "scheduling_update" / "scheduling_show" /
                                               "learning_create" / "learning_update" /
-                                              "learning_delete" / "learning_show" /
+                                              "learning_delete" /
                                               "behavioral" / "general" / "out_of_scope" /
                                               "confirmation" / "multiple_command" / null
   entities                Object              Extracted entities as JSON, null for EVA replies
@@ -412,7 +412,7 @@ ENUM REFERENCE
   Conversation intent  : scheduling_add / scheduling_delete /
                          scheduling_update / scheduling_show /
                          learning_create / learning_update /
-                         learning_delete / learning_show /
+                         learning_delete /
                          behavioral / general / out_of_scope /
                          confirmation / multiple_command
 
