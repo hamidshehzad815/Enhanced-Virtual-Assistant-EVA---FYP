@@ -2,7 +2,7 @@
 
 Phase 2, Step 1: template definitions for **learning_create**, **learning_update**, **learning_delete** only.
 
-**Not included:** `learning_show` — disabled in EVA router (`handlers/router.py`).
+**Not supported:** chat commands to show learning progress — use the app **Roadmap** tab (`GET /api/roadmaps/*`).
 
 ## Slot notation
 

@@ -105,7 +105,7 @@ After NER extraction, `entity_scoper.py` keeps only entities valid for the detec
 | `learning_update` | `topic`, `subtopic`, `date` |
 | `learning_delete` | `topic`, `subtopic` |
 
-Note: **`learning_show` is disabled** in `Eva_AI_Server/handlers/router.py` — not included in NER training data.
+**Not supported in chat:** showing learning plan progress (use Roadmap app screen, not NER/chat).
 
 ---
 

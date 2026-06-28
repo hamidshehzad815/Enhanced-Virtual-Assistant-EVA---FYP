@@ -290,7 +290,6 @@ _LEARNING_NER_INTENTS = frozenset(
         "learning_create",
         "learning_update",
         "learning_delete",
-        "learning_show",
     },
 )
 

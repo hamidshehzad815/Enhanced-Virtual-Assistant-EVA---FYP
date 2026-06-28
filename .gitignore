@@ -24,3 +24,4 @@ start-servers.ps1
 start-servers.bat
 start-flutter.ps1
 start-flutter.bat
+UpdateDataset&Templates

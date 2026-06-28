@@ -325,10 +325,12 @@ MODEL 1 — Input Type Classifier
   greetings classified as command, models handle naturally
 
 MODEL 2 — Intent Classifier
-  Fine-tuned DistilBERT — 9 classes:
+  Fine-tuned DistilBERT — 8 classes:
   scheduling_add | scheduling_delete | scheduling_update
   scheduling_show | learning_create | learning_update
-  learning_delete | learning_show | behavioral
+  learning_delete | behavioral
+  NOT SUPPORTED IN CHAT: learning progress / show roadmap
+  (use Roadmap app screen + GET /api/roadmaps/* instead)
 
 NER — Named Entity Recognition
   Fine-tuned DistilBERT token classification — BIO tagging
@@ -497,7 +499,8 @@ MODEL 2 — Intent Classifier
   Classes      : scheduling_add | scheduling_delete |
                  scheduling_update | scheduling_show |
                  learning_create | learning_update |
-                 learning_delete | learning_show | behavioral
+                 learning_delete | behavioral
+  Note         : Legacy weights may emit learning_show — rejected at runtime
   Dataset      : ~1800 examples
   Max tokens   : 64
 

@@ -20,6 +20,10 @@ from handlers.general_handler import (
     handle_out_of_scope,
 )
 from handlers.router import normalize_intent, route_intent
+from handlers.unsupported_chat_intents import (
+    build_unsupported_intent_response,
+    is_legacy_unsupported_intent,
+)
 from db.activity_logs import (
     get_avg_time_taken,
     get_completed_logs_for_scoring,
@@ -1207,13 +1211,15 @@ async def process_message(payload: ProcessRequest):
                         "settings": settings_data,
                     }
 
-                if pending_intent == "learning_show":
+                if is_legacy_unsupported_intent(pending_intent):
                     await redis_client.delete_context(payload.user_id)
-                    response_text = _safe_reply(
-                        "out_of_scope",
-                        user_name,
-                        history,
-                        {"user_message": message},
+                    routed_result = build_unsupported_intent_response(
+                        pending_intent,
+                        {
+                            "user": fetched.user,
+                            "message": message,
+                            "history": history,
+                        },
                     )
                     return {
                         "status": "ok",
@@ -1221,7 +1227,9 @@ async def process_message(payload: ProcessRequest):
                         "preprocessed": processed,
                         "context_handled": True,
                         "expected_response": "free_text",
-                        "response_text": response_text,
+                        "route": routed_result,
+                        "handler_status": routed_result.get("status"),
+                        "response_text": routed_result.get("response_text"),
                         "user_name": user_name,
                         "settings": settings_data,
                     }

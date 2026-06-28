@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "note": "Use generators/template_library.py — learning_show is not supported.",
+  "note": "Use generators/template_library.py. Eight supported intents; no chat learning-show intent.",
   "labels": {},
   "slots": {}
 }

@@ -2,7 +2,8 @@
 EVA Learning NER — Sentence Templates (Phase 2, Step 1)
 
 Source-of-truth template definitions for learning_create, learning_update,
-learning_delete intents (learning_show is NOT supported in EVA — disabled in router).
+learning_create, learning_update, and learning_delete intents only.
+Showing learning progress in chat is NOT supported — use the app Roadmap screen.
 
 Regenerate JSON exports:
     python learning_templates.py
