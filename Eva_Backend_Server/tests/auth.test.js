@@ -34,6 +34,14 @@ jest.mock("../services/email.service", () => ({
   sendPasswordResetEmail: jest.fn(),
 }));
 
+jest.mock("../utils/googleIdToken", () => ({
+  verifyGoogleIdToken: jest.fn(),
+}));
+
+jest.mock("../utils/googleUsername", () => ({
+  generateUniqueUsername: jest.fn(),
+}));
+
 jest.mock("../models", () => ({
   User: {
     findOne: jest.fn(),
@@ -67,6 +75,8 @@ const {
   sendVerificationEmail,
   sendPasswordResetEmail,
 } = require("../services/email.service");
+const { verifyGoogleIdToken } = require("../utils/googleIdToken");
+const { generateUniqueUsername } = require("../utils/googleUsername");
 
 const USER_ID = "507f1f77bcf86cd799439011";
 
@@ -267,5 +277,78 @@ describe("Auth API", () => {
 
     expect(response.status).toBe(400);
     expect(response.body.status).toBe("fail");
+  });
+
+  test("POST /api/auth/google -> 201 for new Google user", async () => {
+    verifyGoogleIdToken.mockResolvedValue({
+      googleId: "google-subject-1",
+      email: "google@example.com",
+      emailVerified: true,
+      name: "Google User",
+      picture: "https://example.com/photo.jpg",
+    });
+    generateUniqueUsername.mockResolvedValue("google_user");
+
+    const googleUser = {
+      _id: USER_ID,
+      name: "Google User",
+      username: "google_user",
+      email: "google@example.com",
+      is_verified: true,
+      profile_picture: "https://example.com/photo.jpg",
+      setRefreshToken: jest.fn().mockResolvedValue(),
+      updateLastLogin: jest.fn().mockResolvedValue(),
+    };
+
+    User.findOne.mockReturnValue({
+      select: jest.fn().mockResolvedValue(null),
+    });
+    User.create.mockResolvedValue(googleUser);
+    UserSetting.createDefaultSettings.mockResolvedValue({ _id: "507f1f77bcf86cd799439099" });
+
+    const response = await request(app).post("/api/auth/google").send({
+      id_token: "valid-google-token",
+      timezone: "Asia/Karachi",
+    });
+
+    expect(response.status).toBe(201);
+    expect(response.body.status).toBe("success");
+    expect(response.body.data.is_new_user).toBe(true);
+    expect(response.body.data.tokens.access_token).toBeTruthy();
+    expect(User.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "google@example.com",
+        auth_provider: "google",
+        is_verified: true,
+      }),
+    );
+  });
+
+  test("POST /api/auth/google -> 409 when email belongs to password account", async () => {
+    verifyGoogleIdToken.mockResolvedValue({
+      googleId: "google-subject-2",
+      email: "local@example.com",
+      emailVerified: true,
+      name: "Local User",
+      picture: null,
+    });
+
+    User.findOne.mockReturnValue({
+      select: jest.fn().mockResolvedValue({
+        _id: USER_ID,
+        email: "local@example.com",
+        auth_provider: "local",
+        password_hash: "hashed-password",
+        is_active: true,
+      }),
+    });
+
+    const response = await request(app).post("/api/auth/google").send({
+      id_token: "valid-google-token",
+    });
+
+    expect(response.status).toBe(409);
+    expect(response.body.status).toBe("fail");
+    expect(response.body.message).toMatch(/password/i);
   });
 });

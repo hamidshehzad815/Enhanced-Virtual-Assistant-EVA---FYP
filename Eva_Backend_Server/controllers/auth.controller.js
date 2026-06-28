@@ -19,6 +19,8 @@ const {
 } = require("../services/email.service");
 const { renderEmailVerificationPage } = require("../utils/verificationPage");
 const { allowFriendRequestsToBoolean } = require("../utils/friendSettings");
+const { verifyGoogleIdToken } = require("../utils/googleIdToken");
+const { generateUniqueUsername } = require("../utils/googleUsername");
 
 const serializeAuthUser = (user) => ({
   _id: user._id,
@@ -71,6 +73,31 @@ const generatePasswordResetToken = () => {
   const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
   const expires = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
   return { token, hashedToken, expires };
+};
+
+const issueAuthTokensResponse = async (
+  user,
+  res,
+  { message, statusCode = 200, isNewUser = false } = {},
+) => {
+  const accessToken = generateAccessToken(user._id);
+  const refreshToken = generateRefreshToken(user._id);
+
+  await user.setRefreshToken(refreshToken);
+  await user.updateLastLogin();
+
+  res.status(statusCode).json({
+    status: "success",
+    message,
+    data: {
+      user: serializeAuthUser(user),
+      tokens: {
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      },
+      is_new_user: isNewUser,
+    },
+  });
 };
 
 /**
@@ -193,27 +220,95 @@ const login = async (req, res, next) => {
     }
 
     // Generate tokens
-    const accessToken = generateAccessToken(user._id);
-    const refreshToken = generateRefreshToken(user._id);
-
-    // Store refresh token hash
-    await user.setRefreshToken(refreshToken);
-
-    // Update last login
-    await user.updateLastLogin();
+    await issueAuthTokensResponse(user, res, {
+      message: "Login successful",
+    });
 
     logger.info("User logged in", { userId: user._id, email: user.email });
+  } catch (error) {
+    next(error);
+  }
+};
 
-    res.json({
-      status: "success",
-      message: "Login successful",
-      data: {
-        user: serializeAuthUser(user),
-        tokens: {
-          access_token: accessToken,
-          refresh_token: refreshToken,
-        },
-      },
+/**
+ * POST /api/auth/google
+ * Sign in or register using a Google ID token from the client.
+ */
+const googleAuth = async (req, res, next) => {
+  try {
+    const { id_token: idToken, timezone } = req.body;
+
+    if (!idToken || typeof idToken !== "string") {
+      throw new BadRequestError("id_token is required");
+    }
+
+    let profile;
+    try {
+      profile = await verifyGoogleIdToken(idToken);
+    } catch (error) {
+      logger.warn("Google token verification failed", { message: error.message });
+      throw new UnauthorizedError("Invalid Google sign-in token");
+    }
+
+    if (!profile.email) {
+      throw new UnauthorizedError("Google account email is unavailable");
+    }
+
+    if (!profile.emailVerified) {
+      throw new UnauthorizedError("Google email is not verified");
+    }
+
+    let user = await User.findOne({ email: profile.email }).select("+password_hash");
+    let isNewUser = false;
+
+    if (user) {
+      if (!user.is_active) {
+        throw new UnauthorizedError("Account is deactivated");
+      }
+
+      if (user.auth_provider === "local" && user.password_hash) {
+        throw new ConflictError(
+          "This email is registered with a password. Please sign in with email and password.",
+        );
+      }
+
+      if (user.auth_provider !== "google") {
+        user.auth_provider = "google";
+      }
+
+      if (profile.picture && !user.profile_picture) {
+        user.profile_picture = profile.picture;
+      }
+
+      user.is_verified = true;
+      await user.save();
+    } else {
+      isNewUser = true;
+      const username = await generateUniqueUsername(profile.email, profile.name);
+      const userTimezone = normalizeTimezone(timezone || "Asia/Karachi");
+
+      user = await User.create({
+        name: profile.name || username,
+        username,
+        email: profile.email,
+        auth_provider: "google",
+        is_verified: true,
+        profile_picture: profile.picture || null,
+        timezone: userTimezone,
+      });
+
+      await UserSetting.createDefaultSettings(user._id);
+    }
+
+    logger.info(isNewUser ? "User registered via Google" : "User logged in via Google", {
+      userId: user._id,
+      email: user.email,
+    });
+
+    await issueAuthTokensResponse(user, res, {
+      message: isNewUser ? "Google sign-up successful" : "Google login successful",
+      statusCode: isNewUser ? 201 : 200,
+      isNewUser,
     });
   } catch (error) {
     next(error);
@@ -567,6 +662,7 @@ const resetPassword = async (req, res, next) => {
 module.exports = {
   register,
   login,
+  googleAuth,
   refresh,
   logout,
   getMe,
