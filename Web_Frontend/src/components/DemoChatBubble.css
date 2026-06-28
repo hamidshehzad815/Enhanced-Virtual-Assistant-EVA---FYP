@@ -1,0 +1,64 @@
+/* DemoChatBubble.css */
+
+.chat-bubble-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  margin-bottom: 10px;
+  width: 100%;
+}
+
+.chat-bubble-row.eva {
+  justify-content: flex-start;
+}
+
+.chat-bubble-row.user {
+  justify-content: flex-end;
+}
+
+.avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: bold;
+  color: #ffffff;
+  flex-shrink: 0;
+}
+
+.avatar-eva {
+  background-color: var(--color-primary);
+  font-style: italic;
+}
+
+.avatar-user {
+  background-color: var(--color-primary);
+}
+
+.bubble-content {
+  max-width: 75%;
+  padding: 10px 14px;
+  font-size: 13.5px;
+  line-height: 1.4;
+  word-wrap: break-word;
+}
+
+.eva .bubble-content {
+  background-color: #E2DDD5; /* Light mode bubble grey-beige */
+  color: #1F2937;
+  border-radius: 18px 18px 18px 4px;
+}
+
+html.dark .eva .bubble-content {
+  background-color: var(--bg-card-elevated);
+  color: #ffffff;
+}
+
+.user .bubble-content {
+  background-color: var(--color-primary);
+  color: #ffffff;
+  border-radius: 18px 18px 4px 18px;
+}

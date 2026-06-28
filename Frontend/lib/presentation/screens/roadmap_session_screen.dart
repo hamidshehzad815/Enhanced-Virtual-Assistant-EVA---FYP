@@ -325,8 +325,9 @@ class _RoadmapSessionScreenContentState
           session: session,
           isDark: isDark,
           fetchLatestSession: (sessionId) async {
-    return await vm.getSessionDetail(sessionId);  
-  },
+            return await vm.getSessionDetail(sessionId);
+          },
+          fetchScheduleDates: () => vm.getScheduleDates(),
           onUpdate: (updatedSession) async {
             await vm.loadRoadmap();
           },
