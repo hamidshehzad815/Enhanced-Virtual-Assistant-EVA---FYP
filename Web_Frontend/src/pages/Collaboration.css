@@ -1,0 +1,622 @@
+/* Collaboration.css */
+
+.collaboration-workspace {
+  display: flex;
+  gap: 24px;
+  min-height: calc(100vh - 72px);
+  width: 100%;
+}
+
+/* ===========================================
+   1. Left Sidebar Column (Profile & Menu)
+   =========================================== */
+.collab-left-pane {
+  width: 260px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  flex-shrink: 0;
+}
+
+.collab-profile-card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 20px;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.profile-details-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.profile-avatar-big {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--color-primary) 0%, #764ba2 100%);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 16px;
+  box-shadow: var(--shadow-sm);
+}
+
+.profile-names h4 {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.profile-names p {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+}
+
+/* Quote Box */
+.quote-saas-box {
+  background-color: var(--bg-card-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  padding: 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.quote-saas-box:hover {
+  border-color: var(--color-primary);
+}
+
+.quote-header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.quote-lbl {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.quote-edit-pencil {
+  color: var(--color-hint);
+}
+
+.quote-text-val {
+  font-size: 12px;
+  color: var(--color-text-primary);
+  line-height: 1.4;
+  font-style: italic;
+}
+
+/* Quote Editor Form */
+.quote-editor-saas {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quote-textarea-saas {
+  width: 100%;
+  height: 60px;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  background-color: var(--bg-card);
+  color: var(--color-text-primary);
+  font-size: 11.5px;
+  outline: none;
+  resize: none;
+}
+
+.quote-textarea-saas:focus {
+  border-color: var(--color-primary);
+}
+
+.quote-editor-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.q-btn-saas {
+  padding: 4px 8px;
+  font-size: 10.5px;
+  border-radius: 4px;
+  font-weight: 700;
+  cursor: pointer;
+  border: none;
+  font-family: var(--font-body);
+}
+
+.q-btn-saas.cancel {
+  background: transparent;
+  color: var(--color-text-secondary);
+}
+
+.q-btn-saas.save {
+  background-color: var(--color-primary);
+  color: white;
+}
+
+/* Tab Navigation vertical */
+.collab-navigation-vertical {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.collab-vertical-tab-btn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  transition: all 0.2s ease;
+}
+
+.collab-vertical-tab-btn:hover {
+  background-color: var(--bg-card-elevated);
+  color: var(--color-primary);
+}
+
+.collab-vertical-tab-btn.active {
+  background-color: var(--color-primary-glow);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+.collab-vertical-tab-btn .count-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 700;
+  background-color: var(--bg-card);
+  border: 1px solid var(--color-border);
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+}
+
+.collab-vertical-tab-btn.active .count-badge {
+  background-color: var(--color-primary);
+  color: white;
+  border-color: var(--color-primary);
+}
+
+/* ===========================================
+   2. Center Panel Column (Directory views)
+   =========================================== */
+.collab-center-pane {
+  flex: 1;
+  background-color: var(--bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: 24px;
+  overflow-y: auto;
+}
+
+.directory-panel-saas {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.directory-title {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 14px;
+}
+
+/* Bento grid for buddies */
+.bento-buddies-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  grid-gap: 16px;
+}
+
+.buddy-bento-card {
+  background-color: var(--bg-card-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  transition: all 0.22s ease;
+}
+
+.buddy-bento-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--color-text-secondary);
+}
+
+.buddy-avatar-wrapper {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background-color: var(--avatar-color);
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 15px;
+  margin-bottom: 12px;
+  box-shadow: var(--shadow-sm);
+}
+
+.buddy-name {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+.buddy-username {
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  margin-top: 2px;
+}
+
+.buddy-since {
+  font-size: 10.5px;
+  color: var(--color-hint);
+  margin-top: 10px;
+  margin-bottom: 14px;
+}
+
+.buddy-actions-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.buddy-btn {
+  flex: 1;
+  background-color: var(--bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  padding: 6px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: all 0.2s;
+}
+
+.buddy-btn:hover {
+  background-color: var(--bg-card-elevated);
+  color: var(--color-text-primary);
+}
+
+.buddy-btn.block:hover {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+  background-color: rgba(239, 68, 68, 0.05);
+}
+
+.buddy-btn.remove:hover {
+  border-color: var(--color-danger);
+  color: var(--color-danger);
+  background-color: rgba(239, 68, 68, 0.05);
+}
+
+/* Empty State */
+.collab-empty-state-saas {
+  text-align: center;
+  padding: 60px 20px;
+  color: var(--color-text-secondary);
+}
+
+.collab-empty-state-saas p {
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.goto-find-btn {
+  background-color: var(--color-primary);
+  border: none;
+  color: white;
+  padding: 8px 20px;
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.goto-find-btn:hover {
+  background-color: var(--color-primary-dark);
+}
+
+/* Pending requests side columns */
+.requests-columns-saas {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+
+.requests-col-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.requests-section-lbl {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  border-bottom: 1px solid var(--color-border);
+  padding-bottom: 8px;
+}
+
+.requests-list-saas {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.collab-user-tile-saas {
+  display: flex;
+  align-items: center;
+  padding: 12px 14px;
+  background-color: var(--bg-card-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  gap: 12px;
+}
+
+.collab-user-tile-saas .tile-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.collab-user-tile-saas .tile-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.collab-user-tile-saas .tile-display-name {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.collab-user-tile-saas .tile-username {
+  font-size: 10.5px;
+  color: var(--color-text-secondary);
+}
+
+.tile-status-badge-saas {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.tile-status-badge-saas.pending {
+  background-color: var(--color-primary-glow);
+  color: var(--color-primary);
+}
+
+.tile-status-badge-saas.friend {
+  background-color: rgba(34, 197, 94, 0.12);
+  color: rgb(34, 197, 94);
+}
+
+.tile-status-badge-saas.blocked {
+  background-color: rgba(239, 68, 68, 0.12);
+  color: var(--color-danger);
+}
+
+.tile-action-btn {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tile-action-btn:hover {
+  background-color: var(--bg-card);
+}
+
+.tile-action-btn.accept-btn {
+  color: var(--color-success);
+  border-color: rgba(34, 197, 94, 0.3);
+}
+
+.tile-action-btn.accept-btn:hover {
+  background-color: rgba(34, 197, 94, 0.05);
+}
+
+.tile-action-btn.reject-btn {
+  color: var(--color-danger);
+  border-color: rgba(239, 68, 68, 0.3);
+}
+
+.tile-action-btn.reject-btn:hover {
+  background-color: rgba(239, 68, 68, 0.05);
+}
+
+.tile-action-btn.add-btn {
+  color: var(--color-primary);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.tile-action-btn.add-btn:hover {
+  background-color: var(--color-primary-glow);
+}
+
+.unblock-action-btn-saas {
+  background: transparent;
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  padding: 4px 10px;
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.unblock-action-btn-saas:hover {
+  background-color: var(--bg-card);
+  border-color: var(--color-text-secondary);
+}
+
+.no-requests-msg-saas {
+  font-size: 12px;
+  color: var(--color-hint);
+  font-style: italic;
+  padding: 10px 0;
+}
+
+/* Search Box Form */
+.collab-search-form-saas {
+  display: flex;
+  align-items: center;
+  background-color: var(--bg-card-elevated);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 4px;
+  box-shadow: var(--shadow-sm);
+  margin-bottom: 24px;
+  transition: all 0.2s;
+}
+
+.collab-search-form-saas:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-glow);
+}
+
+.collab-search-input-saas {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  font-family: var(--font-body);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  padding: 10px 12px;
+}
+
+.collab-search-submit-saas {
+  background-color: var(--color-primary);
+  border: none;
+  color: white;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.2s;
+}
+
+.collab-search-submit-saas:hover {
+  background-color: var(--color-primary-dark);
+}
+
+.search-error-msg-saas, .search-loading-msg-saas, .no-results-msg-saas {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-bottom: 16px;
+}
+
+.search-error-msg-saas {
+  color: var(--color-danger);
+}
+
+.search-results-list-saas {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ===========================================
+   Responsive Design
+   =========================================== */
+
+@media (max-width: 992px) {
+  .collaboration-workspace {
+    flex-direction: column;
+  }
+  
+  .collab-left-pane {
+    width: 100%;
+  }
+  
+  .collab-navigation-vertical {
+    flex-direction: row;
+    overflow-x: auto;
+    padding-bottom: 4px;
+  }
+  
+  .collab-vertical-tab-btn {
+    width: auto;
+    white-space: nowrap;
+  }
+  
+  .requests-columns-saas {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+}
+
+@media (max-width: 768px) {
+  .collab-center-pane {
+    padding: 16px;
+  }
+}
