@@ -38,7 +38,6 @@ dependencies:
   lottie: ^3.3.2
   go_router: ^17.2.2
   validation_helper: ^0.0.3
-  speech_to_text: ^7.3.0
   provider: ^6.0.0
   table_calendar: ^3.2.0
   fl_chart: ^1.2.0
@@ -55,6 +54,7 @@ dependencies:
   firebase_messaging: ^16.4.0
   flutter_local_notifications: ^20.1.0
   intl: ^0.20.2
+  speech_to_text: ^7.4.0
 
 dev_dependencies:
   flutter_test:
