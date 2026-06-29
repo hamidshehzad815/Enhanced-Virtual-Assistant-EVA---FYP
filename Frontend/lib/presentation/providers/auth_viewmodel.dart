@@ -94,6 +94,17 @@ class AuthViewModel extends ChangeNotifier {
     _setLoading(true);
 
     final response = await AuthService.signupUser(user);
+
+    if (response['success'] == true) {
+      final accessToken = response['data']?['tokens']?['access_token'];
+      final refreshToken = response['data']?['tokens']?['refresh_token'];
+
+      if (accessToken != null) {
+        await StorageService.saveAccessToken(accessToken);
+        await StorageService.saveRefreshToken(refreshToken);
+      }
+    }
+
     final result = AuthResult.fromMap(response);
     _lastResult = result;
 
@@ -103,6 +114,49 @@ class AuthViewModel extends ChangeNotifier {
 
     _setLoading(false);
     return result;
+  }
+
+  /// Google Sign-In
+  Future<AuthResult> signInWithGoogle({String? timezone}) async {
+    _clearErrors();
+    _setLoading(true);
+
+    try {
+      final response = await AuthService.signInWithGoogle(timezone: timezone);
+
+      if (response['success'] == true) {
+        final accessToken = response['data']?['tokens']?['access_token'];
+        final refreshToken = response['data']?['tokens']?['refresh_token'];
+
+        if (accessToken == null) {
+          throw Exception('Access token missing in Google sign-in response');
+        }
+
+        await StorageService.saveAccessToken(accessToken);
+        await StorageService.saveRefreshToken(refreshToken);
+
+        try {
+          await PushNotificationService.init();
+        } catch (pushError) {
+          print('Push notification setup failed: $pushError');
+        }
+      }
+
+      final result = AuthResult.fromMap(response);
+      _lastResult = result;
+
+      if (!result.success) {
+        _applyFieldError(result);
+      }
+
+      return result;
+    } catch (e) {
+      _generalError = e.toString();
+      notifyListeners();
+      return AuthResult(success: false, message: "Something went wrong");
+    } finally {
+      _setLoading(false);
+    }
   }
 
   void clearErrors() {
