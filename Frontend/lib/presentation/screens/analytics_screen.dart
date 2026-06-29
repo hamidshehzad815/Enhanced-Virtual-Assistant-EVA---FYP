@@ -377,7 +377,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                       )
                     else
                       Text(
-                        '🎉 Insights unlocked! Keep completing tasks to get more personalized recommendations.',
+                        'Insights unlocked! Keep completing tasks to get more personalized recommendations.',
                         style: AppTextStyles.body.copyWith(
                           fontSize: 14,
                           color: isDark ? Colors.white70 : Colors.black54,
