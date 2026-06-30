@@ -53,3 +53,5 @@ app.*.map.json
 
 
 node_modules/
+# Local Android secrets (copy from local.properties.example)
+/android/local.properties
