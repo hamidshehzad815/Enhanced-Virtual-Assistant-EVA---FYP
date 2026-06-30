@@ -50,6 +50,8 @@
     <string>We need your microphone to recognize speech.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
     <string>We need speech recognition to convert your voice to text.</string>
+	<key>GIDClientID</key>
+    <string>424904983644-1r590marhlk27lgab1pja3ufcirtfkqb.apps.googleusercontent.com</string>
 	
 </dict>
 </plist>
