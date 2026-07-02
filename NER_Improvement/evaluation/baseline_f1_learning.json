@@ -1,8 +1,0 @@
-{
-  "model": "learning_ner",
-  "overall_f1": 0.9991228070175439,
-  "classification_report": "              precision    recall  f1-score   support\n\n        date     1.0000    1.0000    1.0000        57\n    duration     1.0000    1.0000    1.0000       127\n      person     1.0000    1.0000    1.0000        77\n  start_date     1.0000    1.0000    1.0000       115\n    subtopic     0.9956    0.9956    0.9956       226\n       topic     1.0000    1.0000    1.0000       538\n\n   micro avg     0.9991    0.9991    0.9991      1140\n   macro avg     0.9993    0.9993    0.9993      1140\nweighted avg     0.9991    0.9991    0.9991      1140\n",
-  "epochs": 10,
-  "train_size": 4840,
-  "val_size": 538
-}

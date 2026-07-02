@@ -94,10 +94,18 @@ class AuthService {
   }) async {
     final url = Uri.parse("${AppConstants.baseUrl}/auth/google");
 
+    const googleWebClientId = String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
+    if (googleWebClientId.isEmpty) {
+      return {
+        "success": false,
+        "msg":
+            "Google Sign-In is not configured. Set GOOGLE_WEB_CLIENT_ID via --dart-define.",
+      };
+    }
+
     try {
       await GoogleSignIn.instance.initialize(
-        serverClientId:
-            '424904983644-1r590marhlk27lgab1pja3ufcirtfkqb.apps.googleusercontent.com', 
+        serverClientId: googleWebClientId,
       );
       final GoogleSignInAccount? googleUser = await GoogleSignIn.instance
           .authenticate(scopeHint: ['email', 'profile']);
