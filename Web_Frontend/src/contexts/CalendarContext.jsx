@@ -6,6 +6,7 @@ const CalendarContext = createContext(null);
 
 export const CalendarProvider = ({ children }) => {
   const { isAuthenticated } = useAuth();
+  const [allTasks, setAllTasks] = useState([]);
   const [tasks, setTasks] = useState([]);
   const [dashboardData, setDashboardData] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -15,21 +16,14 @@ export const CalendarProvider = ({ children }) => {
   // Filters
   const [filterCategory, setFilterCategory] = useState(null);
 
-  const fetchTasks = async (dateStr) => {
+  const fetchTasks = async () => {
     if (!isAuthenticated) return;
     setIsLoading(true);
     try {
-      // Convert date to YYYY-MM-DD for filter
-      const queryParams = [];
-      if (dateStr) {
-        queryParams.push(`date=${dateStr}`);
-      }
-      const queryString = queryParams.length ? `?${queryParams.join('&')}` : '';
-      
-      const response = await apiRequest(`/api/tasks${queryString}`);
+      const response = await apiRequest('/api/tasks/calendar');
       if (response.status === 'success' || response.data) {
         const list = response.data?.tasks || response.data || [];
-        setTasks(list);
+        setAllTasks(list);
       }
     } catch (err) {
       console.error('Failed to fetch tasks:', err);
@@ -52,18 +46,43 @@ export const CalendarProvider = ({ children }) => {
 
   useEffect(() => {
     if (isAuthenticated) {
-      // Fetch initial tasks for selected day
-      const formattedDate = formatDateString(selectedDay);
-      fetchTasks(formattedDate);
+      fetchTasks();
       fetchDashboard();
+    } else {
+      setAllTasks([]);
+      setTasks([]);
+      setDashboardData(null);
     }
-  }, [isAuthenticated, selectedDay]);
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    const formattedDate = formatDateString(selectedDay);
+    const filtered = allTasks.filter(t => {
+      if (!t.due_datetime) return false;
+      const tDate = formatDateString(new Date(t.due_datetime));
+      
+      const dateMatch = tDate === formattedDate;
+      const categoryMatch = !filterCategory || t.priority === filterCategory;
+      
+      return dateMatch && categoryMatch;
+    });
+
+    filtered.sort((a, b) => {
+      if (a.status === 'complete' && b.status !== 'complete') return 1;
+      if (b.status === 'complete' && a.status !== 'complete') return -1;
+      const timeA = a.due_datetime ? new Date(a.due_datetime).getTime() : 0;
+      const timeB = b.due_datetime ? new Date(b.due_datetime).getTime() : 0;
+      return timeA - timeB;
+    });
+
+    setTasks(filtered);
+  }, [allTasks, selectedDay, filterCategory]);
 
   const toggleTask = async (taskId, currentStatus) => {
     const newStatus = currentStatus === 'complete' ? 'pending' : 'complete';
     try {
       // Optimistic update
-      setTasks(prev => prev.map(t => t._id === taskId ? { ...t, status: newStatus } : t));
+      setAllTasks(prev => prev.map(t => t._id === taskId ? { ...t, status: newStatus } : t));
       
       const response = await apiRequest(`/api/tasks/${taskId}/status`, {
         method: 'PATCH',
@@ -75,16 +94,14 @@ export const CalendarProvider = ({ children }) => {
       }
     } catch (err) {
       console.error('Failed to toggle task:', err);
-      // Revert
-      const formattedDate = formatDateString(selectedDay);
-      fetchTasks(formattedDate);
+      fetchTasks();
     }
   };
 
   const deleteTask = async (taskId) => {
     try {
       // Optimistic delete
-      setTasks(prev => prev.filter(t => t._id !== taskId));
+      setAllTasks(prev => prev.filter(t => t._id !== taskId));
       
       const response = await apiRequest(`/api/tasks/${taskId}`, {
         method: 'DELETE'
@@ -95,8 +112,7 @@ export const CalendarProvider = ({ children }) => {
       }
     } catch (err) {
       console.error('Failed to delete task:', err);
-      const formattedDate = formatDateString(selectedDay);
-      fetchTasks(formattedDate);
+      fetchTasks();
     }
   };
 
@@ -111,6 +127,7 @@ export const CalendarProvider = ({ children }) => {
 
   return (
     <CalendarContext.Provider value={{
+      allTasks,
       tasks,
       dashboardData,
       isLoading,

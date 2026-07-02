@@ -338,6 +338,16 @@
   margin-bottom: 8px;
 }
 
+.has-tasks-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: var(--color-text-secondary);
+  opacity: 0.5;
+  align-self: center;
+  margin-bottom: 8px;
+}
+
 /* ===========================================
    Right Sidebar Column (Day Tasks Checklist)
    =========================================== */
