@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { ChevronDown, Info, Play, CheckCircle, HelpCircle, BookOpen, AlertCircle, Sparkles, X, ExternalLink, PlayCircle } from 'lucide-react';
 import apiRequest from '../services/api';
+import { useCalendar } from '../contexts/CalendarContext';
 import './Roadmap.css';
 
 const MOCK_ALL_ROADMAPS = [
@@ -148,11 +149,71 @@ export const Roadmap = () => {
   const [activeNode, setActiveNode] = useState(null);
   const [showInfoDrawer, setShowInfoDrawer] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [scheduleDates, setScheduleDates] = useState([]);
+
+  const { fetchDashboard } = useCalendar() || {};
+
+  const fetchRoadmapDetails = async (goalId) => {
+    if (goalId === '1' || goalId === '2') return;
+    setIsLoading(true);
+    try {
+      const response = await apiRequest(`/api/roadmaps/${goalId}`);
+      if (response.status === 'success' && response.data?.roadmap) {
+        const r = response.data.roadmap;
+        setUserRoadmaps(prev => prev.map(item => {
+          if (item.id === goalId) {
+            return {
+              ...item,
+              name: r.language || r.title,
+              language: r.language,
+              category: r.track_label || 'Study Track',
+              progress_percent: r.progress_percent || 0,
+              status: r.status,
+              sessions: (r.sessions || []).map(s => ({
+                id: s.id || s._id,
+                title: s.title,
+                description: s.description,
+                status: s.status,
+                scheduled_date: s.scheduled_date ? formatBackendDate(s.scheduled_date) : 'Flexible',
+                estimated_duration: s.estimated_duration || 60,
+                resources: s.resources || [],
+                session_state: s.session_state || 'locked',
+                is_current: s.is_current || false,
+              }))
+            };
+          }
+          return item;
+        }));
+
+        // Keep details panel in sync if open
+        if (activeNode) {
+          const freshNode = (r.sessions || []).find(s => (s.id || s._id) === activeNode.id);
+          if (freshNode) {
+            setActiveNode({
+              id: freshNode.id || freshNode._id,
+              title: freshNode.title,
+              description: freshNode.description,
+              status: freshNode.status,
+              scheduled_date: freshNode.scheduled_date ? formatBackendDate(freshNode.scheduled_date) : 'Flexible',
+              estimated_duration: freshNode.estimated_duration || 60,
+              resources: freshNode.resources || [],
+              session_state: freshNode.session_state || 'locked',
+              is_current: freshNode.is_current || false,
+            });
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load roadmap details:', err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const fetchUserRoadmaps = async () => {
     setIsLoading(true);
     try {
-      const response = await apiRequest('/api/roadmaps');
+      const response = await apiRequest('/api/roadmaps/plans');
       if (response.status === 'success' && response.data?.roadmaps && response.data.roadmaps.length > 0) {
         const mapped = response.data.roadmaps.map(r => ({
           id: r.id || r._id,
@@ -162,26 +223,24 @@ export const Roadmap = () => {
           color: getLangColor(r.language),
           bg: getLangBgColor(r.language),
           progress_percent: r.progress_percent || 0,
-          sessions: (r.sessions || []).map(s => ({
-            id: s.id || s._id,
-            title: s.title,
-            description: s.description,
-            status: s.status, 
-            scheduled_date: s.scheduled_date ? formatBackendDate(s.scheduled_date) : 'Flexible',
-            estimated_duration: s.estimated_duration || 60,
-            resources: s.resources || [],
-            session_state: s.session_state || 'locked',
-            is_current: s.is_current || false,
-          }))
+          status: r.status,
+          sessions: []
         }));
         setUserRoadmaps(mapped);
-        setSelectedRoadmapId(mapped[0].id);
+        
+        // Pick the first roadmap plan as default if none is currently selected
+        const currentSelectedId = selectedRoadmapId;
+        if (!currentSelectedId || !mapped.some(m => m.id === currentSelectedId)) {
+          setSelectedRoadmapId(mapped[0].id);
+        } else {
+          fetchRoadmapDetails(currentSelectedId);
+        }
       } else {
         setUserRoadmaps(MOCK_USER_ROADMAPS);
         setSelectedRoadmapId(MOCK_USER_ROADMAPS[0].id);
       }
     } catch (err) {
-      console.warn('Could not load real roadmaps, loading fallback data.', err);
+      console.warn('Could not load real roadmaps plans, loading fallback data.', err);
       setUserRoadmaps(MOCK_USER_ROADMAPS);
       setSelectedRoadmapId(MOCK_USER_ROADMAPS[0].id);
     } finally {
@@ -189,9 +248,95 @@ export const Roadmap = () => {
     }
   };
 
+  const fetchScheduleDates = async (goalId) => {
+    if (goalId === '1' || goalId === '2') return;
+    try {
+      const response = await apiRequest(`/api/roadmaps/${goalId}/schedule-dates`);
+      if (response.status === 'success' && response.data?.dates) {
+        setScheduleDates(response.data.dates);
+      } else {
+        setScheduleDates([]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch schedule dates:', err);
+      setScheduleDates([]);
+    }
+  };
+
   useEffect(() => {
     fetchUserRoadmaps();
   }, []);
+
+  useEffect(() => {
+    if (selectedRoadmapId) {
+      fetchRoadmapDetails(selectedRoadmapId);
+    }
+  }, [selectedRoadmapId]);
+
+  useEffect(() => {
+    if (activeNode && activeNode.is_current && selectedRoadmapId && selectedRoadmapId !== '1' && selectedRoadmapId !== '2') {
+      fetchScheduleDates(selectedRoadmapId);
+    } else {
+      setScheduleDates([]);
+    }
+  }, [activeNode, selectedRoadmapId]);
+
+  const handleUpdateSessionStatus = async (status) => {
+    if (!selectedRoadmapId || !activeNode) return;
+    setIsLoading(true);
+    try {
+      await apiRequest(`/api/learning/${selectedRoadmapId}/sessions/${activeNode.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      });
+      alert(`Topic marked as ${status}!`);
+      if (fetchDashboard) fetchDashboard();
+      await fetchRoadmapDetails(selectedRoadmapId);
+    } catch (err) {
+      alert(err.message || `Failed to mark topic as ${status}`);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRescheduleSession = async (dateStr) => {
+    if (!selectedRoadmapId || !activeNode || !dateStr) return;
+    setIsLoading(true);
+    try {
+      await apiRequest(`/api/learning/${selectedRoadmapId}/sessions/${activeNode.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ scheduled_date: dateStr })
+      });
+      alert('Topic rescheduled successfully!');
+      if (fetchDashboard) fetchDashboard();
+      await fetchRoadmapDetails(selectedRoadmapId);
+    } catch (err) {
+      alert(err.message || 'Failed to reschedule topic');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleUpdateGoalStatus = async (newStatus) => {
+    if (!selectedRoadmapId) return;
+    if (newStatus === 'cancelled' && !window.confirm('Are you sure you want to cancel this learning plan? This will delete all mapped tasks.')) {
+      return;
+    }
+    setIsLoading(true);
+    try {
+      await apiRequest(`/api/learning/${selectedRoadmapId}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: newStatus })
+      });
+      alert(`Learning plan marked as ${newStatus}!`);
+      if (fetchDashboard) fetchDashboard();
+      await fetchUserRoadmaps();
+    } catch (err) {
+      alert(err.message || 'Failed to update plan status');
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const getLangColor = (lang) => {
     const found = MOCK_ALL_ROADMAPS.find(l => l.name.toLowerCase() === (lang || '').toLowerCase());
@@ -265,7 +410,37 @@ export const Roadmap = () => {
                   style={{ width: `${currentRoadmap.progress_percent}%`, backgroundColor: currentRoadmap.color }}
                 />
               </div>
+              {currentRoadmap.status && (
+                <>
+                  <div className="stat-row" style={{ marginTop: 12, marginBottom: 4 }}>
+                    <span>Status</span>
+                    <span className={`status-badge-saas ${currentRoadmap.status}`}>
+                      {currentRoadmap.status}
+                    </span>
+                  </div>
+                </>
+              )}
             </div>
+
+            {selectedRoadmapId !== '1' && selectedRoadmapId !== '2' && currentRoadmap.status && (
+              <div className="goal-actions-row">
+                {currentRoadmap.status === 'active' && (
+                  <button className="goal-action-btn pause-btn" onClick={() => handleUpdateGoalStatus('paused')}>
+                    Pause Plan
+                  </button>
+                )}
+                {currentRoadmap.status === 'paused' && (
+                  <button className="goal-action-btn resume-btn" onClick={() => handleUpdateGoalStatus('active')}>
+                    Resume Plan
+                  </button>
+                )}
+                {currentRoadmap.status !== 'cancelled' && currentRoadmap.status !== 'completed' && (
+                  <button className="goal-action-btn cancel-btn" onClick={() => handleUpdateGoalStatus('cancelled')}>
+                    Cancel
+                  </button>
+                )}
+              </div>
+            )}
             
             <button className="directory-trigger-mobile-btn" onClick={() => setShowInfoDrawer(true)}>
               <Info size={14} /> Browse Catalog
@@ -390,6 +565,56 @@ export const Roadmap = () => {
                   <strong>{activeNode.scheduled_date}</strong>
                 </div>
               </div>
+
+              {activeNode.is_current && selectedRoadmapId !== '1' && selectedRoadmapId !== '2' && (
+                <div className="node-actions-container">
+                  <span className="resource-section-lbl">Session Actions</span>
+                  <div className="action-buttons-row">
+                    {(activeNode.session_state === 'ongoing' || activeNode.session_state === 'overdue' || activeNode.status === 'ongoing') && (
+                      <button 
+                        className="action-btn complete-btn"
+                        onClick={() => handleUpdateSessionStatus('completed')}
+                      >
+                        <CheckCircle size={14} /> Complete Topic
+                      </button>
+                    )}
+                    {(activeNode.session_state === 'unlocked_future' || activeNode.session_state === 'upcoming') && (
+                      <button 
+                        className="action-btn skip-btn"
+                        onClick={() => handleUpdateSessionStatus('skipped')}
+                      >
+                        <Play size={14} /> Skip Topic
+                      </button>
+                    )}
+                  </div>
+                  
+                  {/* Reschedule Dropdown */}
+                  {scheduleDates.length > 0 && (
+                    <div className="reschedule-dropdown-container">
+                      <label className="reschedule-lbl">Reschedule Topic</label>
+                      <div className="custom-dropdown-container-saas">
+                        <select
+                          className="roadmap-select-saas font-body"
+                          defaultValue=""
+                          onChange={(e) => {
+                            if (e.target.value) {
+                              handleRescheduleSession(e.target.value);
+                            }
+                          }}
+                        >
+                          <option value="" disabled>Select new study slot...</option>
+                          {scheduleDates.map((item, idx) => (
+                            <option key={idx} value={item.date}>
+                              {item.day_label} · {item.date} ({item.time})
+                            </option>
+                          ))}
+                        </select>
+                        <ChevronDown size={14} className="dropdown-arrow-saas" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {activeNode.resources && activeNode.resources.length > 0 ? (
                 <div className="details-resources">
