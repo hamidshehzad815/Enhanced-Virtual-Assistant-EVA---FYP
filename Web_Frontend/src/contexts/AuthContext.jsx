@@ -176,13 +176,24 @@ export const AuthProvider = ({ children }) => {
 
   const verifyEmailApi = async (token) => {
     try {
-      const response = await apiRequest(`/api/auth/verify-email?token=${token}&format=json`, {
+      const baseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+      const url = `${baseUrl}/api/auth/verify-email?token=${encodeURIComponent(token)}`;
+      const response = await fetch(url, {
         method: 'GET',
-        tokenRequired: false,
       });
-      return { success: response.status === 'success' || response.success, message: response.message };
+      if (response.ok) {
+        return { success: true, message: 'Your email has been successfully verified. You can now log in.' };
+      } else {
+        try {
+          const text = await response.text();
+          const data = JSON.parse(text);
+          return { success: false, message: data.message || data.msg || 'Verification failed' };
+        } catch {
+          return { success: false, message: 'This verification link is invalid or has expired.' };
+        }
+      }
     } catch (err) {
-      return { success: false, message: err.message || 'Verification failed' };
+      return { success: false, message: err.message || 'Server not reachable' };
     }
   };
 
