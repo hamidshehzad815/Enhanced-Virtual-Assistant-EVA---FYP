@@ -3,8 +3,13 @@ class AnalyticsDashboard {
   final String generatedAt;
   final String timezone;
   final int rangeDays;
+  final ProductivityScore? productivityScore;
   final HeroStats hero;
+  final List<Insight> insights;
   final BehavioralSection behavioral;
+  final DailyCompletionsSection? dailyCompletions;
+  final TimeOfDaySection? timeOfDay;
+  final List<PriorityPerformance> priorityPerformance;
   final HeatmapSection heatmap;
   final TasksSection tasks;
   final CompletionTrendSection completionTrend;
@@ -14,8 +19,13 @@ class AnalyticsDashboard {
     required this.generatedAt,
     required this.timezone,
     required this.rangeDays,
+    required this.productivityScore,
     required this.hero,
+    required this.insights,
     required this.behavioral,
+    required this.dailyCompletions,
+    required this.timeOfDay,
+    required this.priorityPerformance,
     required this.heatmap,
     required this.tasks,
     required this.completionTrend,
@@ -27,8 +37,27 @@ class AnalyticsDashboard {
       generatedAt: json['generated_at'],
       timezone: json['timezone'],
       rangeDays: json['range_days'],
+      productivityScore: json['productivity_score'] != null
+          ? ProductivityScore.fromJson(json['productivity_score'])
+          : null,
       hero: HeroStats.fromJson(json['hero']),
+      insights:
+          (json['insights'] as List?)
+              ?.map((i) => Insight.fromJson(i))
+              .toList() ??
+          [],
       behavioral: BehavioralSection.fromJson(json['behavioral']),
+      dailyCompletions: json['daily_completions'] != null
+          ? DailyCompletionsSection.fromJson(json['daily_completions'])
+          : null,
+      timeOfDay: json['time_of_day'] != null
+          ? TimeOfDaySection.fromJson(json['time_of_day'])
+          : null,
+      priorityPerformance:
+          (json['priority_performance'] as List?)
+              ?.map((p) => PriorityPerformance.fromJson(p))
+              .toList() ??
+          [],
       heatmap: HeatmapSection.fromJson(json['heatmap']),
       tasks: TasksSection.fromJson(json['tasks']),
       completionTrend: CompletionTrendSection.fromJson(
@@ -37,6 +66,225 @@ class AnalyticsDashboard {
       bestSlots: (json['best_slots'] as List)
           .map((s) => BestSlot.fromJson(s))
           .toList(),
+    );
+  }
+}
+
+// ─── Productivity Score ─────────────────────────────────────────────────
+class ProductivityScore {
+  final int score;
+  final String rating;
+  final String caption;
+  final ScoreComponents components;
+
+  ProductivityScore({
+    required this.score,
+    required this.rating,
+    required this.caption,
+    required this.components,
+  });
+
+  factory ProductivityScore.fromJson(Map<String, dynamic> json) {
+    return ProductivityScore(
+      score: json['score'] ?? 0,
+      rating: json['rating'] ?? '',
+      caption: json['caption'] ?? '',
+      components: ScoreComponents.fromJson(json['components'] ?? {}),
+    );
+  }
+}
+
+class ScoreComponents {
+  final int onTime;
+  final int consistency;
+  final int volume;
+  final int streak;
+
+  ScoreComponents({
+    required this.onTime,
+    required this.consistency,
+    required this.volume,
+    required this.streak,
+  });
+
+  factory ScoreComponents.fromJson(Map<String, dynamic> json) {
+    return ScoreComponents(
+      onTime: json['on_time'] ?? 0,
+      consistency: json['consistency'] ?? 0,
+      volume: json['volume'] ?? 0,
+      streak: json['streak'] ?? 0,
+    );
+  }
+}
+
+// ─── Insight ─────────────────────────────────────────────────────────────
+class Insight {
+  final String id;
+  final String type; // positive | warning | tip | info
+  final String icon;
+  final String title;
+  final String message;
+
+  Insight({
+    required this.id,
+    required this.type,
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  factory Insight.fromJson(Map<String, dynamic> json) {
+    return Insight(
+      id: json['id']?.toString() ?? '',
+      type: json['type'] ?? 'info',
+      icon: json['icon'] ?? 'info',
+      title: json['title'] ?? '',
+      message: json['message'] ?? '',
+    );
+  }
+}
+
+// ─── Daily Completions ──────────────────────────────────────────────────
+class DailyCompletionsSection {
+  final int rangeDays;
+  final int total;
+  final int activeDays;
+  final double avgPerActiveDay;
+  final DailyPoint? busiestDate;
+  final List<DailyPoint> series;
+
+  DailyCompletionsSection({
+    required this.rangeDays,
+    required this.total,
+    required this.activeDays,
+    required this.avgPerActiveDay,
+    required this.busiestDate,
+    required this.series,
+  });
+
+  factory DailyCompletionsSection.fromJson(Map<String, dynamic> json) {
+    return DailyCompletionsSection(
+      rangeDays: json['range_days'] ?? 30,
+      total: json['total'] ?? 0,
+      activeDays: json['active_days'] ?? 0,
+      avgPerActiveDay: (json['avg_per_active_day'] ?? 0).toDouble(),
+      busiestDate: json['busiest_date'] != null
+          ? DailyPoint.fromJson(json['busiest_date'])
+          : null,
+      series:
+          (json['series'] as List?)
+              ?.map((p) => DailyPoint.fromJson(p))
+              .toList() ??
+          [],
+    );
+  }
+}
+
+class DailyPoint {
+  final String date;
+  final int count;
+  final int onTime;
+  final int late;
+
+  DailyPoint({
+    required this.date,
+    required this.count,
+    required this.onTime,
+    required this.late,
+  });
+
+  factory DailyPoint.fromJson(Map<String, dynamic> json) {
+    return DailyPoint(
+      date: json['date'] ?? '',
+      count: json['count'] ?? 0,
+      onTime: json['on_time'] ?? 0,
+      late: json['late'] ?? 0,
+    );
+  }
+}
+
+// ─── Time of Day ────────────────────────────────────────────────────────
+class TimeOfDaySection {
+  final int total;
+  final List<TimeBucket> buckets;
+  final TimeBucket? dominant;
+
+  TimeOfDaySection({
+    required this.total,
+    required this.buckets,
+    required this.dominant,
+  });
+
+  factory TimeOfDaySection.fromJson(Map<String, dynamic> json) {
+    return TimeOfDaySection(
+      total: json['total'] ?? 0,
+      buckets:
+          (json['buckets'] as List?)
+              ?.map((b) => TimeBucket.fromJson(b))
+              .toList() ??
+          [],
+      dominant: json['dominant'] != null
+          ? TimeBucket.fromJson(json['dominant'])
+          : null,
+    );
+  }
+}
+
+class TimeBucket {
+  final String key;
+  final String label;
+  final String rangeDisplay;
+  final int count;
+  final double onTimeRate;
+  final double percent;
+
+  TimeBucket({
+    required this.key,
+    required this.label,
+    required this.rangeDisplay,
+    required this.count,
+    required this.onTimeRate,
+    required this.percent,
+  });
+
+  factory TimeBucket.fromJson(Map<String, dynamic> json) {
+    return TimeBucket(
+      key: json['key'] ?? '',
+      label: json['label'] ?? '',
+      rangeDisplay: json['range_display'] ?? '',
+      count: json['count'] ?? 0,
+      onTimeRate: (json['on_time_rate'] ?? 0).toDouble(),
+      percent: (json['percent'] ?? 0).toDouble(),
+    );
+  }
+}
+
+// ─── Priority Performance ───────────────────────────────────────────────
+class PriorityPerformance {
+  final String priority;
+  final String label;
+  final int completed;
+  final int onTime;
+  final double onTimeRate;
+  final double percent;
+
+  PriorityPerformance({
+    required this.priority,
+    required this.label,
+    required this.completed,
+    required this.onTime,
+    required this.onTimeRate,
+    required this.percent,
+  });
+
+  factory PriorityPerformance.fromJson(Map<String, dynamic> json) {
+    return PriorityPerformance(
+      priority: json['priority'] ?? 'medium',
+      label: json['label'] ?? '',
+      completed: json['completed'] ?? 0,
+      onTime: json['on_time'] ?? 0,
+      onTimeRate: (json['on_time_rate'] ?? 0).toDouble(),
+      percent: (json['percent'] ?? 0).toDouble(),
     );
   }
 }

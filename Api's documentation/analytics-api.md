@@ -1,6 +1,8 @@
 # Analytics API
 
-Productivity analytics page: one call returns hero stats, behavioral scores, heatmap, task overview, completion trend, and best scheduling slots.
+Productivity analytics page: one call returns a composite productivity score, hero stats, smart insights, behavioral scores, a daily-activity series, time-of-day and priority breakdowns, a heatmap, task overview, completion trend, and best scheduling slots.
+
+> **Resilience note:** `productivity_score`, `insights`, `daily_completions`, `time_of_day`, and `priority_performance` are computed entirely from MongoDB. They are always present — even when behavioral analytics is disabled or the Eva AI Server is down. Only `behavioral` and `best_slots` depend on the AI server.
 
 Base path: `/api/analytics`
 
@@ -37,16 +39,23 @@ When behavioral analytics is off or AI is down, `behavioral.enabled` may be `fal
 
 ### What it returns
 
-Seven UI sections under `data`:
+UI sections under `data`:
 
-1. **`hero`** — top stat cards (this week vs last week, streak, on-time rate)
-2. **`behavioral`** — AI productivity scores + hour windows + strength summary
-3. **`heatmap`** — day × hour completion grid (6AM–11PM)
-4. **`tasks`** — counts, priority breakdown, due-soon list
-5. **`completion_trend`** — last 3 ISO weeks of completions
-6. **`best_slots`** — top 3 AI-recommended hour slots for scheduling
+1. **`productivity_score`** — composite 0–100 score with a component breakdown and rating label
+2. **`hero`** — top stat cards (this week vs last week, streak, on-time rate)
+3. **`insights`** — up to 5 rule-based, actionable insight cards
+4. **`behavioral`** — AI productivity scores + hour windows + strength summary
+5. **`daily_completions`** — per-day completion series over the selected range (for a line chart)
+6. **`time_of_day`** — Morning / Afternoon / Evening / Night distribution
+7. **`priority_performance`** — on-time reliability per priority (High / Medium / Low)
+8. **`heatmap`** — day × hour completion grid (6AM–11PM)
+9. **`tasks`** — counts, priority breakdown, due-soon list
+10. **`completion_trend`** — last 3 ISO weeks of completions
+11. **`best_slots`** — top 3 AI-recommended hour slots for scheduling
 
 Plus metadata: `generated_at`, `timezone`, `range_days`.
+
+Unlike the old behavior, `days` (7/30/90) now drives **`daily_completions`, `time_of_day`, `priority_performance`, and `heatmap`**. Only `completion_trend` is fixed at 3 weeks.
 
 ---
 
@@ -59,8 +68,13 @@ Plus metadata: `generated_at`, `timezone`, `range_days`.
     "generated_at": "2026-06-26T04:39:29.771Z",
     "timezone": "Asia/Karachi",
     "range_days": 30,
+    "productivity_score": { },
     "hero": { },
+    "insights": [ ],
     "behavioral": { },
+    "daily_completions": { },
+    "time_of_day": { },
+    "priority_performance": [ ],
     "heatmap": { },
     "tasks": { },
     "completion_trend": { },
@@ -80,12 +94,108 @@ Plus metadata: `generated_at`, `timezone`, `range_days`.
 | `generated_at` | `string` | ISO timestamp when payload was built |
 | `timezone` | `string` | User IANA timezone used for all date math |
 | `range_days` | `number` | Echo of query `days` (`7`, `30`, or `90`) |
+| `productivity_score` | `ProductivityScore` | Composite 0–100 score + component breakdown |
 | `hero` | `HeroStats` | Summary stat cards |
+| `insights` | `Insight[]` | Up to 5 rule-based insight cards (may be empty) |
 | `behavioral` | `BehavioralSection` | AI scores + enrichments |
+| `daily_completions` | `DailyCompletionsSection` | Per-day completion series over the range |
+| `time_of_day` | `TimeOfDaySection` | Completion distribution across day parts |
+| `priority_performance` | `PriorityPerformance[]` | On-time reliability per priority (always 3 items) |
 | `heatmap` | `HeatmapSection` | Productivity grid |
 | `tasks` | `TasksSection` | Task counts and at-risk list |
 | `completion_trend` | `CompletionTrendSection` | Weekly completion bars |
 | `best_slots` | `BestSlot[]` | Top 3 scheduling suggestions (may be empty) |
+
+#### `ProductivityScore`
+
+A single headline number combining on-time rate, consistency, volume, and streak.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `score` | `number` | `0–100` composite score |
+| `rating` | `string` | Label for the score band: `"Excellent"` (85+), `"Great"` (70–84), `"Good"` (55–69), `"Fair"` (40–54), `"Building"` (<40) |
+| `caption` | `string` | Short human sentence matched to the rating |
+| `components` | `{ on_time, consistency, volume, streak }` | Each `0–100` — the sub-scores that make up `score`. Render as mini bars. |
+| `weights` | `{ on_time: 35, consistency: 25, volume: 25, streak: 15 }` | Weighting applied to each component (sums to 100) |
+
+Component definitions:
+
+- **on_time** — all-time on-time completion rate.
+- **consistency** — share of days in the range with ≥1 completion (60% active earns full credit).
+- **volume** — completions per day over the range (~0.8/day earns full credit).
+- **streak** — current daily streak, capped at 7 days.
+
+#### `Insight`
+
+Rule-based, ready-to-render cards. Ordered by relevance, capped at 5. For a brand-new user (0 completions) a single `rocket_launch` "get started" tip is returned.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | `string` | Stable position id within this response (`"1"`, `"2"`, …) |
+| `type` | `"positive" \| "warning" \| "tip" \| "info"` | Drives accent color |
+| `icon` | `string` | Icon hint — map to your own icon set (see below) |
+| `title` | `string` | Short bold headline |
+| `message` | `string` | One-sentence detail |
+
+Possible `icon` values: `local_fire_department`, `trending_up`, `trending_down`, `verified`, `schedule`, `bolt`, `priority_high`, `warning_amber`, `wb_sunny`, `calendar_month`, `rocket_launch`.
+
+#### `DailyCompletionsSection`
+
+Dense series (one entry per day in the range, zero-filled) for a completion line/area chart.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `range_days` | `number` | Number of days in `series` (equals `days`) |
+| `total` | `number` | Total completions across the range |
+| `active_days` | `number` | Days with ≥1 completion |
+| `avg_per_active_day` | `number` | `total / active_days`, 1 decimal (`0` if none) |
+| `busiest_date` | `DailyPoint \| null` | Day with the most completions (null if all zero) |
+| `series` | `DailyPoint[]` | Length equals `range_days`, oldest → newest |
+
+**`DailyPoint`**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `date` | `string` | Local date `YYYY-MM-DD` (user timezone) |
+| `count` | `number` | Completions that day |
+| `on_time` | `number` | On-time completions |
+| `late` | `number` | Late completions |
+
+#### `TimeOfDaySection`
+
+Distribution of completions across four day-parts (by local completion hour).
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `total` | `number` | Total completions bucketed |
+| `buckets` | `TimeBucket[]` | Always 4, in order Morning → Afternoon → Evening → Night |
+| `dominant` | `TimeBucket \| null` | Bucket with the most completions (null if `total` is 0) |
+
+**`TimeBucket`**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `key` | `"morning" \| "afternoon" \| "evening" \| "night"` | Stable key |
+| `label` | `string` | e.g. `"Afternoon"` |
+| `range_display` | `string` | e.g. `"12PM–5PM"` (Night is `"9PM–5AM"` and wraps midnight) |
+| `count` | `number` | Completions in this bucket |
+| `on_time_rate` | `number` | Percentage `0–100` |
+| `percent` | `number` | Share of `total`, percentage `0–100` |
+
+Bucket hours: Morning `5–11`, Afternoon `12–16`, Evening `17–20`, Night `21–4`.
+
+#### `PriorityPerformance`
+
+How reliably the user finishes tasks at each priority. Always 3 items (`high`, `medium`, `low`), even if `completed` is 0.
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `priority` | `"high" \| "medium" \| "low"` | Priority key |
+| `label` | `string` | `"High"` / `"Medium"` / `"Low"` |
+| `completed` | `number` | Completed tasks of this priority in range |
+| `on_time` | `number` | Of those, how many were on time |
+| `on_time_rate` | `number` | Percentage `0–100` (`0` when `completed` is 0) |
+| `percent` | `number` | Share of all completed tasks across priorities, `0–100` |
 
 #### `HeroStats`
 
@@ -241,6 +351,13 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
     "generated_at": "2026-06-26T04:39:29.771Z",
     "timezone": "Asia/Karachi",
     "range_days": 30,
+    "productivity_score": {
+      "score": 78,
+      "rating": "Great",
+      "caption": "Strong, consistent momentum. Keep it going.",
+      "components": { "on_time": 82, "consistency": 90, "volume": 100, "streak": 14 },
+      "weights": { "on_time": 35, "consistency": 25, "volume": 25, "streak": 15 }
+    },
     "hero": {
       "completed_this_week": 5,
       "completed_last_week": 14,
@@ -250,6 +367,29 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
       "streak_days": 1,
       "upcoming_7d": 14
     },
+    "insights": [
+      {
+        "id": "1",
+        "type": "positive",
+        "icon": "verified",
+        "title": "Reliably on time",
+        "message": "You finish 82.4% of your tasks on schedule. Excellent discipline."
+      },
+      {
+        "id": "2",
+        "type": "info",
+        "icon": "bolt",
+        "title": "Your power hours",
+        "message": "You're strongest Thursday & Wednesday afternoons."
+      },
+      {
+        "id": "3",
+        "type": "warning",
+        "icon": "trending_down",
+        "title": "Slower week",
+        "message": "Completions are down 64% versus last week — a small push gets you back on track."
+      }
+    ],
     "behavioral": {
       "enabled": true,
       "has_enough_data": true,
@@ -287,6 +427,33 @@ Authorization: Bearer eyJhbGciOiJIUzI1NiIs...
       },
       "avg_time_taken": 67.49
     },
+    "daily_completions": {
+      "range_days": 30,
+      "total": 41,
+      "active_days": 18,
+      "avg_per_active_day": 2.3,
+      "busiest_date": { "date": "2026-06-18", "count": 5, "on_time": 5, "late": 0 },
+      "series": [
+        { "date": "2026-05-28", "count": 0, "on_time": 0, "late": 0 },
+        { "date": "2026-05-29", "count": 2, "on_time": 2, "late": 0 },
+        { "date": "2026-06-18", "count": 5, "on_time": 5, "late": 0 }
+      ]
+    },
+    "time_of_day": {
+      "total": 68,
+      "buckets": [
+        { "key": "morning", "label": "Morning", "range_display": "5AM–12PM", "count": 14, "on_time_rate": 78.6, "percent": 20.6 },
+        { "key": "afternoon", "label": "Afternoon", "range_display": "12PM–5PM", "count": 38, "on_time_rate": 89.5, "percent": 55.9 },
+        { "key": "evening", "label": "Evening", "range_display": "5PM–9PM", "count": 11, "on_time_rate": 72.7, "percent": 16.2 },
+        { "key": "night", "label": "Night", "range_display": "9PM–5AM", "count": 5, "on_time_rate": 40, "percent": 7.4 }
+      ],
+      "dominant": { "key": "afternoon", "label": "Afternoon", "range_display": "12PM–5PM", "count": 38, "on_time_rate": 89.5, "percent": 55.9 }
+    },
+    "priority_performance": [
+      { "priority": "high", "label": "High", "completed": 22, "on_time": 15, "on_time_rate": 68.2, "percent": 32.4 },
+      { "priority": "medium", "label": "Medium", "completed": 34, "on_time": 30, "on_time_rate": 88.2, "percent": 50 },
+      { "priority": "low", "label": "Low", "completed": 12, "on_time": 11, "on_time_rate": 91.7, "percent": 17.6 }
+    ],
     "heatmap": {
       "range_days": 30,
       "timezone": "Asia/Karachi",
@@ -399,6 +566,13 @@ New user or behavioral analytics disabled:
     "generated_at": "2026-06-26T04:39:29.771Z",
     "timezone": "Asia/Karachi",
     "range_days": 30,
+    "productivity_score": {
+      "score": 18,
+      "rating": "Building",
+      "caption": "Every completed task moves this number up.",
+      "components": { "on_time": 67, "consistency": 17, "volume": 13, "streak": 0 },
+      "weights": { "on_time": 35, "consistency": 25, "volume": 25, "streak": 15 }
+    },
     "hero": {
       "completed_this_week": 0,
       "completed_last_week": 0,
@@ -408,6 +582,15 @@ New user or behavioral analytics disabled:
       "streak_days": 0,
       "upcoming_7d": 2
     },
+    "insights": [
+      {
+        "id": "1",
+        "type": "info",
+        "icon": "wb_sunny",
+        "title": "Afternoon person",
+        "message": "67% of your work happens in the afternoon (12PM–5PM)."
+      }
+    ],
     "behavioral": {
       "enabled": false,
       "has_enough_data": false,
@@ -427,6 +610,31 @@ New user or behavioral analytics disabled:
       },
       "avg_time_taken": null
     },
+    "daily_completions": {
+      "range_days": 30,
+      "total": 3,
+      "active_days": 3,
+      "avg_per_active_day": 1,
+      "busiest_date": { "date": "2026-06-24", "count": 1, "on_time": 1, "late": 0 },
+      "series": [
+        { "date": "2026-06-24", "count": 1, "on_time": 1, "late": 0 }
+      ]
+    },
+    "time_of_day": {
+      "total": 3,
+      "buckets": [
+        { "key": "morning", "label": "Morning", "range_display": "5AM–12PM", "count": 1, "on_time_rate": 100, "percent": 33.3 },
+        { "key": "afternoon", "label": "Afternoon", "range_display": "12PM–5PM", "count": 2, "on_time_rate": 50, "percent": 66.7 },
+        { "key": "evening", "label": "Evening", "range_display": "5PM–9PM", "count": 0, "on_time_rate": 0, "percent": 0 },
+        { "key": "night", "label": "Night", "range_display": "9PM–5AM", "count": 0, "on_time_rate": 0, "percent": 0 }
+      ],
+      "dominant": { "key": "afternoon", "label": "Afternoon", "range_display": "12PM–5PM", "count": 2, "on_time_rate": 50, "percent": 66.7 }
+    },
+    "priority_performance": [
+      { "priority": "high", "label": "High", "completed": 0, "on_time": 0, "on_time_rate": 0, "percent": 0 },
+      { "priority": "medium", "label": "Medium", "completed": 3, "on_time": 2, "on_time_rate": 66.7, "percent": 100 },
+      { "priority": "low", "label": "Low", "completed": 0, "on_time": 0, "on_time_rate": 0, "percent": 0 }
+    ],
     "heatmap": {
       "range_days": 30,
       "timezone": "Asia/Karachi",
@@ -478,7 +686,32 @@ New user or behavioral analytics disabled:
 **Single fetch for the whole page**
 
 - Use only `GET /api/analytics/dashboard` — there are no sub-routes like `/hero` or `/heatmap`.
-- Refetch when user changes the range toggle (`?days=7|30|90`).
+- Refetch when user changes the range toggle (`?days=7|30|90`). The range now affects `daily_completions`, `time_of_day`, `priority_performance`, and `heatmap` (not just the heatmap).
+
+**Productivity score**
+
+- Render `score` in a radial gauge; color-band by rating (`Excellent`/`Great`/`Good`/`Fair`/`Building`).
+- Show `components` as four labelled mini-bars (`on_time`, `consistency`, `volume`, `streak`), each `0–100`. Display `caption` beside the gauge.
+
+**Insights**
+
+- Render as a horizontal carousel of cards. Map `type` → accent color (`positive`=green, `warning`=red, `tip`=amber, `info`=blue) and `icon` → your icon set (values listed in the type reference).
+- Array may be empty — hide the section when so. It is capped at 5 and already ordered by relevance; render as-is.
+
+**Daily completions**
+
+- `series` is dense and zero-filled (length = `range_days`), oldest → newest — plot directly as a line/area chart using `count`. `date` is `YYYY-MM-DD` in the user's timezone.
+- For 90-day ranges, hide per-point dots and thin the x-axis labels.
+- Header stats: `total`, `active_days`, `avg_per_active_day`.
+
+**Time of day**
+
+- `buckets` is always 4 in fixed order — render as a donut (`count`/`percent`) with a legend showing `range_display` and `on_time_rate`.
+- Highlight `dominant` (e.g. in the donut center). Hide the section when `total` is 0.
+
+**Priority performance**
+
+- Always 3 rows. Use `on_time_rate` for the bar and `completed` for the count; show a "no completed tasks" placeholder when `completed` is 0.
 
 **Weekday numbers**
 
