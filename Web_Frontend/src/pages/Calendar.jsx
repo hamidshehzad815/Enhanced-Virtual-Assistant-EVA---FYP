@@ -7,6 +7,7 @@ import './Calendar.css';
 export const Calendar = () => {
   const navigate = useNavigate();
   const {
+    allTasks,
     tasks,
     selectedDay,
     focusedDay,
@@ -154,6 +155,11 @@ export const Calendar = () => {
               const isTodayDay = isToday(day.date);
               const isSelectedDay = isSelected(day.date);
               const isCurr = day.isCurrentMonth;
+              const formattedCellDate = formatDateString(day.date);
+              const hasTasksOnDay = allTasks.some(t => {
+                if (!t.due_datetime) return false;
+                return formatDateString(new Date(t.due_datetime)) === formattedCellDate;
+              });
               
               return (
                 <div
@@ -167,6 +173,7 @@ export const Calendar = () => {
                   <span className="day-number-label">{day.date.getDate()}</span>
                   {/* Visual task indicator dot on cell */}
                   {isTodayDay && <span className="today-badge-dot"></span>}
+                  {!isTodayDay && hasTasksOnDay && <span className="has-tasks-dot"></span>}
                 </div>
               );
             })}
