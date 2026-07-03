@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import '../../core/theme/app_colours.dart';
 import '../../core/theme/app_text_style.dart';
 import '../widgets/collaboration_widgets.dart';
+import 'package:lottie/lottie.dart';
 
 // ---------------------------------------------------------------------
 // Data Models
@@ -151,49 +152,63 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
   bool _isBlocked(User user) => _blockedUsers.contains(user);
 
   // ─── Avatar widget ─────────────────────────────────────────────────
-  Widget _buildAvatar(User user, {double radius = 22}) {
-    // If no avatar URL, show initials immediately.
-    if (user.avatarUrl == null || user.avatarUrl!.isEmpty) {
-      return CircleAvatar(
-        radius: radius,
-        backgroundColor: AppColors.primary.withOpacity(0.2),
-        child: Text(
-          _getInitials(user.displayName),
-          style: TextStyle(
-            fontSize: radius * 0.9,
-            color: AppColors.primary,
-            fontWeight: FontWeight.w700,
-          ),
-        ),
-      );
-    }
-
-    // If there is a URL, try to load the image with a fallback to initials.
-    return CircleAvatar(
-      radius: radius,
-      backgroundColor: AppColors.primary.withOpacity(0.2),
-      child: ClipOval(
-        child: Image.network(
-          user.avatarUrl!,
-          fit: BoxFit.cover,
-          errorBuilder: (context, error, stackTrace) {
-            // When image fails, show initials instead.
-            return Container(
-              color: AppColors.primary.withOpacity(0.2),
-              child: Center(
-                child: Text(
-                  _getInitials(user.displayName),
-                  style: TextStyle(
-                    fontSize: radius * 0.9,
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
+  Widget _buildAvatar(User user, {double radius = 22, bool ring = false}) {
+    final avatar = user.avatarUrl == null || user.avatarUrl!.isEmpty
+        ? CircleAvatar(
+            radius: radius,
+            backgroundColor: AppColors.primary.withOpacity(0.2),
+            child: Text(
+              _getInitials(user.displayName),
+              style: TextStyle(
+                fontSize: radius * 0.9,
+                color: AppColors.primary,
+                fontWeight: FontWeight.w700,
               ),
-            );
-          },
+            ),
+          )
+        : CircleAvatar(
+            radius: radius,
+            backgroundColor: AppColors.primary.withOpacity(0.2),
+            child: ClipOval(
+              child: Image.network(
+                user.avatarUrl!,
+                fit: BoxFit.cover,
+                width: radius * 2,
+                height: radius * 2,
+                errorBuilder: (context, error, stackTrace) {
+                  // Fixed: was Colors.white, which was nearly invisible
+                  // against the light amber-tinted background below.
+                  return Container(
+                    color: AppColors.primary.withOpacity(0.2),
+                    child: Center(
+                      child: Text(
+                        _getInitials(user.displayName),
+                        style: TextStyle(
+                          fontSize: radius * 0.9,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          );
+
+    if (!ring) return avatar;
+
+    return Container(
+      padding: const EdgeInsets.all(3),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [AppColors.primary, AppColors.primary.withOpacity(0.4)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
         ),
       ),
+      child: avatar,
     );
   }
 
@@ -374,6 +389,10 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     );
   }
 
+  // ───────────────────────────────────────────────────────────────────
+  // Friend Requests Sheet — rounded tile bg, pill accept button, and
+  // decline ONLY via swipe-left (no cross icon clutter).
+  // ───────────────────────────────────────────────────────────────────
   void _showFriendRequests() {
     if (_pendingRequests.isEmpty) {
       _showSnackbar('No pending friend requests.', Colors.grey);
@@ -387,81 +406,208 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.5,
-        minChildSize: 0.3,
-        maxChildSize: 0.7,
-        expand: false,
-        builder: (_, scrollController) => Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: Column(
-            children: [
-              const SizedBox(height: 12),
-              Container(
-                width: 40,
-                height: 4,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, sheetSetState) {
+          return DraggableScrollableSheet(
+            initialChildSize: 0.5,
+            minChildSize: 0.3,
+            maxChildSize: 0.75,
+            expand: false,
+            builder: (_, scrollController) => Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Column(
+                children: [
+                  const SizedBox(height: 12),
+                  Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade300,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Text(
+                        'Friend Requests',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      if (_pendingRequests.isNotEmpty) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: AppColors.primary.withOpacity(0.15),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${_pendingRequests.length}',
+                            style: const TextStyle(
+                              color: AppColors.primary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  if (_pendingRequests.isNotEmpty)
+                    Text(
+                      'Swipe left to decline',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).hintColor,
+                      ),
+                    ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: _pendingRequests.isEmpty
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                SizedBox(
+                                  width: 180,
+                                  height: 180,
+                                  child: Lottie.asset(
+                                    'assets/lottie/no_notificaition.json',
+                                    fit: BoxFit.contain,
+                                  ),
+                                ),
+                                Text(
+                                  'No more pending requests',
+                                  style: TextStyle(
+                                    color: Theme.of(context).hintColor,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                        : ListView.builder(
+                            controller: scrollController,
+                            itemCount: _pendingRequests.length,
+                            itemBuilder: (_, index) {
+                              final request = _pendingRequests[index];
+                              return _buildRequestTile(request, sheetSetState);
+                            },
+                          ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  // Single friend-request row: soft rounded background, avatar, name,
+  // pill-shaped Accept button. Decline happens ONLY via swipe-left.
+  Widget _buildRequestTile(FriendRequest request, StateSetter sheetSetState) {
+    final user = request.fromUser;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tileColor = isDark
+        ? Colors.white.withOpacity(0.06)
+        : AppColors.primary.withOpacity(0.06);
+
+    return Dismissible(
+      key: ValueKey(request.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        alignment: Alignment.centerRight,
+        decoration: BoxDecoration(
+          color: Colors.red.shade400,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: const Icon(Icons.delete_outline, color: Colors.white),
+      ),
+      confirmDismiss: (_) async {
+        _declineFriendRequest(request);
+        sheetSetState(() {});
+        return true;
+      },
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: tileColor,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Row(
+          children: [
+            _buildAvatar(user, radius: 24),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    user.displayName,
+                    style: const TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '@${user.username} · ${request.timeAgo}',
+                    style: TextStyle(
+                      color: Theme.of(context).hintColor,
+                      fontSize: 11,
+                    ),
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // Pill-shaped accept button
+            GestureDetector(
+              onTap: () {
+                _acceptFriendRequest(request);
+                sheetSetState(() {});
+              },
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 18,
+                  vertical: 9,
+                ),
                 decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(2),
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(20),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.primary.withOpacity(0.3),
+                      blurRadius: 6,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
+                ),
+                child: const Text(
+                  'Accept',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
-              const SizedBox(height: 16),
-              const Text(
-                'Friend Requests',
-                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 8),
-              Expanded(
-                child: ListView.builder(
-                  controller: scrollController,
-                  itemCount: _pendingRequests.length,
-                  itemBuilder: (_, index) {
-                    final request = _pendingRequests[index];
-                    final user = request.fromUser;
-                    return Card(
-                      margin: const EdgeInsets.symmetric(vertical: 6),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                      child: ListTile(
-                        leading: _buildAvatar(user, radius: 24),
-                        title: Text(
-                          user.displayName,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: Text(
-                          '@${user.username} · ${request.timeAgo}',
-                          style: const TextStyle(color: Colors.grey),
-                        ),
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            IconButton(
-                              icon: const Icon(
-                                Icons.check_circle,
-                                color: Colors.green,
-                              ),
-                              onPressed: () {
-                                Navigator.pop(ctx);
-                                _acceptFriendRequest(request);
-                              },
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.cancel, color: Colors.red),
-                              onPressed: () {
-                                Navigator.pop(ctx);
-                                _declineFriendRequest(request);
-                              },
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
@@ -502,19 +648,21 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
             children: [
               // ─── Header ────────────────────────────────────────────────
               _buildHeader(),
-              const SizedBox(height: 8),
+              const SizedBox(height: 10),
 
               // ─── Search row ────────────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
-                child: Expanded(child: _buildSearchBar()),
+                child: _buildSearchBar(),
               ),
-              const SizedBox(height: 8),
 
               // ─── Search result ─────────────────────────────────────────
-              if (_searchText.isNotEmpty) _buildSearchResult(),
+              if (_searchText.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                _buildSearchResult(),
+              ],
 
-              const SizedBox(height: 12),
+              const SizedBox(height: 16),
 
               // ─── Profile + Quote ──────────────────────────────────────
               Padding(
@@ -531,7 +679,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                 ),
               ),
 
-              const SizedBox(height: 16),
+              const SizedBox(height: 20),
 
               // ─── Friends list ─────────────────────────────────────────
               Expanded(child: _buildFriendsList()),
@@ -542,44 +690,81 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     );
   }
 
+  // Header with title + subtitle.
   Widget _buildHeader() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = isDark
         ? AppColors.primaryTextDark
         : AppColors.primaryTextLight;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
-      child: Text(
-        'Friends & Collaboration',
-        style: AppTextStyles.logo.copyWith(fontSize: 26, color: textColor),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Friends & Collaboration',
+            style: AppTextStyles.logo.copyWith(fontSize: 22, color: textColor),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Stay connected and study together',
+            style: TextStyle(
+              fontSize: 12.5,
+              color: Theme.of(context).hintColor,
+            ),
+          ),
+        ],
       ),
     );
   }
 
+  // Rounded, bordered, elevated search field.
   Widget _buildSearchBar() {
-    return TextField(
-      controller: _searchController,
-      inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-z]'))],
-      decoration: InputDecoration(
-        hintText: 'Search by username...',
-        prefixIcon: const Icon(Icons.search, size: 20),
-        suffixIcon: _isSearching
-            ? const Padding(
-                padding: EdgeInsets.all(12.0),
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
-              )
-            : null,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: _searchController,
+        inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[a-z]'))],
+        style: const TextStyle(fontSize: 14),
+        decoration: InputDecoration(
+          hintText: 'Search by username...',
+          hintStyle: TextStyle(color: Theme.of(context).hintColor),
+          prefixIcon: Icon(Icons.search, size: 20, color: AppColors.primary),
+          suffixIcon: _isSearching
+              ? const Padding(
+                  padding: EdgeInsets.all(14.0),
+                  child: SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              : (_searchText.isNotEmpty
+                    ? IconButton(
+                        icon: const Icon(Icons.clear, size: 18),
+                        onPressed: () => _searchController.clear(),
+                      )
+                    : null),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: BorderSide.none,
+          ),
+          filled: true,
+          fillColor: Theme.of(context).cardColor,
+          contentPadding: const EdgeInsets.symmetric(
+            vertical: 14,
+            horizontal: 12,
+          ),
         ),
-        filled: true,
-        fillColor: Theme.of(context).cardColor,
-        contentPadding: const EdgeInsets.symmetric(vertical: 0, horizontal: 12),
       ),
     );
   }
@@ -592,50 +777,101 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
       final isFriend = _isFriend(user);
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
-        child: Card(
-          margin: EdgeInsets.zero,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: Theme.of(context).cardColor,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
-          child: ListTile(
-            leading: _buildAvatar(user, radius: 24),
-            title: Text(
-              user.displayName,
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            subtitle: Text(
-              '@${user.username}',
-              style: const TextStyle(color: Colors.grey),
-            ),
-            trailing: isFriend
-                ? Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 8,
+          child: Row(
+            children: [
+              _buildAvatar(user, radius: 22),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user.displayName,
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    decoration: BoxDecoration(
-                      color: Colors.green.shade100,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Text(
-                      'Friends',
+                    Text(
+                      '@${user.username}',
                       style: TextStyle(
-                        color: Colors.green.shade800,
+                        color: Theme.of(context).hintColor,
                         fontSize: 12,
                       ),
                     ),
-                  )
-                : ElevatedButton(
-                    onPressed: () => _addFriend(user),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      shape: RoundedRectangleBorder(
+                  ],
+                ),
+              ),
+              isFriend
+                  ? Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withOpacity(0.12),
                         borderRadius: BorderRadius.circular(20),
                       ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.check_circle,
+                            size: 14,
+                            color: Colors.green.shade700,
+                          ),
+                          const SizedBox(width: 4),
+                          Text(
+                            'Friends',
+                            style: TextStyle(
+                              color: Colors.green.shade700,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    )
+                  : GestureDetector(
+                      onTap: () => _addFriend(user),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.primary,
+                          borderRadius: BorderRadius.circular(20),
+                          boxShadow: [
+                            BoxShadow(
+                              color: AppColors.primary.withOpacity(0.3),
+                              blurRadius: 6,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: const Text(
+                          'Add Friend',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
                     ),
-                    child: const Text('Add Friend'),
-                  ),
+            ],
           ),
         ),
       );
@@ -646,17 +882,19 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
-            color: Theme.of(context).cardColor,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.red.shade300),
+            color: Colors.red.withOpacity(0.06),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: Colors.red.shade200),
           ),
           child: Row(
             children: [
-              Icon(Icons.error_outline, color: Colors.red.shade300),
+              Icon(Icons.error_outline, color: Colors.red.shade300, size: 18),
               const SizedBox(width: 8),
-              Text(
-                'No user found with that username.',
-                style: TextStyle(color: Colors.red.shade300),
+              Expanded(
+                child: Text(
+                  'No user found with that username.',
+                  style: TextStyle(color: Colors.red.shade400, fontSize: 12.5),
+                ),
               ),
             ],
           ),
@@ -667,31 +905,48 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
 
   Widget _buildUserProfileCard() {
     return Container(
-      padding: const EdgeInsets.all(14),
+      padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Theme.of(context).cardColor,
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(18),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.05),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
           ),
         ],
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _buildAvatar(currentUser, radius: 30),
-          const SizedBox(height: 8),
+          _buildAvatar(currentUser, radius: 28, ring: true),
+          const SizedBox(height: 10),
           Text(
             currentUser.displayName,
-            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+            style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
             overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
           ),
           Text(
             '@${currentUser.username}',
-            style: const TextStyle(fontSize: 11, color: Colors.grey),
+            style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor),
+          ),
+          const SizedBox(height: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              '${_friends.length} friends',
+              style: const TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w600,
+                color: AppColors.primary,
+              ),
+            ),
           ),
         ],
       ),
@@ -702,15 +957,15 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     return GestureDetector(
       onTap: _onEditQuote,
       child: Container(
-        padding: const EdgeInsets.all(14),
+        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Theme.of(context).cardColor,
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.05),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
             ),
           ],
         ),
@@ -720,30 +975,38 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
           children: [
             Row(
               children: [
-                Icon(
-                  Icons.format_quote,
-                  size: 18,
-                  color: Colors.orange.shade700,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  'Quote of the Day',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.w600,
-                    fontSize: 13,
+                Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    Icons.format_quote_rounded,
+                    size: 16,
+                    color: Colors.orange.shade700,
                   ),
                 ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Quote of the Day',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
                 const Spacer(),
-                Icon(Icons.edit, size: 16, color: Theme.of(context).hintColor),
+                Icon(
+                  Icons.edit_outlined,
+                  size: 15,
+                  color: Theme.of(context).hintColor,
+                ),
               ],
             ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 8),
             Text(
               _quoteOfDay,
               style: const TextStyle(
                 fontSize: 13,
                 fontStyle: FontStyle.italic,
-                height: 1.4,
+                height: 1.45,
               ),
               maxLines: 3,
               overflow: TextOverflow.ellipsis,
@@ -765,35 +1028,53 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
             children: [
               const Text(
                 'My Friends',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
               ),
-              const Spacer(),
+              const Spacer(), // Fixed: keeps the bell pinned to the right
               Stack(
+                clipBehavior: Clip.none,
                 children: [
-                  IconButton(
-                    icon: const Icon(Icons.notifications_outlined),
-                    onPressed: _showFriendRequests,
-                    tooltip: 'Friend Requests',
+                  Container(
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).cardColor,
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.04),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: IconButton(
+                      icon: const Icon(Icons.notifications_outlined, size: 22),
+                      onPressed: _showFriendRequests,
+                      tooltip: 'Friend Requests',
+                    ),
                   ),
                   if (_pendingRequests.isNotEmpty)
                     Positioned(
-                      right: 6,
-                      top: 6,
+                      right: 4,
+                      top: 4,
                       child: Container(
                         padding: const EdgeInsets.all(3),
-                        decoration: const BoxDecoration(
+                        decoration: BoxDecoration(
                           color: Colors.red,
                           shape: BoxShape.circle,
+                          border: Border.all(
+                            color: Theme.of(context).cardColor,
+                            width: 1.5,
+                          ),
                         ),
                         constraints: const BoxConstraints(
-                          minWidth: 18,
-                          minHeight: 18,
+                          minWidth: 17,
+                          minHeight: 17,
                         ),
                         child: Text(
                           _pendingRequests.length.toString(),
                           style: const TextStyle(
                             color: Colors.white,
-                            fontSize: 10,
+                            fontSize: 9.5,
                             fontWeight: FontWeight.bold,
                           ),
                           textAlign: TextAlign.center,
@@ -804,33 +1085,62 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           Expanded(
             child: hasFriends
                 ? ListView.separated(
                     itemCount: _friends.length,
-                    separatorBuilder: (_, __) => const SizedBox(height: 6),
+                    separatorBuilder: (_, __) => const SizedBox(height: 8),
                     itemBuilder: (_, index) {
                       final friend = _friends[index];
-                      return Card(
-                        margin: EdgeInsets.zero,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: ListTile(
-                          leading: _buildAvatar(friend, radius: 22),
-                          title: Text(
-                            friend.displayName,
-                            style: const TextStyle(fontWeight: FontWeight.w600),
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(16),
+                        onTap: () => _showFriendDetails(friend),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 10,
                           ),
-                          subtitle: Text(
-                            '@${friend.username}',
-                            style: const TextStyle(
-                              color: Colors.grey,
-                              fontSize: 12,
-                            ),
+                          decoration: BoxDecoration(
+                            color: Theme.of(context).cardColor,
+                            borderRadius: BorderRadius.circular(16),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.04),
+                                blurRadius: 8,
+                                offset: const Offset(0, 2),
+                              ),
+                            ],
                           ),
-                          onTap: () => _showFriendDetails(friend),
+                          child: Row(
+                            children: [
+                              _buildAvatar(friend, radius: 22),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      friend.displayName,
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.w600,
+                                        fontSize: 14,
+                                      ),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '@${friend.username}',
+                                      style: TextStyle(
+                                        color: Theme.of(context).hintColor,
+                                        fontSize: 12,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       );
                     },
@@ -839,10 +1149,13 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        Icon(
-                          Icons.people_outline,
-                          size: 48,
-                          color: Theme.of(context).hintColor,
+                        SizedBox(
+                          width: 180,
+                          height: 180,
+                          child: Lottie.asset(
+                            'assets/lottie/nothing.json',
+                            fit: BoxFit.contain,
+                          ),
                         ),
                         const SizedBox(height: 8),
                         Text(
@@ -850,8 +1163,10 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                           style: TextStyle(
                             color: Theme.of(context).hintColor,
                             fontSize: 16,
+                            fontWeight: FontWeight.w600,
                           ),
                         ),
+                        const SizedBox(height: 2),
                         Text(
                           'Search for friends above and add them!',
                           style: TextStyle(
