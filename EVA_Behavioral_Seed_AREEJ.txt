@@ -1,34 +1,47 @@
-EVA Behavioral Analytics — Seed Summary (Areej Fatima)
+EVA Behavioral Analytics — Seed Summary
 ============================================================
-Email:     areejfatima@gmail.com
-User ID:   6a3ce9af0454221f82496f90
+Email:     hamidlilla7@gmail.com
+User ID:   6a4822a2e17b10ba04dd9f06
 Timezone:  Asia/Karachi
-Generated: 2026-06-25T15:20:50.519Z
+Generated: 2026-07-03T21:00:34.620Z
 
 Cleanup (if --clean was used):
-  Tasks removed: 63
-  Logs removed:  63
+  Tasks removed: 0
+  Logs removed:  0
 
-Inserted completed tasks: 63
-Inserted activity logs:   63
+Inserted completed tasks: 47
+Inserted activity logs:   47
+Active days (last 30): 20
 
-Expected analytics pattern (for chat):
+Week-over-week (Mon-start, PKT):
+  This week completed: 11
+  Last week completed: 12
+
+On-time rate:
+  Overall: 81%
+  High:    64%   (intentionally lower — drives 'high-priority slips' insight)
+  Medium:  88%
+  Low:     89%
+
+Expected analytics-page shape:
+  - Productivity Score: mid-high (Great / Excellent)
   - Strongest days:  Tuesday & Thursday
   - Peak hours:      ~2:00 PM – 5:00 PM PKT
+  - Dominant time:   Afternoon
   - Weaker:          Friday evening, late Sunday
-  - Total completed: above global threshold (20)
-  - Per-day counts:  5+ per weekday (for day-specific queries)
+  - Streak:          alive through today
+  - Both CURRENT and PREVIOUS week populated
 
 Completions by day_of_week:
-  Monday     9
-  Tuesday    12
-  Wednesday  9
-  Thursday   12
-  Friday     9
-  Saturday   6
-  Sunday     6
+  Monday     5
+  Tuesday    14
+  Wednesday  8
+  Thursday   14
+  Friday     4
+  Saturday   2
+  Sunday     0
 
-CHAT PHRASES TO TEST (login as areejFatima@gmail.com):
+CHAT PHRASES TO TEST:
   1. "when am I most productive"
   2. "what are my peak hours"
   3. "which days am I most focused"
@@ -43,37 +56,37 @@ Follow-up test (best time, no day):
   User: "find the best time for me"
   EVA should ask which day → reply: "Tuesday"
 
-Sample seeded tasks (first 15):
-  01. [BEHAV-AREEJ] FYP supervisor meeting notes
-      Due: Mon, 01 Jun 2026, 09:30 am | Done: Mon, 01 Jun 2026, 10:25 am | on-time: true
-  02. [BEHAV-AREEJ] Submit OS assignment on LMS
-      Due: Mon, 01 Jun 2026, 11:00 am | Done: Mon, 01 Jun 2026, 11:40 am | on-time: true
-  03. [BEHAV-AREEJ] Revise DBMS normalization slides
-      Due: Mon, 01 Jun 2026, 07:00 pm | Done: Mon, 01 Jun 2026, 08:25 pm | on-time: true
-  04. [BEHAV-AREEJ] Practice past paper MCQs
-      Due: Tue, 02 Jun 2026, 02:00 pm | Done: Tue, 02 Jun 2026, 03:10 pm | on-time: true
-  05. [BEHAV-AREEJ] Group meeting for FYP demo
-      Due: Tue, 02 Jun 2026, 03:30 pm | Done: Tue, 02 Jun 2026, 04:25 pm | on-time: true
-  06. [BEHAV-AREEJ] Read chapter for software engineering
-      Due: Tue, 02 Jun 2026, 04:45 pm | Done: Tue, 02 Jun 2026, 06:10 pm | on-time: true
-  07. [BEHAV-AREEJ] Fix bugs in Flutter login screen
-      Due: Tue, 02 Jun 2026, 10:00 am | Done: Tue, 02 Jun 2026, 12:05 pm | on-time: false
-  08. [BEHAV-AREEJ] Prepare slides for presentation
-      Due: Wed, 03 Jun 2026, 09:45 am | Done: Wed, 03 Jun 2026, 10:40 am | on-time: true
-  09. [BEHAV-AREEJ] Watch recorded lecture and summarize
-      Due: Wed, 03 Jun 2026, 03:00 pm | Done: Wed, 03 Jun 2026, 04:10 pm | on-time: true
-  10. [BEHAV-AREEJ] Chemistry lab write-up
-      Due: Wed, 03 Jun 2026, 08:30 pm | Done: Wed, 03 Jun 2026, 09:10 pm | on-time: true
-  11. [BEHAV-AREEJ] Email professor about extension
-      Due: Thu, 04 Jun 2026, 02:15 pm | Done: Thu, 04 Jun 2026, 03:30 pm | on-time: true
-  12. [BEHAV-AREEJ] LeetCode practice — arrays
-      Due: Thu, 04 Jun 2026, 04:00 pm | Done: Thu, 04 Jun 2026, 05:05 pm | on-time: true
-  13. [BEHAV-AREEJ] Print and bind report draft
-      Due: Thu, 04 Jun 2026, 05:30 pm | Done: Thu, 04 Jun 2026, 06:25 pm | on-time: true
-  14. [BEHAV-AREEJ] Library quiet hour — thesis reading
-      Due: Thu, 04 Jun 2026, 11:15 am | Done: Thu, 04 Jun 2026, 12:00 pm | on-time: true
-  15. [BEHAV-AREEJ] Mock viva with roommate
-      Due: Fri, 29 May 2026, 01:00 pm | Done: Fri, 29 May 2026, 03:05 pm | on-time: false
+Sample seeded tasks (most recent 15):
+  01. [BEHAV-AREEJ] Fix bugs in Flutter login screen [medium]
+      Due: Fri, 03 Jul 2026, 01:00 pm | Done: Fri, 03 Jul 2026, 12:33 pm | on-time: true
+  02. [BEHAV-AREEJ] Read chapter for software engineering [high]
+      Due: Thu, 02 Jul 2026, 05:30 pm | Done: Thu, 02 Jul 2026, 05:16 pm | on-time: true
+  03. [BEHAV-AREEJ] Group meeting for FYP demo [medium]
+      Due: Thu, 02 Jul 2026, 04:00 pm | Done: Thu, 02 Jul 2026, 03:47 pm | on-time: true
+  04. [BEHAV-AREEJ] Practice past paper MCQs [low]
+      Due: Thu, 02 Jul 2026, 02:15 pm | Done: Thu, 02 Jul 2026, 01:55 pm | on-time: true
+  05. [BEHAV-AREEJ] Revise DBMS normalization slides [medium]
+      Due: Thu, 02 Jul 2026, 11:15 am | Done: Thu, 02 Jul 2026, 10:53 am | on-time: true
+  06. [BEHAV-AREEJ] Submit OS assignment on LMS [medium]
+      Due: Wed, 01 Jul 2026, 03:00 pm | Done: Wed, 01 Jul 2026, 03:20 pm | on-time: false
+  07. [BEHAV-AREEJ] FYP supervisor meeting notes [high]
+      Due: Wed, 01 Jul 2026, 09:45 am | Done: Wed, 01 Jul 2026, 09:22 am | on-time: true
+  08. [BEHAV-AREEJ] Flashcards for midterm formulas [high]
+      Due: Tue, 30 Jun 2026, 04:45 pm | Done: Tue, 30 Jun 2026, 05:51 pm | on-time: false
+  09. [BEHAV-AREEJ] Review teammate PR on GitHub [medium]
+      Due: Tue, 30 Jun 2026, 03:30 pm | Done: Tue, 30 Jun 2026, 03:10 pm | on-time: true
+  10. [BEHAV-AREEJ] Backup project to Google Drive [low]
+      Due: Tue, 30 Jun 2026, 02:00 pm | Done: Tue, 30 Jun 2026, 01:32 pm | on-time: true
+  11. [BEHAV-AREEJ] Rehearse demo script [medium]
+      Due: Mon, 29 Jun 2026, 11:00 am | Done: Mon, 29 Jun 2026, 10:51 am | on-time: true
+  12. [BEHAV-AREEJ] Update Gantt chart for FYP [high]
+      Due: Sat, 27 Jun 2026, 11:00 am | Done: Sat, 27 Jun 2026, 10:41 am | on-time: true
+  13. [BEHAV-AREEJ] Mock viva with roommate [medium]
+      Due: Fri, 26 Jun 2026, 06:30 pm | Done: Fri, 26 Jun 2026, 06:08 pm | on-time: true
+  14. [BEHAV-AREEJ] Library quiet hour — thesis reading [low]
+      Due: Thu, 25 Jun 2026, 05:30 pm | Done: Thu, 25 Jun 2026, 05:19 pm | on-time: true
+  15. [BEHAV-AREEJ] Print and bind report draft [medium]
+      Due: Thu, 25 Jun 2026, 04:00 pm | Done: Thu, 25 Jun 2026, 03:40 pm | on-time: true
 
 Re-run seed:
   cd Eva_Backend_Server && node scripts/seed-areej-behavioral-analytics.js --clean

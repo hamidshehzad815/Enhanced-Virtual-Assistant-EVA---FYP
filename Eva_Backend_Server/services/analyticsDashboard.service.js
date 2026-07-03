@@ -40,6 +40,45 @@ const roundTo = (value, digits = 1) => {
   return Math.round(Number(value) * factor) / factor;
 };
 
+const clamp01 = (value) => Math.max(0, Math.min(1, Number(value) || 0));
+
+/** Time-of-day buckets (local hours). "night" wraps past midnight. */
+const TIME_BUCKETS = [
+  { key: "morning", label: "Morning", start: 5, end: 11, range_display: "5AM–12PM" },
+  { key: "afternoon", label: "Afternoon", start: 12, end: 16, range_display: "12PM–5PM" },
+  { key: "evening", label: "Evening", start: 17, end: 20, range_display: "5PM–9PM" },
+  { key: "night", label: "Night", start: 21, end: 4, range_display: "9PM–5AM" },
+];
+
+const bucketKeyForHour = (hour) => {
+  const h = Number(hour);
+  if (h >= 5 && h <= 11) return "morning";
+  if (h >= 12 && h <= 16) return "afternoon";
+  if (h >= 17 && h <= 20) return "evening";
+  return "night";
+};
+
+const PRIORITY_ORDER = ["high", "medium", "low"];
+const PRIORITY_LABELS = { high: "High", medium: "Medium", low: "Low" };
+
+const localHour = (date, timezone) => {
+  const value = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    hourCycle: "h23",
+    timeZone: timezone,
+  }).format(date);
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) ? parsed % 24 : 0;
+};
+
+const SCORE_RATINGS = [
+  { min: 85, label: "Excellent", caption: "You're operating at your best — steady and on time." },
+  { min: 70, label: "Great", caption: "Strong, consistent momentum. Keep it going." },
+  { min: 55, label: "Good", caption: "Solid habits forming — a little more consistency lifts this." },
+  { min: 40, label: "Fair", caption: "You're building rhythm. Small daily wins add up fast." },
+  { min: 0, label: "Building", caption: "Every completed task moves this number up." },
+];
+
 const buildOwnerIdFilter = (userId) => {
   const ownerIds = [userId, String(userId)];
   return [...new Set(ownerIds)];
@@ -599,6 +638,293 @@ const pickTopSlots = (hours = [], limit = 3) => {
     }));
 };
 
+/**
+ * Fetch completion logs within the range once, so several blocks
+ * (daily series, time-of-day, priority) can reuse the same rows.
+ */
+const fetchRangeCompletionLogs = async (userId, rangeDays) => {
+  const since = new Date(Date.now() - (rangeDays + 1) * 24 * 60 * 60 * 1000);
+  return ActivityLog.find({
+    user_id: { $in: buildOwnerIdFilter(userId) },
+    action_type: "task_completed",
+    action_timestamp: { $gte: since },
+  })
+    .select("action_timestamp was_on_time hour_of_day task_priority time_taken_minutes")
+    .sort({ action_timestamp: 1 })
+    .limit(2000)
+    .lean();
+};
+
+/** Dense per-day completion series over the selected range (for the trend line). */
+const buildDailyCompletions = (rangeLogs, rangeDays, timezone) => {
+  const now = new Date();
+  const order = [];
+  const map = {};
+  for (let i = rangeDays - 1; i >= 0; i -= 1) {
+    const day = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+    const key = localDateKey(day, timezone);
+    order.push(key);
+    map[key] = { date: key, count: 0, on_time: 0, late: 0 };
+  }
+
+  rangeLogs.forEach((log) => {
+    if (!log.action_timestamp) return;
+    const key = localDateKey(new Date(log.action_timestamp), timezone);
+    const bucket = map[key];
+    if (!bucket) return;
+    bucket.count += 1;
+    if (log.was_on_time === true) bucket.on_time += 1;
+    else if (log.was_on_time === false) bucket.late += 1;
+  });
+
+  const series = order.map((key) => map[key]);
+  const total = series.reduce((sum, row) => sum + row.count, 0);
+  const activeDays = series.filter((row) => row.count > 0).length;
+  const busiest = series.reduce(
+    (best, row) => (row.count > (best?.count || 0) ? row : best),
+    null,
+  );
+
+  return {
+    range_days: rangeDays,
+    total,
+    active_days: activeDays,
+    avg_per_active_day: activeDays ? roundTo(total / activeDays, 1) : 0,
+    busiest_date: busiest && busiest.count > 0 ? busiest : null,
+    series,
+  };
+};
+
+/** Distribution of completions across morning / afternoon / evening / night. */
+const buildTimeOfDay = (rangeLogs, timezone) => {
+  const counters = {};
+  TIME_BUCKETS.forEach((bucket) => {
+    counters[bucket.key] = { count: 0, on_time: 0 };
+  });
+
+  rangeLogs.forEach((log) => {
+    let hour = Number(log.hour_of_day);
+    if (!Number.isFinite(hour) && log.action_timestamp) {
+      hour = localHour(new Date(log.action_timestamp), timezone);
+    }
+    if (!Number.isFinite(hour)) return;
+    const key = bucketKeyForHour(hour);
+    counters[key].count += 1;
+    if (log.was_on_time === true) counters[key].on_time += 1;
+  });
+
+  const total = TIME_BUCKETS.reduce((sum, b) => sum + counters[b.key].count, 0);
+
+  const buckets = TIME_BUCKETS.map((bucket) => {
+    const { count, on_time: onTime } = counters[bucket.key];
+    return {
+      key: bucket.key,
+      label: bucket.label,
+      range_display: bucket.range_display,
+      count,
+      on_time_rate: count > 0 ? roundTo((onTime / count) * 100, 1) : 0,
+      percent: total > 0 ? roundTo((count / total) * 100, 1) : 0,
+    };
+  });
+
+  const dominant = total
+    ? [...buckets].sort((a, b) => b.count - a.count)[0]
+    : null;
+
+  return { total, buckets, dominant };
+};
+
+/** How reliably the user finishes tasks at each priority level. */
+const buildPriorityPerformance = (rangeLogs) => {
+  const counters = {};
+  PRIORITY_ORDER.forEach((priority) => {
+    counters[priority] = { completed: 0, on_time: 0 };
+  });
+
+  rangeLogs.forEach((log) => {
+    const priority = String(log.task_priority || "").toLowerCase();
+    if (!counters[priority]) return;
+    counters[priority].completed += 1;
+    if (log.was_on_time === true) counters[priority].on_time += 1;
+  });
+
+  const totalKnown = PRIORITY_ORDER.reduce(
+    (sum, priority) => sum + counters[priority].completed,
+    0,
+  );
+
+  return PRIORITY_ORDER.map((priority) => {
+    const { completed, on_time: onTime } = counters[priority];
+    return {
+      priority,
+      label: PRIORITY_LABELS[priority],
+      completed,
+      on_time: onTime,
+      on_time_rate: completed > 0 ? roundTo((onTime / completed) * 100, 1) : 0,
+      percent: totalKnown > 0 ? roundTo((completed / totalKnown) * 100, 1) : 0,
+    };
+  });
+};
+
+/**
+ * Composite 0–100 productivity score with a transparent component breakdown.
+ * Weighted: on-time 35, consistency 25, volume 25, streak 15.
+ */
+const buildProductivityScore = ({ hero, daily, rangeDays }) => {
+  const onTime = clamp01((hero.on_time_rate || 0) / 100);
+  // 60% of days active earns full consistency credit (range-agnostic target).
+  const activeRatio = rangeDays > 0 ? daily.active_days / rangeDays : 0;
+  const consistency = clamp01(activeRatio / 0.6);
+  // ~0.8 completions/day averaged over the range earns full volume credit.
+  const volume = clamp01(rangeDays > 0 ? daily.total / rangeDays / 0.8 : 0);
+  const streak = clamp01((hero.streak_days || 0) / 7);
+
+  const score = Math.round(
+    100 * (0.35 * onTime + 0.25 * consistency + 0.25 * volume + 0.15 * streak),
+  );
+  const rating = SCORE_RATINGS.find((r) => score >= r.min) || SCORE_RATINGS[SCORE_RATINGS.length - 1];
+
+  return {
+    score,
+    rating: rating.label,
+    caption: rating.caption,
+    components: {
+      on_time: Math.round(onTime * 100),
+      consistency: Math.round(consistency * 100),
+      volume: Math.round(volume * 100),
+      streak: Math.round(streak * 100),
+    },
+    weights: { on_time: 35, consistency: 25, volume: 25, streak: 15 },
+  };
+};
+
+/**
+ * Rule-based, human-readable insight cards. Built entirely from Mongo-derived
+ * data so they work even when the AI server is unavailable.
+ */
+const buildInsights = ({
+  hero,
+  heatmap,
+  tasks,
+  behavioral,
+  timeOfDay,
+  priorityPerformance,
+  daily,
+}) => {
+  const insights = [];
+  const push = (type, icon, title, message) =>
+    insights.push({ id: `${insights.length + 1}`, type, icon, title, message });
+
+  if ((hero.total_completed || 0) === 0) {
+    push(
+      "tip",
+      "rocket_launch",
+      "Let's get started",
+      "Complete your first task to unlock your productivity insights.",
+    );
+    return insights;
+  }
+
+  if ((hero.streak_days || 0) >= 3) {
+    push(
+      "positive",
+      "local_fire_department",
+      "On a roll",
+      `${hero.streak_days}-day completion streak — keep the momentum going!`,
+    );
+  }
+
+  const weekChange = hero.week_change_percent || 0;
+  if (weekChange >= 10) {
+    push(
+      "positive",
+      "trending_up",
+      "Up from last week",
+      `You've finished ${hero.completed_this_week} tasks this week — ${Math.round(Math.abs(weekChange))}% more than last week.`,
+    );
+  } else if (weekChange <= -20 && (hero.completed_last_week || 0) > 0) {
+    push(
+      "warning",
+      "trending_down",
+      "Slower week",
+      `Completions are down ${Math.round(Math.abs(weekChange))}% versus last week — a small push gets you back on track.`,
+    );
+  }
+
+  const onTimeRate = hero.on_time_rate || 0;
+  if (onTimeRate >= 85) {
+    push(
+      "positive",
+      "verified",
+      "Reliably on time",
+      `You finish ${onTimeRate}% of your tasks on schedule. Excellent discipline.`,
+    );
+  } else if (onTimeRate > 0 && onTimeRate < 60 && (hero.total_completed || 0) >= 10) {
+    push(
+      "tip",
+      "schedule",
+      "Beat the deadline",
+      `Only ${onTimeRate}% of tasks finish on time. Try scheduling them inside your peak window.`,
+    );
+  }
+
+  const strength = behavioral?.strength_summary;
+  const peak = heatmap?.peak;
+  if (strength) {
+    push("info", "bolt", "Your power hours", strength);
+  } else if (peak) {
+    push(
+      "info",
+      "bolt",
+      "Your power hours",
+      `You're most productive on ${peak.day_name} around ${peak.hour_display}.`,
+    );
+  }
+
+  const high = (priorityPerformance || []).find((p) => p.priority === "high");
+  if (high && high.completed >= 3 && high.on_time_rate < onTimeRate - 15) {
+    push(
+      "tip",
+      "priority_high",
+      "High-priority tasks slip",
+      `High-priority tasks are on time only ${high.on_time_rate}% of the time — plan them earlier in the day.`,
+    );
+  }
+
+  if ((tasks?.overdue || 0) > 0) {
+    push(
+      "warning",
+      "warning_amber",
+      "Overdue tasks waiting",
+      `You have ${tasks.overdue} overdue task${tasks.overdue > 1 ? "s" : ""}. Clearing them lifts your score.`,
+    );
+  }
+
+  const dominant = timeOfDay?.dominant;
+  if (dominant && dominant.percent >= 40) {
+    push(
+      "info",
+      "wb_sunny",
+      `${dominant.label} person`,
+      `${dominant.percent}% of your work happens in the ${dominant.label.toLowerCase()} (${dominant.range_display}).`,
+    );
+  }
+
+  if (daily && daily.range_days > 0) {
+    const activeRatio = daily.active_days / daily.range_days;
+    if (activeRatio >= 0.6) {
+      push(
+        "positive",
+        "calendar_month",
+        "Consistent presence",
+        `Active on ${daily.active_days} of the last ${daily.range_days} days — consistency is your superpower.`,
+      );
+    }
+  }
+
+  return insights.slice(0, 5);
+};
+
 const buildDashboard = async ({
   userId,
   timezone,
@@ -607,11 +933,12 @@ const buildDashboard = async ({
 }) => {
   const tz = normalizeTimezone(timezone);
 
-  const [hero, heatmap, tasks, completionTrend] = await Promise.all([
+  const [hero, heatmap, tasks, completionTrend, rangeLogs] = await Promise.all([
     getHeroSummary(userId, tz),
     getHeatmap(userId, rangeDays, tz),
     getTasksOverview(userId, tz),
     getCompletionTrendWeeks(userId, COMPLETION_TREND_WEEKS),
+    fetchRangeCompletionLogs(userId, rangeDays),
   ]);
 
   const behavioral = await buildBehavioralBlock({
@@ -623,12 +950,31 @@ const buildDashboard = async ({
 
   const bestSlots = pickTopSlots(behavioralPayload?.data?.hours || [], 3);
 
+  const daily = buildDailyCompletions(rangeLogs, rangeDays, tz);
+  const timeOfDay = buildTimeOfDay(rangeLogs, tz);
+  const priorityPerformance = buildPriorityPerformance(rangeLogs);
+  const productivityScore = buildProductivityScore({ hero, daily, rangeDays });
+  const insights = buildInsights({
+    hero,
+    heatmap,
+    tasks,
+    behavioral,
+    timeOfDay,
+    priorityPerformance,
+    daily,
+  });
+
   return {
     generated_at: new Date().toISOString(),
     timezone: tz,
     range_days: rangeDays,
+    productivity_score: productivityScore,
     hero,
+    insights,
     behavioral,
+    daily_completions: daily,
+    time_of_day: timeOfDay,
+    priority_performance: priorityPerformance,
     heatmap,
     tasks,
     completion_trend: {
@@ -642,6 +988,11 @@ const buildDashboard = async ({
 module.exports = {
   parseRangeDays,
   buildBehavioralBlock,
+  buildDailyCompletions,
+  buildTimeOfDay,
+  buildPriorityPerformance,
+  buildProductivityScore,
+  buildInsights,
   buildDashboard,
   DAY_LABELS,
   HOUR_LABELS,

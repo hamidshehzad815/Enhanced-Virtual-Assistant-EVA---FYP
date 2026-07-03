@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
@@ -81,12 +82,36 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         _buildHeader(vm, isDark, dashboard),
-                        const SizedBox(height: 10),
+                        const SizedBox(height: 12),
+                        if (dashboard.productivityScore != null) ...[
+                          _buildProductivityScore(dashboard, isDark),
+                          const SizedBox(height: 14),
+                        ],
                         _buildHeroSection(dashboard, isDark),
                         const SizedBox(height: 14),
+                        if (dashboard.insights.isNotEmpty) ...[
+                          _buildInsights(dashboard, isDark),
+                          const SizedBox(height: 14),
+                        ],
+                        if (dashboard.dailyCompletions != null &&
+                            dashboard.dailyCompletions!.series.isNotEmpty) ...[
+                          _pad(_buildDailyActivityCard(dashboard, isDark)),
+                          const SizedBox(height: 14),
+                        ],
                         _buildBehavioralSection(dashboard, isDark),
                         const SizedBox(height: 14),
-                        _buildChartsSection(dashboard, isDark),
+                        _pad(_buildHeatmapCard(dashboard, isDark)),
+                        const SizedBox(height: 14),
+                        if (dashboard.timeOfDay != null &&
+                            dashboard.timeOfDay!.total > 0) ...[
+                          _pad(_buildTimeOfDayCard(dashboard, isDark)),
+                          const SizedBox(height: 14),
+                        ],
+                        if (_hasPriorityData(dashboard)) ...[
+                          _pad(_buildPriorityPerformanceCard(dashboard, isDark)),
+                          const SizedBox(height: 14),
+                        ],
+                        _pad(_buildTrendCard(dashboard, isDark)),
                         const SizedBox(height: 14),
                         _buildTaskSummary(dashboard, isDark),
                         const SizedBox(height: 20),
@@ -520,19 +545,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     );
   }
 
-  // ─── CHARTS SECTION ──────────────────────────────────────────────────
-  Widget _buildChartsSection(AnalyticsDashboard dashboard, bool isDark) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      child: Column(
-        children: [
-          _buildHeatmapCard(dashboard, isDark),
-          const SizedBox(height: 14),
-          _buildTrendCard(dashboard, isDark),
-        ],
-      ),
-    );
-  }
+  // ─── LAYOUT HELPERS ──────────────────────────────────────────────────
+  Widget _pad(Widget child) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 14),
+    child: child,
+  );
+
+  bool _hasPriorityData(AnalyticsDashboard dashboard) =>
+      dashboard.priorityPerformance.any((p) => p.completed > 0);
 
   // ─── HEATMAP ──────────────────────────────────────────────────────────
   Widget _buildHeatmapCard(AnalyticsDashboard dashboard, bool isDark) {
@@ -1147,6 +1167,732 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
       ),
     );
   }
+
+  // ─── PRODUCTIVITY SCORE ──────────────────────────────────────────────
+  Widget _buildProductivityScore(AnalyticsDashboard dashboard, bool isDark) {
+    final ps = dashboard.productivityScore!;
+    final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
+    final borderClr = isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200;
+    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
+    final subClr = isDark ? Colors.white70 : Colors.black54;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: cardBg,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: borderClr),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(isDark ? 0.18 : 0.06),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Productivity Score',
+              style: AppTextStyles.subtitleMedium.copyWith(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: subClr,
+                letterSpacing: 0.5,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _ScoreGauge(score: ps.score, rating: ps.rating, isDark: isDark),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        ps.caption,
+                        style: AppTextStyles.body.copyWith(
+                          fontSize: 12,
+                          height: 1.3,
+                          color: textClr,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      _scoreComponentBar(
+                        'On time',
+                        ps.components.onTime,
+                        const Color(0xFF22C55E),
+                        isDark,
+                      ),
+                      _scoreComponentBar(
+                        'Consistency',
+                        ps.components.consistency,
+                        AppColors.primary,
+                        isDark,
+                      ),
+                      _scoreComponentBar(
+                        'Volume',
+                        ps.components.volume,
+                        const Color(0xFF3B82F6),
+                        isDark,
+                      ),
+                      _scoreComponentBar(
+                        'Streak',
+                        ps.components.streak,
+                        const Color(0xFFBA7517),
+                        isDark,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _scoreComponentBar(String label, int value, Color color, bool isDark) {
+    final subClr = isDark ? Colors.white70 : Colors.black54;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Row(
+        children: [
+          SizedBox(
+            width: 78,
+            child: Text(
+              label,
+              style: TextStyle(fontSize: 11, color: subClr),
+            ),
+          ),
+          Expanded(
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(4),
+              child: LinearProgressIndicator(
+                value: (value / 100).clamp(0.0, 1.0),
+                minHeight: 7,
+                backgroundColor: isDark ? Colors.white10 : Colors.grey.shade200,
+                valueColor: AlwaysStoppedAnimation<Color>(color),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 26,
+            child: Text(
+              '$value',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: subClr,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── SMART INSIGHTS ──────────────────────────────────────────────────
+  Widget _buildInsights(AnalyticsDashboard dashboard, bool isDark) {
+    final subClr = isDark ? Colors.white70 : Colors.black54;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: Row(
+            children: [
+              Icon(
+                Icons.auto_awesome_rounded,
+                size: 14,
+                color: AppColors.primary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'Smart Insights',
+                style: AppTextStyles.subtitleMedium.copyWith(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: subClr,
+                  letterSpacing: 0.5,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 110,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            itemCount: dashboard.insights.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (context, i) =>
+                _insightCard(dashboard.insights[i], isDark),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _insightCard(Insight insight, bool isDark) {
+    final accent = _insightColor(insight.type);
+    final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
+    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
+    final subClr = isDark ? Colors.white70 : Colors.black54;
+
+    return Container(
+      width: 232,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: accent.withOpacity(0.25)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.10 : 0.04),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 26,
+                height: 26,
+                decoration: BoxDecoration(
+                  color: accent.withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(_insightIcon(insight.icon), size: 15, color: accent),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  insight.title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w700,
+                    color: textClr,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Text(
+              insight.message,
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+              style: AppTextStyles.body.copyWith(
+                fontSize: 11.5,
+                height: 1.3,
+                color: subClr,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Color _insightColor(String type) {
+    switch (type) {
+      case 'positive':
+        return const Color(0xFF22C55E);
+      case 'warning':
+        return const Color(0xFFEF4444);
+      case 'tip':
+        return AppColors.primary;
+      default:
+        return const Color(0xFF3B82F6);
+    }
+  }
+
+  IconData _insightIcon(String name) {
+    switch (name) {
+      case 'local_fire_department':
+        return Icons.local_fire_department_rounded;
+      case 'trending_up':
+        return Icons.trending_up_rounded;
+      case 'trending_down':
+        return Icons.trending_down_rounded;
+      case 'verified':
+        return Icons.verified_rounded;
+      case 'schedule':
+        return Icons.schedule_rounded;
+      case 'bolt':
+        return Icons.bolt_rounded;
+      case 'priority_high':
+        return Icons.priority_high_rounded;
+      case 'warning_amber':
+        return Icons.warning_amber_rounded;
+      case 'wb_sunny':
+        return Icons.wb_sunny_rounded;
+      case 'calendar_month':
+        return Icons.calendar_month_rounded;
+      case 'rocket_launch':
+        return Icons.rocket_launch_rounded;
+      default:
+        return Icons.lightbulb_rounded;
+    }
+  }
+
+  // ─── DAILY ACTIVITY (line chart) ─────────────────────────────────────
+  Widget _buildDailyActivityCard(AnalyticsDashboard dashboard, bool isDark) {
+    final daily = dashboard.dailyCompletions!;
+    final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
+    final borderClr = isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200;
+    final subClr = isDark ? Colors.white70 : Colors.black54;
+
+    final series = daily.series;
+    final spots = <FlSpot>[
+      for (var i = 0; i < series.length; i++)
+        FlSpot(i.toDouble(), series[i].count.toDouble()),
+    ];
+    final maxCount = series.fold<int>(0, (m, p) => p.count > m ? p.count : m);
+    final maxY = (maxCount < 4 ? 4 : maxCount + 1).toDouble();
+    final lineColor = AppColors.primary;
+
+    final xInterval = math.max(1, (series.length / 5).ceil());
+    final leftInterval = math.max(1, (maxY / 4).ceil()).toDouble();
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderClr),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.10 : 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Daily Activity',
+            style: AppTextStyles.subtitleMedium.copyWith(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: subClr,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Completions over the last ${daily.rangeDays} days',
+            style: AppTextStyles.body.copyWith(fontSize: 11, color: subClr),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              _miniStat('${daily.total}', 'Completed', isDark),
+              const SizedBox(width: 20),
+              _miniStat('${daily.activeDays}', 'Active days', isDark),
+              const SizedBox(width: 20),
+              _miniStat(
+                daily.avgPerActiveDay.toStringAsFixed(1),
+                'Avg / active day',
+                isDark,
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          SizedBox(
+            height: 140,
+            child: LineChart(
+              LineChartData(
+                minX: 0,
+                maxX: (series.length - 1).toDouble(),
+                minY: 0,
+                maxY: maxY,
+                lineTouchData: const LineTouchData(enabled: true),
+                gridData: FlGridData(
+                  show: true,
+                  drawVerticalLine: false,
+                  horizontalInterval: leftInterval,
+                  getDrawingHorizontalLine: (value) => FlLine(
+                    color: isDark ? Colors.white12 : Colors.grey.shade200,
+                    strokeWidth: 1,
+                  ),
+                ),
+                borderData: FlBorderData(show: false),
+                titlesData: FlTitlesData(
+                  topTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  rightTitles: const AxisTitles(
+                    sideTitles: SideTitles(showTitles: false),
+                  ),
+                  leftTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: leftInterval,
+                      reservedSize: 24,
+                      getTitlesWidget: (value, meta) => Text(
+                        value.toInt().toString(),
+                        style: TextStyle(fontSize: 9, color: subClr),
+                      ),
+                    ),
+                  ),
+                  bottomTitles: AxisTitles(
+                    sideTitles: SideTitles(
+                      showTitles: true,
+                      interval: xInterval.toDouble(),
+                      reservedSize: 20,
+                      getTitlesWidget: (value, meta) {
+                        final i = value.round();
+                        if (i < 0 || i >= series.length) {
+                          return const SizedBox.shrink();
+                        }
+                        final d = DateTime.tryParse(series[i].date);
+                        final label = d != null
+                            ? DateFormat('d MMM').format(d)
+                            : '';
+                        return Padding(
+                          padding: const EdgeInsets.only(top: 4),
+                          child: Text(
+                            label,
+                            style: TextStyle(fontSize: 8, color: subClr),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ),
+                lineBarsData: [
+                  LineChartBarData(
+                    spots: spots,
+                    isCurved: true,
+                    curveSmoothness: 0.25,
+                    color: lineColor,
+                    barWidth: 2.5,
+                    dotData: FlDotData(show: series.length <= 31),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      gradient: LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: [
+                          lineColor.withOpacity(0.25),
+                          lineColor.withOpacity(0.0),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniStat(String value, String label, bool isDark) {
+    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
+    final subClr = isDark ? Colors.white70 : Colors.black54;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: textClr,
+          ),
+        ),
+        Text(label, style: TextStyle(fontSize: 10, color: subClr)),
+      ],
+    );
+  }
+
+  // ─── TIME OF DAY (donut) ─────────────────────────────────────────────
+  Widget _buildTimeOfDayCard(AnalyticsDashboard dashboard, bool isDark) {
+    final tod = dashboard.timeOfDay!;
+    final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
+    final borderClr = isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200;
+    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
+    final subClr = isDark ? Colors.white70 : Colors.black54;
+
+    Color colorFor(String key) {
+      switch (key) {
+        case 'morning':
+          return const Color(0xFFF59E0B);
+        case 'afternoon':
+          return const Color(0xFF3B82F6);
+        case 'evening':
+          return const Color(0xFF8B5CF6);
+        default:
+          return const Color(0xFF6366F1);
+      }
+    }
+
+    final sections = <PieChartSectionData>[
+      for (final b in tod.buckets)
+        if (b.count > 0)
+          PieChartSectionData(
+            value: b.count.toDouble(),
+            color: colorFor(b.key),
+            radius: 16,
+            showTitle: false,
+          ),
+    ];
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderClr),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.10 : 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'When You Work',
+            style: AppTextStyles.subtitleMedium.copyWith(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: subClr,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              SizedBox(
+                width: 110,
+                height: 110,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    PieChart(
+                      PieChartData(
+                        sectionsSpace: 2,
+                        centerSpaceRadius: 32,
+                        sections: sections,
+                      ),
+                    ),
+                    if (tod.dominant != null)
+                      Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            '${tod.dominant!.percent.toStringAsFixed(0)}%',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.w700,
+                              color: textClr,
+                            ),
+                          ),
+                          Text(
+                            tod.dominant!.label,
+                            style: TextStyle(fontSize: 10, color: subClr),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Expanded(
+                child: Column(
+                  children: [
+                    for (final b in tod.buckets)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 8),
+                        child: Row(
+                          children: [
+                            Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: colorFor(b.key),
+                                borderRadius: BorderRadius.circular(3),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    b.label,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w600,
+                                      color: textClr,
+                                    ),
+                                  ),
+                                  Text(
+                                    b.rangeDisplay,
+                                    style: TextStyle(
+                                      fontSize: 9,
+                                      color: subClr,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Text(
+                              '${b.count} · ${b.percent.toStringAsFixed(0)}%',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: subClr,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ─── PRIORITY PERFORMANCE ────────────────────────────────────────────
+  Widget _buildPriorityPerformanceCard(
+    AnalyticsDashboard dashboard,
+    bool isDark,
+  ) {
+    final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
+    final borderClr = isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200;
+    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
+    final subClr = isDark ? Colors.white70 : Colors.black54;
+
+    Color colorFor(String priority) {
+      switch (priority) {
+        case 'high':
+          return const Color(0xFFEF4444);
+        case 'medium':
+          return const Color(0xFFF59E0B);
+        default:
+          return const Color(0xFF22C55E);
+      }
+    }
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: borderClr),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(isDark ? 0.10 : 0.04),
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Priority Performance',
+            style: AppTextStyles.subtitleMedium.copyWith(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: subClr,
+              letterSpacing: 0.5,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'How reliably you finish tasks on time by priority',
+            style: AppTextStyles.body.copyWith(fontSize: 11, color: subClr),
+          ),
+          const SizedBox(height: 12),
+          for (final p in dashboard.priorityPerformance)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 10),
+              child: Row(
+                children: [
+                  SizedBox(
+                    width: 58,
+                    child: Text(
+                      p.label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: colorFor(p.priority),
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: p.completed > 0
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(4),
+                            child: LinearProgressIndicator(
+                              value: (p.onTimeRate / 100).clamp(0.0, 1.0),
+                              minHeight: 8,
+                              backgroundColor: isDark
+                                  ? Colors.white10
+                                  : Colors.grey.shade200,
+                              valueColor: AlwaysStoppedAnimation<Color>(
+                                colorFor(p.priority),
+                              ),
+                            ),
+                          )
+                        : Text(
+                            'No completed tasks yet',
+                            style: TextStyle(fontSize: 10, color: subClr),
+                          ),
+                  ),
+                  const SizedBox(width: 10),
+                  SizedBox(
+                    width: 92,
+                    child: Text(
+                      p.completed > 0
+                          ? '${p.onTimeRate.toStringAsFixed(0)}% · ${p.completed} done'
+                          : '—',
+                      textAlign: TextAlign.right,
+                      style: TextStyle(fontSize: 10, color: textClr),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 // ─── Hero Card ──────────────────────────────────────────────────────────
@@ -1324,4 +2070,112 @@ class _AnimatedStatementState extends State<_AnimatedStatement>
       },
     );
   }
+}
+
+// ─── Score Gauge ────────────────────────────────────────────────────────
+class _ScoreGauge extends StatelessWidget {
+  final int score;
+  final String rating;
+  final bool isDark;
+
+  const _ScoreGauge({
+    required this.score,
+    required this.rating,
+    required this.isDark,
+  });
+
+  Color get _color {
+    if (score >= 85) return const Color(0xFF22C55E);
+    if (score >= 70) return AppColors.primary;
+    if (score >= 55) return const Color(0xFF3B82F6);
+    if (score >= 40) return const Color(0xFFF59E0B);
+    return const Color(0xFFEF4444);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 116,
+      height: 116,
+      child: CustomPaint(
+        painter: _GaugePainter(
+          progress: (score / 100).clamp(0.0, 1.0),
+          color: _color,
+          trackColor: isDark ? Colors.white12 : Colors.grey.shade200,
+        ),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '$score',
+                style: AppTextStyles.headline.copyWith(
+                  fontSize: 34,
+                  fontWeight: FontWeight.w700,
+                  color: isDark ? Colors.white : const Color(0xFF1C1C1E),
+                ),
+              ),
+              Text(
+                rating,
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: _color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GaugePainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  final Color trackColor;
+
+  _GaugePainter({
+    required this.progress,
+    required this.color,
+    required this.trackColor,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const stroke = 11.0;
+    final rect = Rect.fromLTWH(
+      stroke / 2,
+      stroke / 2,
+      size.width - stroke,
+      size.height - stroke,
+    );
+    const start = math.pi * 0.75; // 135°
+    const sweep = math.pi * 1.5; // 270°
+
+    final track = Paint()
+      ..color = trackColor
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = stroke
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(rect, start, sweep, false, track);
+
+    if (progress > 0) {
+      final prog = Paint()
+        ..shader = SweepGradient(
+          startAngle: start,
+          endAngle: start + sweep,
+          colors: [color.withOpacity(0.55), color],
+        ).createShader(rect)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = stroke
+        ..strokeCap = StrokeCap.round;
+      canvas.drawArc(rect, start, sweep * progress, false, prog);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GaugePainter oldDelegate) =>
+      oldDelegate.progress != progress || oldDelegate.color != color;
 }

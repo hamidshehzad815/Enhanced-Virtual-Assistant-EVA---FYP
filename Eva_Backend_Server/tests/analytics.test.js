@@ -144,12 +144,39 @@ describe("Analytics API", () => {
     expect(response.body.data.completion_trend.weeks).toBe(3);
     expect(Array.isArray(response.body.data.best_slots)).toBe(true);
     expect(response.body.data.best_slots).toHaveLength(3);
-    expect(response.body.data.insights).toBeUndefined();
-    expect(response.body.data.empty_state).toBeUndefined();
+
+    // New computed blocks (all derived from Mongo, present even without AI)
+    expect(response.body.data.productivity_score).toBeDefined();
+    expect(typeof response.body.data.productivity_score.score).toBe("number");
+    expect(response.body.data.productivity_score.components).toBeDefined();
+    expect(Array.isArray(response.body.data.insights)).toBe(true);
+    expect(response.body.data.daily_completions).toBeDefined();
+    expect(Array.isArray(response.body.data.daily_completions.series)).toBe(true);
+    expect(response.body.data.daily_completions.series).toHaveLength(30);
+    expect(response.body.data.time_of_day).toBeDefined();
+    expect(response.body.data.time_of_day.buckets).toHaveLength(4);
+    expect(Array.isArray(response.body.data.priority_performance)).toBe(true);
+    expect(response.body.data.priority_performance).toHaveLength(3);
+
     expect(callAIAnalytics).toHaveBeenCalledWith({
       userId: USER_ID,
       type: "full",
     });
+  });
+
+  test("GET /api/analytics/dashboard?days=7 -> 7-day daily series", async () => {
+    callAIAnalytics.mockResolvedValueOnce({
+      status: "success",
+      data: { has_enough_data: false, total_completed: 0, hours: [], days: [] },
+    });
+
+    const response = await request(app)
+      .get("/api/analytics/dashboard?days=7")
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.daily_completions.series).toHaveLength(7);
+    expect(response.body.data.daily_completions.range_days).toBe(7);
   });
 
   test("GET /api/analytics/dashboard with invalid days -> 400", async () => {

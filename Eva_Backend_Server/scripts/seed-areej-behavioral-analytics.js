@@ -1,16 +1,29 @@
 #!/usr/bin/env node
 /**
- * Seed realistic behavioral analytics data for manual E2E chat testing.
+ * Seed realistic behavioral analytics data for manual E2E + analytics-page testing.
  *
- * Target user: areejFatima@gmail.com (Areej Fatima — FYP student persona)
+ * Target user: hamidlilla7@gmail.com (FYP student persona)
  *
- * Inserts completed tasks + matching activity_logs (task_completed) with
- * human-like patterns across days, dates, and times (Asia/Karachi).
+ * Generation model (rewritten):
+ *   - Day-by-day over the last DAYS_OF_HISTORY days, anchored to "now".
+ *   - Fills the CURRENT week AND previous weeks (so week-over-week works).
+ *   - Builds a live completion streak ending today.
+ *   - Realistic per-weekday productive windows (peak Tue/Thu afternoons).
+ *   - On-time rate driven by priority (high slips more) + weaker evenings.
+ *   - Deterministic per run-day: clear + re-run gives a clean, sensible dataset
+ *     anchored to whatever "today" is.
+ *
+ * This lights up every analytics-page section: productivity_score, hero,
+ * insights, daily_completions, time_of_day, priority_performance, heatmap,
+ * completion_trend, streak, and on-time rate.
  *
  * Usage (from Eva_Backend_Server):
  *   node scripts/seed-areej-behavioral-analytics.js
  *   node scripts/seed-areej-behavioral-analytics.js --clean   # remove prior seed data first
  *   node scripts/seed-areej-behavioral-analytics.js --dry-run # preview counts only
+ *
+ * Recommended (fresh, sensible data every time):
+ *   node scripts/seed-areej-behavioral-analytics.js --clean
  *
  * Requires: MONGODB_URI in .env (same DB as AI server + backend)
  */
@@ -24,13 +37,19 @@ const mongoose = require("mongoose");
 const { connectDB, disconnectDB } = require("../config/db");
 const { User, UserSetting, Task, ActivityLog } = require("../models");
 
-const TARGET_EMAIL = "areejFatima@gmail.com";
+const TARGET_EMAIL = "hamidlilla7@gmail.com";
 const SEED_TAG = "[BEHAV-AREEJ]";
 const LOG_SOURCE = "seed_behavioral_areej";
 const TIMEZONE_LABEL = "Asia/Karachi";
-const WEEKS_OF_HISTORY = 3;
 
-// --- Persona: what Areej actually completes (student voice) ---
+// How many days back to generate (covers current + ~4 previous weeks).
+const DAYS_OF_HISTORY = 30;
+// Guarantee at least one completion on each of the most-recent days (streak).
+const STREAK_TARGET_DAYS = 6;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+// --- Persona: what the student actually completes (student voice) ---
 const TASK_POOL = [
   "FYP supervisor meeting notes",
   "Submit OS assignment on LMS",
@@ -55,41 +74,50 @@ const TASK_POOL = [
 ];
 
 /**
- * Weekly completion slots (PKT). Weight = how often this slot fires that week.
- * Designed so analytics show:
- *   - Peak hours: Tue/Thu 14:00–17:00
- *   - Good mornings: Mon/Wed 09:00–11:00
- *   - Weaker: Fri 18:00+, Sun sparse
+ * Per-weekday productive windows (Mon=0 … Sun=6).
+ * Each slot:
+ *   h, m       → local (PKT) start time
+ *   dur        → planned duration (minutes)
+ *   rel        → base reliability hint (kept for realism)
+ *   freq       → 0–10 chance this slot fires on a given day (creates variance)
+ *   part       → optional day-part tag; "evening" slots are less reliable
+ *
+ * Shape of the resulting analytics:
+ *   - Peak days:   Tuesday & Thursday afternoons (2–5 PM)
+ *   - Good:        Mon/Wed mornings (9–11 AM)
+ *   - Weaker:      Friday evening, Sunday sparse
+ *   - Dominant time-of-day: Afternoon
  */
-const SLOT_PROFILE = [
-  { day: 0, hour: 9, minute: 30, weight: 3, duration: 60, onTimeRate: 0.85 },
-  { day: 0, hour: 11, minute: 0, weight: 2, duration: 45, onTimeRate: 0.8 },
-  { day: 0, hour: 19, minute: 0, weight: 1, duration: 90, onTimeRate: 0.55 },
-
-  { day: 1, hour: 14, minute: 0, weight: 5, duration: 75, onTimeRate: 0.92 },
-  { day: 1, hour: 15, minute: 30, weight: 5, duration: 60, onTimeRate: 0.9 },
-  { day: 1, hour: 16, minute: 45, weight: 4, duration: 90, onTimeRate: 0.88 },
-  { day: 1, hour: 10, minute: 0, weight: 2, duration: 60, onTimeRate: 0.75 },
-
-  { day: 2, hour: 9, minute: 45, weight: 3, duration: 60, onTimeRate: 0.82 },
-  { day: 2, hour: 15, minute: 0, weight: 3, duration: 75, onTimeRate: 0.8 },
-  { day: 2, hour: 20, minute: 30, weight: 1, duration: 45, onTimeRate: 0.5 },
-
-  { day: 3, hour: 14, minute: 15, weight: 5, duration: 80, onTimeRate: 0.91 },
-  { day: 3, hour: 16, minute: 0, weight: 4, duration: 70, onTimeRate: 0.89 },
-  { day: 3, hour: 17, minute: 30, weight: 3, duration: 60, onTimeRate: 0.86 },
-  { day: 3, hour: 11, minute: 15, weight: 2, duration: 50, onTimeRate: 0.78 },
-
-  { day: 4, hour: 13, minute: 0, weight: 2, duration: 60, onTimeRate: 0.7 },
-  { day: 4, hour: 18, minute: 30, weight: 2, duration: 90, onTimeRate: 0.45 },
-  { day: 4, hour: 21, minute: 0, weight: 1, duration: 45, onTimeRate: 0.4 },
-
-  { day: 5, hour: 11, minute: 0, weight: 1, duration: 60, onTimeRate: 0.65 },
-  { day: 5, hour: 15, minute: 0, weight: 1, duration: 75, onTimeRate: 0.6 },
-
-  { day: 6, hour: 10, minute: 30, weight: 1, duration: 45, onTimeRate: 0.7 },
-  { day: 6, hour: 19, minute: 0, weight: 1, duration: 60, onTimeRate: 0.55 },
-];
+const WEEKDAY_PROFILE = {
+  0: [
+    { h: 9, m: 30, dur: 60, rel: 0.85, freq: 8 },
+    { h: 11, m: 0, dur: 45, rel: 0.8, freq: 6 },
+    { h: 15, m: 0, dur: 75, rel: 0.82, freq: 6 },
+  ],
+  1: [
+    { h: 10, m: 0, dur: 60, rel: 0.78, freq: 6 },
+    { h: 14, m: 0, dur: 75, rel: 0.92, freq: 9 },
+    { h: 15, m: 30, dur: 60, rel: 0.9, freq: 9 },
+    { h: 16, m: 45, dur: 90, rel: 0.88, freq: 7 },
+  ],
+  2: [
+    { h: 9, m: 45, dur: 60, rel: 0.85, freq: 7 },
+    { h: 15, m: 0, dur: 75, rel: 0.82, freq: 7 },
+    { h: 20, m: 30, dur: 45, rel: 0.6, freq: 4, part: "evening" },
+  ],
+  3: [
+    { h: 11, m: 15, dur: 50, rel: 0.8, freq: 6 },
+    { h: 14, m: 15, dur: 80, rel: 0.91, freq: 9 },
+    { h: 16, m: 0, dur: 70, rel: 0.89, freq: 8 },
+    { h: 17, m: 30, dur: 60, rel: 0.86, freq: 6 },
+  ],
+  4: [
+    { h: 13, m: 0, dur: 60, rel: 0.72, freq: 6 },
+    { h: 18, m: 30, dur: 90, rel: 0.5, freq: 4, part: "evening" },
+  ],
+  5: [{ h: 11, m: 0, dur: 60, rel: 0.7, freq: 4 }],
+  6: [{ h: 19, m: 0, dur: 60, rel: 0.6, freq: 3, part: "evening" }],
+};
 
 const DAY_NAMES = [
   "Monday",
@@ -101,7 +129,24 @@ const DAY_NAMES = [
   "Sunday",
 ];
 
-const PRIORITIES = ["high", "medium", "low"];
+// ~30% high, ~50% medium, ~20% low — enough high-priority to show priority insights.
+const PRIORITY_SEQUENCE = [
+  "high",
+  "medium",
+  "medium",
+  "low",
+  "medium",
+  "high",
+  "medium",
+  "low",
+  "medium",
+  "high",
+];
+
+// Target on-time rate per priority. High deliberately slips more so the
+// "high-priority tasks slip" analytics insight surfaces cleanly. Enforced as a
+// running average so the aggregate rates are stable regardless of sample size.
+const PRIORITY_ONTIME_TARGET = { high: 0.62, medium: 0.9, low: 0.95 };
 
 const args = new Set(process.argv.slice(2));
 const DRY_RUN = args.has("--dry-run");
@@ -135,7 +180,7 @@ const pkDateIso = (date) =>
     timeZone: TIMEZONE_LABEL,
   }).format(date);
 
-/** Monday=0 weekday in user's timezone (matches hamid seed + scorer expectations). */
+/** Monday=0 weekday in user's timezone (matches scorer expectations). */
 const pkWeekdayMondayStart = (date) => {
   const midday = new Date(`${pkDateIso(date)}T12:00:00+05:00`);
   return (midday.getUTCDay() + 6) % 7;
@@ -148,7 +193,27 @@ const pkHour = (date) =>
       hour12: false,
       timeZone: TIMEZONE_LABEL,
     }).format(date),
-  );
+  ) % 24;
+
+/** Build a PKT datetime for the calendar day `daysAgo` days before now. */
+const pkDateNDaysAgo = (daysAgo, hour, minute) => {
+  const target = new Date(Date.now() - daysAgo * DAY_MS);
+  const dateIso = pkDateIso(target);
+  const hh = String(hour).padStart(2, "0");
+  const mm = String(minute).padStart(2, "0");
+  return new Date(`${dateIso}T${hh}:${mm}:00+05:00`);
+};
+
+/** Small deterministic PRNG so a given run-day yields a stable dataset. */
+const mulberry32 = (seed) => {
+  let t = seed >>> 0;
+  return () => {
+    t += 0x6d2b79f5;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+};
 
 const buildActivityLog = (task, seedMeta) => {
   const completedAt = toDateOrNull(task.completed_at) || new Date();
@@ -182,37 +247,6 @@ const buildActivityLog = (task, seedMeta) => {
     scheduled_day: scheduledDay,
     reschedule_count: seedMeta.reschedule_count || 0,
   };
-};
-
-const pkDateOnWeekday = (weeksAgo, weekdayMon0, hour, minute) => {
-  const anchor = new Date();
-  anchor.setHours(12, 0, 0, 0);
-  anchor.setDate(anchor.getDate() - weeksAgo * 7);
-
-  const jsDay = (weekdayMon0 + 1) % 7;
-  const currentJs = anchor.getDay();
-  let delta = jsDay - currentJs;
-  if (delta > 0) delta -= 7;
-  anchor.setDate(anchor.getDate() + delta);
-
-  const y = anchor.getFullYear();
-  const m = String(anchor.getMonth() + 1).padStart(2, "0");
-  const d = String(anchor.getDate()).padStart(2, "0");
-  const hh = String(hour).padStart(2, "0");
-  const mm = String(minute).padStart(2, "0");
-  return new Date(`${y}-${m}-${d}T${hh}:${mm}:00+05:00`);
-};
-
-const pickPriority = (index) => PRIORITIES[index % PRIORITIES.length];
-
-const expandSlotEvents = () => {
-  const events = [];
-  for (let week = WEEKS_OF_HISTORY; week >= 1; week -= 1) {
-    for (const slot of SLOT_PROFILE) {
-      events.push({ week, slot, variant: week });
-    }
-  }
-  return events;
 };
 
 const formatPkt = (date) =>
@@ -258,57 +292,110 @@ async function cleanPreviousSeed(userId) {
   };
 }
 
+/**
+ * Day-by-day plan builder. Walks from the oldest day to today, choosing which
+ * productive slots "fire" each day, then produces one completed task per slot.
+ */
 function buildSeedPlan() {
-  const events = expandSlotEvents();
   const plan = [];
   let taskIndex = 0;
 
-  for (const { week, slot, variant } of events) {
-    const due = pkDateOnWeekday(week, slot.day, slot.hour, slot.minute);
-    const duration = slot.duration;
-    const createdAt = new Date(due.getTime() - (2 + (variant % 3)) * 24 * 60 * 60 * 1000);
+  const nowPkHour = pkHour(new Date());
 
-    const onTimeRoll = (taskIndex + variant) % 10;
-    const onTimeThreshold = Math.round(slot.onTimeRate * 10);
-    const wasOnTime = onTimeRoll < onTimeThreshold;
-    const completeOffsetMin = wasOnTime
-      ? Math.max(10, duration - 5)
-      : duration + 20 + (variant % 4) * 15;
-    const completedAt = new Date(due.getTime() + completeOffsetMin * 60 * 1000);
-    const timeTakenMinutes = Math.max(15, completeOffsetMin);
+  // Running on-time tally per priority so aggregate rates converge to target.
+  const onTimeState = {
+    high: { n: 0, ok: 0 },
+    medium: { n: 0, ok: 0 },
+    low: { n: 0, ok: 0 },
+  };
 
-    const titleBase = TASK_POOL[taskIndex % TASK_POOL.length];
-    const title = `${SEED_TAG} ${titleBase}`;
+  for (let daysAgo = DAYS_OF_HISTORY - 1; daysAgo >= 0; daysAgo -= 1) {
+    const dayNoon = pkDateNDaysAgo(daysAgo, 12, 0);
+    const weekday = pkWeekdayMondayStart(dayNoon);
+    const profile = WEEKDAY_PROFILE[weekday] || [];
 
-    plan.push({
-      title,
-      description: `Seeded for behavioral E2E — week -${week}, ${DAY_NAMES[slot.day]} ${slot.hour}:${String(slot.minute).padStart(2, "0")} PKT`,
-      due_datetime: due,
-      duration,
-      priority: pickPriority(taskIndex),
-      status: "complete",
-      source: "manual",
-      scheduled_by: "manual",
-      collaborators: [],
-      is_deleted: false,
-      reminder_minutes_before: 30,
-      completed_at: completedAt,
-      created_at: createdAt,
-      _seed: {
-        reschedule_count: variant % 5 === 0 ? 1 : 0,
-        was_on_time: wasOnTime,
-        time_taken_minutes: timeTakenMinutes,
-      },
-      _meta: {
-        week,
-        day_name: DAY_NAMES[slot.day],
-        scheduled_pkt: formatPkt(due),
-        completed_pkt: formatPkt(completedAt),
-        was_on_time: wasOnTime,
-      },
+    // Deterministic per calendar day: same day → same choices on re-run.
+    const dayKey = Number(pkDateIso(dayNoon).replace(/-/g, ""));
+    const rng = mulberry32(dayKey);
+
+    let chosen = profile.filter((slot) => {
+      // Don't complete tasks in the future (today, before the slot's hour).
+      if (daysAgo === 0 && slot.h > nowPkHour) return false;
+      return rng() * 10 < slot.freq;
     });
 
-    taskIndex += 1;
+    // Keep the streak alive on the most-recent days.
+    if (chosen.length === 0 && daysAgo < STREAK_TARGET_DAYS) {
+      const fallback = profile
+        .filter((slot) => !(daysAgo === 0 && slot.h > nowPkHour))
+        .sort((a, b) => b.freq - a.freq)[0];
+      if (fallback) chosen = [fallback];
+    }
+
+    for (const slot of chosen) {
+      const priority = PRIORITY_SEQUENCE[taskIndex % PRIORITY_SEQUENCE.length];
+
+      // On-time: converge each priority to its target rate (clean analytics
+      // signal), with a little extra lateness in the evening / on Fridays.
+      const st = onTimeState[priority];
+      const currentRate = st.n === 0 ? 0 : st.ok / st.n;
+      let wasOnTime = currentRate < PRIORITY_ONTIME_TARGET[priority];
+      if (wasOnTime && slot.part === "evening" && rng() < 0.45) wasOnTime = false;
+      else if (wasOnTime && weekday === 4 && rng() < 0.2) wasOnTime = false;
+      st.n += 1;
+      if (wasOnTime) st.ok += 1;
+
+      const due = pkDateNDaysAgo(daysAgo, slot.h, slot.m);
+
+      // Complete a bit early when on time, a bit late otherwise (same day).
+      const offsetMin = wasOnTime
+        ? -Math.floor(rng() * 25) - 5
+        : Math.floor(rng() * 55) + 20;
+      const completedAt = new Date(due.getTime() + offsetMin * 60 * 1000);
+
+      const createdAt = new Date(
+        due.getTime() - (1 + Math.floor(rng() * 3)) * DAY_MS,
+      );
+      const timeTakenMinutes = Math.max(
+        15,
+        Math.round(slot.dur * (0.85 + rng() * 0.4)),
+      );
+      const rescheduleCount = wasOnTime ? 0 : rng() < 0.4 ? 1 : 0;
+
+      const titleBase = TASK_POOL[taskIndex % TASK_POOL.length];
+
+      plan.push({
+        title: `${SEED_TAG} ${titleBase}`,
+        description: `Seeded for analytics E2E — ${DAY_NAMES[weekday]} ${slot.h}:${String(slot.m).padStart(2, "0")} PKT (${daysAgo}d ago)`,
+        due_datetime: due,
+        duration: slot.dur,
+        priority,
+        status: "complete",
+        source: "manual",
+        scheduled_by: "manual",
+        collaborators: [],
+        is_deleted: false,
+        reminder_minutes_before: 30,
+        completed_at: completedAt,
+        created_at: createdAt,
+        _seed: {
+          reschedule_count: rescheduleCount,
+          was_on_time: wasOnTime,
+          time_taken_minutes: timeTakenMinutes,
+        },
+        _meta: {
+          days_ago: daysAgo,
+          weekday,
+          day_name: DAY_NAMES[weekday],
+          part: slot.part || "day",
+          scheduled_pkt: formatPkt(due),
+          completed_pkt: formatPkt(completedAt),
+          was_on_time: wasOnTime,
+        },
+      });
+
+      taskIndex += 1;
+    }
   }
 
   return plan;
@@ -323,6 +410,48 @@ function summarizeByDay(logs) {
   return DAY_NAMES.map((name, i) => ({ day: name, count: counts[i] }));
 }
 
+/** Split completions into current vs previous Monday-start local week. */
+function summarizeWeekOverWeek(logs) {
+  const now = new Date();
+  const weekday = pkWeekdayMondayStart(now);
+  const thisMondayIso = pkDateIso(new Date(Date.now() - weekday * DAY_MS));
+  const thisMondayStart = new Date(`${thisMondayIso}T00:00:00+05:00`);
+  const lastMondayStart = new Date(thisMondayStart.getTime() - 7 * DAY_MS);
+
+  let thisWeek = 0;
+  let lastWeek = 0;
+  for (const log of logs) {
+    const t = new Date(log.action_timestamp);
+    if (t >= thisMondayStart) thisWeek += 1;
+    else if (t >= lastMondayStart && t < thisMondayStart) lastWeek += 1;
+  }
+  return { thisWeek, lastWeek };
+}
+
+function summarizeOnTime(plan) {
+  let onTime = 0;
+  const byPriority = {
+    high: { total: 0, on_time: 0 },
+    medium: { total: 0, on_time: 0 },
+    low: { total: 0, on_time: 0 },
+  };
+  for (const row of plan) {
+    if (row._seed.was_on_time) onTime += 1;
+    const p = byPriority[row.priority];
+    if (p) {
+      p.total += 1;
+      if (row._seed.was_on_time) p.on_time += 1;
+    }
+  }
+  const pct = (n, d) => (d > 0 ? Math.round((n / d) * 100) : 0);
+  return {
+    overall: pct(onTime, plan.length),
+    high: pct(byPriority.high.on_time, byPriority.high.total),
+    medium: pct(byPriority.medium.on_time, byPriority.medium.total),
+    low: pct(byPriority.low.on_time, byPriority.low.total),
+  };
+}
+
 function writeSummaryFile(user, plan, logs, cleanStats) {
   const outPath = path.resolve(
     __dirname,
@@ -330,6 +459,12 @@ function writeSummaryFile(user, plan, logs, cleanStats) {
     "..",
     "EVA_Behavioral_Seed_AREEJ.txt",
   );
+
+  const wow = summarizeWeekOverWeek(logs);
+  const onTime = summarizeOnTime(plan);
+  const activeDays = new Set(
+    logs.map((l) => pkDateIso(new Date(l.action_timestamp))),
+  ).size;
 
   const chatTests = [
     "when am I most productive",
@@ -344,7 +479,7 @@ function writeSummaryFile(user, plan, logs, cleanStats) {
   ];
 
   const lines = [
-    "EVA Behavioral Analytics — Seed Summary (Areej Fatima)",
+    "EVA Behavioral Analytics — Seed Summary",
     "=".repeat(60),
     `Email:     ${user.email}`,
     `User ID:   ${user._id}`,
@@ -357,32 +492,48 @@ function writeSummaryFile(user, plan, logs, cleanStats) {
     "",
     `Inserted completed tasks: ${plan.length}`,
     `Inserted activity logs:   ${logs.length}`,
+    `Active days (last ${DAYS_OF_HISTORY}): ${activeDays}`,
     "",
-    "Expected analytics pattern (for chat):",
+    "Week-over-week (Mon-start, PKT):",
+    `  This week completed: ${wow.thisWeek}`,
+    `  Last week completed: ${wow.lastWeek}`,
+    "",
+    "On-time rate:",
+    `  Overall: ${onTime.overall}%`,
+    `  High:    ${onTime.high}%   (intentionally lower — drives 'high-priority slips' insight)`,
+    `  Medium:  ${onTime.medium}%`,
+    `  Low:     ${onTime.low}%`,
+    "",
+    "Expected analytics-page shape:",
+    "  - Productivity Score: mid-high (Great / Excellent)",
     "  - Strongest days:  Tuesday & Thursday",
     "  - Peak hours:      ~2:00 PM – 5:00 PM PKT",
+    "  - Dominant time:   Afternoon",
     "  - Weaker:          Friday evening, late Sunday",
-    "  - Total completed: above global threshold (20)",
-    "  - Per-day counts:  5+ per weekday (for day-specific queries)",
+    "  - Streak:          alive through today",
+    "  - Both CURRENT and PREVIOUS week populated",
     "",
     "Completions by day_of_week:",
     ...summarizeByDay(logs).map((row) => `  ${row.day.padEnd(10)} ${row.count}`),
     "",
-    "CHAT PHRASES TO TEST (login as areejFatima@gmail.com):",
+    "CHAT PHRASES TO TEST:",
     ...chatTests.map((t, i) => `  ${i + 1}. "${t}"`),
     "",
     "Follow-up test (best time, no day):",
     '  User: "find the best time for me"',
     '  EVA should ask which day → reply: "Tuesday"',
     "",
-    "Sample seeded tasks (first 15):",
-    ...plan.slice(0, 15).map((row, i) => {
-      const m = row._meta;
-      return (
-        `  ${String(i + 1).padStart(2, "0")}. ${row.title}\n` +
-        `      Due: ${m.scheduled_pkt} | Done: ${m.completed_pkt} | on-time: ${m.was_on_time}`
-      );
-    }),
+    "Sample seeded tasks (most recent 15):",
+    ...plan
+      .slice(-15)
+      .reverse()
+      .map((row, i) => {
+        const m = row._meta;
+        return (
+          `  ${String(i + 1).padStart(2, "0")}. ${row.title} [${row.priority}]\n` +
+          `      Due: ${m.scheduled_pkt} | Done: ${m.completed_pkt} | on-time: ${m.was_on_time}`
+        );
+      }),
     "",
     "Re-run seed:",
     "  cd Eva_Backend_Server && node scripts/seed-areej-behavioral-analytics.js --clean",
@@ -409,9 +560,7 @@ async function main() {
     const email = TARGET_EMAIL.toLowerCase();
     const user = await User.findOne({ email }).lean();
     if (!user) {
-      throw new Error(
-        `User not found: ${email}. Run: node scripts/seed-areej-user.js first.`,
-      );
+      throw new Error(`User not found: ${email}. Create/seed the user first.`);
     }
 
     let cleanStats = { tasks_removed: 0, logs_removed: 0 };
@@ -423,6 +572,10 @@ async function main() {
     const plan = buildSeedPlan();
 
     if (DRY_RUN) {
+      const previewLogs = plan.map((p) => ({
+        action_timestamp: p.completed_at,
+        day_of_week: pkWeekdayMondayStart(p.completed_at),
+      }));
       console.log(
         JSON.stringify(
           {
@@ -432,14 +585,9 @@ async function main() {
             user_id: String(user._id),
             would_insert_tasks: plan.length,
             would_insert_logs: plan.length,
-            by_day: summarizeByDay(
-              plan.map((p) => ({
-                day_of_week:
-                  p.completed_at.getUTCDay() === 0
-                    ? 6
-                    : p.completed_at.getUTCDay() - 1,
-              })),
-            ),
+            week_over_week: summarizeWeekOverWeek(previewLogs),
+            on_time: summarizeOnTime(plan),
+            by_day: summarizeByDay(previewLogs),
           },
           null,
           2,
@@ -480,13 +628,11 @@ async function main() {
           inserted_tasks: insertedTasks.length,
           inserted_logs: logs.length,
           total_task_completed_logs_for_user: existingTotal,
+          week_over_week: summarizeWeekOverWeek(logs),
+          on_time: summarizeOnTime(plan),
           behavioral_analytics_enabled: true,
           clean: cleanStats,
           summary_file: summaryPath,
-          chat_login: {
-            email: TARGET_EMAIL,
-            password_hint: "see seed-areej-user.js (default areejFatima@1234)",
-          },
         },
         null,
         2,
