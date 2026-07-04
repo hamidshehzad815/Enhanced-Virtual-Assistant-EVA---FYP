@@ -1,3 +1,4 @@
+// collaboration_screen.dart
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -151,64 +152,45 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
   bool _isFriend(User user) => _friends.contains(user);
   bool _isBlocked(User user) => _blockedUsers.contains(user);
 
-  // ─── Avatar widget ─────────────────────────────────────────────────
-  Widget _buildAvatar(User user, {double radius = 22, bool ring = false}) {
-    final avatar = user.avatarUrl == null || user.avatarUrl!.isEmpty
-        ? CircleAvatar(
-            radius: radius,
-            backgroundColor: AppColors.primary.withOpacity(0.2),
-            child: Text(
-              _getInitials(user.displayName),
-              style: TextStyle(
-                fontSize: radius * 0.9,
-                color: AppColors.primary,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          )
-        : CircleAvatar(
-            radius: radius,
-            backgroundColor: AppColors.primary.withOpacity(0.2),
-            child: ClipOval(
+  // ─── Avatar widget (for friends & search results) ─────────────────
+  Widget _buildAvatar(User user, {double radius = 22}) {
+    final hasImage = user.avatarUrl != null && user.avatarUrl!.isNotEmpty;
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: AppColors.primary,
+      child: hasImage
+          ? ClipOval(
               child: Image.network(
                 user.avatarUrl!,
                 fit: BoxFit.cover,
                 width: radius * 2,
                 height: radius * 2,
                 errorBuilder: (context, error, stackTrace) {
-                  // Fixed: was Colors.white, which was nearly invisible
-                  // against the light amber-tinted background below.
+                  // If image fails, show initials
                   return Container(
-                    color: AppColors.primary.withOpacity(0.2),
+                    color: AppColors.primary,
                     child: Center(
                       child: Text(
                         _getInitials(user.displayName),
                         style: TextStyle(
-                          fontSize: radius * 0.9,
                           color: Colors.white,
-                          fontWeight: FontWeight.w500,
+                          fontWeight: FontWeight.bold,
+                          fontSize: radius * 0.8,
                         ),
                       ),
                     ),
                   );
                 },
               ),
+            )
+          : Text(
+              _getInitials(user.displayName),
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: radius * 0.8,
+              ),
             ),
-          );
-
-    if (!ring) return avatar;
-
-    return Container(
-      padding: const EdgeInsets.all(3),
-      decoration: BoxDecoration(
-        shape: BoxShape.circle,
-        gradient: LinearGradient(
-          colors: [AppColors.primary, AppColors.primary.withOpacity(0.4)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-      ),
-      child: avatar,
     );
   }
 
@@ -390,8 +372,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
   }
 
   // ───────────────────────────────────────────────────────────────────
-  // Friend Requests Sheet — rounded tile bg, pill accept button, and
-  // decline ONLY via swipe-left (no cross icon clutter).
+  // Friend Requests Sheet
   // ───────────────────────────────────────────────────────────────────
   void _showFriendRequests() {
     if (_pendingRequests.isEmpty) {
@@ -480,7 +461,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                                   width: 180,
                                   height: 180,
                                   child: Lottie.asset(
-                                    'assets/lottie/no_notificaition.json',
+                                    'assets/lottie/notification.json',
                                     fit: BoxFit.contain,
                                   ),
                                 ),
@@ -511,8 +492,6 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     );
   }
 
-  // Single friend-request row: soft rounded background, avatar, name,
-  // pill-shaped Accept button. Decline happens ONLY via swipe-left.
   Widget _buildRequestTile(FriendRequest request, StateSetter sheetSetState) {
     final user = request.fromUser;
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -574,8 +553,6 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
               ),
             ),
             const SizedBox(width: 8),
-
-            // Pill-shaped accept button
             GestureDetector(
               onTap: () {
                 _acceptFriendRequest(request);
@@ -646,25 +623,17 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // ─── Header ────────────────────────────────────────────────
               _buildHeader(),
               const SizedBox(height: 10),
-
-              // ─── Search row ────────────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: _buildSearchBar(),
               ),
-
-              // ─── Search result ─────────────────────────────────────────
               if (_searchText.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 _buildSearchResult(),
               ],
-
               const SizedBox(height: 16),
-
-              // ─── Profile + Quote ──────────────────────────────────────
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: IntrinsicHeight(
@@ -678,10 +647,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                   ),
                 ),
               ),
-
               const SizedBox(height: 20),
-
-              // ─── Friends list ─────────────────────────────────────────
               Expanded(child: _buildFriendsList()),
             ],
           ),
@@ -690,7 +656,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     );
   }
 
-  // Header with title + subtitle.
+  // ─── Header ─────────────────────────────────────────────────────────
   Widget _buildHeader() {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = isDark
@@ -718,7 +684,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     );
   }
 
-  // Rounded, bordered, elevated search field.
+  // ─── Search bar ─────────────────────────────────────────────────────
   Widget _buildSearchBar() {
     return Container(
       decoration: BoxDecoration(
@@ -769,6 +735,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     );
   }
 
+  // ─── Search result ──────────────────────────────────────────────────
   Widget _buildSearchResult() {
     if (_isSearching) return const SizedBox.shrink();
 
@@ -876,7 +843,6 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
         ),
       );
     } else {
-      // No user found
       return Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16),
         child: Container(
@@ -903,7 +869,30 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     }
   }
 
+  // ─── User Profile Card (with HomeScreen‑style avatar) ──────────────
   Widget _buildUserProfileCard() {
+    final profile = currentUser;
+
+    // Avatar with the same style as HomeScreen
+    final avatar = CircleAvatar(
+      radius: 28,
+      backgroundColor: AppColors.primary,
+      backgroundImage:
+          profile.avatarUrl != null && profile.avatarUrl!.isNotEmpty
+          ? NetworkImage(profile.avatarUrl!)
+          : null,
+      child: profile.avatarUrl == null || profile.avatarUrl!.isEmpty
+          ? Text(
+              _getInitials(profile.displayName),
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 20,
+              ),
+            )
+          : null,
+    );
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -920,16 +909,30 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          _buildAvatar(currentUser, radius: 28, ring: true),
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withOpacity(0.35),
+                  blurRadius: 12,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: avatar,
+          ),
           const SizedBox(height: 10),
           Text(
-            currentUser.displayName,
+            profile.displayName,
             style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
             overflow: TextOverflow.ellipsis,
             textAlign: TextAlign.center,
           ),
           Text(
-            '@${currentUser.username}',
+            '@${profile.username}',
             style: TextStyle(fontSize: 11, color: Theme.of(context).hintColor),
           ),
           const SizedBox(height: 8),
@@ -953,6 +956,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     );
   }
 
+  // ─── Quote Card ──────────────────────────────────────────────────────
   Widget _buildQuoteCard() {
     return GestureDetector(
       onTap: _onEditQuote,
@@ -1017,6 +1021,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     );
   }
 
+  // ─── Friends List ────────────────────────────────────────────────────
   Widget _buildFriendsList() {
     final hasFriends = _friends.isNotEmpty;
     return Padding(
@@ -1030,7 +1035,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                 'My Friends',
                 style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold),
               ),
-              const Spacer(), // Fixed: keeps the bell pinned to the right
+              const Spacer(),
               Stack(
                 clipBehavior: Clip.none,
                 children: [
@@ -1150,8 +1155,8 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         SizedBox(
-                          width: 180,
-                          height: 180,
+                          width: 120,
+                          height: 120,
                           child: Lottie.asset(
                             'assets/lottie/nothing.json',
                             fit: BoxFit.contain,

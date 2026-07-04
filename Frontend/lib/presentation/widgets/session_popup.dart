@@ -6,6 +6,7 @@ import '../../core/theme/app_text_style.dart';
 import '../../core/theme/app_colours.dart';
 import '../../data/models/roadmap_model.dart';
 import '../../data/models/schedule_date_model.dart';
+import 'package:table_calendar/table_calendar.dart';
 
 class SessionPopup extends StatefulWidget {
   final Session session;
@@ -448,53 +449,206 @@ class _SessionPopupState extends State<SessionPopup> {
     BuildContext context,
     ScheduleDatesResponse response,
   ) {
-    showModalBottomSheet(
+    if (response.dates.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No available dates to reschedule.')),
+      );
+      return;
+    }
+
+    // ─── Build date map ──────────────────────────────────────────────────
+    final dateMap = <String, ScheduleDate>{};
+    for (var slot in response.dates) {
+      dateMap[slot.date] = slot;
+    }
+
+    final from = DateTime.parse(response.range.from);
+    final to = DateTime.parse(response.range.to);
+
+    // ─── Format helper for time ────────────────────────────────────────
+    String _formatTime(String? scheduledDatetime, String? fallbackTime) {
+      if (scheduledDatetime != null && scheduledDatetime.isNotEmpty) {
+        try {
+          final dt = DateTime.parse(scheduledDatetime);
+          return DateFormat('h:mm a').format(dt);
+        } catch (_) {}
+      }
+      return fallbackTime ?? '';
+    }
+
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
       builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Select a new date',
-                style: AppTextStyles.headline.copyWith(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
+        DateTime focusedDay = from;
+
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
               ),
-              const SizedBox(height: 8),
-              Text(
-                'Available slots (${response.range.from} – ${response.range.to})',
-                style: AppTextStyles.body.copyWith(color: Colors.grey),
+              titlePadding: const EdgeInsets.fromLTRB(20, 16, 20, 0),
+              contentPadding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+              title: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Select a new date',
+                    style: AppTextStyles.headline.copyWith(fontSize: 20),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'Available slots (${DateFormat('MMM d, y').format(from)} – ${DateFormat('MMM d, y').format(to)})',
+                    style: AppTextStyles.body.copyWith(
+                      fontSize: 13,
+                      color: Colors.grey,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 12),
-              Expanded(
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: response.dates.length,
-                  itemBuilder: (context, index) {
-                    final slot = response.dates[index];
-                    return ListTile(
-                      title: Text('${slot.dayLabel}, ${slot.date}'),
-                      subtitle: Text(
-                        '${slot.time} · ${slot.durationMinutes} min',
-                      ),
-                      onTap: () {
-                        Navigator.pop(context);
-                        widget.onReschedule(_session.id, slot.date);
-                      },
-                    );
+              content: SizedBox(
+                width: double.maxFinite,
+                height: 400, // Increased height to prevent overflow
+                child: TableCalendar<ScheduleDate>(
+                  firstDay: from,
+                  lastDay: to,
+                  focusedDay: focusedDay,
+                  calendarFormat: CalendarFormat.month,
+                  headerStyle: const HeaderStyle(
+                    formatButtonVisible: false,
+                    titleCentered: true,
+                    leftChevronIcon: Icon(Icons.chevron_left_rounded),
+                    rightChevronIcon: Icon(Icons.chevron_right_rounded),
+                    titleTextStyle: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  daysOfWeekStyle: DaysOfWeekStyle(
+                    weekdayStyle: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    weekendStyle: TextStyle(
+                      color: Colors.grey.shade600,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  calendarStyle: CalendarStyle(
+                    // ─── Hide outside days ──────────────────────────────────
+                    outsideDaysVisible: false,
+                    defaultDecoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    weekendDecoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    todayDecoration: BoxDecoration(
+                      color: AppColors.primary.withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    todayTextStyle: TextStyle(
+                      color: AppColors.primary,
+                      fontWeight: FontWeight.bold,
+                    ),
+                    disabledDecoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    disabledTextStyle: TextStyle(color: Colors.grey.shade400),
+                    defaultTextStyle: const TextStyle(color: Colors.grey),
+                  ),
+                  eventLoader: (day) {
+                    final dateStr = DateFormat('yyyy-MM-dd').format(day);
+                    final slot = dateMap[dateStr];
+                    return slot != null ? [slot] : [];
+                  },
+                  calendarBuilders: CalendarBuilders(
+                    defaultBuilder: (context, day, focusedDay) {
+                      final dateStr = DateFormat('yyyy-MM-dd').format(day);
+                      final slot = dateMap[dateStr];
+                      final isAvailable = slot != null;
+
+                      String timeDisplay = '';
+                      if (isAvailable && slot != null) {
+                        timeDisplay = _formatTime(
+                          slot.scheduledDatetime,
+                          slot.time,
+                        );
+                      }
+
+                      // ─── Only show if the day is in the current month ──
+                      final isCurrentMonth = day.month == focusedDay.month;
+                      if (!isCurrentMonth) return const SizedBox.shrink();
+
+                      return GestureDetector(
+                        onTap: isAvailable
+                            ? () {
+                                Navigator.pop(context);
+                                widget.onReschedule(_session.id, dateStr);
+                              }
+                            : null,
+                        child: Container(
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: isAvailable
+                                ? AppColors.primary.withOpacity(0.12)
+                                : Colors.transparent,
+                            borderRadius: BorderRadius.circular(8),
+                            border: isAvailable
+                                ? Border.all(
+                                    color: AppColors.primary.withOpacity(0.4),
+                                    width: 1,
+                                  )
+                                : null,
+                          ),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text(
+                                '${day.day}',
+                                style: TextStyle(
+                                  color: isAvailable
+                                      ? AppColors.primary
+                                      : Colors.grey.shade400,
+                                  fontWeight: isAvailable
+                                      ? FontWeight.bold
+                                      : FontWeight.normal,
+                                  fontSize: 14,
+                                ),
+                              ),
+                              if (isAvailable && timeDisplay.isNotEmpty)
+                                Text(
+                                  timeDisplay,
+                                  style: TextStyle(
+                                    fontSize: 8,
+                                    color: AppColors.primary.withOpacity(0.7),
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                  onPageChanged: (day) {
+                    setState(() {
+                      focusedDay = day;
+                    });
                   },
                 ),
               ),
-            ],
-          ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Cancel'),
+                ),
+              ],
+            );
+          },
         );
       },
     );
