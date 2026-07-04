@@ -53,10 +53,10 @@ class _SessionPopupState extends State<SessionPopup> {
     super.dispose();
   }
 
-  bool get _isActive {
-    return _session.sessionState == 'ongoing' ||
-        _session.sessionState == 'overdue';
-  }
+  // bool get _isActive {
+  //   return _session.sessionState == 'ongoing' ||
+  //       _session.sessionState == 'overdue';
+  // }
 
   bool get _canAct {
     return _session.isCurrent &&

@@ -62,8 +62,6 @@ class _FeaturesScreenState extends State<FeaturesScreen> {
 
   @override
   Widget build(BuildContext context) {
-    // final isDark = Theme.of(context).brightness == Brightness.dark;
-
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
 
@@ -88,7 +86,6 @@ class _FeaturesScreenState extends State<FeaturesScreen> {
             width: 100,
             height: 100,
             decoration: BoxDecoration(
-              // cardElevatedDark in dark mode so circle is visible against gradient
               color: Colors.white.withOpacity(0.9),
               shape: BoxShape.circle,
               boxShadow: [
@@ -222,30 +219,22 @@ class _FeaturesScreenState extends State<FeaturesScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     // ── Color logic ──────────────────────────────────────────────────────────
-    // Active card background
     final activeBg = Theme.of(context).colorScheme.primary; // amber
-    // Inactive card background
     final inactiveBg = Theme.of(context).cardColor;
 
-    // NUMBER label color
     final numberColor = isActive
         ? Colors.black.withOpacity(0.7)
         : Theme.of(context).textTheme.bodySmall!.color;
 
-    // TITLE color: white when active (both modes), theme primary text when not
     final titleColor = isActive
         ? Colors.white
         : Theme.of(context).textTheme.bodyMedium!.color;
 
-    // DESCRIPTION color:
-    //  • Active  → black87 in BOTH modes (as requested — don't change body text)
-    //  • Inactive → theme secondary text
     final descColor = isActive
         ? Colors.black87
         : Theme.of(context).textTheme.bodySmall!.color;
 
     return Container(
-      // ── Reduced height: was unconstrained, now we give a tighter padding ──
       width: MediaQuery.of(context).size.width * 0.62,
       padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 18),
       decoration: BoxDecoration(
@@ -268,41 +257,106 @@ class _FeaturesScreenState extends State<FeaturesScreen> {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min, // shrink-wrap height
-        children: [
-          // Number label
-          Text(
-            feature["number"],
-            style: AppTextStyles.info.copyWith(
-              fontSize: 13,
-              color: numberColor,
-            ),
-          ),
-          const SizedBox(height: 10),
+      // ── STAGGERED CONTENT REVEAL ─────────────────────────────────────────
+      // When a card becomes active: number → emoji → title → description
+      // fade + slide up one after another.
+      // When a card stops being active: content fades/slides out as a
+      // single block (no stagger) — mirrors the "old content out, new
+      // content staggers in" pattern from the reference onboarding flow.
+      child: TweenAnimationBuilder<double>(
+        key: ValueKey(isActive),
+        tween: Tween(begin: 0.0, end: 1.0),
+        duration: Duration(milliseconds: isActive ? 650 : 220),
+        curve: isActive ? Curves.easeOutCubic : Curves.easeIn,
+        builder: (context, t, _) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _staggerItem(
+                t: t,
+                isActive: isActive,
+                start: 0.0,
+                end: 0.35,
+                child: Text(
+                  feature["number"],
+                  style: AppTextStyles.info.copyWith(
+                    fontSize: 13,
+                    color: numberColor,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 10),
+              _staggerItem(
+                t: t,
+                isActive: isActive,
+                start: 0.12,
+                end: 0.5,
+                child: Text(feature["emoji"], style: const TextStyle(fontSize: 40)),
+              ),
+              const SizedBox(height: 12),
+              _staggerItem(
+                t: t,
+                isActive: isActive,
+                start: 0.28,
+                end: 0.68,
+                child: Text(
+                  feature["title"],
+                  style: AppTextStyles.logo.copyWith(fontSize: 20, color: titleColor),
+                ),
+              ),
+              const SizedBox(height: 8),
+              _staggerItem(
+                t: t,
+                isActive: isActive,
+                start: 0.42,
+                end: 0.85,
+                child: Text(
+                  feature["description"],
+                  style: AppTextStyles.body.copyWith(
+                    fontSize: 13.5,
+                    color: descColor,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 
-          // Emoji
-          Text(feature["emoji"], style: const TextStyle(fontSize: 40)),
-          const SizedBox(height: 12),
+  /// Computes opacity + vertical offset for one piece of card content.
+  ///
+  /// - While becoming active: piece animates in during its own [start]–[end]
+  ///   slice of the overall timeline `t`, producing the staggered effect.
+  /// - While becoming inactive: all pieces fade/slide out together using
+  ///   the raw `t` value (no stagger) — a quick, uniform exit.
+  Widget _staggerItem({
+    required double t,
+    required bool isActive,
+    required double start,
+    required double end,
+    required Widget child,
+  }) {
+    late final double opacity;
+    late final double dy;
 
-          // Title — white on active, theme color on inactive
-          Text(
-            feature["title"],
-            style: AppTextStyles.logo.copyWith(fontSize: 20, color: titleColor),
-          ),
-          const SizedBox(height: 8),
+    if (isActive) {
+      final local = ((t - start) / (end - start)).clamp(0.0, 1.0);
+      opacity = local;
+      dy = (1 - local) * 14; // slides up into place
+    } else {
+      opacity = 1 - t;
+      dy = t * 8; // drifts down slightly while fading out
+    }
 
-          // Description — always black87 on active, secondary text on inactive
-          Text(
-            feature["description"],
-            style: AppTextStyles.body.copyWith(
-              fontSize: 13.5,
-              color: descColor,
-              height: 1.4,
-            ),
-          ),
-        ],
+    return Opacity(
+      opacity: opacity,
+      child: Transform.translate(
+        offset: Offset(0, dy),
+        child: child,
       ),
     );
   }
