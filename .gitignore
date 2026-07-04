@@ -2,6 +2,7 @@
 Eva_AI_Server/models/*
 *.env
 .venv
+EVA/
 .pytest_cache
 # Python bytecode (Eva_AI_Server and any other Python in repo)
 __pycache__/
@@ -25,3 +26,4 @@ start-servers.bat
 start-flutter.ps1
 start-flutter.bat
 UpdateDataset&Templates
+# NER&CLF---TrainingCode-templates-dataset

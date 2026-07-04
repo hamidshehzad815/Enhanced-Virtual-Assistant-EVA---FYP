@@ -124,12 +124,12 @@ class Settings:
     CONFIDENCE_THRESHOLD: float = float(os.getenv("CONFIDENCE_THRESHOLD", "0.7"))
 
     # Model Paths
-    CLF1_MODEL_DIR: Path = BASE_DIR / os.getenv("CLF1_MODEL_DIR", "models/clf1")
-    CLF2_MODEL_DIR: Path = BASE_DIR / os.getenv("CLF2_MODEL_DIR", "models/intent_classifier")
-    NER_MODEL_DIR: Path = BASE_DIR / os.getenv("NER_MODEL_DIR", "models/ner_model")
+    CLF1_MODEL_DIR: Path = BASE_DIR / os.getenv("CLF1_MODEL_DIR", "models/clf1_model")
+    CLF2_MODEL_DIR: Path = BASE_DIR / os.getenv("CLF2_MODEL_DIR", "models/clf1_model")
+    NER_MODEL_DIR: Path = BASE_DIR / os.getenv("NER_MODEL_DIR", "models/ner1_model")
     LEARNING_NER_MODEL_DIR: Path = BASE_DIR / os.getenv(
         "LEARNING_NER_MODEL_DIR",
-        "models/learning_ner",
+        "models/ner2_model",
     )
 
     # Context Manager
