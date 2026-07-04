@@ -203,7 +203,7 @@ class DailyPoint {
   }
 }
 
-// ─── Time of Day ────────────────────────────────────────────────────────
+// ─── Time of Day ──────────
 class TimeOfDaySection {
   final int total;
   final List<TimeBucket> buckets;

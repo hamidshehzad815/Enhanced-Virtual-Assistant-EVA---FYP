@@ -8,13 +8,12 @@ class WelcomeScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // final isDark = Theme.of(context).brightness == Brightness.dark;
     final textColor = Theme.of(context).textTheme.bodyMedium!.color!;
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       body: SafeArea(
-        child: Padding(
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(horizontal: 24.0),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -24,50 +23,46 @@ class WelcomeScreen extends StatelessWidget {
               // Logo
               Text("EVA", style: AppTextStyles.logo.copyWith(color: textColor)),
               const SizedBox(height: 140),
-
-              SizedBox(
-                height: 200,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    SizedBox(
-                      width: MediaQuery.of(context).size.width * 0.5,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Your',
-                            style: AppTextStyles.headline.copyWith(
-                              color: textColor,
-                            ),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  SizedBox(
+                    width: MediaQuery.of(context).size.width * 0.5,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Your',
+                          style: AppTextStyles.headline.copyWith(
+                            color: textColor,
                           ),
-                          Text(
-                            'Academic',
-                            style: AppTextStyles.headlineWithYellow,
+                        ),
+                        Text(
+                          'Academic',
+                          style: AppTextStyles.headlineWithYellow,
+                        ),
+                        Text(
+                          'Assistant',
+                          style: AppTextStyles.headline.copyWith(
+                            color: textColor,
                           ),
-                          Text(
-                            'Assistant',
-                            style: AppTextStyles.headline.copyWith(
-                              color: textColor,
-                            ),
-                          ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
+                  ),
 
-                    const Spacer(),
+                  const Spacer(),
 
-                    SizedBox(
-                      height: 149,
-                      width: 148,
-                      child: Lottie.asset(
-                        'assets/lottie/message.json',
-                        fit: BoxFit.contain,
-                      ),
+                  SizedBox(
+                    height: 149,
+                    width: 148,
+                    child: Lottie.asset(
+                      'assets/lottie/message.json',
+                      fit: BoxFit.contain,
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
 
               const SizedBox(height: 20),
