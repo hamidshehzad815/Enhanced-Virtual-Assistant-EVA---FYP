@@ -1080,6 +1080,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            // ─── Header row ─────────────────────────────────────────────
             Row(
               children: [
                 _sectionTitle(
@@ -1088,61 +1089,99 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                   icon: Icons.insights_rounded,
                 ),
                 const Spacer(),
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 2,
-                  ),
-                  decoration: BoxDecoration(
-                    color: isDark ? Colors.white12 : Colors.grey.shade200,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: Text(
-                    behavioral.source.toUpperCase(),
-                    style: TextStyle(
-                      fontSize: 8,
-                      fontWeight: FontWeight.w600,
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      behavioral.source == 'ai'
+                          ? Icons.auto_awesome_rounded
+                          : Icons.rule_rounded,
+                      size: 11,
                       color: behavioral.source == 'ai'
                           ? AppColors.primary
                           : subClr,
                     ),
-                  ),
+                    const SizedBox(width: 3),
+                    Text(
+                      behavioral.source == 'ai' ? 'AI' : 'Rule-based',
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w600,
+                        color: behavioral.source == 'ai'
+                            ? AppColors.primary
+                            : subClr,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
 
-            // ─── Top Days (with hours) ─────────────────────────────────────
-            SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              child: Row(
-                children: behavioral.topDays.map((day) {
+            // ─── Top Days (best day highlighted) ────────────────────────
+            SizedBox(
+              height: 148,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(),
+                itemCount: behavioral.topDays.length,
+                separatorBuilder: (_, __) => const SizedBox(width: 10),
+                itemBuilder: (context, i) {
+                  final day = behavioral.topDays[i];
+                  final isBest = i == 0;
+                  final shownHours = day.hours.take(2).toList();
+                  final extraHours = day.hours.length - shownHours.length;
+
                   return Container(
-                    width: 170,
-                    margin: const EdgeInsets.only(right: 10),
+                    width: 178,
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
-                      color: isDark ? Colors.white10 : Colors.grey.shade50,
+                      color: isDark
+                          ? Colors.white.withOpacity(0.05)
+                          : Colors.grey.shade50,
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: isDark ? Colors.white12 : Colors.grey.shade200,
+                        color: isBest
+                            ? AppColors.primary.withOpacity(0.55)
+                            : (isDark ? Colors.white12 : Colors.grey.shade200),
+                        width: isBest ? 1.4 : 1,
                       ),
+                      boxShadow: isBest
+                          ? [
+                              BoxShadow(
+                                color: AppColors.primary.withOpacity(
+                                  isDark ? 0.16 : 0.10,
+                                ),
+                                blurRadius: 14,
+                                offset: const Offset(0, 4),
+                              ),
+                            ]
+                          : null,
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Row(
                           children: [
-                            Text(
-                              day.day,
-                              style: TextStyle(
-                                fontSize: 15,
-                                fontWeight: FontWeight.w700,
-                                color: textClr,
+                            if (isBest) ...[
+                              Icon(
+                                Icons.emoji_events_rounded,
+                                size: 13,
+                                color: AppColors.primary,
+                              ),
+                              const SizedBox(width: 4),
+                            ],
+                            Expanded(
+                              child: Text(
+                                day.day,
+                                style: TextStyle(
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.w700,
+                                  color: textClr,
+                                ),
                               ),
                             ),
-                            const Spacer(),
                             Container(
                               padding: const EdgeInsets.symmetric(
                                 horizontal: 6,
@@ -1153,9 +1192,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                                 borderRadius: BorderRadius.circular(10),
                               ),
                               child: Text(
-                                '${day.score.toStringAsFixed(2)}',
+                                day.score.toStringAsFixed(2),
                                 style: TextStyle(
-                                  fontSize: 10,
+                                  fontSize: 9.5,
                                   fontWeight: FontWeight.w600,
                                   color: AppColors.primary,
                                 ),
@@ -1163,25 +1202,18 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                             ),
                           ],
                         ),
-                        const SizedBox(height: 4),
-                        Row(
-                          children: [
-                            Icon(Icons.timer_rounded, size: 12, color: subClr),
-                            const SizedBox(width: 4),
-                            Text(
-                              '${day.logCount} tasks · ${day.onTimeRate.toStringAsFixed(0)}% on time',
-                              style: TextStyle(fontSize: 10, color: subClr),
-                            ),
-                          ],
+                        const SizedBox(height: 3),
+                        Text(
+                          '${day.logCount} tasks · ${day.onTimeRate.toStringAsFixed(0)}% on time',
+                          style: TextStyle(fontSize: 9.5, color: subClr),
                         ),
                         const SizedBox(height: 8),
-                        // ─── Hours ──────────────────────────────────────────
-                        ...day.hours.map((hour) {
+                        ...shownHours.map((hour) {
                           return Container(
                             margin: const EdgeInsets.only(bottom: 4),
                             padding: const EdgeInsets.symmetric(
                               horizontal: 8,
-                              vertical: 4,
+                              vertical: 5,
                             ),
                             decoration: BoxDecoration(
                               color: isDark ? Colors.white12 : Colors.white,
@@ -1197,7 +1229,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                               children: [
                                 Icon(
                                   Icons.access_time_rounded,
-                                  size: 12,
+                                  size: 11,
                                   color: AppColors.primary,
                                 ),
                                 const SizedBox(width: 6),
@@ -1205,7 +1237,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                                   child: Text(
                                     hour.hourDisplay,
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: 10.5,
                                       fontWeight: FontWeight.w600,
                                       color: textClr,
                                     ),
@@ -1219,57 +1251,69 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                             ),
                           );
                         }),
+                        if (extraHours > 0)
+                          Text(
+                            '+ $extraHours more slot${extraHours == 1 ? '' : 's'}',
+                            style: TextStyle(
+                              fontSize: 9,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.primary,
+                            ),
+                          ),
                       ],
                     ),
                   );
-                }).toList(),
+                },
               ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
 
             // ─── Stats row ──────────────────────────────────────────────────
             Row(
               children: [
-                _behaviorStat(
-                  Icons.timer_rounded,
-                  '${behavioral.focus.avgMinutes.toStringAsFixed(0)} min',
-                  'Avg focus',
-                  isDark,
+                Expanded(
+                  child: _behaviorStat(
+                    Icons.timer_rounded,
+                    '${behavioral.focus.avgMinutes.toStringAsFixed(0)} min',
+                    'Avg focus',
+                    isDark,
+                  ),
                 ),
-                const SizedBox(width: 12),
-                _behaviorStat(
-                  behavioral.momentum.direction == 'up'
-                      ? Icons.trending_up_rounded
-                      : behavioral.momentum.direction == 'down'
-                      ? Icons.trending_down_rounded
-                      : Icons.remove_rounded,
-                  behavioral.momentum.label,
-                  'Momentum',
-                  isDark,
-                  color: behavioral.momentum.direction == 'up'
-                      ? const Color(0xFF22C55E)
-                      : behavioral.momentum.direction == 'down'
-                      ? const Color(0xFFEF4444)
-                      : Colors.orange,
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _behaviorStat(
+                    behavioral.momentum.direction == 'up'
+                        ? Icons.trending_up_rounded
+                        : behavioral.momentum.direction == 'down'
+                        ? Icons.trending_down_rounded
+                        : Icons.remove_rounded,
+                    behavioral.momentum.label,
+                    'Momentum',
+                    isDark,
+                    color: behavioral.momentum.direction == 'up'
+                        ? const Color(0xFF22C55E)
+                        : behavioral.momentum.direction == 'down'
+                        ? const Color(0xFFEF4444)
+                        : Colors.orange,
+                  ),
                 ),
               ],
             ),
+            const SizedBox(height: 10),
+
+            // ─── Procrastination bars ─────────────────────────────────────
+            _procrastinationBar(
+              Icons.dark_mode_rounded,
+              'Late night completions',
+              behavioral.procrastination.lateNightRate,
+              isDark,
+            ),
             const SizedBox(height: 8),
-            // ─── Procrastination rates ────────────────────────────────────
-            Row(
-              children: [
-                _procrastinationChip(
-                  'Late night: ${behavioral.procrastination.lateNightRate.toStringAsFixed(0)}%',
-                  behavioral.procrastination.lateNightRate,
-                  isDark,
-                ),
-                const SizedBox(width: 8),
-                _procrastinationChip(
-                  'Rescheduled: ${behavioral.procrastination.rescheduleRate.toStringAsFixed(0)}%',
-                  behavioral.procrastination.rescheduleRate,
-                  isDark,
-                ),
-              ],
+            _procrastinationBar(
+              Icons.event_repeat_rounded,
+              'Rescheduled tasks',
+              behavioral.procrastination.rescheduleRate,
+              isDark,
             ),
           ],
         ),
@@ -1286,60 +1330,108 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
   }) {
     final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
     final subClr = isDark ? Colors.white70 : Colors.black54;
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
-        decoration: BoxDecoration(
-          color: isDark ? Colors.white10 : Colors.grey.shade50,
-          borderRadius: BorderRadius.circular(10),
-        ),
-        child: Row(
-          children: [
-            Icon(icon, size: 16, color: color ?? AppColors.primary),
-            const SizedBox(width: 6),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w600,
-                      color: color ?? textClr,
-                    ),
-                  ),
-                  Text(hint, style: TextStyle(fontSize: 9, color: subClr)),
-                ],
-              ),
+    final accent = color ?? AppColors.primary;
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: isDark ? Colors.white.withOpacity(0.04) : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 30,
+            height: 30,
+            decoration: BoxDecoration(
+              color: accent.withOpacity(isDark ? 0.18 : 0.12),
+              shape: BoxShape.circle,
             ),
-          ],
-        ),
+            child: Icon(icon, size: 15, color: accent),
+          ),
+          const SizedBox(width: 9),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  label,
+                  softWrap: true,
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: textClr,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(hint, style: TextStyle(fontSize: 9, color: subClr)),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _procrastinationChip(String label, double rate, bool isDark) {
+  Widget _procrastinationBar(
+    IconData icon,
+    String label,
+    double rate,
+    bool isDark,
+  ) {
     final color = rate > 40
         ? const Color(0xFFEF4444)
         : rate > 20
         ? Colors.orange
         : const Color(0xFF22C55E);
+    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
+
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
-        color: color.withOpacity(isDark ? 0.18 : 0.08),
-        borderRadius: BorderRadius.circular(20),
+        color: isDark ? Colors.white.withOpacity(0.04) : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w600,
-          color: color,
-        ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(icon, size: 13, color: color),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  label,
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w600,
+                    color: textClr,
+                  ),
+                ),
+              ),
+              Text(
+                '${rate.toStringAsFixed(0)}%',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: (rate / 100).clamp(0.0, 1.0),
+              minHeight: 5,
+              backgroundColor: isDark ? Colors.white10 : Colors.grey.shade200,
+              valueColor: AlwaysStoppedAnimation<Color>(color),
+            ),
+          ),
+        ],
       ),
     );
   }
