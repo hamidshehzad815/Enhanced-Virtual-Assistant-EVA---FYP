@@ -89,6 +89,10 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                           const SizedBox(height: 14),
                         ],
 
+                        // ─── Behavioral ──────────────────────────────────────────────────────
+                        _buildBehavioral(dashboard, isDark),
+                        const SizedBox(height: 14),
+
                         // ─── 4. Productivity Score ──────────────────────
                         _buildProductivityScore(dashboard, isDark),
                         const SizedBox(height: 14),
@@ -668,12 +672,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
 
   // ─── HEATMAP ──────────────────────────────────────────────────────────
   Widget _buildHeatmap(AnalyticsDashboard dashboard, bool isDark) {
-    final map = dashboard.productivityMap;
+    final heatmap = dashboard.heatmap; // 👈 changed from productivityMap
     final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
     final subClr = isDark ? Colors.white70 : Colors.black54;
 
-    final maxIntensity = map.cells.isNotEmpty
-        ? map.cells.map((c) => c.count).reduce((a, b) => a > b ? a : b)
+    final maxIntensity = heatmap.cells.isNotEmpty
+        ? heatmap.cells.map((c) => c.count).reduce((a, b) => a > b ? a : b)
         : 1;
 
     final dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -699,7 +703,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     ];
 
     Map<String, HeatmapCell> cellMap = {};
-    for (var cell in map.cells) {
+    for (var cell in heatmap.cells) {
       cellMap['${cell.day}-${cell.hour}'] = cell;
     }
 
@@ -717,9 +721,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
       )!;
     }
 
-    final peak = map.cells.isEmpty
+    final peak = heatmap.cells.isEmpty
         ? null
-        : map.cells.reduce((a, b) => a.count > b.count ? a : b);
+        : heatmap.cells.reduce((a, b) => a.count > b.count ? a : b);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -732,7 +736,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
             _sectionTitle('Heatmap', isDark),
             const SizedBox(height: 4),
             Text(
-              '${dashboard.rangeDays} days · ${map.hourRange.startDisplay}–${map.hourRange.endDisplay}',
+              '${dashboard.rangeDays} days · ${heatmap.hourRange.startDisplay}–${heatmap.hourRange.endDisplay}',
               style: AppTextStyles.body.copyWith(fontSize: 11, color: subClr),
             ),
             const SizedBox(height: 10),
@@ -827,39 +831,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                 style: AppTextStyles.body.copyWith(fontSize: 11, color: subClr),
               ),
             ],
-            if (map.bestSlots.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                'Best slot: ${map.bestSlots.first.suggestion}',
-                style: AppTextStyles.body.copyWith(
-                  fontSize: 11,
-                  color: AppColors.primary,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-            ],
-            if (map.unreliableDays.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Wrap(
-                spacing: 4,
-                children: map.unreliableDays.map((d) {
-                  return Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 6,
-                      vertical: 2,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isDark ? Colors.white10 : Colors.grey.shade200,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '${d.day} (${d.logCount}/${d.needed})',
-                      style: TextStyle(fontSize: 8, color: subClr),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
+            // Remove bestSlots and unreliableDays – they are now in behavioral
           ],
         ),
       ),
@@ -1074,6 +1046,302 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
       default:
         return const Color(0xFF22C55E);
     }
+  }
+
+  // ─── BEHAVIORAL SECTION ────────────────────────────────────────────────
+  Widget _buildBehavioral(AnalyticsDashboard dashboard, bool isDark) {
+    final behavioral = dashboard.behavioral;
+    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
+    final subClr = isDark ? Colors.white70 : Colors.black54;
+
+    // If no top days, show empty state
+    if (behavioral.topDays.isEmpty) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: _cardDecoration(isDark),
+          child: Center(
+            child: Text(
+              'Not enough data yet. Complete more tasks to see your productive patterns.',
+              style: AppTextStyles.body.copyWith(fontSize: 13, color: subClr),
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: _cardDecoration(isDark),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                _sectionTitle(
+                  'Behavioral Insights',
+                  isDark,
+                  icon: Icons.insights_rounded,
+                ),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: isDark ? Colors.white12 : Colors.grey.shade200,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    behavioral.source.toUpperCase(),
+                    style: TextStyle(
+                      fontSize: 8,
+                      fontWeight: FontWeight.w600,
+                      color: behavioral.source == 'ai'
+                          ? AppColors.primary
+                          : subClr,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // ─── Top Days (with hours) ─────────────────────────────────────
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                children: behavioral.topDays.map((day) {
+                  return Container(
+                    width: 170,
+                    margin: const EdgeInsets.only(right: 10),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white10 : Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: isDark ? Colors.white12 : Colors.grey.shade200,
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Text(
+                              day.day,
+                              style: TextStyle(
+                                fontSize: 15,
+                                fontWeight: FontWeight.w700,
+                                color: textClr,
+                              ),
+                            ),
+                            const Spacer(),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: AppColors.primary.withOpacity(0.12),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Text(
+                                '${day.score.toStringAsFixed(2)}',
+                                style: TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.primary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 4),
+                        Row(
+                          children: [
+                            Icon(Icons.timer_rounded, size: 12, color: subClr),
+                            const SizedBox(width: 4),
+                            Text(
+                              '${day.logCount} tasks · ${day.onTimeRate.toStringAsFixed(0)}% on time',
+                              style: TextStyle(fontSize: 10, color: subClr),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        // ─── Hours ──────────────────────────────────────────
+                        ...day.hours.map((hour) {
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 4),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: isDark ? Colors.white12 : Colors.white,
+                              borderRadius: BorderRadius.circular(8),
+                              border: Border.all(
+                                color: isDark
+                                    ? Colors.white12
+                                    : Colors.grey.shade200,
+                                width: 0.5,
+                              ),
+                            ),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  Icons.access_time_rounded,
+                                  size: 12,
+                                  color: AppColors.primary,
+                                ),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    hour.hourDisplay,
+                                    style: TextStyle(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: textClr,
+                                    ),
+                                  ),
+                                ),
+                                Text(
+                                  '${hour.onTimeRate.toStringAsFixed(0)}% · ${hour.logCount}',
+                                  style: TextStyle(fontSize: 9, color: subClr),
+                                ),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+            const SizedBox(height: 14),
+
+            // ─── Stats row ──────────────────────────────────────────────────
+            Row(
+              children: [
+                _behaviorStat(
+                  Icons.timer_rounded,
+                  '${behavioral.focus.avgMinutes.toStringAsFixed(0)} min',
+                  'Avg focus',
+                  isDark,
+                ),
+                const SizedBox(width: 12),
+                _behaviorStat(
+                  behavioral.momentum.direction == 'up'
+                      ? Icons.trending_up_rounded
+                      : behavioral.momentum.direction == 'down'
+                      ? Icons.trending_down_rounded
+                      : Icons.remove_rounded,
+                  behavioral.momentum.label,
+                  'Momentum',
+                  isDark,
+                  color: behavioral.momentum.direction == 'up'
+                      ? const Color(0xFF22C55E)
+                      : behavioral.momentum.direction == 'down'
+                      ? const Color(0xFFEF4444)
+                      : Colors.orange,
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            // ─── Procrastination rates ────────────────────────────────────
+            Row(
+              children: [
+                _procrastinationChip(
+                  'Late night: ${behavioral.procrastination.lateNightRate.toStringAsFixed(0)}%',
+                  behavioral.procrastination.lateNightRate,
+                  isDark,
+                ),
+                const SizedBox(width: 8),
+                _procrastinationChip(
+                  'Rescheduled: ${behavioral.procrastination.rescheduleRate.toStringAsFixed(0)}%',
+                  behavioral.procrastination.rescheduleRate,
+                  isDark,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _behaviorStat(
+    IconData icon,
+    String label,
+    String hint,
+    bool isDark, {
+    Color? color,
+  }) {
+    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
+    final subClr = isDark ? Colors.white70 : Colors.black54;
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
+        decoration: BoxDecoration(
+          color: isDark ? Colors.white10 : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: [
+            Icon(icon, size: 16, color: color ?? AppColors.primary),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: color ?? textClr,
+                    ),
+                  ),
+                  Text(hint, style: TextStyle(fontSize: 9, color: subClr)),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _procrastinationChip(String label, double rate, bool isDark) {
+    final color = rate > 40
+        ? const Color(0xFFEF4444)
+        : rate > 20
+        ? Colors.orange
+        : const Color(0xFF22C55E);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(isDark ? 0.18 : 0.08),
+        borderRadius: BorderRadius.circular(20),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          fontSize: 10,
+          fontWeight: FontWeight.w600,
+          color: color,
+        ),
+      ),
+    );
   }
 
   // ─── NEEDS ATTENTION ─────────────────────────────────────────────────
