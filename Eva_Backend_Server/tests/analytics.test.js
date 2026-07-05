@@ -111,19 +111,22 @@ describe("Analytics API", () => {
     Task.find.mockReturnValue(makeQueryChain());
   });
 
-  test("GET /api/analytics/dashboard -> de-duplicated six-section payload", async () => {
+  test("GET /api/analytics/dashboard -> de-duplicated behavioral payload", async () => {
     callAIAnalytics.mockResolvedValueOnce({
       status: "success",
       data: {
         type: "full",
         has_enough_data: true,
         total_completed: 25,
+        days: [
+          { day: "Thursday", day_num: 3, score: 0.9, log_count: 8, on_time_rate: 0.9 },
+          { day: "Tuesday", day_num: 1, score: 0.8, log_count: 7, on_time_rate: 0.88 },
+        ],
         hours: [
           { day: "Thursday", day_num: 3, hour: 13, hour_display: "1PM", score: 0.88, on_time_rate: 0.92, log_count: 5 },
           { day: "Thursday", day_num: 3, hour: 17, hour_display: "5PM", score: 0.71, on_time_rate: 0.9, log_count: 3 },
           { day: "Tuesday", day_num: 1, hour: 14, hour_display: "2PM", score: 0.7, on_time_rate: 1, log_count: 3 },
         ],
-        days: [],
       },
     });
 
@@ -137,7 +140,6 @@ describe("Analytics API", () => {
 
     // Metadata
     expect(data.range_days).toBe(30);
-    expect(data.meta).toBeDefined();
     expect(typeof data.meta.has_enough_data).toBe("boolean");
 
     // 1) snapshot — single home for headline numbers
@@ -155,37 +157,43 @@ describe("Analytics API", () => {
     // 3) activity — daily series, no total field
     expect(Array.isArray(data.activity.series)).toBe(true);
     expect(data.activity.series).toHaveLength(30);
-    expect(data.activity).toHaveProperty("active_days");
     expect(data.activity.total).toBeUndefined();
 
-    // 4) productivity_map — heatmap + AI slots + unreliable days, no peak
-    expect(Array.isArray(data.productivity_map.cells)).toBe(true);
-    expect(data.productivity_map.best_slots).toHaveLength(3);
-    expect(data.productivity_map.best_slots[0].on_time_rate).toBe(92);
-    expect(Array.isArray(data.productivity_map.unreliable_days)).toBe(true);
-    expect(data.productivity_map.peak).toBeUndefined();
+    // 4) behavioral — flagship: top-3 days each with their best hours
+    expect(data.behavioral.source).toBe("ai");
+    expect(data.behavioral.has_scores).toBe(true);
+    expect(data.behavioral.top_days).toHaveLength(2);
+    expect(data.behavioral.top_days[0].day).toBe("Thursday");
+    expect(data.behavioral.top_days[0].on_time_rate).toBe(90); // 0.9 -> percentage
+    expect(data.behavioral.top_days[0].hours).toHaveLength(2); // both Thursday hours
+    expect(data.behavioral.top_days[0].hours[0].hour_display).toBe("1PM");
+    expect(data.behavioral.focus).toHaveProperty("avg_minutes");
+    expect(data.behavioral.momentum).toHaveProperty("direction");
+    expect(data.behavioral.procrastination).toHaveProperty("late_night_rate");
+    expect(data.behavioral.procrastination).toHaveProperty("reschedule_rate");
+    expect(Array.isArray(data.behavioral.unreliable_days)).toBe(true);
 
-    // 5) work_patterns — two breakdowns
+    // 5) heatmap — grid only (peak derived client-side)
+    expect(Array.isArray(data.heatmap.cells)).toBe(true);
+    expect(data.heatmap.hour_range.start).toBe(6);
+    expect(data.heatmap.peak).toBeUndefined();
+
+    // 6) work_patterns — two breakdowns; priority rows now carry avg_minutes
     expect(data.work_patterns.time_of_day).toHaveLength(4);
     expect(data.work_patterns.by_priority).toHaveLength(3);
+    expect(data.work_patterns.by_priority[0]).toHaveProperty("avg_minutes");
 
-    // 6) needs_attention
+    // 7) needs_attention
     expect(data.needs_attention).toHaveProperty("overdue");
     expect(data.needs_attention).toHaveProperty("due_next_7d");
     expect(Array.isArray(data.needs_attention.due_soon)).toBe(true);
-    expect(data.needs_attention.pending_by_priority).toBeDefined();
 
-    // Old (removed) top-level keys must be gone
+    // Old / removed keys must be gone
     expect(data.hero).toBeUndefined();
-    expect(data.behavioral).toBeUndefined();
-    expect(data.completion_trend).toBeUndefined();
-    expect(data.heatmap).toBeUndefined();
-    expect(data.tasks).toBeUndefined();
-    expect(data.daily_completions).toBeUndefined();
-    expect(data.time_of_day).toBeUndefined();
-    expect(data.priority_performance).toBeUndefined();
+    expect(data.productivity_map).toBeUndefined();
     expect(data.best_slots).toBeUndefined();
-    expect(data.productivity_score).toBeUndefined();
+    expect(data.completion_trend).toBeUndefined();
+    expect(data.tasks).toBeUndefined();
 
     expect(callAIAnalytics).toHaveBeenCalledWith({
       userId: USER_ID,
@@ -193,7 +201,7 @@ describe("Analytics API", () => {
     });
   });
 
-  test("GET /api/analytics/dashboard?days=7 -> 7-day activity series", async () => {
+  test("GET /api/analytics/dashboard?days=7 -> range + Mongo behavioral fallback", async () => {
     callAIAnalytics.mockResolvedValueOnce({
       status: "success",
       data: { has_enough_data: false, total_completed: 0, hours: [], days: [] },
@@ -206,7 +214,9 @@ describe("Analytics API", () => {
     expect(response.status).toBe(200);
     expect(response.body.data.activity.series).toHaveLength(7);
     expect(response.body.data.range_days).toBe(7);
-    expect(response.body.data.productivity_map.best_slots).toEqual([]);
+    // No AI days -> falls back to Mongo ranking (empty logs -> empty list)
+    expect(response.body.data.behavioral.source).toBe("history");
+    expect(response.body.data.behavioral.top_days).toEqual([]);
   });
 
   test("GET /api/analytics/dashboard with invalid days -> 400", async () => {

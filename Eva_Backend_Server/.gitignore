@@ -36,4 +36,6 @@ coverage/
 .nyc_output/
 
 firebase-service-account.json
+evafirebase-*-firebase-adminsdk-*.json
+*firebase*adminsdk*.json
 # scripts/*.js

@@ -1,24 +1,28 @@
 /**
  * Analytics dashboard aggregations for the web UI.
  *
- * Produces a de-duplicated, six-section payload where every headline metric has
+ * De-duplicated, behavior-forward payload where every headline metric has
  * exactly ONE home:
- *   1. snapshot         — score, on-time rate, streak, completed (+Δ)
- *   2. insights         — narrative cards derived from the sections below
- *   3. activity         — daily completion series (a breakdown of the total)
- *   4. productivity_map — heatmap + AI best slots + unreliable days
- *   5. work_patterns    — time-of-day + priority breakdowns
- *   6. needs_attention  — overdue / due-soon / pending
+ *   1. snapshot        — score, on-time rate, streak, completed (+Δ)
+ *   2. insights        — narrative cards derived from the sections below
+ *   3. activity        — daily completion series (a breakdown of the total)
+ *   4. behavioral      — FLAGSHIP: top-3 days (each with their best hours),
+ *                        focus time, momentum, procrastination, unreliable days
+ *   5. heatmap         — day × hour completion grid (6AM–11PM)
+ *   6. work_patterns   — time-of-day + priority breakdowns
+ *   7. needs_attention — overdue / due-soon / pending
  *
- * Everything is computed from MongoDB except `productivity_map.best_slots`,
- * which comes from the AI server's scored hours (empty when AI is unavailable).
+ * The behavioral day/hour ranking prefers the AI server's scored output
+ * (`callAIAnalytics` → `days` / `hours`) and falls back to a Mongo count-based
+ * ranking when the AI server is unavailable. Everything else is Mongo.
  *
  * De-duplication rules:
- *   - The aggregate on-time rate and the canonical completed total live only in
- *     `snapshot`. Per-slice `on_time_rate` (cells/buckets/priority) is a
- *     breakdown, not a duplicate.
- *   - `activity`, `work_patterns.time_of_day`, and `work_patterns.by_priority`
- *     are breakdowns of that single total by a dimension — no `total` field.
+ *   - Aggregate on-time rate + the canonical completed total live only in
+ *     `snapshot`. Per-slice `on_time_rate` (cells / buckets / priority / behavioral)
+ *     is a breakdown, not a duplicate.
+ *   - `activity`, `time_of_day`, `by_priority` are breakdowns of that one total —
+ *     no `total` field. The heatmap "peak" and time-of-day "dominant" are the max
+ *     entries (derive client-side) and are not sent.
  */
 
 const { ActivityLog, Task } = require("../models");
@@ -130,19 +134,28 @@ const fetchRangeCompletionLogs = (userId, rangeDays) => {
     action_timestamp: { $gte: since },
   })
     .select(
-      "action_timestamp was_on_time hour_of_day day_of_week scheduled_hour scheduled_day task_priority",
+      "action_timestamp was_on_time hour_of_day day_of_week scheduled_hour scheduled_day task_priority time_taken_minutes reschedule_count",
     )
     .sort({ action_timestamp: 1 })
     .limit(3000)
     .lean();
 };
 
-const countCompletionsInRange = (userId, start, end) =>
-  ActivityLog.countDocuments({
+/** Completion logs in the window immediately before the range (for momentum). */
+const fetchPreviousCompletionLogs = (userId, rangeDays) => {
+  const now = Date.now();
+  return ActivityLog.find({
     user_id: { $in: buildOwnerIdFilter(userId) },
     action_type: "task_completed",
-    action_timestamp: { $gte: start, $lte: end },
-  });
+    action_timestamp: {
+      $gte: new Date(now - 2 * rangeDays * DAY_MS),
+      $lte: new Date(now - rangeDays * DAY_MS),
+    },
+  })
+    .select("action_timestamp was_on_time")
+    .limit(3000)
+    .lean();
+};
 
 const countAllTimeCompleted = (userId) =>
   ActivityLog.countDocuments({
@@ -177,7 +190,6 @@ const computeStreakDays = async (userId, timezone) => {
       streak += 1;
       cursor.setUTCDate(cursor.getUTCDate() - 1);
     } else if (i === 0) {
-      // Today with no completion yet doesn't break the streak.
       cursor.setUTCDate(cursor.getUTCDate() - 1);
     } else {
       break;
@@ -253,26 +265,125 @@ const buildHeatmapCells = (rangeLogs) => {
     }));
 };
 
-/** Top scored hour slots from the AI server (forward-looking scheduling). */
-const buildBestSlots = (behavioralPayload, limit = 3) => {
-  const hours = behavioralPayload?.data?.hours || [];
-  if (!Array.isArray(hours) || !hours.length) return [];
-  return [...hours]
-    .sort(
-      (a, b) =>
-        Number(b.score || 0) - Number(a.score || 0) ||
-        Number(b.log_count || 0) - Number(a.log_count || 0),
-    )
+const buildHeatmap = (rangeLogs) => ({
+  hour_range: {
+    start: HEATMAP_HOUR_START,
+    end: HEATMAP_HOUR_END,
+    start_display: HOUR_LABELS(HEATMAP_HOUR_START),
+    end_display: HOUR_LABELS(HEATMAP_HOUR_END),
+  },
+  cells: buildHeatmapCells(rangeLogs),
+});
+
+/**
+ * Top-N most productive weekdays, each with its own best hours. Prefers the AI
+ * server's scored ranking; falls back to a Mongo count ranking when unavailable.
+ * All `on_time_rate` values are normalized to a 0–100 percentage.
+ */
+const buildTopDays = (behavioralPayload, rangeLogs, limit = 3, hoursPerDay = 3) => {
+  const aiDays = behavioralPayload?.data?.days;
+  const aiHours = behavioralPayload?.data?.hours || [];
+
+  if (Array.isArray(aiDays) && aiDays.length) {
+    const days = [...aiDays]
+      .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+      .slice(0, limit)
+      .map((day) => ({
+        day: day.day || DAY_LABELS[day.day_num],
+        day_num: day.day_num,
+        score: roundTo(Number(day.score || 0), 2),
+        log_count: Number(day.log_count || 0),
+        on_time_rate: roundTo(Number(day.on_time_rate || 0) * 100, 1),
+        hours: [...aiHours]
+          .filter((h) => Number(h.day_num) === Number(day.day_num))
+          .sort((a, b) => Number(b.score || 0) - Number(a.score || 0))
+          .slice(0, hoursPerDay)
+          .map((h) => ({
+            hour: h.hour,
+            hour_display: h.hour_display || HOUR_LABELS(h.hour),
+            score: roundTo(Number(h.score || 0), 2),
+            on_time_rate: roundTo(Number(h.on_time_rate || 0) * 100, 1),
+            log_count: Number(h.log_count || 0),
+          })),
+      }));
+    return { source: "ai", days };
+  }
+
+  // Mongo fallback: rank weekdays (and their hours) by completion count.
+  const agg = {};
+  rangeLogs.forEach((log) => {
+    const d = Number(log.day_of_week);
+    if (!Number.isFinite(d) || d < 0 || d > 6) return;
+    if (!agg[d]) agg[d] = { count: 0, on_time: 0, hours: {} };
+    agg[d].count += 1;
+    if (log.was_on_time === true) agg[d].on_time += 1;
+    const h = Number(log.hour_of_day);
+    if (Number.isFinite(h)) {
+      if (!agg[d].hours[h]) agg[d].hours[h] = { count: 0, on_time: 0 };
+      agg[d].hours[h].count += 1;
+      if (log.was_on_time === true) agg[d].hours[h].on_time += 1;
+    }
+  });
+
+  const entries = Object.entries(agg).map(([d, v]) => ({ day_num: Number(d), ...v }));
+  const maxDay = Math.max(1, ...entries.map((e) => e.count));
+
+  const days = entries
+    .sort((a, b) => b.count - a.count)
     .slice(0, limit)
-    .map((slot) => {
-      const display = slot.hour_display || HOUR_LABELS(slot.hour);
+    .map((entry) => {
+      const hourEntries = Object.entries(entry.hours).map(([h, v]) => ({
+        hour: Number(h),
+        ...v,
+      }));
+      const maxHour = Math.max(1, ...hourEntries.map((h) => h.count));
       return {
-        day_name: slot.day,
-        hour_display: display,
-        on_time_rate: roundTo(Number(slot.on_time_rate || 0) * 100, 1),
-        suggestion: `Plan deep work on ${slot.day} around ${display}`,
+        day: DAY_LABELS[entry.day_num],
+        day_num: entry.day_num,
+        score: roundTo(entry.count / maxDay, 2),
+        log_count: entry.count,
+        on_time_rate: pct(entry.on_time, entry.count),
+        hours: hourEntries
+          .sort((a, b) => b.count - a.count)
+          .slice(0, hoursPerDay)
+          .map((h) => ({
+            hour: h.hour,
+            hour_display: HOUR_LABELS(h.hour),
+            score: roundTo(h.count / maxHour, 2),
+            on_time_rate: pct(h.on_time, h.count),
+            log_count: h.count,
+          })),
       };
     });
+
+  return { source: "history", days };
+};
+
+/** Average minutes spent per completed task in the range. */
+const buildFocus = (rangeLogs) => {
+  const values = rangeLogs
+    .map((log) => Number(log.time_taken_minutes))
+    .filter((v) => Number.isFinite(v) && v > 0);
+  const avg = values.length
+    ? Math.round(values.reduce((sum, v) => sum + v, 0) / values.length)
+    : 0;
+  return { avg_minutes: avg, sample_size: values.length };
+};
+
+/** Late-night finishing and rescheduling — gentle "watch-out" signals. */
+const buildProcrastination = (rangeLogs) => {
+  const total = rangeLogs.length;
+  let lateNight = 0;
+  let rescheduled = 0;
+  rangeLogs.forEach((log) => {
+    const h = Number(log.hour_of_day);
+    if (Number.isFinite(h) && (h >= 22 || h < 5)) lateNight += 1;
+    if (Number(log.reschedule_count) > 0) rescheduled += 1;
+  });
+  return {
+    late_night_rate: pct(lateNight, total),
+    reschedule_rate: pct(rescheduled, total),
+  };
 };
 
 /** Weekdays with fewer than the per-day threshold of completions in range. */
@@ -295,17 +406,28 @@ const buildUnreliableDays = (rangeLogs) => {
   return result;
 };
 
-const buildProductivityMap = (rangeLogs, behavioralPayload) => ({
-  hour_range: {
-    start: HEATMAP_HOUR_START,
-    end: HEATMAP_HOUR_END,
-    start_display: HOUR_LABELS(HEATMAP_HOUR_START),
-    end_display: HOUR_LABELS(HEATMAP_HOUR_END),
-  },
-  cells: buildHeatmapCells(rangeLogs),
-  best_slots: buildBestSlots(behavioralPayload, 3),
-  unreliable_days: buildUnreliableDays(rangeLogs),
-});
+/** Behaviour sub-score (on-time / consistency / volume, no streak) 0–100. */
+const computeBehaviorScore = ({ onTimeRate, activeDays, total, rangeDays }) =>
+  Math.round(
+    100 *
+      (0.4 * clamp01(onTimeRate / 100) +
+        0.3 * clamp01(rangeDays > 0 ? activeDays / rangeDays / 0.6 : 0) +
+        0.3 * clamp01(rangeDays > 0 ? total / rangeDays / 0.8 : 0)),
+  );
+
+const buildMomentum = (currentScore, previousScore) => {
+  const delta = currentScore - previousScore;
+  let direction = "steady";
+  if (delta >= 3) direction = "up";
+  else if (delta <= -3) direction = "down";
+  const label =
+    direction === "up"
+      ? "Your habits are improving versus the previous period."
+      : direction === "down"
+        ? "Your habits dipped versus the previous period."
+        : "Holding steady versus the previous period.";
+  return { direction, delta, label };
+};
 
 /** Completion distribution across day-parts (breakdown of the total). */
 const buildTimeOfDay = (rangeLogs, timezone) => {
@@ -340,11 +462,11 @@ const buildTimeOfDay = (rangeLogs, timezone) => {
   });
 };
 
-/** On-time reliability per priority (breakdown of the total). */
+/** On-time reliability + average focus time per priority. */
 const buildByPriority = (rangeLogs) => {
   const counters = {};
   PRIORITY_ORDER.forEach((priority) => {
-    counters[priority] = { completed: 0, on_time: 0 };
+    counters[priority] = { completed: 0, on_time: 0, minutes: 0, minutesCount: 0 };
   });
 
   rangeLogs.forEach((log) => {
@@ -352,6 +474,11 @@ const buildByPriority = (rangeLogs) => {
     if (!counters[priority]) return;
     counters[priority].completed += 1;
     if (log.was_on_time === true) counters[priority].on_time += 1;
+    const minutes = Number(log.time_taken_minutes);
+    if (Number.isFinite(minutes) && minutes > 0) {
+      counters[priority].minutes += minutes;
+      counters[priority].minutesCount += 1;
+    }
   });
 
   const totalKnown = PRIORITY_ORDER.reduce(
@@ -360,13 +487,14 @@ const buildByPriority = (rangeLogs) => {
   );
 
   return PRIORITY_ORDER.map((priority) => {
-    const { completed, on_time: onTime } = counters[priority];
+    const c = counters[priority];
     return {
       priority,
       label: PRIORITY_LABELS[priority],
-      completed,
-      on_time_rate: pct(onTime, completed),
-      percent: pct(completed, totalKnown),
+      completed: c.completed,
+      on_time_rate: pct(c.on_time, c.completed),
+      percent: pct(c.completed, totalKnown),
+      avg_minutes: c.minutesCount ? Math.round(c.minutes / c.minutesCount) : 0,
     };
   });
 };
@@ -441,6 +569,7 @@ const computeProductivityScore = ({ onTimeRate, activeDays, total, rangeDays, st
 const buildInsights = ({
   allTimeCompleted,
   snapshot,
+  behavioral,
   peakCell,
   byPriority,
   timeOfDay,
@@ -506,7 +635,17 @@ const buildInsights = ({
     );
   }
 
-  if (peakCell) {
+  // Prefer the scored top day/hour; fall back to the busiest heatmap cell.
+  const topDay = behavioral?.top_days?.[0];
+  const topHour = topDay?.hours?.[0];
+  if (topDay && topHour) {
+    push(
+      "info",
+      "bolt",
+      "Your power hours",
+      `You're most productive on ${topDay.day} around ${topHour.hour_display}.`,
+    );
+  } else if (peakCell) {
     push(
       "info",
       "bolt",
@@ -523,6 +662,12 @@ const buildInsights = ({
       "High-priority tasks slip",
       `High-priority tasks are on time only ${high.on_time_rate}% of the time — plan them earlier in the day.`,
     );
+  }
+
+  if (behavioral?.momentum?.direction === "up") {
+    push("positive", "rocket_launch", "Gaining momentum", behavioral.momentum.label);
+  } else if (behavioral?.momentum?.direction === "down") {
+    push("warning", "trending_down", "Losing momentum", behavioral.momentum.label);
   }
 
   if ((overdue || 0) > 0) {
@@ -565,30 +710,49 @@ const buildDashboard = async ({
   behavioralPayload,
 }) => {
   const tz = normalizeTimezone(timezone);
-  const now = Date.now();
 
-  const [rangeLogs, streakDays, previousCount, allTimeCompleted, needsAttention] =
+  const [rangeLogs, previousLogs, streakDays, allTimeCompleted, needsAttention] =
     await Promise.all([
       fetchRangeCompletionLogs(userId, rangeDays),
+      fetchPreviousCompletionLogs(userId, rangeDays),
       computeStreakDays(userId, tz),
-      countCompletionsInRange(
-        userId,
-        new Date(now - 2 * rangeDays * DAY_MS),
-        new Date(now - rangeDays * DAY_MS),
-      ),
       countAllTimeCompleted(userId),
       getNeedsAttention(userId),
     ]);
 
+  // Current-period aggregates
   const activity = buildActivity(rangeLogs, rangeDays, tz);
   const periodTotal = activity._total;
   const onTimeRate = pct(activity._onTime, periodTotal);
+
+  // Previous-period aggregates (for Δ + momentum)
+  const previousCount = previousLogs.length;
+  const previousOnTime = previousLogs.filter((l) => l.was_on_time === true).length;
+  const previousActiveDays = new Set(
+    previousLogs.map((l) => localDateKey(new Date(l.action_timestamp), tz)),
+  ).size;
+
   const changePercent =
     previousCount > 0
       ? roundTo(((periodTotal - previousCount) / previousCount) * 100, 1)
       : periodTotal > 0
         ? 100
         : 0;
+
+  const momentum = buildMomentum(
+    computeBehaviorScore({
+      onTimeRate,
+      activeDays: activity.active_days,
+      total: periodTotal,
+      rangeDays,
+    }),
+    computeBehaviorScore({
+      onTimeRate: pct(previousOnTime, previousCount),
+      activeDays: previousActiveDays,
+      total: previousCount,
+      rangeDays,
+    }),
+  );
 
   const snapshot = {
     productivity_score: computeProductivityScore({
@@ -607,14 +771,26 @@ const buildDashboard = async ({
     },
   };
 
-  const productivityMap = buildProductivityMap(rangeLogs, behavioralPayload);
+  const topDays = buildTopDays(behavioralPayload, rangeLogs, 3, 3);
+  const behavioral = {
+    has_scores: topDays.days.length > 0,
+    source: topDays.source,
+    top_days: topDays.days,
+    focus: buildFocus(rangeLogs),
+    momentum,
+    procrastination: buildProcrastination(rangeLogs),
+    unreliable_days: buildUnreliableDays(rangeLogs),
+  };
+
+  const heatmap = buildHeatmap(rangeLogs);
   const timeOfDay = buildTimeOfDay(rangeLogs, tz);
   const byPriority = buildByPriority(rangeLogs);
 
   const insights = buildInsights({
     allTimeCompleted,
     snapshot,
-    peakCell: [...productivityMap.cells].sort((a, b) => b.count - a.count)[0] || null,
+    behavioral,
+    peakCell: [...heatmap.cells].sort((a, b) => b.count - a.count)[0] || null,
     byPriority,
     timeOfDay,
     overdue: needsAttention.overdue,
@@ -638,7 +814,8 @@ const buildDashboard = async ({
       active_days: activity.active_days,
       avg_per_active_day: activity.avg_per_active_day,
     },
-    productivity_map: productivityMap,
+    behavioral,
+    heatmap,
     work_patterns: {
       time_of_day: timeOfDay,
       by_priority: byPriority,
@@ -651,9 +828,14 @@ module.exports = {
   parseRangeDays,
   buildDashboard,
   buildActivity,
+  buildHeatmap,
   buildHeatmapCells,
-  buildBestSlots,
+  buildTopDays,
+  buildFocus,
+  buildProcrastination,
   buildUnreliableDays,
+  computeBehaviorScore,
+  buildMomentum,
   buildTimeOfDay,
   buildByPriority,
   computeProductivityScore,
