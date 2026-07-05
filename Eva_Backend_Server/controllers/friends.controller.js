@@ -14,6 +14,7 @@ const {
 const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
 const { insert_and_dispatch } = require("../services/notification.service");
 const { isAcceptingFriendRequests, closedToFriendRequestsFilter } = require("../utils/friendSettings");
+const { getDailyQuote } = require("../utils/dailyQuote");
 
 const buildApiData = (req, payload) => {
   const timezone = (req.user && req.user.timezone) || "UTC";
@@ -275,6 +276,7 @@ const listFriends = async (req, res, next) => {
       status: "success",
       data: {
         friends,
+        quote: getDailyQuote(userTz(req)),
       },
     });
   } catch (error) {
