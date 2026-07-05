@@ -125,7 +125,7 @@ Send a friend request. Identify the target by **`username` or `email`** (at leas
 
 ## `GET /api/friends`
 
-List the current user's **accepted** friends, most recently updated first.
+List the current user's **accepted** friends, most recently updated first. Also returns a **quote of the day** for the Collaboration screen's quote card.
 
 ### Success `200`
 
@@ -139,12 +139,17 @@ List the current user's **accepted** friends, most recently updated first.
         "since": "2026-07-01T09:12:00+05:00",
         "friend": { "_id": "...", "name": "...", "username": "...", "email": "...", "profile_picture": null }
       }
-    ]
+    ],
+    "quote": {
+      "text": "Alone we can do so little; together we can do so much.",
+      "author": "Helen Keller"
+    }
   }
 }
 ```
 
 - `since` is `responded_at` (or `created_at` as fallback).
+- `quote` is a **deterministic quote of the day**: the same quote for the whole calendar day (in the user's timezone), rotating one-per-day so the full set (~40 quotes) is shown before any repeats. No client action needed — just render `quote.text` / `quote.author`. It changes at the user's local midnight.
 
 ---
 
