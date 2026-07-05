@@ -30,6 +30,7 @@ class AnalyticsViewModel extends ChangeNotifier {
       _dashboard = await _repository.getDashboard(days: _selectedDays);
       _error = null;
     } catch (e) {
+      print('🔴 Analytics parse error: $e');
       _error = 'Failed to load analytics. Please try again.';
       _dashboard = null;
     } finally {
