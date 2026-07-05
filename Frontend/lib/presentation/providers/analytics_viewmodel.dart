@@ -1,3 +1,4 @@
+// lib/presentation/providers/analytics_viewmodel.dart
 import 'package:flutter/material.dart';
 import '../../data/models/analytics_model.dart';
 import '../../data/repositories/analytics_repository.dart';
@@ -29,7 +30,7 @@ class AnalyticsViewModel extends ChangeNotifier {
       _dashboard = await _repository.getDashboard(days: _selectedDays);
       _error = null;
     } catch (e) {
-      _error = e.toString();
+      _error = 'Failed to load analytics. Please try again.';
       _dashboard = null;
     } finally {
       _setLoading(false);

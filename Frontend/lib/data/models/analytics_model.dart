@@ -1,126 +1,140 @@
-// ─── Root ─────────────
+import 'package:flutter/material.dart';
+import '../../core/theme/app_colours.dart';
+
+// ─── ROOT ──────────────────────────────────────────────────────────────
 class AnalyticsDashboard {
   final String generatedAt;
   final String timezone;
   final int rangeDays;
-  final ProductivityScore? productivityScore;
-  final HeroStats hero;
+  final Meta meta;
+  final Snapshot snapshot;
   final List<Insight> insights;
-  final BehavioralSection behavioral;
-  final DailyCompletionsSection? dailyCompletions;
-  final TimeOfDaySection? timeOfDay;
-  final List<PriorityPerformance> priorityPerformance;
-  final HeatmapSection heatmap;
-  final TasksSection tasks;
-  final CompletionTrendSection completionTrend;
-  final List<BestSlot> bestSlots;
+  final Activity activity;
+  final ProductivityMap productivityMap;
+  final WorkPatterns workPatterns;
+  final NeedsAttention needsAttention;
 
   AnalyticsDashboard({
     required this.generatedAt,
     required this.timezone,
     required this.rangeDays,
-    required this.productivityScore,
-    required this.hero,
+    required this.meta,
+    required this.snapshot,
     required this.insights,
-    required this.behavioral,
-    required this.dailyCompletions,
-    required this.timeOfDay,
-    required this.priorityPerformance,
-    required this.heatmap,
-    required this.tasks,
-    required this.completionTrend,
-    required this.bestSlots,
+    required this.activity,
+    required this.productivityMap,
+    required this.workPatterns,
+    required this.needsAttention,
   });
 
   factory AnalyticsDashboard.fromJson(Map<String, dynamic> json) {
+    // Safely extract with defaults
     return AnalyticsDashboard(
-      generatedAt: json['generated_at'],
-      timezone: json['timezone'],
-      rangeDays: json['range_days'],
-      productivityScore: json['productivity_score'] != null
-          ? ProductivityScore.fromJson(json['productivity_score'])
-          : null,
-      hero: HeroStats.fromJson(json['hero']),
+      generatedAt: json['generated_at'] ?? '',
+      timezone: json['timezone'] ?? 'UTC',
+      rangeDays: json['range_days'] ?? 30,
+      meta: Meta.fromJson(json['meta'] ?? {}),
+      snapshot: Snapshot.fromJson(json['snapshot'] ?? {}),
       insights:
           (json['insights'] as List?)
               ?.map((i) => Insight.fromJson(i))
               .toList() ??
           [],
-      behavioral: BehavioralSection.fromJson(json['behavioral']),
-      dailyCompletions: json['daily_completions'] != null
-          ? DailyCompletionsSection.fromJson(json['daily_completions'])
-          : null,
-      timeOfDay: json['time_of_day'] != null
-          ? TimeOfDaySection.fromJson(json['time_of_day'])
-          : null,
-      priorityPerformance:
-          (json['priority_performance'] as List?)
-              ?.map((p) => PriorityPerformance.fromJson(p))
-              .toList() ??
-          [],
-      heatmap: HeatmapSection.fromJson(json['heatmap']),
-      tasks: TasksSection.fromJson(json['tasks']),
-      completionTrend: CompletionTrendSection.fromJson(
-        json['completion_trend'],
-      ),
-      bestSlots: (json['best_slots'] as List)
-          .map((s) => BestSlot.fromJson(s))
-          .toList(),
+      activity: Activity.fromJson(json['activity'] ?? {}),
+      productivityMap: ProductivityMap.fromJson(json['productivity_map'] ?? {}),
+      workPatterns: WorkPatterns.fromJson(json['work_patterns'] ?? {}),
+      needsAttention: NeedsAttention.fromJson(json['needs_attention'] ?? {}),
     );
   }
 }
 
-// ─── Productivity Score ─────────────────────────────────────────────────
+// ─── META ──────────────────────────────────────────────────────────────
+class Meta {
+  final bool hasEnoughData;
+  final int minTasks;
+  final int tasksRemaining;
+
+  Meta({
+    this.hasEnoughData = false,
+    this.minTasks = 20,
+    this.tasksRemaining = 0,
+  });
+
+  factory Meta.fromJson(Map<String, dynamic> json) {
+    return Meta(
+      hasEnoughData: json['has_enough_data'] ?? false,
+      minTasks: json['min_tasks'] ?? 20,
+      tasksRemaining: json['tasks_remaining'] ?? 0,
+    );
+  }
+}
+
+// ─── SNAPSHOT ──────────────────────────────────────────────────────────
+class Snapshot {
+  final ProductivityScore productivityScore;
+  final double onTimeRate;
+  final int currentStreak;
+  final Completed completed;
+
+  Snapshot({
+    required this.productivityScore,
+    required this.onTimeRate,
+    required this.currentStreak,
+    required this.completed,
+  });
+
+  factory Snapshot.fromJson(Map<String, dynamic> json) {
+    return Snapshot(
+      productivityScore: ProductivityScore.fromJson(
+        json['productivity_score'] ?? {},
+      ),
+      onTimeRate: (json['on_time_rate'] ?? 0).toDouble(),
+      currentStreak: json['current_streak'] ?? 0,
+      completed: Completed.fromJson(json['completed'] ?? {}),
+    );
+  }
+}
+
 class ProductivityScore {
   final int score;
   final String rating;
   final String caption;
-  final ScoreComponents components;
 
   ProductivityScore({
-    required this.score,
-    required this.rating,
-    required this.caption,
-    required this.components,
+    this.score = 0,
+    this.rating = 'Building',
+    this.caption = 'Keep completing tasks to build momentum.',
   });
 
   factory ProductivityScore.fromJson(Map<String, dynamic> json) {
     return ProductivityScore(
       score: json['score'] ?? 0,
-      rating: json['rating'] ?? '',
-      caption: json['caption'] ?? '',
-      components: ScoreComponents.fromJson(json['components'] ?? {}),
+      rating: json['rating'] ?? 'Building',
+      caption: json['caption'] ?? 'Keep completing tasks to build momentum.',
     );
   }
 }
 
-class ScoreComponents {
-  final int onTime;
-  final int consistency;
-  final int volume;
-  final int streak;
+class Completed {
+  final int period;
+  final int previous;
+  final double changePercent;
 
-  ScoreComponents({
-    required this.onTime,
-    required this.consistency,
-    required this.volume,
-    required this.streak,
-  });
+  Completed({this.period = 0, this.previous = 0, this.changePercent = 0});
 
-  factory ScoreComponents.fromJson(Map<String, dynamic> json) {
-    return ScoreComponents(
-      onTime: json['on_time'] ?? 0,
-      consistency: json['consistency'] ?? 0,
-      volume: json['volume'] ?? 0,
-      streak: json['streak'] ?? 0,
+  factory Completed.fromJson(Map<String, dynamic> json) {
+    return Completed(
+      period: json['period'] ?? 0,
+      previous: json['previous'] ?? 0,
+      changePercent: (json['change_percent'] ?? 0).toDouble(),
     );
   }
 }
 
-// ─── Insight ─────────────────────────────────────────────────────────────
+// ─── INSIGHTS ──────────────────────────────────────────────────────────
 class Insight {
   final String id;
-  final String type; // positive | warning | tip | info
+  final String type; // positive, warning, tip, info
   final String icon;
   final String title;
   final String message;
@@ -135,66 +149,97 @@ class Insight {
 
   factory Insight.fromJson(Map<String, dynamic> json) {
     return Insight(
-      id: json['id']?.toString() ?? '',
+      id: json['id'] ?? '0',
       type: json['type'] ?? 'info',
       icon: json['icon'] ?? 'info',
       title: json['title'] ?? '',
       message: json['message'] ?? '',
     );
   }
+
+  IconData get iconData {
+    switch (icon) {
+      case 'local_fire_department':
+        return Icons.local_fire_department_rounded;
+      case 'trending_up':
+        return Icons.trending_up_rounded;
+      case 'trending_down':
+        return Icons.trending_down_rounded;
+      case 'verified':
+        return Icons.verified_rounded;
+      case 'schedule':
+        return Icons.schedule_rounded;
+      case 'bolt':
+        return Icons.bolt_rounded;
+      case 'priority_high':
+        return Icons.priority_high_rounded;
+      case 'warning_amber':
+        return Icons.warning_amber_rounded;
+      case 'wb_sunny':
+        return Icons.wb_sunny_rounded;
+      case 'calendar_month':
+        return Icons.calendar_month_rounded;
+      case 'rocket_launch':
+        return Icons.rocket_launch_rounded;
+      default:
+        return Icons.info_rounded;
+    }
+  }
+
+  Color get color {
+    switch (type) {
+      case 'positive':
+        return Colors.green;
+      case 'warning':
+        return Colors.orange;
+      case 'tip':
+        return AppColors.primary;
+      default:
+        return Colors.grey;
+    }
+  }
 }
 
-// ─── Daily Completions ──────────────────────────────────────────────────
-class DailyCompletionsSection {
-  final int rangeDays;
-  final int total;
+// ─── ACTIVITY ──────────────────────────────────────────────────────────
+class Activity {
+  final List<ActivityPoint> series;
   final int activeDays;
   final double avgPerActiveDay;
-  final DailyPoint? busiestDate;
-  final List<DailyPoint> series;
 
-  DailyCompletionsSection({
-    required this.rangeDays,
-    required this.total,
-    required this.activeDays,
-    required this.avgPerActiveDay,
-    required this.busiestDate,
-    required this.series,
+  Activity({
+    this.series = const [],
+    this.activeDays = 0,
+    this.avgPerActiveDay = 0,
   });
 
-  factory DailyCompletionsSection.fromJson(Map<String, dynamic> json) {
-    return DailyCompletionsSection(
-      rangeDays: json['range_days'] ?? 30,
-      total: json['total'] ?? 0,
-      activeDays: json['active_days'] ?? 0,
-      avgPerActiveDay: (json['avg_per_active_day'] ?? 0).toDouble(),
-      busiestDate: json['busiest_date'] != null
-          ? DailyPoint.fromJson(json['busiest_date'])
-          : null,
+  factory Activity.fromJson(Map<String, dynamic> json) {
+    return Activity(
       series:
           (json['series'] as List?)
-              ?.map((p) => DailyPoint.fromJson(p))
+              ?.map((p) => ActivityPoint.fromJson(p))
               .toList() ??
           [],
+      activeDays: json['active_days'] ?? 0,
+      avgPerActiveDay: (json['avg_per_active_day'] ?? 0).toDouble(),
     );
   }
 }
 
-class DailyPoint {
+class ActivityPoint {
   final String date;
   final int count;
   final int onTime;
   final int late;
 
-  DailyPoint({
-    required this.date,
-    required this.count,
-    required this.onTime,
-    required this.late,
+  ActivityPoint({
+    this.date = '',
+    this.count = 0,
+    this.onTime = 0,
+    this.late = 0,
   });
 
-  factory DailyPoint.fromJson(Map<String, dynamic> json) {
-    return DailyPoint(
+  factory ActivityPoint.fromJson(Map<String, dynamic> json) {
+    return ActivityPoint(
       date: json['date'] ?? '',
       count: json['count'] ?? 0,
       onTime: json['on_time'] ?? 0,
@@ -203,335 +248,38 @@ class DailyPoint {
   }
 }
 
-// ─── Time of Day ──────────
-class TimeOfDaySection {
-  final int total;
-  final List<TimeBucket> buckets;
-  final TimeBucket? dominant;
-
-  TimeOfDaySection({
-    required this.total,
-    required this.buckets,
-    required this.dominant,
-  });
-
-  factory TimeOfDaySection.fromJson(Map<String, dynamic> json) {
-    return TimeOfDaySection(
-      total: json['total'] ?? 0,
-      buckets:
-          (json['buckets'] as List?)
-              ?.map((b) => TimeBucket.fromJson(b))
-              .toList() ??
-          [],
-      dominant: json['dominant'] != null
-          ? TimeBucket.fromJson(json['dominant'])
-          : null,
-    );
-  }
-}
-
-class TimeBucket {
-  final String key;
-  final String label;
-  final String rangeDisplay;
-  final int count;
-  final double onTimeRate;
-  final double percent;
-
-  TimeBucket({
-    required this.key,
-    required this.label,
-    required this.rangeDisplay,
-    required this.count,
-    required this.onTimeRate,
-    required this.percent,
-  });
-
-  factory TimeBucket.fromJson(Map<String, dynamic> json) {
-    return TimeBucket(
-      key: json['key'] ?? '',
-      label: json['label'] ?? '',
-      rangeDisplay: json['range_display'] ?? '',
-      count: json['count'] ?? 0,
-      onTimeRate: (json['on_time_rate'] ?? 0).toDouble(),
-      percent: (json['percent'] ?? 0).toDouble(),
-    );
-  }
-}
-
-// ─── Priority Performance ───────────────────────────────────────────────
-class PriorityPerformance {
-  final String priority;
-  final String label;
-  final int completed;
-  final int onTime;
-  final double onTimeRate;
-  final double percent;
-
-  PriorityPerformance({
-    required this.priority,
-    required this.label,
-    required this.completed,
-    required this.onTime,
-    required this.onTimeRate,
-    required this.percent,
-  });
-
-  factory PriorityPerformance.fromJson(Map<String, dynamic> json) {
-    return PriorityPerformance(
-      priority: json['priority'] ?? 'medium',
-      label: json['label'] ?? '',
-      completed: json['completed'] ?? 0,
-      onTime: json['on_time'] ?? 0,
-      onTimeRate: (json['on_time_rate'] ?? 0).toDouble(),
-      percent: (json['percent'] ?? 0).toDouble(),
-    );
-  }
-}
-
-// ─── Hero Stats ──────────────────────────────────────────────────────────
-class HeroStats {
-  final int completedThisWeek;
-  final int completedLastWeek;
-  final double weekChangePercent;
-  final double onTimeRate;
-  final int totalCompleted;
-  final int streakDays;
-  final int upcoming7d;
-
-  HeroStats({
-    required this.completedThisWeek,
-    required this.completedLastWeek,
-    required this.weekChangePercent,
-    required this.onTimeRate,
-    required this.totalCompleted,
-    required this.streakDays,
-    required this.upcoming7d,
-  });
-
-  factory HeroStats.fromJson(Map<String, dynamic> json) {
-    return HeroStats(
-      completedThisWeek: json['completed_this_week'] ?? 0,
-      completedLastWeek: json['completed_last_week'] ?? 0,
-      weekChangePercent: (json['week_change_percent'] ?? 0).toDouble(),
-      onTimeRate: (json['on_time_rate'] ?? 0).toDouble(),
-      totalCompleted: json['total_completed'] ?? 0,
-      streakDays: json['streak_days'] ?? 0,
-      upcoming7d: json['upcoming_7d'] ?? 0,
-    );
-  }
-}
-
-// ─── Behavioral ──────────────────────────────────────────────────────────
-class BehavioralSection {
-  final bool enabled;
-  final bool hasEnoughData;
-  final Thresholds thresholds;
-  final int totalCompleted;
-  final List<TopDay> topDays;
-  final List<HourWindow> hourWindows;
-  final String? strengthSummary;
-  final List<UnreliableDay> unreliableDays;
-  final CompletionRate completionRate;
-  final double? avgTimeTaken;
-
-  BehavioralSection({
-    required this.enabled,
-    required this.hasEnoughData,
-    required this.thresholds,
-    required this.totalCompleted,
-    required this.topDays,
-    required this.hourWindows,
-    this.strengthSummary,
-    required this.unreliableDays,
-    required this.completionRate,
-    this.avgTimeTaken,
-  });
-
-  factory BehavioralSection.fromJson(Map<String, dynamic> json) {
-    return BehavioralSection(
-      enabled: json['enabled'] ?? false,
-      hasEnoughData: json['has_enough_data'] ?? false,
-      thresholds: Thresholds.fromJson(json['thresholds'] ?? {}),
-      totalCompleted: json['total_completed'] ?? 0,
-      topDays:
-          (json['top_days'] as List?)
-              ?.map((d) => TopDay.fromJson(d))
-              .toList() ??
-          [],
-      hourWindows:
-          (json['hour_windows'] as List?)
-              ?.map((w) => HourWindow.fromJson(w))
-              .toList() ??
-          [],
-      strengthSummary: json['strength_summary'],
-      unreliableDays:
-          (json['unreliable_days'] as List?)
-              ?.map((d) => UnreliableDay.fromJson(d))
-              .toList() ??
-          [],
-      completionRate: CompletionRate.fromJson(json['completion_rate'] ?? {}),
-      avgTimeTaken: json['avg_time_taken']?.toDouble(),
-    );
-  }
-}
-
-class Thresholds {
-  final int global;
-  final int perDay;
-
-  Thresholds({required this.global, required this.perDay});
-
-  factory Thresholds.fromJson(Map<String, dynamic> json) {
-    return Thresholds(
-      global: json['global'] ?? 20,
-      perDay: json['per_day'] ?? 5,
-    );
-  }
-}
-
-class TopDay {
-  final String day;
-  final int dayNum;
-  final double score;
-  final int logCount;
-  final double onTimeRate;
-
-  TopDay({
-    required this.day,
-    required this.dayNum,
-    required this.score,
-    required this.logCount,
-    required this.onTimeRate,
-  });
-
-  factory TopDay.fromJson(Map<String, dynamic> json) {
-    return TopDay(
-      day: json['day'],
-      dayNum: json['day_num'],
-      score: (json['score'] ?? 0).toDouble(),
-      logCount: json['log_count'] ?? 0,
-      onTimeRate: (json['on_time_rate'] ?? 0).toDouble(),
-    );
-  }
-}
-
-class HourWindow {
-  final int dayNum;
-  final String dayName;
-  final int startHour;
-  final int endHour;
-  final String startDisplay;
-  final String endDisplay;
-  final String label;
-  final double score;
-  final int logCount;
-
-  HourWindow({
-    required this.dayNum,
-    required this.dayName,
-    required this.startHour,
-    required this.endHour,
-    required this.startDisplay,
-    required this.endDisplay,
-    required this.label,
-    required this.score,
-    required this.logCount,
-  });
-
-  factory HourWindow.fromJson(Map<String, dynamic> json) {
-    return HourWindow(
-      dayNum: json['day_num'],
-      dayName: json['day_name'],
-      startHour: json['start_hour'],
-      endHour: json['end_hour'],
-      startDisplay: json['start_display'],
-      endDisplay: json['end_display'],
-      label: json['label'],
-      score: (json['score'] ?? 0).toDouble(),
-      logCount: json['log_count'] ?? 0,
-    );
-  }
-}
-
-class UnreliableDay {
-  final String day;
-  final int dayNum;
-  final int logCount;
-  final int needed;
-
-  UnreliableDay({
-    required this.day,
-    required this.dayNum,
-    required this.logCount,
-    required this.needed,
-  });
-
-  factory UnreliableDay.fromJson(Map<String, dynamic> json) {
-    return UnreliableDay(
-      day: json['day'],
-      dayNum: json['day_num'],
-      logCount: json['log_count'] ?? 0,
-      needed: json['needed'] ?? 5,
-    );
-  }
-}
-
-class CompletionRate {
-  final int totalCompleted;
-  final int onTime;
-  final int late;
-  final double onTimeRate;
-
-  CompletionRate({
-    required this.totalCompleted,
-    required this.onTime,
-    required this.late,
-    required this.onTimeRate,
-  });
-
-  factory CompletionRate.fromJson(Map<String, dynamic> json) {
-    return CompletionRate(
-      totalCompleted: json['total_completed'] ?? 0,
-      onTime: json['on_time'] ?? 0,
-      late: json['late'] ?? 0,
-      onTimeRate: (json['on_time_rate'] ?? 0).toDouble(),
-    );
-  }
-}
-
-// ─── Heatmap ─────────────────────────────────────────────────────────────
-class HeatmapSection {
-  final int rangeDays;
-  final String timezone;
+// ─── PRODUCTIVITY MAP ──────────────────────────────────────────────────
+class ProductivityMap {
   final HourRange hourRange;
   final List<HeatmapCell> cells;
-  final HeatmapCell? peak;
-  final HeatmapCell? weakest;
+  final List<BestSlot> bestSlots;
+  final List<UnreliableDay> unreliableDays;
 
-  HeatmapSection({
-    required this.rangeDays,
-    required this.timezone,
+  ProductivityMap({
     required this.hourRange,
-    required this.cells,
-    this.peak,
-    this.weakest,
+    this.cells = const [],
+    this.bestSlots = const [],
+    this.unreliableDays = const [],
   });
 
-  factory HeatmapSection.fromJson(Map<String, dynamic> json) {
-    return HeatmapSection(
-      rangeDays: json['range_days'] ?? 30,
-      timezone: json['timezone'] ?? 'UTC',
+  factory ProductivityMap.fromJson(Map<String, dynamic> json) {
+    return ProductivityMap(
       hourRange: HourRange.fromJson(json['hour_range'] ?? {}),
       cells:
           (json['cells'] as List?)
               ?.map((c) => HeatmapCell.fromJson(c))
               .toList() ??
           [],
-      peak: json['peak'] != null ? HeatmapCell.fromJson(json['peak']) : null,
-      weakest: json['weakest'] != null
-          ? HeatmapCell.fromJson(json['weakest'])
-          : null,
+      bestSlots:
+          (json['best_slots'] as List?)
+              ?.map((s) => BestSlot.fromJson(s))
+              .toList() ??
+          [],
+      unreliableDays:
+          (json['unreliable_days'] as List?)
+              ?.map((d) => UnreliableDay.fromJson(d))
+              .toList() ??
+          [],
     );
   }
 }
@@ -543,10 +291,10 @@ class HourRange {
   final String endDisplay;
 
   HourRange({
-    required this.start,
-    required this.end,
-    required this.startDisplay,
-    required this.endDisplay,
+    this.start = 6,
+    this.end = 23,
+    this.startDisplay = '6AM',
+    this.endDisplay = '11PM',
   });
 
   factory HourRange.fromJson(Map<String, dynamic> json) {
@@ -566,79 +314,171 @@ class HeatmapCell {
   final String hourDisplay;
   final int count;
   final double onTimeRate;
-  final int intensity;
 
   HeatmapCell({
-    required this.day,
-    required this.dayName,
-    required this.hour,
-    required this.hourDisplay,
-    required this.count,
-    required this.onTimeRate,
-    required this.intensity,
+    this.day = 0,
+    this.dayName = '',
+    this.hour = 0,
+    this.hourDisplay = '',
+    this.count = 0,
+    this.onTimeRate = 0,
   });
 
   factory HeatmapCell.fromJson(Map<String, dynamic> json) {
     return HeatmapCell(
-      day: json['day'],
-      dayName: json['day_name'],
-      hour: json['hour'],
-      hourDisplay: json['hour_display'],
+      day: json['day'] ?? 0,
+      dayName: json['day_name'] ?? '',
+      hour: json['hour'] ?? 0,
+      hourDisplay: json['hour_display'] ?? '',
       count: json['count'] ?? 0,
       onTimeRate: (json['on_time_rate'] ?? 0).toDouble(),
-      intensity: json['intensity'] ?? 0,
     );
   }
 }
 
-// ─── Tasks ──────────────────────────────────────────────────────────────
-class TasksSection {
-  final int pending;
-  final int complete;
-  final int overdue;
-  final PriorityCounts byPriority;
-  final List<DueSoonTask> dueWithin48h;
-  final BusiestDay busiestDayThisWeek;
+class BestSlot {
+  final String dayName;
+  final String hourDisplay;
+  final double onTimeRate;
+  final String suggestion;
 
-  TasksSection({
-    required this.pending,
-    required this.complete,
-    required this.overdue,
-    required this.byPriority,
-    required this.dueWithin48h,
-    required this.busiestDayThisWeek,
+  BestSlot({
+    this.dayName = '',
+    this.hourDisplay = '',
+    this.onTimeRate = 0,
+    this.suggestion = '',
   });
 
-  factory TasksSection.fromJson(Map<String, dynamic> json) {
-    return TasksSection(
-      pending: json['pending'] ?? 0,
-      complete: json['complete'] ?? 0,
+  factory BestSlot.fromJson(Map<String, dynamic> json) {
+    return BestSlot(
+      dayName: json['day_name'] ?? '',
+      hourDisplay: json['hour_display'] ?? '',
+      onTimeRate: (json['on_time_rate'] ?? 0).toDouble(),
+      suggestion: json['suggestion'] ?? '',
+    );
+  }
+}
+
+class UnreliableDay {
+  final String day;
+  final int logCount;
+  final int needed;
+
+  UnreliableDay({this.day = '', this.logCount = 0, this.needed = 5});
+
+  factory UnreliableDay.fromJson(Map<String, dynamic> json) {
+    return UnreliableDay(
+      day: json['day'] ?? '',
+      logCount: json['log_count'] ?? 0,
+      needed: json['needed'] ?? 5,
+    );
+  }
+}
+
+// ─── WORK PATTERNS ─────────────────────────────────────────────────────
+class WorkPatterns {
+  final List<TimeBucket> timeOfDay;
+  final List<PriorityRow> byPriority;
+
+  WorkPatterns({this.timeOfDay = const [], this.byPriority = const []});
+
+  factory WorkPatterns.fromJson(Map<String, dynamic> json) {
+    return WorkPatterns(
+      timeOfDay:
+          (json['time_of_day'] as List?)
+              ?.map((t) => TimeBucket.fromJson(t))
+              .toList() ??
+          [],
+      byPriority:
+          (json['by_priority'] as List?)
+              ?.map((p) => PriorityRow.fromJson(p))
+              .toList() ??
+          [],
+    );
+  }
+}
+
+class TimeBucket {
+  final String key;
+  final String label;
+  final String rangeDisplay;
+  final int count;
+  final double percent;
+  final double onTimeRate;
+
+  TimeBucket({
+    this.key = '',
+    this.label = '',
+    this.rangeDisplay = '',
+    this.count = 0,
+    this.percent = 0,
+    this.onTimeRate = 0,
+  });
+
+  factory TimeBucket.fromJson(Map<String, dynamic> json) {
+    return TimeBucket(
+      key: json['key'] ?? '',
+      label: json['label'] ?? '',
+      rangeDisplay: json['range_display'] ?? '',
+      count: json['count'] ?? 0,
+      percent: (json['percent'] ?? 0).toDouble(),
+      onTimeRate: (json['on_time_rate'] ?? 0).toDouble(),
+    );
+  }
+}
+
+class PriorityRow {
+  final String priority;
+  final String label;
+  final int completed;
+  final double onTimeRate;
+  final double percent;
+
+  PriorityRow({
+    this.priority = '',
+    this.label = '',
+    this.completed = 0,
+    this.onTimeRate = 0,
+    this.percent = 0,
+  });
+
+  factory PriorityRow.fromJson(Map<String, dynamic> json) {
+    return PriorityRow(
+      priority: json['priority'] ?? '',
+      label: json['label'] ?? '',
+      completed: json['completed'] ?? 0,
+      onTimeRate: (json['on_time_rate'] ?? 0).toDouble(),
+      percent: (json['percent'] ?? 0).toDouble(),
+    );
+  }
+}
+
+// ─── NEEDS ATTENTION ──────────────────────────────────────────────────
+class NeedsAttention {
+  final int overdue;
+  final int dueNext7d;
+  final List<DueSoonTask> dueSoon;
+  final PendingByPriority pendingByPriority;
+
+  NeedsAttention({
+    this.overdue = 0,
+    this.dueNext7d = 0,
+    this.dueSoon = const [],
+    required this.pendingByPriority,
+  });
+
+  factory NeedsAttention.fromJson(Map<String, dynamic> json) {
+    return NeedsAttention(
       overdue: json['overdue'] ?? 0,
-      byPriority: PriorityCounts.fromJson(json['by_priority'] ?? {}),
-      dueWithin48h:
-          (json['due_within_48h'] as List?)
+      dueNext7d: json['due_next_7d'] ?? 0,
+      dueSoon:
+          (json['due_soon'] as List?)
               ?.map((t) => DueSoonTask.fromJson(t))
               .toList() ??
           [],
-      busiestDayThisWeek: BusiestDay.fromJson(
-        json['busiest_day_this_week'] ?? {},
+      pendingByPriority: PendingByPriority.fromJson(
+        json['pending_by_priority'] ?? {},
       ),
-    );
-  }
-}
-
-class PriorityCounts {
-  final int high;
-  final int medium;
-  final int low;
-
-  PriorityCounts({required this.high, required this.medium, required this.low});
-
-  factory PriorityCounts.fromJson(Map<String, dynamic> json) {
-    return PriorityCounts(
-      high: json['high'] ?? 0,
-      medium: json['medium'] ?? 0,
-      low: json['low'] ?? 0,
     );
   }
 }
@@ -648,124 +488,36 @@ class DueSoonTask {
   final String title;
   final String dueDatetime;
   final String priority;
-  final String status;
 
   DueSoonTask({
-    required this.id,
-    required this.title,
-    required this.dueDatetime,
-    required this.priority,
-    required this.status,
+    this.id = '',
+    this.title = '',
+    this.dueDatetime = '',
+    this.priority = 'medium',
   });
 
   factory DueSoonTask.fromJson(Map<String, dynamic> json) {
     return DueSoonTask(
-      id: json['id'],
-      title: json['title'],
-      dueDatetime: json['due_datetime'],
+      id: json['id'] ?? '',
+      title: json['title'] ?? '',
+      dueDatetime: json['due_datetime'] ?? '',
       priority: json['priority'] ?? 'medium',
-      status: json['status'] ?? 'pending',
     );
   }
 }
 
-class BusiestDay {
-  final int dayNum;
-  final String dayName;
-  final int taskCount;
+class PendingByPriority {
+  final int high;
+  final int medium;
+  final int low;
 
-  BusiestDay({
-    required this.dayNum,
-    required this.dayName,
-    required this.taskCount,
-  });
+  PendingByPriority({this.high = 0, this.medium = 0, this.low = 0});
 
-  factory BusiestDay.fromJson(Map<String, dynamic> json) {
-    return BusiestDay(
-      dayNum: json['day_num'] ?? 0,
-      dayName: json['day_name'] ?? 'Monday',
-      taskCount: json['task_count'] ?? 0,
-    );
-  }
-}
-
-// ─── Completion Trend ──────────────────────────────────────────────────
-class CompletionTrendSection {
-  final int weeks;
-  final List<WeekTrend> trend;
-
-  CompletionTrendSection({required this.weeks, required this.trend});
-
-  factory CompletionTrendSection.fromJson(Map<String, dynamic> json) {
-    return CompletionTrendSection(
-      weeks: json['weeks'] ?? 3,
-      trend:
-          (json['trend'] as List?)
-              ?.map((t) => WeekTrend.fromJson(t))
-              .toList() ??
-          [],
-    );
-  }
-}
-
-class WeekTrend {
-  final int week;
-  final int count;
-  final int onTime;
-  final int late;
-  final double onTimeRate;
-
-  WeekTrend({
-    required this.week,
-    required this.count,
-    required this.onTime,
-    required this.late,
-    required this.onTimeRate,
-  });
-
-  factory WeekTrend.fromJson(Map<String, dynamic> json) {
-    return WeekTrend(
-      week: json['week'] ?? 0,
-      count: json['count'] ?? 0,
-      onTime: json['on_time'] ?? 0,
-      late: json['late'] ?? 0,
-      onTimeRate: (json['on_time_rate'] ?? 0).toDouble(),
-    );
-  }
-}
-
-// ─── Best Slot ──────────────────────────────────────────────────────────
-class BestSlot {
-  final int dayNum;
-  final String dayName;
-  final int hour;
-  final String hourDisplay;
-  final double score;
-  final double onTimeRate;
-  final int logCount;
-  final String suggestion;
-
-  BestSlot({
-    required this.dayNum,
-    required this.dayName,
-    required this.hour,
-    required this.hourDisplay,
-    required this.score,
-    required this.onTimeRate,
-    required this.logCount,
-    required this.suggestion,
-  });
-
-  factory BestSlot.fromJson(Map<String, dynamic> json) {
-    return BestSlot(
-      dayNum: json['day_num'],
-      dayName: json['day_name'],
-      hour: json['hour'],
-      hourDisplay: json['hour_display'],
-      score: (json['score'] ?? 0).toDouble(),
-      onTimeRate: (json['on_time_rate'] ?? 0).toDouble(),
-      logCount: json['log_count'] ?? 0,
-      suggestion: json['suggestion'] ?? '',
+  factory PendingByPriority.fromJson(Map<String, dynamic> json) {
+    return PendingByPriority(
+      high: json['high'] ?? 0,
+      medium: json['medium'] ?? 0,
+      low: json['low'] ?? 0,
     );
   }
 }
