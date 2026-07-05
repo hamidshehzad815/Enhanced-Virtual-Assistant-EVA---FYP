@@ -12,6 +12,7 @@ import 'presentation/providers/roadmap_viewmodel.dart';
 import 'presentation/providers/settings_viewmodel.dart';
 import 'presentation/providers/theme_provider.dart';
 import 'presentation/providers/profile_viewmodel.dart';
+import 'presentation/providers/friends_viewmodel.dart';
 import 'package:firebase_core/firebase_core.dart';
 import '../../data/services/push_notification_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -20,6 +21,8 @@ import '../../data/repositories/calendar_screen_repository.dart';
 import 'firebase_options.dart';
 import '../../data/services/roadmap_service.dart';
 import '../../data/repositories/roadmap_repository.dart';
+import 'data/services/friend_service.dart';
+import '../../data/repositories/friends_repository.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,6 +70,15 @@ void main() async {
         ChangeNotifierProvider(
           create: (context) =>
               RoadmapViewmodel(context.read<RoadmapRepository>()),
+        ),
+        Provider<FriendsService>(create: (_) => FriendsService()),
+        Provider<FriendsRepository>(
+          create: (context) =>
+              FriendsRepository(context.read<FriendsService>()),
+        ),
+        ChangeNotifierProvider(
+          create: (context) =>
+              FriendsViewModel(context.read<FriendsRepository>()),
         ),
       ],
 
