@@ -6,7 +6,7 @@ FROM python:3.11-slim-bookworm
 RUN useradd -m -u 1000 user
 ENV PATH="/home/user/.local/bin:$PATH" \
     HF_HOME=/tmp/hf \
-    TRANSFORMERS_CACHE=/tmp/hf \
+    HF_HUB_CACHE=/tmp/hf/hub \
     TORCH_HOME=/tmp/torch \
     PORT=7860 \
     DUCKLING_URL=http://127.0.0.1:8000
