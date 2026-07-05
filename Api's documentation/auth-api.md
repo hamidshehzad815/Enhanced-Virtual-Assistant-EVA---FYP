@@ -577,7 +577,7 @@ The reset **email** link is built with `RESET_PASSWORD_URL` or defaults to
 |------|----------|-----|
 | Full profile + edit | `GET` / `PATCH /api/profile` | [profile-api.md](./profile-api.md) |
 | Theme / notifications / push token | `GET` / `PATCH /api/settings` | [settings-api.md](./settings-api.md) |
-| Google sign-in | Integrations (separate flow) | `Eva_Backend_Server/BACKEND_API_DOCUMENTATION.md` |
+| Google sign-in | Integrations (separate flow) | [google-auth-api.md](./google-auth-api.md) |
 
 ---
 

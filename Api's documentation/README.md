@@ -86,6 +86,7 @@ Conflict responses (`409`) may include extra context:
 | [roadmaps-api.md](./roadmaps-api.md) | `GET /api/roadmaps/*`, `GET /api/learning/:goalId/sessions/:sessionId`, `PATCH /api/learning/:goalId/sessions/:sessionId`, `PATCH /api/learning/:goalId/status` |
 | [roadmaps-frontend-actions-guide.md](./roadmaps-frontend-actions-guide.md) | **UI tables:** plan/session actions, buttons by `session_state`, popup fields (frontend) |
 | [tasks-api.md](./tasks-api.md) | `GET /api/tasks/calendar`, `GET /api/tasks/:id`, `PATCH /api/tasks/:id`, `DELETE /api/tasks/:id` |
+| [friends-api.md](./friends-api.md) | `POST /api/friends/request`, `GET /api/friends`, `GET /api/friends/requests`, `GET /api/friends/search`, `PATCH /api/friends/:id/respond`, `DELETE /api/friends/:id` |
 | [push-notifications-frontend-setup.md](./push-notifications-frontend-setup.md) | FCM / push token registration (Flutter setup guide) |
 
 ## Quick frontend map
@@ -102,5 +103,6 @@ Conflict responses (`409`) may include extra context:
 | Push device token (after login) | — | `PATCH /api/settings` with `push_token` — see [push-notifications-frontend-setup.md](./push-notifications-frontend-setup.md) |
 | Learning schedules UI | `GET /api/settings` or `GET /api/settings/learning-schedules` | `POST` / `PATCH` / `DELETE` on `/api/settings/learning-schedules` |
 | Calendar | `GET /api/tasks/calendar`, `GET /api/tasks/:id` | `PATCH /api/tasks/:id`, `DELETE /api/tasks/:id` — see [tasks-api.md](./tasks-api.md) |
+| Collaboration / Friends | `GET /api/friends`, `GET /api/friends/requests`, `GET /api/friends/search` | `POST /api/friends/request`, `PATCH /api/friends/:id/respond`, `DELETE /api/friends/:id` — see [friends-api.md](./friends-api.md) |
 
 **Do not** update `preferred_learning_schedules` via `PATCH /api/settings`. Use the learning-schedules CRUD routes only.

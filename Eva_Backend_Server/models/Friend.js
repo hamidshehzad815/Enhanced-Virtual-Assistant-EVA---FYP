@@ -5,7 +5,7 @@
 
 const mongoose = require("mongoose");
 
-const FRIEND_STATUS = ["pending", "accepted", "rejected", "blocked"];
+const FRIEND_STATUS = ["pending", "accepted", "rejected"];
 
 const friendSchema = new mongoose.Schema(
   {
@@ -35,11 +35,6 @@ const friendSchema = new mongoose.Schema(
     },
     responded_at: {
       type: Date,
-      default: null,
-    },
-    blocked_by: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
       default: null,
     },
   },
