@@ -4,7 +4,6 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:lottie/lottie.dart';
-import 'package:go_router/go_router.dart';
 import '../providers/analytics_viewmodel.dart';
 import '../../core/theme/app_colours.dart';
 import '../../core/theme/app_text_style.dart';
@@ -63,14 +62,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
         child: vm.isLoading
             ? const Center(child: CircularProgressIndicator())
             : vm.error != null
-            ? Center(
-                child: Text(
-                  'Error: ${vm.error}',
-                  style: AppTextStyles.body.copyWith(fontSize: 15),
-                ),
-              )
+            ? _buildErrorState(vm, isDark)
             : dashboard == null
-            ? const Center(child: Text('No data available'))
+            ? _buildEmptyState(isDark)
             : FadeTransition(
                 opacity: _fadeAnimation,
                 child: SlideTransition(
@@ -81,39 +75,38 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
+                        // ─── 1. Header ───────────────────────────────────
                         _buildHeader(vm, isDark, dashboard),
                         const SizedBox(height: 12),
-                        if (dashboard.productivityScore != null) ...[
-                          _buildProductivityScore(dashboard, isDark),
-                          const SizedBox(height: 14),
-                        ],
-                        _buildHeroSection(dashboard, isDark),
+
+                        // ─── 2. Snapshot Stats (horizontal scroll) ──────
+                        _buildSnapshotStats(dashboard, isDark),
                         const SizedBox(height: 14),
+
+                        // ─── 3. Smart Insights ──────────────────────────
                         if (dashboard.insights.isNotEmpty) ...[
                           _buildInsights(dashboard, isDark),
                           const SizedBox(height: 14),
                         ],
-                        if (dashboard.dailyCompletions != null &&
-                            dashboard.dailyCompletions!.series.isNotEmpty) ...[
-                          _pad(_buildDailyActivityCard(dashboard, isDark)),
-                          const SizedBox(height: 14),
-                        ],
-                        _buildBehavioralSection(dashboard, isDark),
+
+                        // ─── 4. Productivity Score ──────────────────────
+                        _buildProductivityScore(dashboard, isDark),
                         const SizedBox(height: 14),
-                        _pad(_buildHeatmapCard(dashboard, isDark)),
+
+                        // ─── 5. Daily Activity ──────────────────────────
+                        _buildDailyActivity(dashboard, isDark),
                         const SizedBox(height: 14),
-                        if (dashboard.timeOfDay != null &&
-                            dashboard.timeOfDay!.total > 0) ...[
-                          _pad(_buildTimeOfDayCard(dashboard, isDark)),
-                          const SizedBox(height: 14),
-                        ],
-                        if (_hasPriorityData(dashboard)) ...[
-                          _pad(_buildPriorityPerformanceCard(dashboard, isDark)),
-                          const SizedBox(height: 14),
-                        ],
-                        _pad(_buildTrendCard(dashboard, isDark)),
+
+                        // ─── 6. Heatmap ──────────────────────────────────
+                        _buildHeatmap(dashboard, isDark),
                         const SizedBox(height: 14),
-                        _buildTaskSummary(dashboard, isDark),
+
+                        // ─── 7. Work Patterns ──────────────────────────
+                        _buildWorkPatterns(dashboard, isDark),
+                        const SizedBox(height: 14),
+
+                        // ─── 8. Needs Attention ─────────────────────────
+                        _buildNeedsAttention(dashboard, isDark),
                         const SizedBox(height: 20),
                       ],
                     ),
@@ -124,7 +117,97 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     );
   }
 
-  // ─── HEADER ────────────────────────────────────────────────────────────
+  // ─── ERROR / EMPTY STATES ──────────────────────────────────────────────
+  Widget _buildErrorState(AnalyticsViewModel vm, bool isDark) {
+    final subClr = isDark ? Colors.white60 : Colors.black45;
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.cloud_off_rounded, size: 40, color: subClr),
+            const SizedBox(height: 12),
+            Text(
+              'Couldn\'t load your analytics',
+              style: AppTextStyles.subtitleMedium.copyWith(
+                fontSize: 15,
+                fontWeight: FontWeight.w700,
+                color: isDark ? Colors.white : const Color(0xFF1C1C1E),
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              '${vm.error}',
+              textAlign: TextAlign.center,
+              style: AppTextStyles.body.copyWith(fontSize: 12, color: subClr),
+            ),
+            const SizedBox(height: 16),
+            TextButton.icon(
+              onPressed: () => vm.loadDashboard(),
+              icon: const Icon(Icons.refresh_rounded, size: 16),
+              label: const Text('Try again'),
+              style: TextButton.styleFrom(foregroundColor: AppColors.primary),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEmptyState(bool isDark) {
+    final subClr = isDark ? Colors.white60 : Colors.black45;
+    return Center(
+      child: Text(
+        'No data available',
+        style: AppTextStyles.body.copyWith(color: subClr),
+      ),
+    );
+  }
+
+  // ─── SHARED CARD DECORATION ─────────────────────────────────────────────
+  BoxDecoration _cardDecoration(bool isDark, {Color? accentBorder}) {
+    return BoxDecoration(
+      color: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+      borderRadius: BorderRadius.circular(16),
+      border: Border.all(
+        color:
+            accentBorder ??
+            (isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200),
+        width: accentBorder != null ? 1.2 : 1,
+      ),
+      boxShadow: [
+        BoxShadow(
+          color: Colors.black.withOpacity(isDark ? 0.10 : 0.04),
+          blurRadius: 10,
+          offset: const Offset(0, 2),
+        ),
+      ],
+    );
+  }
+
+  Widget _sectionTitle(String text, bool isDark, {IconData? icon}) {
+    final subClr = isDark ? Colors.white70 : Colors.black54;
+    return Row(
+      children: [
+        if (icon != null) ...[
+          Icon(icon, size: 14, color: AppColors.primary),
+          const SizedBox(width: 6),
+        ],
+        Text(
+          text,
+          style: AppTextStyles.subtitleMedium.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w700,
+            color: subClr,
+            letterSpacing: 0.5,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── HEADER (unchanged) ─────────────────────────────────────────────────
   Widget _buildHeader(
     AnalyticsViewModel vm,
     bool isDark,
@@ -178,7 +261,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                 const SizedBox(width: 4),
                 Expanded(
                   child: Text(
-                    'Generated ${DateFormat('d MMM y, HH:mm').format(generatedDate)} · ${dashboard.timezone}',
+                    'Generated ${DateFormat('d MMM y, h:mm a').format(generatedDate)} · ${dashboard.timezone}',
                     style: AppTextStyles.body.copyWith(
                       fontSize: 10,
                       color: subClr,
@@ -222,348 +305,375 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     );
   }
 
-  // ─── HERO SECTION ──────────────────────────────────────────────────────
-  Widget _buildHeroSection(AnalyticsDashboard dashboard, bool isDark) {
-    final hero = dashboard.hero;
+  // ─── PRODUCTIVITY SCORE ──────────────────────────────────────────────
+  Widget _buildProductivityScore(AnalyticsDashboard dashboard, bool isDark) {
+    final ps = dashboard.snapshot.productivityScore;
+    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
+    final subClr = isDark ? Colors.white70 : Colors.black54;
 
-    final cards = [
-      _HeroCard(
-        icon: Icons.check_circle_rounded,
-        iconColor: AppColors.primary,
-        value: '${hero.completedThisWeek}',
-        label: 'This week',
-        change: _getChangeText(hero.weekChangePercent),
-        isDark: isDark,
-      ),
-      _HeroCard(
-        icon: Icons.trending_up_rounded,
-        iconColor: Colors.green,
-        value: '${hero.completedLastWeek}',
-        label: 'Last week',
-        sub: 'completions',
-        isDark: isDark,
-      ),
-      _HeroCard(
-        icon: Icons.timer_rounded,
-        iconColor: AppColors.primary,
-        value: '${hero.onTimeRate.toStringAsFixed(1)}%',
-        label: 'On-time rate',
-        sub: 'all time',
-        isDark: isDark,
-      ),
-      _HeroCard(
-        icon: Icons.local_fire_department_rounded,
-        iconColor: const Color(0xFFBA7517),
-        value: '${hero.streakDays}',
-        label: 'Day streak',
-        sub: 'keep going',
-        isDark: isDark,
-      ),
-      _HeroCard(
-        icon: Icons.list_alt_rounded,
-        iconColor: Colors.green,
-        value: '${hero.totalCompleted}',
-        label: 'Total done',
-        sub: 'all time',
-        isDark: isDark,
-      ),
-      _HeroCard(
-        icon: Icons.calendar_today_rounded,
-        iconColor: Colors.orange,
-        value: '${hero.upcoming7d}',
-        label: 'Due in 7d',
-        sub: 'upcoming',
-        isDark: isDark,
-      ),
-    ];
-
+    // Meta gating – if not enough data, show placeholder
+    if (!dashboard.meta.hasEnoughData) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: _cardDecoration(isDark),
+          child: Center(
+            child: Column(
+              children: [
+                Lottie.asset(
+                  'assets/lottie/insights.json',
+                  width: 100,
+                  height: 100,
+                  fit: BoxFit.contain,
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Complete ${dashboard.meta.tasksRemaining} more tasks to unlock your productivity score',
+                  style: AppTextStyles.body.copyWith(
+                    fontSize: 14,
+                    color: subClr,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
-      child: GridView.count(
-        crossAxisCount: 3,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 8,
-        childAspectRatio: 1.1,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        children: cards,
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: _cardDecoration(isDark),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            _ScoreGauge(score: ps.score, rating: ps.rating, isDark: isDark),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    ps.caption,
+                    style: AppTextStyles.body.copyWith(
+                      fontSize: 13,
+                      height: 1.4,
+                      color: textClr,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      _scoreBadge(
+                        Icons.timer_rounded,
+                        '${dashboard.snapshot.onTimeRate.toStringAsFixed(0)}% on time',
+                        AppColors.primary,
+                        isDark,
+                      ),
+                      _scoreBadge(
+                        Icons.local_fire_department_rounded,
+                        '${dashboard.snapshot.currentStreak} day streak',
+                        const Color(0xFFEF6C4D),
+                        isDark,
+                      ),
+                      _scoreBadge(
+                        dashboard.snapshot.completed.changePercent >= 0
+                            ? Icons.trending_up_rounded
+                            : Icons.trending_down_rounded,
+                        dashboard.snapshot.completed.changePercent >= 0
+                            ? '↑ ${dashboard.snapshot.completed.changePercent.toStringAsFixed(1)}% vs last period'
+                            : '↓ ${dashboard.snapshot.completed.changePercent.abs().toStringAsFixed(1)}% vs last period',
+                        dashboard.snapshot.completed.changePercent >= 0
+                            ? const Color(0xFF22C55E)
+                            : const Color(0xFFEF4444),
+                        isDark,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
 
-  String _getChangeText(double percent) {
-    if (percent == 0) return '';
-    final sign = percent > 0 ? '↑' : '↓';
-    return '$sign ${percent.abs().toStringAsFixed(1)}%';
+  Widget _scoreBadge(IconData icon, String label, Color color, bool isDark) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(isDark ? 0.16 : 0.10),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              color: color,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
-  // ─── BEHAVIORAL SECTION ──────────────────────────────────────────────
-  Widget _buildBehavioralSection(AnalyticsDashboard dashboard, bool isDark) {
-    final behavioral = dashboard.behavioral;
-    final bestSlots = dashboard.bestSlots;
-    final int remainingTasks =
-        (behavioral.thresholds.global) - (behavioral.totalCompleted);
+  // ─── SNAPSHOT STATS (Hero cards) ────────────────────────────────────
+  Widget _buildSnapshotStats(AnalyticsDashboard dashboard, bool isDark) {
+    final snap = dashboard.snapshot;
+    final items = [
+      _StatCard(
+        value: '${snap.completed.period}',
+        label: 'Completed',
+        change: snap.completed.changePercent,
+        icon: Icons.check_circle_rounded,
+        color: const Color(0xFF22C55E),
+        isDark: isDark,
+      ),
+      _StatCard(
+        value: '${snap.onTimeRate.toStringAsFixed(0)}%',
+        label: 'On time',
+        icon: Icons.timer_rounded,
+        color: AppColors.primary,
+        isDark: isDark,
+      ),
+      _StatCard(
+        value: '${snap.currentStreak}',
+        label: 'Day streak',
+        icon: Icons.local_fire_department_rounded,
+        color: const Color(0xFFBA7517),
+        isDark: isDark,
+      ),
+      _StatCard(
+        value: '${snap.completed.previous}',
+        label: 'Previous period',
+        icon: Icons.history_rounded,
+        color: Colors.blue,
+        isDark: isDark,
+      ),
+    ];
 
-    final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
-    final borderClr = isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200;
+    return SizedBox(
+      height: 92,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        itemCount: items.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (_, i) => items[i],
+      ),
+    );
+  }
+
+  // ─── INSIGHTS ─────────────────────────────────────────────────────────
+  Widget _buildInsights(AnalyticsDashboard dashboard, bool isDark) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          child: _sectionTitle(
+            'Smart Insights',
+            isDark,
+            icon: Icons.auto_awesome_rounded,
+          ),
+        ),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 116,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            itemCount: dashboard.insights.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (context, i) =>
+                _InsightCard(insight: dashboard.insights[i], isDark: isDark),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ─── DAILY ACTIVITY (line chart) ─────────────────────────────────────
+  Widget _buildDailyActivity(AnalyticsDashboard dashboard, bool isDark) {
+    final activity = dashboard.activity;
+    final subClr = isDark ? Colors.white70 : Colors.black54;
+
+    final series = activity.series;
+    final spots = <FlSpot>[
+      for (var i = 0; i < series.length; i++)
+        FlSpot(i.toDouble(), series[i].count.toDouble()),
+    ];
+    final maxCount = series.fold<int>(0, (m, p) => p.count > m ? p.count : m);
+    final maxY = (maxCount < 4 ? 4 : maxCount + 1).toDouble();
+    final lineColor = AppColors.primary;
+
+    final xInterval = math.max(1, (series.length / 5).ceil());
+    final leftInterval = math.max(1, (maxY / 4).ceil()).toDouble();
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: borderClr),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(isDark ? 0.10 : 0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
+        decoration: _cardDecoration(isDark),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _sectionTitle('Daily Activity', isDark),
+            const SizedBox(height: 4),
             Text(
-              'Behavioral Insights',
-              style: AppTextStyles.subtitleMedium.copyWith(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: isDark ? Colors.white70 : Colors.black54,
-                letterSpacing: 0.5,
+              '${dashboard.rangeDays} days · ${activity.activeDays} active days · ${activity.avgPerActiveDay.toStringAsFixed(1)} avg / active day',
+              style: AppTextStyles.body.copyWith(fontSize: 11, color: subClr),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 130,
+              child: LineChart(
+                LineChartData(
+                  minX: 0,
+                  maxX: (series.length - 1).toDouble(),
+                  minY: 0,
+                  maxY: maxY,
+                  lineTouchData: LineTouchData(
+                    enabled: true,
+                    touchTooltipData: LineTouchTooltipData(
+                      getTooltipColor: (_) =>
+                          isDark ? const Color(0xFF2C2C2E) : Colors.white,
+                      tooltipBorder: BorderSide(
+                        color: lineColor.withOpacity(0.3),
+                      ),
+                      getTooltipItems: (spots) => spots.map((s) {
+                        final i = s.x.toInt();
+                        final d = DateTime.tryParse(series[i].date);
+                        final label = d != null
+                            ? DateFormat('d MMM').format(d)
+                            : '';
+                        return LineTooltipItem(
+                          '$label\n${s.y.toInt()} tasks',
+                          TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: isDark ? Colors.white : Colors.black87,
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
+                  gridData: FlGridData(
+                    show: true,
+                    drawVerticalLine: false,
+                    horizontalInterval: leftInterval,
+                    getDrawingHorizontalLine: (value) => FlLine(
+                      color: isDark ? Colors.white12 : Colors.grey.shade200,
+                      strokeWidth: 1,
+                    ),
+                  ),
+                  borderData: FlBorderData(show: false),
+                  titlesData: FlTitlesData(
+                    topTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    rightTitles: const AxisTitles(
+                      sideTitles: SideTitles(showTitles: false),
+                    ),
+                    leftTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        interval: leftInterval,
+                        reservedSize: 24,
+                        getTitlesWidget: (value, meta) => Text(
+                          value.toInt().toString(),
+                          style: TextStyle(fontSize: 9, color: subClr),
+                        ),
+                      ),
+                    ),
+                    bottomTitles: AxisTitles(
+                      sideTitles: SideTitles(
+                        showTitles: true,
+                        interval: xInterval.toDouble(),
+                        reservedSize: 20,
+                        getTitlesWidget: (value, meta) {
+                          final i = value.round();
+                          if (i < 0 || i >= series.length) {
+                            return const SizedBox.shrink();
+                          }
+                          final d = DateTime.tryParse(series[i].date);
+                          final label = d != null
+                              ? DateFormat('d MMM').format(d)
+                              : '';
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 4),
+                            child: Text(
+                              label,
+                              style: TextStyle(fontSize: 8, color: subClr),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                  ),
+                  lineBarsData: [
+                    LineChartBarData(
+                      spots: spots,
+                      isCurved: true,
+                      curveSmoothness: 0.25,
+                      color: lineColor,
+                      barWidth: 2.5,
+                      dotData: FlDotData(
+                        show: series.length <= 31,
+                        getDotPainter: (spot, percent, bar, index) {
+                          final isLast = index == spots.length - 1;
+                          return FlDotCirclePainter(
+                            radius: isLast ? 4 : 2.5,
+                            color: lineColor,
+                            strokeWidth: isLast ? 2 : 0,
+                            strokeColor: lineColor.withOpacity(0.3),
+                          );
+                        },
+                      ),
+                      belowBarData: BarAreaData(
+                        show: true,
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            lineColor.withOpacity(0.25),
+                            lineColor.withOpacity(0.0),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
-            const SizedBox(height: 8),
-
-            // ─── Behavioral disabled 
-            if (!behavioral.enabled) ...[
-              Center(
-                child: Column(
-                  children: [
-                    Lottie.asset(
-                      'assets/lottie/insights.json',
-                      width: 120,
-                      height: 120,
-                      fit: BoxFit.contain,
-                    ),
-                    const SizedBox(height: 10),
-                    Text(
-                      'Enable behavioral analytics to unlock insights',
-                      style: AppTextStyles.body.copyWith(
-                        fontSize: 14,
-                        color: isDark ? Colors.white70 : Colors.black54,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                    const SizedBox(height: 10),
-                    ElevatedButton.icon(
-                      onPressed: () => context.push('/settings'),
-                      icon: const Icon(Icons.settings_rounded, size: 16),
-                      label: const Text('Enable Insights'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AppColors.primary,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 20,
-                          vertical: 10,
-                        ),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-
-            // ─── Not enough data
-            if (behavioral.enabled && !behavioral.hasEnoughData) ...[
-              Center(
-                child: Column(
-                  children: [
-                    Lottie.asset(
-                      'assets/lottie/insights.json',
-                      width: 120,
-                      height: 120,
-                      fit: BoxFit.contain,
-                    ),
-                    const SizedBox(height: 10),
-                    if (remainingTasks > 0)
-                      Text(
-                        'Complete $remainingTasks more tasks to unlock personalized insights.',
-                        style: AppTextStyles.body.copyWith(
-                          fontSize: 14,
-                          color: isDark ? Colors.white70 : Colors.black54,
-                        ),
-                        textAlign: TextAlign.center,
-                      )
-                    else
-                      Text(
-                        'Insights unlocked! Keep completing tasks to get more personalized recommendations.',
-                        style: AppTextStyles.body.copyWith(
-                          fontSize: 14,
-                          color: isDark ? Colors.white70 : Colors.black54,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                  ],
-                ),
-              ),
-            ],
-
-            // ─── Full data ──────────────────────────────────────────────
-            if (behavioral.enabled && behavioral.hasEnoughData) ...[
-              if (behavioral.strengthSummary != null)
-                _AnimatedStatement(
-                  text: behavioral.strengthSummary!,
-                  isDark: isDark,
-                ),
-
-              const SizedBox(height: 12),
-
-              if (behavioral.topDays.isNotEmpty) ...[
-                Text(
-                  'Top days',
-                  style: AppTextStyles.body.copyWith(
-                    fontSize: 11,
-                    color: isDark ? Colors.white70 : Colors.black54,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: behavioral.topDays.map((day) {
-                    return Expanded(
-                      child: Container(
-                        margin: const EdgeInsets.only(right: 6),
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: isDark ? Colors.white10 : Colors.grey.shade50,
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              day.day,
-                              style: AppTextStyles.body.copyWith(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: isDark ? Colors.white : Colors.black87,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              'Score ${day.score.toStringAsFixed(2)} · ${day.logCount} tasks',
-                              style: AppTextStyles.body.copyWith(
-                                fontSize: 10,
-                                color: isDark ? Colors.white70 : Colors.black54,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  }).toList(),
-                ),
-                const SizedBox(height: 12),
-              ],
-
-              if (bestSlots.isNotEmpty) ...[
-                Text(
-                  'Best scheduling slot',
-                  style: AppTextStyles.body.copyWith(
-                    fontSize: 11,
-                    color: isDark ? Colors.white70 : Colors.black54,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: isDark ? Colors.white10 : Colors.grey.shade50,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 32,
-                        height: 32,
-                        decoration: BoxDecoration(
-                          color: AppColors.primary.withOpacity(0.12),
-                          borderRadius: BorderRadius.circular(50),
-                        ),
-                        child: Icon(
-                          Icons.stars_rounded,
-                          color: AppColors.primary,
-                          size: 16,
-                        ),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              bestSlots.first.suggestion,
-                              style: AppTextStyles.body.copyWith(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w500,
-                                color: isDark ? Colors.white : Colors.black87,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                              maxLines: 2,
-                            ),
-                            Text(
-                              '${bestSlots.first.logCount} tasks · ${(bestSlots.first.onTimeRate * 100).toStringAsFixed(0)}% on time',
-                              style: AppTextStyles.body.copyWith(
-                                fontSize: 11,
-                                color: isDark ? Colors.white70 : Colors.black54,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      Text(
-                        bestSlots.first.score.toStringAsFixed(2),
-                        style: AppTextStyles.body.copyWith(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.primary,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ],
           ],
         ),
       ),
     );
   }
 
-  // ─── LAYOUT HELPERS ──────────────────────────────────────────────────
-  Widget _pad(Widget child) => Padding(
-    padding: const EdgeInsets.symmetric(horizontal: 14),
-    child: child,
-  );
-
-  bool _hasPriorityData(AnalyticsDashboard dashboard) =>
-      dashboard.priorityPerformance.any((p) => p.completed > 0);
-
   // ─── HEATMAP ──────────────────────────────────────────────────────────
-  Widget _buildHeatmapCard(AnalyticsDashboard dashboard, bool isDark) {
-    final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
-    final borderClr = isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200;
+  Widget _buildHeatmap(AnalyticsDashboard dashboard, bool isDark) {
+    final map = dashboard.productivityMap;
     final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
     final subClr = isDark ? Colors.white70 : Colors.black54;
 
-    final heatmap = dashboard.heatmap;
-    final maxIntensity = heatmap.cells.isNotEmpty
-        ? heatmap.cells.map((c) => c.intensity).reduce((a, b) => a > b ? a : b)
+    final maxIntensity = map.cells.isNotEmpty
+        ? map.cells.map((c) => c.count).reduce((a, b) => a > b ? a : b)
         : 1;
 
     final dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -589,494 +699,574 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     ];
 
     Map<String, HeatmapCell> cellMap = {};
-    for (var cell in heatmap.cells) {
+    for (var cell in map.cells) {
       cellMap['${cell.day}-${cell.hour}'] = cell;
     }
 
-    final primaryColor = isDark
-        ? Colors.blue.shade400
-        : const Color(0xFFD4E8F7);
-    final primaryDark = isDark ? Colors.blue.shade600 : Colors.blue.shade300;
+    final trackClr = isDark
+        ? Colors.white.withOpacity(0.05)
+        : Colors.grey.shade100;
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderClr),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.10 : 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Heatmap',
-            style: AppTextStyles.subtitleMedium.copyWith(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: subClr,
-              letterSpacing: 0.5,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '${heatmap.rangeDays} days · ${heatmap.hourRange.startDisplay}–${heatmap.hourRange.endDisplay}',
-            style: AppTextStyles.body.copyWith(fontSize: 11, color: subClr),
-          ),
-          const SizedBox(height: 10),
-
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    const SizedBox(width: 32),
-                    ...hourLabels.map(
-                      (label) => SizedBox(
-                        width: 18,
-                        child: Text(
-                          label,
-                          style: TextStyle(fontSize: 7, color: subClr),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                ...List.generate(7, (dayIndex) {
-                  return Row(
-                    children: [
-                      SizedBox(
-                        width: 32,
-                        child: Text(
-                          dayNames[dayIndex],
-                          style: TextStyle(fontSize: 9, color: subClr),
-                          textAlign: TextAlign.right,
-                        ),
-                      ),
-                      ...List.generate(18, (hourIndex) {
-                        final hour = hourIndex + 6;
-                        final cell = cellMap['$dayIndex-$hour'];
-                        final count = cell?.count ?? 0;
-                        final color = count > 0
-                            ? Color.lerp(
-                                isDark
-                                    ? Colors.white.withOpacity(0.05)
-                                    : primaryColor,
-                                isDark ? Colors.blue.shade400 : primaryDark,
-                                (count / maxIntensity).clamp(0, 1),
-                              )!
-                            : Colors.transparent;
-
-                        return Container(
-                          width: 18,
-                          height: 14,
-                          margin: const EdgeInsets.all(0.5),
-                          decoration: BoxDecoration(
-                            color: color,
-                            borderRadius: BorderRadius.circular(2),
-                            border: count > 0
-                                ? Border.all(
-                                    color: isDark
-                                        ? Colors.blue.withOpacity(0.3)
-                                        : Colors.blue.withOpacity(0.1),
-                                    width: 0.5,
-                                  )
-                                : null,
-                          ),
-                          child: Center(
-                            child: count > 0
-                                ? Text(
-                                    count.toString(),
-                                    style: TextStyle(
-                                      fontSize: 6,
-                                      color: count > maxIntensity * 0.7
-                                          ? Colors.white
-                                          : textClr,
-                                      fontWeight: FontWeight.w500,
-                                    ),
-                                  )
-                                : null,
-                          ),
-                        );
-                      }),
-                    ],
-                  );
-                }),
-              ],
-            ),
-          ),
-          const SizedBox(height: 8),
-          if (heatmap.peak != null)
-            Text(
-              'Peak: ${heatmap.peak!.dayName} ${heatmap.peak!.hourDisplay} · ${heatmap.peak!.count} completions · ${heatmap.peak!.onTimeRate.toStringAsFixed(1)}% on time',
-              style: AppTextStyles.body.copyWith(fontSize: 11, color: subClr),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // ─── TREND CHART ──────────────────────────────────────────────────────
-  Widget _buildTrendCard(AnalyticsDashboard dashboard, bool isDark) {
-    final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
-    final borderClr = isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200;
-    final subClr = isDark ? Colors.white70 : Colors.black54;
-
-    final trend = dashboard.completionTrend;
-
-    if (trend.trend.isEmpty) {
-      return Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: borderClr),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Completion Trend',
-              style: AppTextStyles.subtitleMedium.copyWith(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: subClr,
-                letterSpacing: 0.5,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Center(
-              child: Text(
-                'No data available',
-                style: AppTextStyles.body.copyWith(color: subClr, fontSize: 13),
-              ),
-            ),
-          ],
-        ),
-      );
+    Color cellColor(int count) {
+      if (count == 0) return trackClr;
+      final t = (count / maxIntensity).clamp(0.0, 1.0);
+      return Color.lerp(
+        AppColors.primary.withOpacity(0.18),
+        AppColors.primary,
+        t,
+      )!;
     }
 
-    final sortedTrend = List.from(trend.trend)
-      ..sort((a, b) => a.week.compareTo(b.week));
-    final labels = sortedTrend.map((t) => 'Wk ${t.week}').toList();
-    final onTimeData = sortedTrend.map((t) => t.onTime.toDouble()).toList();
-    final lateData = sortedTrend.map((t) => t.late.toDouble()).toList();
-
-    final onTimeColor = isDark ? Colors.blue.shade400 : const Color(0xFFA8C8F5);
-    final lateColor = isDark ? Colors.red.shade400 : const Color(0xFFF5A8A8);
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderClr),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.10 : 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                'Completion Trend',
-                style: AppTextStyles.subtitleMedium.copyWith(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: subClr,
-                  letterSpacing: 0.5,
-                ),
-              ),
-              Row(
-                children: [
-                  _buildLegendItem('On time', onTimeColor),
-                  const SizedBox(width: 10),
-                  _buildLegendItem('Late', lateColor),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 120,
-            child: BarChart(
-              BarChartData(
-                alignment: BarChartAlignment.spaceAround,
-                maxY:
-                    (onTimeData + lateData).reduce((a, b) => a > b ? a : b) + 2,
-                barTouchData: BarTouchData(enabled: true),
-                titlesData: FlTitlesData(
-                  show: true,
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      getTitlesWidget: (value, meta) {
-                        final index = value.toInt();
-                        if (index < 0 || index >= labels.length)
-                          return const SizedBox.shrink();
-                        return Text(
-                          labels[index],
-                          style: TextStyle(fontSize: 10, color: subClr),
-                        );
-                      },
-                    ),
-                  ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      reservedSize: 24,
-                      getTitlesWidget: (value, meta) {
-                        return Text(
-                          value.toInt().toString(),
-                          style: TextStyle(fontSize: 9, color: subClr),
-                        );
-                      },
-                    ),
-                  ),
-                  topTitles: AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  rightTitles: AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                ),
-                borderData: FlBorderData(show: false),
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: false,
-                  horizontalInterval: 5,
-                  getDrawingHorizontalLine: (value) {
-                    return FlLine(
-                      color: isDark ? Colors.white12 : Colors.grey.shade200,
-                    );
-                  },
-                ),
-                barGroups: List.generate(sortedTrend.length, (i) {
-                  return BarChartGroupData(
-                    x: i,
-                    barRods: [
-                      BarChartRodData(
-                        toY: onTimeData[i],
-                        color: onTimeColor,
-                        width: 14,
-                        borderRadius: BorderRadius.circular(3),
-                      ),
-                      BarChartRodData(
-                        toY: lateData[i],
-                        color: lateColor,
-                        width: 14,
-                        borderRadius: BorderRadius.circular(3),
-                        fromY: onTimeData[i],
-                      ),
-                    ],
-                  );
-                }),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLegendItem(String label, Color color) {
-    return Row(
-      children: [
-        Container(
-          width: 10,
-          height: 10,
-          decoration: BoxDecoration(
-            color: color,
-            borderRadius: BorderRadius.circular(2),
-          ),
-        ),
-        const SizedBox(width: 4),
-        Text(label, style: TextStyle(fontSize: 10, color: Colors.grey)),
-      ],
-    );
-  }
-
-  // ─── TASK SUMMARY ─────────────────────────────────────────────────────
-  Widget _buildTaskSummary(AnalyticsDashboard dashboard, bool isDark) {
-    final tasks = dashboard.tasks;
-    final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
-    final borderClr = isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200;
-    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
-    final subClr = isDark ? Colors.white70 : Colors.black54;
-
-    final highColor = isDark ? Colors.red.shade400 : const Color(0xFFF5C8C8);
-    final mediumColor = isDark
-        ? Colors.orange.shade400
-        : const Color(0xFFF5E0C8);
-    final lowColor = isDark ? Colors.green.shade400 : const Color(0xFFC8F5C8);
+    final peak = map.cells.isEmpty
+        ? null
+        : map.cells.reduce((a, b) => a.count > b.count ? a : b);
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 14),
       child: Container(
         padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: cardBg,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: borderClr),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(isDark ? 0.10 : 0.04),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
+        decoration: _cardDecoration(isDark),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionTitle('Heatmap', isDark),
+            const SizedBox(height: 4),
+            Text(
+              '${dashboard.rangeDays} days · ${map.hourRange.startDisplay}–${map.hourRange.endDisplay}',
+              style: AppTextStyles.body.copyWith(fontSize: 11, color: subClr),
             ),
+            const SizedBox(height: 10),
+
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const SizedBox(width: 32),
+                      ...hourLabels.map(
+                        (label) => SizedBox(
+                          width: 18,
+                          child: Text(
+                            label,
+                            style: TextStyle(fontSize: 7, color: subClr),
+                            textAlign: TextAlign.center,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  ...List.generate(7, (dayIndex) {
+                    return Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 1),
+                      child: Row(
+                        children: [
+                          SizedBox(
+                            width: 32,
+                            child: Text(
+                              dayNames[dayIndex],
+                              style: TextStyle(fontSize: 9, color: subClr),
+                              textAlign: TextAlign.right,
+                            ),
+                          ),
+                          ...List.generate(18, (hourIndex) {
+                            final hour = hourIndex + 6;
+                            final cell = cellMap['$dayIndex-$hour'];
+                            final count = cell?.count ?? 0;
+                            final isPeak =
+                                peak != null &&
+                                cell != null &&
+                                peak.day == cell.day &&
+                                peak.hour == cell.hour;
+
+                            return Container(
+                              width: 18,
+                              height: 15,
+                              margin: const EdgeInsets.all(0.5),
+                              decoration: BoxDecoration(
+                                color: cellColor(count),
+                                borderRadius: BorderRadius.circular(3),
+                                border: isPeak
+                                    ? Border.all(
+                                        color: AppColors.primary,
+                                        width: 1.2,
+                                      )
+                                    : null,
+                              ),
+                              child: Center(
+                                child: count > 0
+                                    ? Text(
+                                        count.toString(),
+                                        style: TextStyle(
+                                          fontSize: 6,
+                                          color: count > maxIntensity * 0.6
+                                              ? Colors.white
+                                              : textClr,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      )
+                                    : null,
+                              ),
+                            );
+                          }),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            _buildHeatmapLegend(isDark, trackClr),
+            if (peak != null) ...[
+              const SizedBox(height: 10),
+              Text(
+                'Peak: ${peak.dayName} ${peak.hourDisplay} · ${peak.count} completions · ${peak.onTimeRate.toStringAsFixed(1)}% on time',
+                style: AppTextStyles.body.copyWith(fontSize: 11, color: subClr),
+              ),
+            ],
+            if (map.bestSlots.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Text(
+                'Best slot: ${map.bestSlots.first.suggestion}',
+                style: AppTextStyles.body.copyWith(
+                  fontSize: 11,
+                  color: AppColors.primary,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+            if (map.unreliableDays.isNotEmpty) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 4,
+                children: map.unreliableDays.map((d) {
+                  return Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: isDark ? Colors.white10 : Colors.grey.shade200,
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(
+                      '${d.day} (${d.logCount}/${d.needed})',
+                      style: TextStyle(fontSize: 8, color: subClr),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ],
           ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeatmapLegend(bool isDark, Color trackClr) {
+    final subClr = isDark ? Colors.white54 : Colors.black38;
+    return Row(
+      children: [
+        Text('Less', style: TextStyle(fontSize: 9, color: subClr)),
+        const SizedBox(width: 6),
+        ...List.generate(5, (i) {
+          final t = i / 4;
+          return Container(
+            width: 12,
+            height: 8,
+            margin: const EdgeInsets.symmetric(horizontal: 1.5),
+            decoration: BoxDecoration(
+              color: i == 0
+                  ? trackClr
+                  : Color.lerp(
+                      AppColors.primary.withOpacity(0.18),
+                      AppColors.primary,
+                      t,
+                    ),
+              borderRadius: BorderRadius.circular(2),
+            ),
+          );
+        }),
+        const SizedBox(width: 6),
+        Text('More', style: TextStyle(fontSize: 9, color: subClr)),
+      ],
+    );
+  }
+
+  // ─── WORK PATTERNS ────────────────────────────────────────────────────
+  Widget _buildWorkPatterns(AnalyticsDashboard dashboard, bool isDark) {
+    final patterns = dashboard.workPatterns;
+    final subClr = isDark ? Colors.white70 : Colors.black54;
+
+    final totalCount = patterns.timeOfDay.fold<int>(0, (s, b) => s + b.count);
+
+    if (totalCount == 0) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: _cardDecoration(isDark),
+          child: Center(
+            child: Text(
+              'No completion data yet.',
+              style: AppTextStyles.body.copyWith(color: subClr),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: _cardDecoration(isDark),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _sectionTitle('When & How You Work', isDark),
+            const SizedBox(height: 14),
+
+            // ─── Time of day ──────────────────────────────────────────────
+            Text(
+              'Time of day',
+              style: AppTextStyles.body.copyWith(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: subClr,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...patterns.timeOfDay.map((bucket) {
+              final color = _bucketColor(bucket.key);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 7),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    SizedBox(
+                      width: 62,
+                      child: Text(
+                        bucket.label,
+                        style: TextStyle(fontSize: 11, color: color),
+                      ),
+                    ),
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: (bucket.count / totalCount).clamp(0.0, 1.0),
+                          minHeight: 6,
+                          backgroundColor: isDark
+                              ? Colors.white10
+                              : Colors.grey.shade200,
+                          valueColor: AlwaysStoppedAnimation<Color>(color),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      '${bucket.count} (${bucket.percent.toStringAsFixed(0)}%)',
+                      style: TextStyle(fontSize: 10, color: subClr),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            const SizedBox(height: 12),
+
+            // ─── Priority performance ─────────────────────────────────────
+            Text(
+              'By priority',
+              style: AppTextStyles.body.copyWith(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: subClr,
+              ),
+            ),
+            const SizedBox(height: 8),
+            ...patterns.byPriority.map((row) {
+              final color = _priorityColor(row.priority);
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 6),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 7,
+                      height: 7,
+                      decoration: BoxDecoration(
+                        color: color,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 7),
+                    SizedBox(
+                      width: 46,
+                      child: Text(
+                        row.label,
+                        style: TextStyle(fontSize: 11, color: color),
+                      ),
+                    ),
+                    Expanded(
+                      child: row.completed > 0
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: LinearProgressIndicator(
+                                value: (row.onTimeRate / 100).clamp(0.0, 1.0),
+                                minHeight: 6,
+                                backgroundColor: isDark
+                                    ? Colors.white10
+                                    : Colors.grey.shade200,
+                                valueColor: AlwaysStoppedAnimation<Color>(
+                                  color,
+                                ),
+                              ),
+                            )
+                          : Container(),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      row.completed > 0
+                          ? '${row.onTimeRate.toStringAsFixed(0)}% · ${row.completed}'
+                          : '—',
+                      style: TextStyle(fontSize: 10, color: subClr),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Color _bucketColor(String key) {
+    switch (key) {
+      case 'morning':
+        return AppColors.primary;
+      case 'afternoon':
+        return const Color(0xFF3B82F6);
+      case 'evening':
+        return const Color(0xFF8B5CF6);
+      default:
+        return const Color(0xFF6366F1);
+    }
+  }
+
+  Color _priorityColor(String priority) {
+    switch (priority) {
+      case 'high':
+        return const Color(0xFFEF4444);
+      case 'medium':
+        return AppColors.primary;
+      default:
+        return const Color(0xFF22C55E);
+    }
+  }
+
+  // ─── NEEDS ATTENTION ─────────────────────────────────────────────────
+  Widget _buildNeedsAttention(AnalyticsDashboard dashboard, bool isDark) {
+    final attention = dashboard.needsAttention;
+    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
+    final subClr = isDark ? Colors.white70 : Colors.black54;
+
+    final hasItems =
+        attention.overdue > 0 ||
+        attention.dueNext7d > 0 ||
+        attention.dueSoon.isNotEmpty;
+
+    if (!hasItems) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Container(
+          padding: const EdgeInsets.all(16),
+          decoration: _cardDecoration(
+            isDark,
+            accentBorder: const Color(0xFF22C55E).withOpacity(0.25),
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: 32,
+                height: 32,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF22C55E).withOpacity(0.14),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(
+                  Icons.check_circle_rounded,
+                  color: Color(0xFF22C55E),
+                  size: 18,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'All clear! No tasks need immediate attention.',
+                  style: AppTextStyles.body.copyWith(
+                    fontSize: 13,
+                    color: subClr,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      child: Container(
+        padding: const EdgeInsets.all(16),
+        decoration: _cardDecoration(
+          isDark,
+          accentBorder: Colors.orange.withOpacity(0.2),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Text(
-                  'Task Summary',
-                  style: AppTextStyles.subtitleMedium.copyWith(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: subClr,
-                    letterSpacing: 0.5,
-                  ),
+                _sectionTitle(
+                  'Needs Attention',
+                  isDark,
+                  icon: Icons.warning_amber_rounded,
                 ),
-                GestureDetector(
-                  onTap: () => context.push('/calendar'),
+                const Spacer(),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.orange.withOpacity(isDark ? 0.18 : 0.1),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
                   child: Text(
-                    'View all',
-                    style: AppTextStyles.body.copyWith(
-                      fontSize: 12,
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            // ─── Counts ──────────────────────────────────────────────────
-            Row(
-              children: [
-                _buildTaskCount('${tasks.overdue}', 'Overdue', Colors.red),
-                _buildTaskCount('${tasks.pending}', 'Pending', Colors.orange),
-                _buildTaskCount('${tasks.complete}', 'Complete', Colors.green),
-                _buildTaskCount(
-                  '${tasks.dueWithin48h.length}',
-                  'Due soon',
-                  AppColors.primary,
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-
-            // ─── Priority bar ────────────────────────────────────────────
-            Text(
-              'By priority',
-              style: AppTextStyles.body.copyWith(fontSize: 11, color: subClr),
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Expanded(
-                  flex: tasks.byPriority.high,
-                  child: Container(
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: highColor,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 2),
-                Expanded(
-                  flex: tasks.byPriority.medium,
-                  child: Container(
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: mediumColor,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 2),
-                Expanded(
-                  flex: tasks.byPriority.low,
-                  child: Container(
-                    height: 8,
-                    decoration: BoxDecoration(
-                      color: lowColor,
-                      borderRadius: BorderRadius.circular(4),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    'High ${tasks.byPriority.high}',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.red,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    'Medium ${tasks.byPriority.medium}',
-                    style: TextStyle(
+                    '${attention.overdue + attention.dueNext7d} pending',
+                    style: const TextStyle(
                       fontSize: 10,
                       color: Colors.orange,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ),
-                Expanded(
-                  child: Text(
-                    'Low ${tasks.byPriority.low}',
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: Colors.green,
-                      fontWeight: FontWeight.w500,
+                      fontWeight: FontWeight.w700,
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 12),
 
-            // ─── Due soon ────────────────────────────────────────────────
-            if (tasks.dueWithin48h.isNotEmpty) ...[
+            // Counts
+            Row(
+              children: [
+                _attentionCount(
+                  '${attention.overdue}',
+                  'Overdue',
+                  const Color(0xFFEF4444),
+                  isDark,
+                ),
+                const SizedBox(width: 8),
+                _attentionCount(
+                  '${attention.dueNext7d}',
+                  'Due next 7d',
+                  Colors.orange,
+                  isDark,
+                ),
+                const SizedBox(width: 8),
+                _attentionCount(
+                  '${attention.dueSoon.length}',
+                  'Due soon (48h)',
+                  AppColors.primary,
+                  isDark,
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+
+            // Priority breakdown
+            Text(
+              'Pending by priority',
+              style: AppTextStyles.body.copyWith(fontSize: 10, color: subClr),
+            ),
+            const SizedBox(height: 6),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(3),
+              child: Row(
+                children: [
+                  Expanded(
+                    flex: math.max(attention.pendingByPriority.high, 0) + 1,
+                    child: Container(height: 6, color: const Color(0xFFEF4444)),
+                  ),
+                  Expanded(
+                    flex: math.max(attention.pendingByPriority.medium, 0) + 1,
+                    child: Container(height: 6, color: Colors.orange),
+                  ),
+                  Expanded(
+                    flex: math.max(attention.pendingByPriority.low, 0) + 1,
+                    child: Container(height: 6, color: const Color(0xFF22C55E)),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'H ${attention.pendingByPriority.high}',
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Color(0xFFEF4444),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    'M ${attention.pendingByPriority.medium}',
+                    style: const TextStyle(fontSize: 9, color: Colors.orange),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    'L ${attention.pendingByPriority.low}',
+                    style: const TextStyle(
+                      fontSize: 9,
+                      color: Color(0xFF22C55E),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 12),
+
+            // Due soon list
+            if (attention.dueSoon.isNotEmpty) ...[
               Text(
                 'Due within 48h',
-                style: AppTextStyles.body.copyWith(fontSize: 11, color: subClr),
+                style: AppTextStyles.body.copyWith(fontSize: 10, color: subClr),
               ),
               const SizedBox(height: 6),
-              ...tasks.dueWithin48h.take(3).map((task) {
+              ...attention.dueSoon.take(3).map((task) {
                 final dueTime = DateTime.parse(task.dueDatetime).toLocal();
+                final pColor = task.priority == 'high'
+                    ? const Color(0xFFEF4444)
+                    : task.priority == 'medium'
+                    ? Colors.orange
+                    : const Color(0xFF22C55E);
                 return Container(
-                  padding: const EdgeInsets.symmetric(vertical: 6),
+                  padding: const EdgeInsets.symmetric(vertical: 7),
                   decoration: BoxDecoration(
                     border: Border(
                       bottom: BorderSide(
@@ -1091,11 +1281,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                         width: 6,
                         height: 6,
                         decoration: BoxDecoration(
-                          color: task.priority == 'high'
-                              ? Colors.red
-                              : task.priority == 'medium'
-                              ? Colors.orange
-                              : Colors.green,
+                          color: pColor,
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -1122,26 +1308,31 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
                   ),
                 );
               }),
-              const SizedBox(height: 6),
             ],
-
-            // ─── Busiest day ─────────────────────────────────────────────
-            Text(
-              'Busiest day: ${tasks.busiestDayThisWeek.dayName} · ${tasks.busiestDayThisWeek.taskCount} tasks',
-              style: AppTextStyles.body.copyWith(fontSize: 11, color: subClr),
-            ),
+            if (attention.dueSoon.length > 3)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  '+ ${attention.dueSoon.length - 3} more',
+                  style: TextStyle(
+                    fontSize: 10,
+                    color: AppColors.primary,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildTaskCount(String value, String label, Color color) {
+  Widget _attentionCount(String value, String label, Color color, bool isDark) {
     return Expanded(
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 8),
         decoration: BoxDecoration(
-          color: color.withOpacity(0.08),
+          color: color.withOpacity(isDark ? 0.14 : 0.07),
           borderRadius: BorderRadius.circular(10),
         ),
         child: Column(
@@ -1149,7 +1340,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
             Text(
               value,
               style: TextStyle(
-                fontSize: 16,
+                fontSize: 15,
                 fontWeight: FontWeight.w700,
                 color: color,
               ),
@@ -1157,9 +1348,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
             Text(
               label,
               style: TextStyle(
-                fontSize: 10,
+                fontSize: 8,
+                fontWeight: FontWeight.w600,
                 color: color,
-                fontWeight: FontWeight.w500,
               ),
             ),
           ],
@@ -1167,89 +1358,102 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
       ),
     );
   }
+}
 
-  // ─── PRODUCTIVITY SCORE ──────────────────────────────────────────────
-  Widget _buildProductivityScore(AnalyticsDashboard dashboard, bool isDark) {
-    final ps = dashboard.productivityScore!;
+// ─── Stat Card ──────────────────────────────────────────────────────────
+class _StatCard extends StatelessWidget {
+  final String value;
+  final String label;
+  final double? change;
+  final IconData icon;
+  final Color color;
+  final bool isDark;
+
+  const _StatCard({
+    required this.value,
+    required this.label,
+    this.change,
+    required this.icon,
+    required this.color,
+    required this.isDark,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
     final borderClr = isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200;
     final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
-    final subClr = isDark ? Colors.white70 : Colors.black54;
+    final subClr = isDark ? Colors.white60 : Colors.black45;
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+    return SizedBox(
+      width: 122,
       child: Container(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(10),
         decoration: BoxDecoration(
           color: cardBg,
-          borderRadius: BorderRadius.circular(18),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: borderClr),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(isDark ? 0.18 : 0.06),
-              blurRadius: 14,
-              offset: const Offset(0, 4),
+              color: Colors.black.withOpacity(isDark ? 0.06 : 0.04),
+              blurRadius: 6,
+              offset: const Offset(0, 2),
             ),
           ],
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(
-              'Productivity Score',
-              style: AppTextStyles.subtitleMedium.copyWith(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: subClr,
-                letterSpacing: 0.5,
-              ),
-            ),
-            const SizedBox(height: 12),
             Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-                _ScoreGauge(score: ps.score, rating: ps.rating, isDark: isDark),
-                const SizedBox(width: 16),
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: color.withOpacity(0.14),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(icon, size: 12, color: color),
+                ),
+                const SizedBox(width: 6),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        ps.caption,
-                        style: AppTextStyles.body.copyWith(
-                          fontSize: 12,
-                          height: 1.3,
-                          color: textClr,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      _scoreComponentBar(
-                        'On time',
-                        ps.components.onTime,
-                        const Color(0xFF22C55E),
-                        isDark,
-                      ),
-                      _scoreComponentBar(
-                        'Consistency',
-                        ps.components.consistency,
-                        AppColors.primary,
-                        isDark,
-                      ),
-                      _scoreComponentBar(
-                        'Volume',
-                        ps.components.volume,
-                        const Color(0xFF3B82F6),
-                        isDark,
-                      ),
-                      _scoreComponentBar(
-                        'Streak',
-                        ps.components.streak,
-                        const Color(0xFFBA7517),
-                        isDark,
-                      ),
-                    ],
+                  child: Text(
+                    label,
+                    style: TextStyle(fontSize: 9, color: subClr),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    value,
+                    style: AppTextStyles.headline.copyWith(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w700,
+                      color: textClr,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                if (change != null)
+                  Text(
+                    change! >= 0
+                        ? '↑${change!.toStringAsFixed(0)}%'
+                        : '↓${change!.abs().toStringAsFixed(0)}%',
+                    style: TextStyle(
+                      fontSize: 9,
+                      color: change! >= 0
+                          ? const Color(0xFF22C55E)
+                          : const Color(0xFFEF4444),
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
               ],
             ),
           ],
@@ -1257,164 +1461,17 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
       ),
     );
   }
+}
 
-  Widget _scoreComponentBar(String label, int value, Color color, bool isDark) {
-    final subClr = isDark ? Colors.white70 : Colors.black54;
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 78,
-            child: Text(
-              label,
-              style: TextStyle(fontSize: 11, color: subClr),
-            ),
-          ),
-          Expanded(
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(4),
-              child: LinearProgressIndicator(
-                value: (value / 100).clamp(0.0, 1.0),
-                minHeight: 7,
-                backgroundColor: isDark ? Colors.white10 : Colors.grey.shade200,
-                valueColor: AlwaysStoppedAnimation<Color>(color),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-          SizedBox(
-            width: 26,
-            child: Text(
-              '$value',
-              textAlign: TextAlign.right,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: subClr,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
+// ─── Insight Card ──────────────────────────────────────────────────────
+class _InsightCard extends StatelessWidget {
+  final Insight insight;
+  final bool isDark;
 
-  // ─── SMART INSIGHTS ──────────────────────────────────────────────────
-  Widget _buildInsights(AnalyticsDashboard dashboard, bool isDark) {
-    final subClr = isDark ? Colors.white70 : Colors.black54;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          child: Row(
-            children: [
-              Icon(
-                Icons.auto_awesome_rounded,
-                size: 14,
-                color: AppColors.primary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Smart Insights',
-                style: AppTextStyles.subtitleMedium.copyWith(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                  color: subClr,
-                  letterSpacing: 0.5,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 8),
-        SizedBox(
-          height: 110,
-          child: ListView.separated(
-            scrollDirection: Axis.horizontal,
-            physics: const BouncingScrollPhysics(),
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            itemCount: dashboard.insights.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 10),
-            itemBuilder: (context, i) =>
-                _insightCard(dashboard.insights[i], isDark),
-          ),
-        ),
-      ],
-    );
-  }
+  const _InsightCard({required this.insight, required this.isDark});
 
-  Widget _insightCard(Insight insight, bool isDark) {
-    final accent = _insightColor(insight.type);
-    final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
-    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
-    final subClr = isDark ? Colors.white70 : Colors.black54;
-
-    return Container(
-      width: 232,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: accent.withOpacity(0.25)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.10 : 0.04),
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                width: 26,
-                height: 26,
-                decoration: BoxDecoration(
-                  color: accent.withOpacity(0.14),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Icon(_insightIcon(insight.icon), size: 15, color: accent),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  insight.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w700,
-                    color: textClr,
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: Text(
-              insight.message,
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-              style: AppTextStyles.body.copyWith(
-                fontSize: 11.5,
-                height: 1.3,
-                color: subClr,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Color _insightColor(String type) {
-    switch (type) {
+  Color get _accent {
+    switch (insight.type) {
       case 'positive':
         return const Color(0xFF22C55E);
       case 'warning':
@@ -1426,508 +1483,20 @@ class _AnalyticsScreenState extends State<AnalyticsScreen>
     }
   }
 
-  IconData _insightIcon(String name) {
-    switch (name) {
-      case 'local_fire_department':
-        return Icons.local_fire_department_rounded;
-      case 'trending_up':
-        return Icons.trending_up_rounded;
-      case 'trending_down':
-        return Icons.trending_down_rounded;
-      case 'verified':
-        return Icons.verified_rounded;
-      case 'schedule':
-        return Icons.schedule_rounded;
-      case 'bolt':
-        return Icons.bolt_rounded;
-      case 'priority_high':
-        return Icons.priority_high_rounded;
-      case 'warning_amber':
-        return Icons.warning_amber_rounded;
-      case 'wb_sunny':
-        return Icons.wb_sunny_rounded;
-      case 'calendar_month':
-        return Icons.calendar_month_rounded;
-      case 'rocket_launch':
-        return Icons.rocket_launch_rounded;
-      default:
-        return Icons.lightbulb_rounded;
-    }
-  }
-
-  // ─── DAILY ACTIVITY (line chart) ─────────────────────────────────────
-  Widget _buildDailyActivityCard(AnalyticsDashboard dashboard, bool isDark) {
-    final daily = dashboard.dailyCompletions!;
-    final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
-    final borderClr = isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200;
-    final subClr = isDark ? Colors.white70 : Colors.black54;
-
-    final series = daily.series;
-    final spots = <FlSpot>[
-      for (var i = 0; i < series.length; i++)
-        FlSpot(i.toDouble(), series[i].count.toDouble()),
-    ];
-    final maxCount = series.fold<int>(0, (m, p) => p.count > m ? p.count : m);
-    final maxY = (maxCount < 4 ? 4 : maxCount + 1).toDouble();
-    final lineColor = AppColors.primary;
-
-    final xInterval = math.max(1, (series.length / 5).ceil());
-    final leftInterval = math.max(1, (maxY / 4).ceil()).toDouble();
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderClr),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.10 : 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Daily Activity',
-            style: AppTextStyles.subtitleMedium.copyWith(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: subClr,
-              letterSpacing: 0.5,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Completions over the last ${daily.rangeDays} days',
-            style: AppTextStyles.body.copyWith(fontSize: 11, color: subClr),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              _miniStat('${daily.total}', 'Completed', isDark),
-              const SizedBox(width: 20),
-              _miniStat('${daily.activeDays}', 'Active days', isDark),
-              const SizedBox(width: 20),
-              _miniStat(
-                daily.avgPerActiveDay.toStringAsFixed(1),
-                'Avg / active day',
-                isDark,
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          SizedBox(
-            height: 140,
-            child: LineChart(
-              LineChartData(
-                minX: 0,
-                maxX: (series.length - 1).toDouble(),
-                minY: 0,
-                maxY: maxY,
-                lineTouchData: const LineTouchData(enabled: true),
-                gridData: FlGridData(
-                  show: true,
-                  drawVerticalLine: false,
-                  horizontalInterval: leftInterval,
-                  getDrawingHorizontalLine: (value) => FlLine(
-                    color: isDark ? Colors.white12 : Colors.grey.shade200,
-                    strokeWidth: 1,
-                  ),
-                ),
-                borderData: FlBorderData(show: false),
-                titlesData: FlTitlesData(
-                  topTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  rightTitles: const AxisTitles(
-                    sideTitles: SideTitles(showTitles: false),
-                  ),
-                  leftTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      interval: leftInterval,
-                      reservedSize: 24,
-                      getTitlesWidget: (value, meta) => Text(
-                        value.toInt().toString(),
-                        style: TextStyle(fontSize: 9, color: subClr),
-                      ),
-                    ),
-                  ),
-                  bottomTitles: AxisTitles(
-                    sideTitles: SideTitles(
-                      showTitles: true,
-                      interval: xInterval.toDouble(),
-                      reservedSize: 20,
-                      getTitlesWidget: (value, meta) {
-                        final i = value.round();
-                        if (i < 0 || i >= series.length) {
-                          return const SizedBox.shrink();
-                        }
-                        final d = DateTime.tryParse(series[i].date);
-                        final label = d != null
-                            ? DateFormat('d MMM').format(d)
-                            : '';
-                        return Padding(
-                          padding: const EdgeInsets.only(top: 4),
-                          child: Text(
-                            label,
-                            style: TextStyle(fontSize: 8, color: subClr),
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-                ),
-                lineBarsData: [
-                  LineChartBarData(
-                    spots: spots,
-                    isCurved: true,
-                    curveSmoothness: 0.25,
-                    color: lineColor,
-                    barWidth: 2.5,
-                    dotData: FlDotData(show: series.length <= 31),
-                    belowBarData: BarAreaData(
-                      show: true,
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          lineColor.withOpacity(0.25),
-                          lineColor.withOpacity(0.0),
-                        ],
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _miniStat(String value, String label, bool isDark) {
-    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
-    final subClr = isDark ? Colors.white70 : Colors.black54;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 16,
-            fontWeight: FontWeight.w700,
-            color: textClr,
-          ),
-        ),
-        Text(label, style: TextStyle(fontSize: 10, color: subClr)),
-      ],
-    );
-  }
-
-  // ─── TIME OF DAY (donut) ─────────────────────────────────────────────
-  Widget _buildTimeOfDayCard(AnalyticsDashboard dashboard, bool isDark) {
-    final tod = dashboard.timeOfDay!;
-    final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
-    final borderClr = isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200;
-    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
-    final subClr = isDark ? Colors.white70 : Colors.black54;
-
-    Color colorFor(String key) {
-      switch (key) {
-        case 'morning':
-          return const Color(0xFFF59E0B);
-        case 'afternoon':
-          return const Color(0xFF3B82F6);
-        case 'evening':
-          return const Color(0xFF8B5CF6);
-        default:
-          return const Color(0xFF6366F1);
-      }
-    }
-
-    final sections = <PieChartSectionData>[
-      for (final b in tod.buckets)
-        if (b.count > 0)
-          PieChartSectionData(
-            value: b.count.toDouble(),
-            color: colorFor(b.key),
-            radius: 16,
-            showTitle: false,
-          ),
-    ];
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderClr),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.10 : 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'When You Work',
-            style: AppTextStyles.subtitleMedium.copyWith(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: subClr,
-              letterSpacing: 0.5,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              SizedBox(
-                width: 110,
-                height: 110,
-                child: Stack(
-                  alignment: Alignment.center,
-                  children: [
-                    PieChart(
-                      PieChartData(
-                        sectionsSpace: 2,
-                        centerSpaceRadius: 32,
-                        sections: sections,
-                      ),
-                    ),
-                    if (tod.dominant != null)
-                      Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '${tod.dominant!.percent.toStringAsFixed(0)}%',
-                            style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              color: textClr,
-                            ),
-                          ),
-                          Text(
-                            tod.dominant!.label,
-                            style: TextStyle(fontSize: 10, color: subClr),
-                          ),
-                        ],
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  children: [
-                    for (final b in tod.buckets)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(
-                                color: colorFor(b.key),
-                                borderRadius: BorderRadius.circular(3),
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    b.label,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w600,
-                                      color: textClr,
-                                    ),
-                                  ),
-                                  Text(
-                                    b.rangeDisplay,
-                                    style: TextStyle(
-                                      fontSize: 9,
-                                      color: subClr,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            Text(
-                              '${b.count} · ${b.percent.toStringAsFixed(0)}%',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: subClr,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ─── PRIORITY PERFORMANCE ────────────────────────────────────────────
-  Widget _buildPriorityPerformanceCard(
-    AnalyticsDashboard dashboard,
-    bool isDark,
-  ) {
-    final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
-    final borderClr = isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200;
-    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
-    final subClr = isDark ? Colors.white70 : Colors.black54;
-
-    Color colorFor(String priority) {
-      switch (priority) {
-        case 'high':
-          return const Color(0xFFEF4444);
-        case 'medium':
-          return const Color(0xFFF59E0B);
-        default:
-          return const Color(0xFF22C55E);
-      }
-    }
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: cardBg,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: borderClr),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(isDark ? 0.10 : 0.04),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Priority Performance',
-            style: AppTextStyles.subtitleMedium.copyWith(
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              color: subClr,
-              letterSpacing: 0.5,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'How reliably you finish tasks on time by priority',
-            style: AppTextStyles.body.copyWith(fontSize: 11, color: subClr),
-          ),
-          const SizedBox(height: 12),
-          for (final p in dashboard.priorityPerformance)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 10),
-              child: Row(
-                children: [
-                  SizedBox(
-                    width: 58,
-                    child: Text(
-                      p.label,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: colorFor(p.priority),
-                      ),
-                    ),
-                  ),
-                  Expanded(
-                    child: p.completed > 0
-                        ? ClipRRect(
-                            borderRadius: BorderRadius.circular(4),
-                            child: LinearProgressIndicator(
-                              value: (p.onTimeRate / 100).clamp(0.0, 1.0),
-                              minHeight: 8,
-                              backgroundColor: isDark
-                                  ? Colors.white10
-                                  : Colors.grey.shade200,
-                              valueColor: AlwaysStoppedAnimation<Color>(
-                                colorFor(p.priority),
-                              ),
-                            ),
-                          )
-                        : Text(
-                            'No completed tasks yet',
-                            style: TextStyle(fontSize: 10, color: subClr),
-                          ),
-                  ),
-                  const SizedBox(width: 10),
-                  SizedBox(
-                    width: 92,
-                    child: Text(
-                      p.completed > 0
-                          ? '${p.onTimeRate.toStringAsFixed(0)}% · ${p.completed} done'
-                          : '—',
-                      textAlign: TextAlign.right,
-                      style: TextStyle(fontSize: 10, color: textClr),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Hero Card ──────────────────────────────────────────────────────────
-class _HeroCard extends StatelessWidget {
-  final IconData icon;
-  final Color iconColor;
-  final String value;
-  final String label;
-  final String? sub;
-  final String? change;
-  final bool isDark;
-
-  const _HeroCard({
-    required this.icon,
-    required this.iconColor,
-    required this.value,
-    required this.label,
-    this.sub,
-    this.change,
-    required this.isDark,
-  });
-
   @override
   Widget build(BuildContext context) {
     final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
-    final borderClr = isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200;
     final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
     final subClr = isDark ? Colors.white70 : Colors.black54;
 
     return Container(
-      padding: const EdgeInsets.all(8),
+      width: 236,
       decoration: BoxDecoration(
         color: cardBg,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: borderClr),
+        border: Border.all(
+          color: isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200,
+        ),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(isDark ? 0.10 : 0.04),
@@ -1936,143 +1505,75 @@ class _HeroCard extends StatelessWidget {
           ),
         ],
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Container(
-            width: 24,
-            height: 24,
+            width: 4,
             decoration: BoxDecoration(
-              color: iconColor.withOpacity(0.12),
-              borderRadius: BorderRadius.circular(50),
-            ),
-            child: Icon(icon, size: 13, color: iconColor),
-          ),
-          const SizedBox(height: 4),
-          FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              value,
-              style: AppTextStyles.headline.copyWith(
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                color: textClr,
+              color: _accent,
+              borderRadius: const BorderRadius.only(
+                topLeft: Radius.circular(14),
+                bottomLeft: Radius.circular(14),
               ),
             ),
           ),
-          Text(
-            label,
-            style: AppTextStyles.body.copyWith(fontSize: 10, color: subClr),
-            overflow: TextOverflow.ellipsis,
-          ),
-          if (sub != null)
-            Text(
-              sub!,
-              style: AppTextStyles.body.copyWith(fontSize: 9, color: subClr),
-              overflow: TextOverflow.ellipsis,
-            ),
-          if (change != null && change!.isNotEmpty)
-            Text(
-              change!,
-              style: AppTextStyles.body.copyWith(
-                fontSize: 9,
-                color: change!.contains('↓') ? Colors.red : Colors.green,
-              ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-// ─── Animated Statement ────────────────────────────────────────────────
-class _AnimatedStatement extends StatefulWidget {
-  final String text;
-  final bool isDark;
-
-  const _AnimatedStatement({required this.text, required this.isDark});
-
-  @override
-  State<_AnimatedStatement> createState() => _AnimatedStatementState();
-}
-
-class _AnimatedStatementState extends State<_AnimatedStatement>
-    with SingleTickerProviderStateMixin {
-  late AnimationController _controller;
-  late Animation<double> _fadeAnimation;
-  late Animation<Offset> _slideAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      duration: const Duration(milliseconds: 600),
-      vsync: this,
-    );
-    _fadeAnimation = CurvedAnimation(
-      parent: _controller,
-      curve: Curves.easeOut,
-    );
-    _slideAnimation = Tween<Offset>(
-      begin: const Offset(0, 0.15),
-      end: Offset.zero,
-    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOut));
-    _controller.forward();
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return FadeTransition(
-          opacity: _fadeAnimation,
-          child: SlideTransition(
-            position: _slideAnimation,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: AppColors.primary.withOpacity(0.08),
-                borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: AppColors.primary.withOpacity(0.15)),
-              ),
-              child: Row(
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(12),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.lightbulb_rounded,
-                    size: 16,
-                    color: AppColors.primary,
+                  Row(
+                    children: [
+                      Container(
+                        width: 26,
+                        height: 26,
+                        decoration: BoxDecoration(
+                          color: _accent.withOpacity(0.14),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                        child: Icon(insight.iconData, size: 15, color: _accent),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          insight.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            color: textClr,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(height: 8),
                   Expanded(
                     child: Text(
-                      widget.text,
+                      insight.message,
+                      maxLines: 3,
+                      overflow: TextOverflow.ellipsis,
                       style: AppTextStyles.body.copyWith(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        color: widget.isDark ? Colors.white : Colors.black87,
+                        fontSize: 11.5,
+                        height: 1.3,
+                        color: subClr,
                       ),
-                      overflow: TextOverflow.visible,
                     ),
                   ),
                 ],
               ),
             ),
           ),
-        );
-      },
+        ],
+      ),
     );
   }
 }
 
-// ─── Score Gauge ────────────────────────────────────────────────────────
+// ─── Score Gauge (unchanged — no glow) ────────────────────────────────
 class _ScoreGauge extends StatelessWidget {
   final int score;
   final String rating;
@@ -2095,8 +1596,8 @@ class _ScoreGauge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 116,
-      height: 116,
+      width: 100,
+      height: 100,
       child: CustomPaint(
         painter: _GaugePainter(
           progress: (score / 100).clamp(0.0, 1.0),
@@ -2110,7 +1611,7 @@ class _ScoreGauge extends StatelessWidget {
               Text(
                 '$score',
                 style: AppTextStyles.headline.copyWith(
-                  fontSize: 34,
+                  fontSize: 28,
                   fontWeight: FontWeight.w700,
                   color: isDark ? Colors.white : const Color(0xFF1C1C1E),
                 ),
@@ -2118,7 +1619,7 @@ class _ScoreGauge extends StatelessWidget {
               Text(
                 rating,
                 style: TextStyle(
-                  fontSize: 11,
+                  fontSize: 10,
                   fontWeight: FontWeight.w700,
                   color: _color,
                 ),
@@ -2144,15 +1645,15 @@ class _GaugePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const stroke = 11.0;
+    const stroke = 10.0;
     final rect = Rect.fromLTWH(
       stroke / 2,
       stroke / 2,
       size.width - stroke,
       size.height - stroke,
     );
-    const start = math.pi * 0.75; // 135°
-    const sweep = math.pi * 1.5; // 270°
+    const start = math.pi * 0.75;
+    const sweep = math.pi * 1.5;
 
     final track = Paint()
       ..color = trackColor
