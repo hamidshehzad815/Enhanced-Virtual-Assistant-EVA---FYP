@@ -30,7 +30,14 @@ class AnalyticsDashboard {
   });
 
   factory AnalyticsDashboard.fromJson(Map<String, dynamic> json) {
-    final data = json['data'];
+    final data = json['data'] ?? json;
+
+    // If data is still null, throw a clear error.
+    if (data == null) {
+      throw Exception(
+        'Analytics API response missing data. Full response: $json',
+      );
+    }
     return AnalyticsDashboard(
       generatedAt: data['generated_at'] ?? '',
       timezone: data['timezone'] ?? 'UTC',
