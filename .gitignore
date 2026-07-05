@@ -17,7 +17,9 @@ Eva_AI_Server/scripts/allmodels.py
 Eva_AI_Server/scripts/validate_roadmaps.py
 issuesInLearningDelete.txt
 eva-ai-server/
-Eva_Backend_Server/evafirebase-c92ab-firebase-adminsdk-fbsvc-9b9bb50a69.json
+# Firebase service account keys (never commit)
+Eva_Backend_Server/evafirebase-*-firebase-adminsdk-*.json
+Eva_Backend_Server/*firebase*adminsdk*.json
 NER_improvement_guide.txt
 flutter-run-commands.txt
 start-servers.ps1
