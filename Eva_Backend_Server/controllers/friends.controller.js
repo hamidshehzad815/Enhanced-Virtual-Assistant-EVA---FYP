@@ -96,7 +96,6 @@ const mapRelationship = (friendship, currentUserId, timezone = "UTC") => {
     _id: friendship._id,
     status: friendship.status,
     responded_at: friendship.responded_at,
-    blocked_by: friendship.blocked_by || null,
     created_at: friendship.created_at,
     updated_at: friendship.updated_at,
     requester,
@@ -125,35 +124,6 @@ const loadRelationship = async (id) => {
   }
 
   return friendship;
-};
-
-const loadTargetUserById = async (userId) => {
-  if (!mongoose.Types.ObjectId.isValid(userId)) {
-    throw new BadRequestError("Invalid user id");
-  }
-
-  const targetUser = await User.findById(userId)
-    .select("name username email profile_picture is_active")
-    .lean();
-
-  if (!targetUser || !targetUser.is_active) {
-    throw new NotFoundError("Target user not found");
-  }
-
-  return targetUser;
-};
-
-const buildBlockedCounterpartyIdSet = (relationships, currentUserId) => {
-  const blockedIds = new Set();
-  for (const relationship of relationships) {
-    const requesterId = idString(relationship.requester_id);
-    const recipientId = idString(relationship.recipient_id);
-    const otherId = requesterId === String(currentUserId) ? recipientId : requesterId;
-    if (otherId) {
-      blockedIds.add(otherId);
-    }
-  }
-  return blockedIds;
 };
 
 /**
@@ -230,10 +200,6 @@ const sendFriendRequest = async (req, res, next) => {
       throw new ConflictError("You are already friends");
     }
 
-    if (existing.status === "blocked") {
-      throw new ForbiddenError("Friend request cannot be sent due to block status");
-    }
-
     if (existing.status === "pending") {
       if (String(existing.requester_id) === String(req.userId)) {
         throw new ConflictError("Friend request already sent");
@@ -246,7 +212,6 @@ const sendFriendRequest = async (req, res, next) => {
     existing.recipient_id = targetUser._id;
     existing.status = "pending";
     existing.responded_at = null;
-    existing.blocked_by = null;
     await existing.save();
 
     const refreshed = await Friend.findById(existing._id)
@@ -358,47 +323,8 @@ const listFriendRequests = async (req, res, next) => {
 };
 
 /**
- * GET /api/friends/blocked
- * List users blocked by the authenticated user.
- */
-const listBlockedUsers = async (req, res, next) => {
-  try {
-    const relationships = await Friend.find({
-      status: "blocked",
-      blocked_by: req.userId,
-      $or: [
-        { requester_id: req.userId },
-        { recipient_id: req.userId },
-      ],
-    })
-      .sort({ updated_at: -1 })
-      .populate("requester_id", "name username email profile_picture")
-      .populate("recipient_id", "name username email profile_picture")
-      .lean();
-
-    const blocked = relationships.map((relationship) => {
-      const mapped = mapForRequest(req, relationship);
-      return {
-        friendship_id: mapped._id,
-        blocked_at: mapped.responded_at || mapped.updated_at,
-        user: mapped.friend,
-      };
-    });
-
-    res.json({
-      status: "success",
-      data: {
-        blocked,
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
  * GET /api/friends/search
- * Search users for friend requests. Blocked users are hidden.
+ * Search users for friend requests.
  */
 const searchUsers = async (req, res, next) => {
   try {
@@ -410,17 +336,6 @@ const searchUsers = async (req, res, next) => {
       throw new BadRequestError("q must be at least 2 characters");
     }
 
-    const blockedRelationships = await Friend.find({
-      status: "blocked",
-      $or: [
-        { requester_id: req.userId },
-        { recipient_id: req.userId },
-      ],
-    })
-      .select("requester_id recipient_id")
-      .lean();
-
-    const blockedIds = buildBlockedCounterpartyIdSet(blockedRelationships, req.userId);
     const escaped = escapeRegExp(q);
     const searchRegex = new RegExp(escaped, "i");
 
@@ -434,9 +349,7 @@ const searchUsers = async (req, res, next) => {
       .limit(limit * 3)
       .lean();
 
-    const notBlockedUsers = users.filter((user) => !blockedIds.has(String(user._id)));
-
-    const candidateIds = notBlockedUsers.map((user) => user._id);
+    const candidateIds = users.map((user) => user._id);
     let relationshipMap = new Map();
 
     if (candidateIds.length > 0) {
@@ -472,7 +385,7 @@ const searchUsers = async (req, res, next) => {
       );
     }
 
-    const visibleUsers = notBlockedUsers
+    const visibleUsers = users
       .filter((user) => {
         const userId = String(user._id);
         const relationshipStatus = relationshipMap.get(userId) || "none";
@@ -529,7 +442,6 @@ const respondToFriendRequest = async (req, res, next) => {
         $set: {
           status,
           responded_at: new Date(),
-          blocked_by: null,
         },
       },
       { new: true },
@@ -555,117 +467,6 @@ const respondToFriendRequest = async (req, res, next) => {
     res.json({
       status: "success",
       message: `Friend request ${status}`,
-      data: {
-        friendship: mapForRequest(req, updated),
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * POST /api/friends/block/:userId
- * Block a user by user id.
- */
-const blockFriend = async (req, res, next) => {
-  try {
-    const targetUser = await loadTargetUserById(req.params.userId);
-    if (String(targetUser._id) === String(req.userId)) {
-      throw new BadRequestError("You cannot block yourself");
-    }
-
-    const pairKey = Friend.buildPairKey(req.userId, targetUser._id);
-    const existing = await Friend.findOne({ pair_key: pairKey });
-
-    let relationshipId;
-    if (!existing) {
-      const created = await Friend.create({
-        requester_id: req.userId,
-        recipient_id: targetUser._id,
-        status: "blocked",
-        blocked_by: req.userId,
-        responded_at: new Date(),
-      });
-      relationshipId = created._id;
-    } else {
-      await Friend.updateOne(
-        { _id: existing._id },
-        {
-          $set: {
-            status: "blocked",
-            blocked_by: req.userId,
-            responded_at: new Date(),
-          },
-        },
-      );
-      relationshipId = existing._id;
-    }
-
-    const updated = await Friend.findById(relationshipId)
-      .populate("requester_id", "name username email profile_picture")
-      .populate("recipient_id", "name username email profile_picture")
-      .lean();
-
-    res.json({
-      status: "success",
-      message: "User blocked",
-      data: {
-        friendship: mapForRequest(req, updated),
-      },
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * POST /api/friends/unblock/:userId
- * Unblock a user by user id.
- */
-const unblockFriend = async (req, res, next) => {
-  try {
-    const targetUser = await loadTargetUserById(req.params.userId);
-    const pairKey = Friend.buildPairKey(req.userId, targetUser._id);
-    const friendship = await Friend.findOne({ pair_key: pairKey })
-      .populate("requester_id", "name username email profile_picture")
-      .populate("recipient_id", "name username email profile_picture")
-      .lean();
-
-    if (!friendship) {
-      throw new NotFoundError("Relationship not found");
-    }
-
-    if (!isParticipant(friendship, req.userId)) {
-      throw new ForbiddenError("You are not allowed to unblock this relationship");
-    }
-
-    if (friendship.status !== "blocked") {
-      throw new ConflictError("Only blocked relationships can be unblocked");
-    }
-
-    if (idString(friendship.blocked_by) !== String(req.userId)) {
-      throw new ForbiddenError("Only the user who blocked can unblock");
-    }
-
-    const updated = await Friend.findByIdAndUpdate(
-      friendship._id,
-      {
-        $set: {
-          status: "rejected",
-          responded_at: new Date(),
-          blocked_by: null,
-        },
-      },
-      { new: true },
-    )
-      .populate("requester_id", "name username email profile_picture")
-      .populate("recipient_id", "name username email profile_picture")
-      .lean();
-
-    res.json({
-      status: "success",
-      message: "User blocked",
       data: {
         friendship: mapForRequest(req, updated),
       },
@@ -709,10 +510,7 @@ module.exports = {
   sendFriendRequest,
   listFriends,
   listFriendRequests,
-  listBlockedUsers,
   searchUsers,
   respondToFriendRequest,
-  blockFriend,
-  unblockFriend,
   unfriend,
 };
