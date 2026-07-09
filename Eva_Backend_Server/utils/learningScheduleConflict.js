@@ -75,15 +75,20 @@ function dueDatetimeMatchesSlot(dueDate, timeZone, slotDay, slotTimeHHmm) {
  * @param {{ day: number, time: string, duration_minutes?: number }[]} schedule normalized slots
  * @param {string} timeZone
  * @param {typeof import("mongoose").default.Model} TaskModel
+ * @param {{ excludeLearningPlanIds?: (string|import("mongoose").Types.ObjectId)[] }} [options]
  * @returns {Promise<{ slot: object, task: object }[]>}
  */
-async function findLearningScheduleTaskConflicts(userId, schedule, timeZone, TaskModel) {
+async function findLearningScheduleTaskConflicts(userId, schedule, timeZone, TaskModel, options = {}) {
+  const excludePlanIds = new Set(
+    (options.excludeLearningPlanIds || []).map((id) => String(id)),
+  );
+
   const tasks = await TaskModel.find({
     owner_id: userId,
     is_deleted: false,
     status: { $ne: "complete" },
   })
-    .select("_id title due_datetime status duration")
+    .select("_id title due_datetime status duration learning_plan_id")
     .lean();
 
   const conflicts = [];
@@ -91,6 +96,9 @@ async function findLearningScheduleTaskConflicts(userId, schedule, timeZone, Tas
     const slotDur = slot.duration_minutes ?? DEFAULT_SLOT_DURATION;
     for (const task of tasks) {
       if (!task.due_datetime) {
+        continue;
+      }
+      if (task.learning_plan_id && excludePlanIds.has(String(task.learning_plan_id))) {
         continue;
       }
       const due = new Date(task.due_datetime);

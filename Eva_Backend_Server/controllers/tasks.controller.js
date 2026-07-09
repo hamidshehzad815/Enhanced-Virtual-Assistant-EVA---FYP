@@ -13,14 +13,16 @@ const {
   NotFoundError,
   ConflictError,
 } = require("../middleware/errorHandler");
-const { serializeTaskForApi } = require("../utils/taskDisplayStatus");
+const { serializeTaskForApi, isLearningTask, LEARNING_TASK_EDIT_BLOCKED_MESSAGE } = require("../utils/taskDisplayStatus");
 
 const TASK_LIST_PROJECTION =
-  "title description due_datetime duration priority status learning_plan_id completed_at";
+  "title description due_datetime duration priority status learning_plan_id learning_topic_id completed_at";
 const { withApiTimezone } = require("../utils/apiDateTime");
 const {
   notifyOwnerOfCollaborationResponse,
 } = require("../services/collaborationNotifications");
+const { insert_and_dispatch } = require("../services/notification.service");
+const { buildTaskRescheduledNotification } = require("../utils/taskRescheduleNotification");
 const { resolveGoogleCalendarSync } = require("../utils/googleCalendarSync");
 const { deleteEvent } = require("../services/googleCalendar.service");
 
@@ -33,6 +35,19 @@ const PRIORITY_VALUES = new Set(["low", "medium", "high"]);
 const COLLAB_ACTIONS = new Set(["accept", "reject"]);
 
 const resolveUserTimezone = (req) => req.user?.timezone || "UTC";
+
+const assertTaskIsEditable = (task) => {
+  if (!isLearningTask(task)) {
+    return;
+  }
+  throw new ConflictError(LEARNING_TASK_EDIT_BLOCKED_MESSAGE, {
+    conflict_type: "learning_session_read_only",
+    learning_goal_id: String(task.learning_plan_id),
+    learning_session_id: task.learning_topic_id
+      ? String(task.learning_topic_id)
+      : null,
+  });
+};
 
 const PRIORITY_ALIASES = new Map([
   ["high", "high"],
@@ -540,6 +555,8 @@ const updateTask = async (req, res, next) => {
       throw new NotFoundError("Task not found");
     }
 
+    assertTaskIsEditable(existingTask);
+
     const update = {};
     const body = req.body || {};
 
@@ -572,6 +589,8 @@ const updateTask = async (req, res, next) => {
         throw new BadRequestError("due_datetime must be a valid datetime");
       }
       update.due_datetime = dueDate;
+      update.reminder_sent_at = null;
+      update.overdue_notified_at = null;
     }
 
     if (Object.prototype.hasOwnProperty.call(body, "duration")) {
@@ -614,6 +633,32 @@ const updateTask = async (req, res, next) => {
 
     if (!task) {
       throw new NotFoundError("Task not found");
+    }
+
+    const dueDatetimeChanged =
+      Object.prototype.hasOwnProperty.call(body, "due_datetime")
+      && toDateOrNull(existingTask.due_datetime)?.getTime()
+        !== toDateOrNull(task.due_datetime)?.getTime();
+
+    if (dueDatetimeChanged) {
+      try {
+        await insert_and_dispatch([
+          buildTaskRescheduledNotification({
+            userId: req.userId,
+            user: req.user,
+            taskTitle: task.title,
+            dueDatetime: task.due_datetime,
+            timezone: resolveUserTimezone(req),
+            referenceType: "task",
+            referenceId: String(task._id),
+            taskId: String(task._id),
+          }),
+        ]);
+      } catch (error) {
+        console.warn(
+          `[TasksController] Failed to dispatch reschedule notification for task ${task._id}: ${error.message}`,
+        );
+      }
     }
 
     if (
@@ -679,6 +724,8 @@ const updateTaskStatus = async (req, res, next) => {
     if (!existingTask) {
       throw new NotFoundError("Task not found");
     }
+
+    assertTaskIsEditable(existingTask);
 
     const update = {
       status: normalizedStatus,
@@ -747,6 +794,18 @@ const deleteTask = async (req, res, next) => {
     if (!mongoose.Types.ObjectId.isValid(id)) {
       throw new BadRequestError("Invalid task id");
     }
+
+    const existingTask = await Task.findOne({
+      _id: id,
+      owner_id: req.userId,
+      is_deleted: false,
+    }).lean();
+
+    if (!existingTask) {
+      throw new NotFoundError("Task not found");
+    }
+
+    assertTaskIsEditable(existingTask);
 
     const now = new Date();
     const task = await Task.findOneAndUpdate(

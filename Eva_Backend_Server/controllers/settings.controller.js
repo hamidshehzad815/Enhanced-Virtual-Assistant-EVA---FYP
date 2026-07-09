@@ -259,12 +259,13 @@ const assertNoCrossScheduleSlotConflicts = (entry, existingSchedules, excludeSch
   }
 };
 
-const assertNoSlotConflicts = async (userId, entry, timeZone) => {
+const assertNoSlotConflicts = async (userId, entry, timeZone, options = {}) => {
   const conflicts = await findLearningScheduleTaskConflicts(
     userId,
     entry.slots,
     timeZone,
     Task,
+    options,
   );
   if (conflicts.length > 0) {
     throw new ConflictError(
@@ -289,6 +290,16 @@ const buildSettingsPreview = (settings, update = {}) => {
   return { ...plain, ...update };
 };
 
+const scheduleInUseByActiveLearningPlan = async (userId, scheduleId) =>
+  Boolean(
+    await LearningGoal.exists({
+      user_id: userId,
+      learning_schedule_id: scheduleId,
+      status: "active",
+      is_deleted: false,
+    }),
+  );
+
 const scheduleInUseByLearningPlan = async (userId, scheduleId) =>
   Boolean(
     await LearningGoal.exists({
@@ -298,6 +309,18 @@ const scheduleInUseByLearningPlan = async (userId, scheduleId) =>
       is_deleted: false,
     }),
   );
+
+const linkedGoalIdsForSchedule = async (userId, scheduleId) => {
+  const goals = await LearningGoal.find({
+    user_id: userId,
+    learning_schedule_id: scheduleId,
+    status: { $in: ["active", "paused"] },
+    is_deleted: false,
+  })
+    .select("_id")
+    .lean();
+  return goals.map((goal) => goal._id);
+};
 
 const slotsEqual = (a, b) => JSON.stringify(a || []) === JSON.stringify(b || []);
 
@@ -462,11 +485,12 @@ const updateSettings = async (req, res, next) => {
     }
 
     if (pushToken !== undefined) {
+      // Replace tokens on register so stale emulator/old-project tokens do not accumulate.
       await User.updateOne(
         { _id: req.userId },
         {
-          $addToSet: {
-            push_tokens: pushToken,
+          $set: {
+            push_tokens: [pushToken],
           },
         },
       );
@@ -612,16 +636,19 @@ const updateLearningSchedule = async (req, res, next) => {
     }
 
     const slotsChanged = req.body.slots !== undefined && !slotsEqual(entry.slots, existing.slots);
-    if (slotsChanged && (await scheduleInUseByLearningPlan(req.userId, scheduleId))) {
+    if (slotsChanged && (await scheduleInUseByActiveLearningPlan(req.userId, scheduleId))) {
       throw new ConflictError(
-        "This schedule is linked to an active or paused learning plan. "
+        "This schedule is linked to an active learning plan. "
         + "Pause, complete, or delete that plan before changing its times.",
         { schedule_id: scheduleId },
       );
     }
 
     assertNoCrossScheduleSlotConflicts(entry, current, existing.id);
-    await assertNoSlotConflicts(req.userId, entry, userTimeZone(req));
+    const excludeLearningPlanIds = await linkedGoalIdsForSchedule(req.userId, scheduleId);
+    await assertNoSlotConflicts(req.userId, entry, userTimeZone(req), {
+      excludeLearningPlanIds,
+    });
 
     const updated = [...current];
     updated[index] = entry;

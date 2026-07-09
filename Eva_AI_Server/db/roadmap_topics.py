@@ -261,19 +261,34 @@ async def skip_topic(topic_id: str) -> bool:
     return result.matched_count > 0
 
 
-async def reschedule_topic(topic_id: str, new_datetime: datetime) -> bool:
-    """Update scheduled_date for one topic."""
+async def reschedule_topic(
+    topic_id: str,
+    new_datetime: datetime,
+    *,
+    estimated_duration_minutes: Optional[int] = None,
+) -> bool:
+    """Update scheduled_date for one topic; optionally sync estimated_duration."""
     db = get_db()
     tid = _to_object_id(topic_id)
     now = _now_naive_utc()
+    update: Dict[str, Any] = {"scheduled_date": new_datetime, "updated_at": now}
+    if estimated_duration_minutes is not None:
+        try:
+            update["estimated_duration"] = max(
+                5,
+                min(480, int(estimated_duration_minutes)),
+            )
+        except (TypeError, ValueError):
+            pass
+
     result = await db.roadmap_topics.update_one(
         {"_id": tid, "is_deleted": {"$ne": True}},
-        {"$set": {"scheduled_date": new_datetime, "updated_at": now}},
+        {"$set": update},
     )
     if result.matched_count == 0 and tid != topic_id:
         result = await db.roadmap_topics.update_one(
             {"_id": topic_id, "is_deleted": {"$ne": True}},
-            {"$set": {"scheduled_date": new_datetime, "updated_at": now}},
+            {"$set": update},
         )
     return result.matched_count > 0
 

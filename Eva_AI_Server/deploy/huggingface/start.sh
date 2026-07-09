@@ -32,5 +32,8 @@ if [ "$ready" -eq 0 ]; then
   echo "[Duckling] WARNING: not ready after 30s"
 fi
 
+# HF Spaces allows runtime writes under /tmp; ensure cache dirs exist before import.
+mkdir -p /tmp/hf/hub /tmp/torch
+
 cd /app
 exec uvicorn main:app --host 0.0.0.0 --port 7860

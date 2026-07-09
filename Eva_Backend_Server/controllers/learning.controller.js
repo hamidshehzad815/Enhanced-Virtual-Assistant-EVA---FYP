@@ -4,7 +4,7 @@
 
 const mongoose = require("mongoose");
 const jwt = require("jsonwebtoken");
-const { LearningGoal, RoadmapTopic, UserSetting } = require("../models");
+const { LearningGoal, RoadmapTopic, Task, UserSetting } = require("../models");
 const {
   BadRequestError,
   ConflictError,
@@ -13,9 +13,11 @@ const {
 const { applyLearningCollaborationAction } = require("../services/learningCollaboration.service");
 const { softDeleteLearningGoalById } = require("../services/learningDelete.service");
 const { insert_and_dispatch } = require("../services/notification.service");
+const { buildTaskRescheduledNotification } = require("../utils/taskRescheduleNotification");
 const { callAIInternal } = require("../services/ai.service");
 const { buildRoadmapMutationPayload, buildSessionDetailPayload } = require("../services/userRoadmaps.service");
 const { validateTopicAction } = require("../utils/learningSessionState");
+const { resolveLearningSlotsForGoal } = require("../utils/learningSchedules");
 const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
 
 const buildApiData = (req, payload) => {
@@ -40,6 +42,47 @@ const assertAiSuccess = (aiResult, fallbackMessage = "Learning update failed") =
       throw new ConflictError(message);
     }
     throw new BadRequestError(message);
+  }
+};
+
+const dispatchSessionRescheduleNotification = async (req, topic, goal) => {
+  try {
+    const refreshedTopic = await RoadmapTopic.findOne({
+      _id: topic._id,
+      is_deleted: false,
+    }).lean();
+    const topicDoc = refreshedTopic || topic;
+    let dueDatetime = topicDoc.scheduled_date;
+
+    if (topicDoc.task_id) {
+      const linkedTask = await Task.findOne({
+        _id: topicDoc.task_id,
+        owner_id: req.userId,
+        is_deleted: false,
+      })
+        .select("due_datetime")
+        .lean();
+      if (linkedTask?.due_datetime) {
+        dueDatetime = linkedTask.due_datetime;
+      }
+    }
+
+    await insert_and_dispatch([
+      buildTaskRescheduledNotification({
+        userId: req.userId,
+        user: req.user,
+        taskTitle: topicDoc.title || goal?.title || "Learning session",
+        dueDatetime,
+        timezone: userTimezone(req),
+        referenceType: "topic",
+        referenceId: String(topicDoc._id),
+        taskId: topicDoc.task_id ? String(topicDoc.task_id) : null,
+      }),
+    ]);
+  } catch (error) {
+    console.warn(
+      `[LearningController] Failed to dispatch reschedule notification for topic ${topic._id}: ${error.message}`,
+    );
   }
 };
 
@@ -220,6 +263,7 @@ const updateSession = async (req, res, next) => {
         scheduled_date: scheduledDate,
       });
       assertAiSuccess(aiResult, "Could not reschedule session");
+      await dispatchSessionRescheduleNotification(req, topic, goal);
     }
 
     if (hasOwn(body, "status")) {
@@ -352,7 +396,7 @@ const updateStatus = async (req, res, next) => {
       { new: true },
     ).lean();
 
-    // On resume, ask AI to rebase sessions (non-blocking).
+    // On resume, rebase pending sessions using the plan's linked learning schedule.
     let rebuildSummary = null;
     if (raw === "active") {
       try {
@@ -360,14 +404,19 @@ const updateStatus = async (req, res, next) => {
         const settingsDoc = query && typeof query.lean === "function"
           ? await query.lean()
           : await query;
-        const schedules = Array.isArray(settingsDoc?.preferred_learning_schedules)
-          ? settingsDoc.preferred_learning_schedules
-          : [];
-        const primarySlots = schedules[0]?.slots || [];
-        rebuildSummary = await callAIInternal("/internal/rebuild-schedule", {
-          user_id: String(req.userId),
-          new_schedule: primarySlots,
-        });
+        const scheduleSlots = resolveLearningSlotsForGoal(settingsDoc, goal);
+        if (!scheduleSlots.length) {
+          rebuildSummary = {
+            status: "error",
+            message: "Linked learning schedule not found for this plan.",
+          };
+        } else {
+          rebuildSummary = await callAIInternal("/internal/rebuild-schedule", {
+            user_id: String(req.userId),
+            goal_id: String(goal._id),
+            new_schedule: scheduleSlots,
+          });
+        }
       } catch (err) {
         rebuildSummary = { status: "error", message: err.message };
       }

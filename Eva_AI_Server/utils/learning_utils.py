@@ -119,45 +119,96 @@ _OOP_MESSAGE_RE = re.compile(
     flags=re.IGNORECASE,
 )
 
-# Sub-intent keyword patterns for learning_update (longest phrases first).
+# Learning-plan/session anchors — used to disambiguate bare words like "done".
+_LEARNING_ANCHOR_RE = re.compile(
+    r"\b(?:session|sessions|lesson|lessons|topic|topics|learning|plan|plans|"
+    r"roadmap|roadmaps|course|module|chapter|track)\b",
+    re.IGNORECASE,
+)
+
+# Pause: pause, hold, freeze, halt, break, on hold, stop … for now (+ common typos).
+_PAUSE_SUB_INTENT_RE = re.compile(
+    r"\b(?:"
+    r"paus\w*|"
+    r"on\s+hold|"
+    r"put\s+(?:\w+\s+){0,6}on\s+hold|"
+    r"hold\s+(?:my|the|this|that)\b|"
+    r"freez\w*|"
+    r"halt|"
+    r"take\s+a\s+break(?:\s+from)?|"
+    r"stop\b(?:\s+\w+){0,10}\s+for\s+now"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Resume: resume, continue, unpause, pick up, get back, restart (+ typos).
+_RESUME_SUB_INTENT_RE = re.compile(
+    r"\b(?:"
+    r"resum(?:e|ing|es)?\b|"
+    r"continu(?:e|ing)\b|"
+    r"un-?pause|"
+    r"pick\s+up(?:\s+(?:where|again|my))?|"
+    r"get\s+back(?:\s+(?:to|on))?|"
+    r"restart|"
+    r"start\s+again"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Complete: done, finished, completed, did, complete (+ typos).
+_COMPLETE_SUB_INTENT_RE = re.compile(
+    r"\b(?:"
+    r"compl\w*te\w*|"
+    r"finishe?d?|"
+    r"finsh\w*|"
+    r"\bi\s+['']?(?:ve\s+)?did\b|"
+    r"done\s+with|"
+    r"mark\s+.{0,48}\b(?:done|complete|finished)\b"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Skip: skip, bypass, pass on, jump, move past, already know.
+_SKIP_SUB_INTENT_RE = re.compile(
+    r"\b(?:"
+    r"skip|"
+    r"bypass|"
+    r"pass\s+on|"
+    r"jump\s+(?:past|over)|"
+    r"move\s+past|"
+    r"already\s+know"
+    r")\b",
+    re.IGNORECASE,
+)
+
+# Reschedule: move/push/shift … to, change … date (+ typo-tolerant reschedule word).
+_PUSH_TO_DATE_RE = re.compile(
+    r"\bpush(?:\s+back)?\s+.{0,60}\s+to\b",
+    re.IGNORECASE,
+)
+_SHIFT_TO_DATE_RE = re.compile(
+    r"\bshift(?:\s+.{0,60})?\s+to\b",
+    re.IGNORECASE,
+)
+_CHANGE_DATE_RE = re.compile(
+    r"\bchange(?:\s+the)?(?:\s+\w+){0,8}\s+date\b",
+    re.IGNORECASE,
+)
+_MOVE_TO_DATE_RE = re.compile(
+    r"\bmove\s+.{0,60}\s+to\b",
+    re.IGNORECASE,
+)
+
+# Extra phrase fallbacks (longest first) for wording the regexes do not cover.
 _LEARNING_UPDATE_SUB_INTENT_PATTERNS: Tuple[Tuple[str, str], ...] = tuple(
     sorted(
         [
-            ("stop for now", "pause"),
-            ("put on hold", "pause"),
-            ("on hold", "pause"),
-            ("take a break from", "pause"),
             ("mark next session", "complete"),
             ("mark today's session", "complete"),
             ("mark todays session", "complete"),
-            ("mark session as done", "complete"),
-            ("mark session done", "complete"),
-            ("mark done", "complete"),
-            ("mark complete", "complete"),
-            ("done with", "complete"),
-            ("i completed", "complete"),
-            ("i finished", "complete"),
-            ("skip this topic", "skip"),
             ("skip next session", "skip"),
-            ("already know", "skip"),
+            ("skip this topic", "skip"),
             ("shift session to", "reschedule"),
-            ("change date", "reschedule"),
-            ("start again", "resume"),
-            ("pick up", "resume"),
-            ("unpause", "resume"),
-            ("reschedule", "reschedule"),
-            ("postpone", "reschedule"),
-            ("pause", "pause"),
-            ("halt", "pause"),
-            ("resume", "resume"),
-            ("continue", "resume"),
-            ("restart", "resume"),
-            ("finished", "complete"),
-            ("completed", "complete"),
-            ("i did", "complete"),
-            ("skip", "skip"),
-            ("bypass", "skip"),
-            ("move", "reschedule"),
         ],
         key=lambda item: len(item[0]),
         reverse=True,
@@ -232,6 +283,26 @@ def _detect_flexible_session_sub_intent(text: str) -> Optional[str]:
     return None
 
 
+def _implies_complete_sub_intent(text: str) -> bool:
+    if _COMPLETE_SUB_INTENT_RE.search(text):
+        return True
+    if re.search(r"\bdone\b", text) and _LEARNING_ANCHOR_RE.search(text):
+        return True
+    return False
+
+
+def _implies_pause_sub_intent(text: str) -> bool:
+    return bool(_PAUSE_SUB_INTENT_RE.search(text))
+
+
+def _implies_resume_sub_intent(text: str) -> bool:
+    return bool(_RESUME_SUB_INTENT_RE.search(text))
+
+
+def _implies_skip_sub_intent(text: str) -> bool:
+    return bool(_SKIP_SUB_INTENT_RE.search(text))
+
+
 def message_implies_reschedule(message: Optional[str]) -> bool:
     """True when user is trying to move a session date (incl. common typos)."""
     text = str(message or "").strip().lower()
@@ -240,6 +311,14 @@ def message_implies_reschedule(message: Optional[str]) -> bool:
     if _RESCHEDULE_WORD_RE.search(text):
         return True
     if _SESSION_TO_DATE_RE.search(text):
+        return True
+    if _PUSH_TO_DATE_RE.search(text):
+        return True
+    if _SHIFT_TO_DATE_RE.search(text):
+        return True
+    if _CHANGE_DATE_RE.search(text):
+        return True
+    if _MOVE_TO_DATE_RE.search(text):
         return True
     return any(
         marker in text
@@ -287,14 +366,11 @@ def detect_learning_sub_intent(message: Optional[str]) -> Optional[str]:
     if not text:
         return None
 
-    # Reschedule/skip/pause/resume win over incidental "finished"/"done" in the same sentence.
+    # Reschedule/skip win over incidental "finished"/"done" in the same sentence.
     if message_implies_reschedule(text):
         return "reschedule"
-    if re.search(r"\bmove\b", text) and re.search(
-        r"\b(session|sessions|lesson|topic|learning|plan|roadmap)\b",
-        text,
-    ):
-        return "reschedule"
+    if _implies_skip_sub_intent(text):
+        return "skip"
 
     flexible = _detect_flexible_session_sub_intent(text)
     if flexible:
@@ -303,12 +379,16 @@ def detect_learning_sub_intent(message: Optional[str]) -> Optional[str]:
     for phrase, sub_intent in _LEARNING_UPDATE_SUB_INTENT_PATTERNS:
         if phrase not in text:
             continue
-        if sub_intent == "complete" and any(
-            marker in text
-            for marker in ("reschedule", "postpone", "shift session to", "change date")
-        ):
+        if sub_intent == "complete" and message_implies_reschedule(text):
             continue
         return sub_intent
+
+    if _implies_pause_sub_intent(text):
+        return "pause"
+    if _implies_resume_sub_intent(text):
+        return "resume"
+    if _implies_complete_sub_intent(text):
+        return "complete"
 
     return None
 
@@ -811,6 +891,60 @@ def _parse_hhmm(value: str) -> time:
         raise ValueError("time must be HH:MM")
     h, m = int(parts[0]), int(parts[1])
     return time(hour=h, minute=m)
+
+
+def _schedule_slots_by_weekday(
+    preferred_learning_schedule: List[Dict[str, Any]],
+    *,
+    default_duration_minutes: int = 90,
+) -> Dict[int, Dict[str, Any]]:
+    by_day: Dict[int, Dict[str, Any]] = {}
+    for slot in preferred_learning_schedule or []:
+        if not isinstance(slot, dict):
+            continue
+        try:
+            day = int(slot.get("day"))
+        except (TypeError, ValueError):
+            continue
+        dur = default_duration_minutes
+        if slot.get("duration_minutes") is not None:
+            try:
+                dur = int(slot.get("duration_minutes"))
+            except (TypeError, ValueError):
+                dur = default_duration_minutes
+        dur = max(15, min(240, dur))
+        by_day[day] = {
+            "time": str(slot.get("time") or "18:00"),
+            "duration_minutes": dur,
+        }
+    return by_day
+
+
+def next_rebase_start_date(
+    now_local: datetime,
+    preferred_learning_schedule: List[Dict[str, Any]],
+) -> date:
+    """
+    First calendar date whose schedule slot start is still at or after ``now_local``.
+
+    Walks forward from today so resume/rebuild can use a same-day slot when it has
+    not started yet (instead of always skipping to tomorrow).
+    """
+    by_day = _schedule_slots_by_weekday(preferred_learning_schedule)
+    if not by_day:
+        return now_local.date() + timedelta(days=1)
+
+    now_cmp = now_local.replace(tzinfo=None) if now_local.tzinfo is not None else now_local
+    current = now_local.date()
+    for _ in range(14):
+        wd = current.weekday()
+        if wd in by_day:
+            slot_start = datetime.combine(current, _parse_hhmm(str(by_day[wd]["time"])))
+            if now_cmp <= slot_start:
+                return current
+        current = current + timedelta(days=1)
+
+    return now_local.date() + timedelta(days=1)
 
 
 def build_schedule(

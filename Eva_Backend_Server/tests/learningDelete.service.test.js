@@ -99,7 +99,10 @@ describe("learningDelete.service", () => {
     expect(LearningGoal.updateOne).toHaveBeenCalledWith(
       expect.objectContaining({ _id: expect.any(mongoose.Types.ObjectId) }),
       expect.objectContaining({
-        $set: expect.objectContaining({ is_deleted: true }),
+        $set: expect.objectContaining({
+          is_deleted: true,
+          status: "cancelled",
+        }),
       }),
     );
     expect(RoadmapTopic.updateMany).toHaveBeenCalledWith(
@@ -118,6 +121,7 @@ describe("learningDelete.service", () => {
       expect.objectContaining({ action_type: "goal_deleted" }),
     );
     expect(result.goal.is_deleted).toBe(true);
+    expect(result.goal.status).toBe("cancelled");
     expect(result.notifications).toEqual([]);
   });
 });

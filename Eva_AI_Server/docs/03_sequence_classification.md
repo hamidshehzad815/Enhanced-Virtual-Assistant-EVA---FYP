@@ -31,7 +31,7 @@ Examples:
 
 **Purpose**: Determine the specific *intent* of a command  
 **Model**: `AutoModelForSequenceClassification` loaded from `settings.CLF2_MODEL_DIR`  
-**Classes (~10 intents)**:
+**Classes (8 supported intents + 1 legacy label rejected at runtime):**
 
 | Label | Domain |
 |---|---|
@@ -40,10 +40,17 @@ Examples:
 | `scheduling_update` | Update a task |
 | `scheduling_show` | Show/list tasks |
 | `learning_create` | Create a study plan |
-| `learning_update` | Update a study plan |
+| `learning_update` | Update a study plan (pause, resume, complete, skip, reschedule) |
 | `learning_delete` | Delete a study plan |
-| `learning_show` | Show study plan progress |
 | `behavioral` | Query behavioral patterns |
+
+### Not supported in chat
+
+| Removed / legacy | Use instead |
+|---|---|
+| Showing learning plan progress in chat (legacy Classifier 2 label `learning_show`) | **Roadmap screen** in the app — `GET /api/roadmaps/plans` and related backend APIs |
+
+If an old model still predicts the legacy label, EVA replies that chat progress is not supported and directs the user to the Roadmap tab (`handlers/unsupported_chat_intents.py`).
 
 ---
 

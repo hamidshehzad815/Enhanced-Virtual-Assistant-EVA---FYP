@@ -6,6 +6,12 @@
 
 const DEFAULT_DURATION_MINUTES = 120;
 
+const LEARNING_TASK_EDIT_BLOCKED_MESSAGE =
+  "Learning sessions cannot be edited from Tasks or Calendar. "
+  + "Open the roadmap to reschedule, complete, or skip.";
+
+const isLearningTask = (task) => Boolean(task?.learning_plan_id);
+
 const isStoredComplete = (status) => {
   const normalized = String(status || "").trim().toLowerCase();
   return normalized === "complete" || normalized === "completed";
@@ -77,6 +83,10 @@ const serializeTaskForApi = (
   const learningGoalId = task.learning_plan_id
     ? String(task.learning_plan_id)
     : null;
+  const learningSessionId = task.learning_topic_id
+    ? String(task.learning_topic_id)
+    : null;
+  const isLearning = Boolean(learningGoalId);
 
   const payload = {
     id: task._id != null ? String(task._id) : String(task.id || ""),
@@ -88,8 +98,10 @@ const serializeTaskForApi = (
     priority: task.priority || "medium",
     status: normalizeStoredStatus(task.status),
     display_status: computeTaskDisplayStatus(task, now),
-    is_learning_task: Boolean(learningGoalId),
+    is_learning_task: isLearning,
     learning_goal_id: learningGoalId,
+    learning_session_id: learningSessionId,
+    editable: !isLearning,
   };
 
   if (task.completed_at) {
@@ -109,6 +121,8 @@ const enrichTaskForApi = (task, now = new Date(), timezone = "UTC") =>
 
 module.exports = {
   DEFAULT_DURATION_MINUTES,
+  LEARNING_TASK_EDIT_BLOCKED_MESSAGE,
+  isLearningTask,
   isStoredComplete,
   normalizeStoredStatus,
   computeTaskDisplayStatus,

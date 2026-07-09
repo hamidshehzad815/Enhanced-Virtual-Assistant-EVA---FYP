@@ -191,7 +191,10 @@ STEP 3.4 — MODEL 2 — Intent Classifier
   Input: processed text (only if Model 1 → command)
   → scheduling_add | scheduling_delete | scheduling_update
     scheduling_show | learning_create | learning_update
-    learning_delete | learning_show | behavioral
+    learning_delete | behavioral
+
+  NOT SUPPORTED IN CHAT: show learning progress (use Roadmap app / GET /api/roadmaps/*)
+  Legacy clf2 label learning_show → rejected in unsupported_chat_intents.py
 
 
 ================================================================

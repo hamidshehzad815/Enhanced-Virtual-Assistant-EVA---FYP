@@ -384,15 +384,31 @@ const dispatch_push = async (userId, notification, userDoc, extraPushData = {}) 
         return;
       }
       const code = String(result.error?.code || "");
+      logger.warn("Push token rejected by FCM", {
+        user_id: String(userId),
+        notification_id: String(notification?._id || ""),
+        error_code: code,
+        error_message: String(result.error?.message || ""),
+      });
       if (
         code.includes("registration-token-not-registered")
         || code.includes("invalid-registration-token")
+        || code.includes("mismatched-credential")
       ) {
         invalidTokens.push(tokens[index]);
       }
     });
 
     await removeInvalidPushTokens(userId, invalidTokens);
+
+    if (response.successCount > 0) {
+      logger.info("Push dispatched", {
+        user_id: String(userId),
+        notification_id: String(notification._id),
+        success_count: response.successCount,
+        failure_count: response.failureCount,
+      });
+    }
 
     return {
       dispatched: response.successCount > 0,

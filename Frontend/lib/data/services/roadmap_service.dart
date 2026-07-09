@@ -99,4 +99,16 @@ class RoadmapService {
       throw Exception(error['message'] ?? 'Failed to update goal status');
     }
   }
+
+  Future<Map<String, dynamic>> getScheduleDates(String token, String goalId, {int horizonWeeks = 12}) async {
+  final response = await http.get(
+    Uri.parse('${AppConstants.baseUrl}/roadmaps/$goalId/schedule-dates?horizon_weeks=$horizonWeeks'),
+    headers: {'Authorization': 'Bearer $token'},
+  );
+  if (response.statusCode == 200) {
+    return jsonDecode(response.body)['data'];
+  } else {
+    throw Exception('Failed to fetch schedule dates');
+  }
+}
 }

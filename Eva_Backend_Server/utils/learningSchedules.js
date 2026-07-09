@@ -365,6 +365,41 @@ const listSchedulesFromSettings = (settings) => {
   return getSchedulesFromSettingsDoc(settings);
 };
 
+/**
+ * Slot list for schedule building — mirrors AI resolve_learning_slots().
+ * Prefer the goal's learning_schedule_id, then a single saved schedule, then legacy flat slots.
+ */
+const resolveLearningSlotsForGoal = (settings, goal = null) => {
+  const schedules = listSchedulesFromSettings(settings || {});
+
+  if (goal) {
+    const scheduleId = String(goal.learning_schedule_id || "").trim();
+    if (scheduleId) {
+      const index = findScheduleIndex(schedules, scheduleId);
+      if (index >= 0) {
+        return Array.isArray(schedules[index].slots) ? schedules[index].slots : [];
+      }
+    }
+  }
+
+  if (schedules.length === 1) {
+    return Array.isArray(schedules[0].slots) ? schedules[0].slots : [];
+  }
+
+  const legacy = settings?.preferred_learning_schedule;
+  if (Array.isArray(legacy) && legacy.length > 0) {
+    try {
+      return normalizeScheduleSlots(legacy, "preferred_learning_schedule", {
+        legacyDefaultDuration: LEGACY_SLOT_DURATION_MINUTES,
+      });
+    } catch {
+      return [];
+    }
+  }
+
+  return [];
+};
+
 module.exports = {
   MIN_DURATION,
   MAX_DURATION,
@@ -376,6 +411,7 @@ module.exports = {
   normalizeSingleLearningSchedule,
   getSchedulesFromSettingsDoc,
   listSchedulesFromSettings,
+  resolveLearningSlotsForGoal,
   findScheduleIndex,
   findCrossScheduleSlotConflicts,
   assertNoDuplicateSlotsAcrossSchedules,

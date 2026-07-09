@@ -246,10 +246,19 @@ class DetectLearningSubIntentTests(unittest.TestCase):
     def test_pause_keywords(self):
         self.assertEqual(lu.detect_learning_sub_intent("pause my Python"), "pause")
         self.assertEqual(lu.detect_learning_sub_intent("put my plan on hold"), "pause")
+        self.assertEqual(lu.detect_learning_sub_intent("hold my python roadmap"), "pause")
+        self.assertEqual(lu.detect_learning_sub_intent("freeze my javascript plan"), "pause")
+        self.assertEqual(lu.detect_learning_sub_intent("halt kotlin for now"), "pause")
+        self.assertEqual(lu.detect_learning_sub_intent("take a break from python"), "pause")
+        self.assertEqual(lu.detect_learning_sub_intent("stop my python learning for now"), "pause")
 
     def test_resume_keywords(self):
         self.assertEqual(lu.detect_learning_sub_intent("resume Python basics"), "resume")
         self.assertEqual(lu.detect_learning_sub_intent("continue my javascript plan"), "resume")
+        self.assertEqual(lu.detect_learning_sub_intent("unpause my go roadmap"), "resume")
+        self.assertEqual(lu.detect_learning_sub_intent("pick up python again"), "resume")
+        self.assertEqual(lu.detect_learning_sub_intent("get back to javascript"), "resume")
+        self.assertEqual(lu.detect_learning_sub_intent("restart my rust plan"), "resume")
 
     def test_complete_keywords(self):
         self.assertEqual(
@@ -269,6 +278,9 @@ class DetectLearningSubIntentTests(unittest.TestCase):
             "complete",
         )
         self.assertEqual(lu.detect_learning_sub_intent("I finished today's session"), "complete")
+        self.assertEqual(lu.detect_learning_sub_intent("complete my python session"), "complete")
+        self.assertEqual(lu.detect_learning_sub_intent("i did today's session"), "complete")
+        self.assertEqual(lu.detect_learning_sub_intent("session done"), "complete")
         self.assertEqual(
             lu.detect_learning_sub_intent("mark today's python session as done"),
             "complete",
@@ -287,6 +299,10 @@ class DetectLearningSubIntentTests(unittest.TestCase):
     def test_skip_keywords(self):
         self.assertEqual(lu.detect_learning_sub_intent("skip today's topic"), "skip")
         self.assertEqual(lu.detect_learning_sub_intent("bypass this session"), "skip")
+        self.assertEqual(lu.detect_learning_sub_intent("pass on next topic"), "skip")
+        self.assertEqual(lu.detect_learning_sub_intent("jump past this lesson"), "skip")
+        self.assertEqual(lu.detect_learning_sub_intent("move past this topic"), "skip")
+        self.assertEqual(lu.detect_learning_sub_intent("already know this module"), "skip")
 
     def test_reschedule_keywords(self):
         self.assertEqual(
@@ -295,6 +311,22 @@ class DetectLearningSubIntentTests(unittest.TestCase):
         )
         self.assertEqual(
             lu.detect_learning_sub_intent("move my session to Friday"),
+            "reschedule",
+        )
+        self.assertEqual(
+            lu.detect_learning_sub_intent("postpone python to next week"),
+            "reschedule",
+        )
+        self.assertEqual(
+            lu.detect_learning_sub_intent("push my session to Tuesday"),
+            "reschedule",
+        )
+        self.assertEqual(
+            lu.detect_learning_sub_intent("shift python to next monday"),
+            "reschedule",
+        )
+        self.assertEqual(
+            lu.detect_learning_sub_intent("change my session date to friday"),
             "reschedule",
         )
 
@@ -427,6 +459,31 @@ class ComputeSessionStateTests(unittest.TestCase):
             previous_resolved_at=datetime(2026, 6, 4, 19, 0),
         )
         self.assertEqual(state, "unlocked_future")
+
+
+class NextRebaseStartDateTests(unittest.TestCase):
+    def test_uses_same_day_when_slot_still_upcoming(self):
+        # Saturday 01:27, slot Saturday 01:50
+        now = datetime(2026, 6, 27, 1, 27, 0)
+        schedule = [
+            {"day": 5, "time": "01:50", "duration_minutes": 15},
+            {"day": 0, "time": "08:00", "duration_minutes": 60},
+        ]
+        self.assertEqual(lu.next_rebase_start_date(now, schedule), date(2026, 6, 27))
+
+    def test_skips_same_day_when_slot_already_passed(self):
+        # Saturday 01:55, slot Saturday 01:50 -> next Monday
+        now = datetime(2026, 6, 27, 1, 55, 0)
+        schedule = [
+            {"day": 5, "time": "01:50", "duration_minutes": 15},
+            {"day": 0, "time": "08:00", "duration_minutes": 60},
+        ]
+        self.assertEqual(lu.next_rebase_start_date(now, schedule), date(2026, 6, 29))
+
+    def test_uses_today_when_slot_is_later_same_day(self):
+        now = datetime(2026, 6, 27, 1, 10, 0)
+        schedule = [{"day": 5, "time": "01:15", "duration_minutes": 60}]
+        self.assertEqual(lu.next_rebase_start_date(now, schedule), date(2026, 6, 27))
 
 
 class ResolveLearningReminderMinutesTests(unittest.TestCase):

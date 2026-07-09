@@ -359,4 +359,3 @@ If token is registered, backend team can call `dispatch_push` from Node REPL —
 ## 14. Related docs
 
 - [settings-api.md](./settings-api.md) — `push_token`, toggles, PATCH fields
-- [BACKEND_API_DOCUMENTATION.md](../Eva_Backend_Server/BACKEND_API_DOCUMENTATION.md) — full backend reference (section 4.7 Settings, notifications)

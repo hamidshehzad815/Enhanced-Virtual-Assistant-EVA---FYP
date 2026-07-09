@@ -43,7 +43,9 @@ Returns **all non-deleted tasks owned by the user**, sorted by `due_datetime`. U
         "status": "pending",
         "display_status": "pending",
         "is_learning_task": false,
-        "learning_goal_id": null
+        "learning_goal_id": null,
+        "learning_session_id": null,
+        "editable": true
       }
     ]
   }
@@ -85,7 +87,9 @@ Fetch a single task owned by the user.
       "status": "pending",
       "display_status": "pending",
       "is_learning_task": false,
-      "learning_goal_id": null
+      "learning_goal_id": null,
+      "learning_session_id": null,
+      "editable": true
     }
   }
 }
@@ -110,6 +114,8 @@ Fetch a single task owned by the user.
 | **Body** | JSON — at least one field required |
 
 Update task fields from calendar or task detail UI.
+
+**Learning sessions** (`is_learning_task: true`) are **read-only** here — use roadmap session APIs instead.
 
 ### Body fields (all optional, min 1 required)
 
@@ -141,8 +147,9 @@ Update task fields from calendar or task detail UI.
 |------|------|
 | `400` | Invalid id, empty body, or validation failure |
 | `404` | Task not found |
+| `409` | Task is a learning session (`is_learning_task: true`) — edit via roadmap |
 
-> **Note:** For status-only updates from the tasks list, `PATCH /api/tasks/:id/status` with `{ "status": "complete" }` still works.
+> **Note:** For status-only updates from the tasks list, `PATCH /api/tasks/:id/status` with `{ "status": "complete" }` still works for **normal tasks only**. Learning sessions return `409`.
 
 ---
 
@@ -175,6 +182,7 @@ Soft-deletes the task (`is_deleted: true`).
 |------|------|
 | `400` | Invalid task id |
 | `404` | Task not found |
+| `409` | Task is a learning session — delete via roadmap / cancel plan |
 
 ---
 
@@ -192,7 +200,9 @@ Soft-deletes the task (`is_deleted: true`).
 | `display_status` | `"pending" \| "ongoing" \| "overdue" \| "complete"` | **Use for UI badges** |
 | `completed_at` | `string \| null` | When marked complete |
 | `is_learning_task` | `boolean` | |
-| `learning_goal_id` | `string \| null` | |
+| `learning_goal_id` | `string \| null` | Roadmap plan id when `is_learning_task` |
+| `learning_session_id` | `string \| null` | Roadmap session id (`roadmap_topics._id`) when `is_learning_task` |
+| `editable` | `boolean` | `false` for learning sessions; calendar/tasks UI must not PATCH/DELETE |
 
 ---
 
@@ -200,9 +210,10 @@ Soft-deletes the task (`is_deleted: true`).
 
 1. `GET /api/tasks/calendar` — load all tasks
 2. Group `tasks[]` by local date from `due_datetime` on the client
-3. Tap task → `GET /api/tasks/:id` for detail
-4. Edit → `PATCH /api/tasks/:id`
-5. Delete → `DELETE /api/tasks/:id`
+3. Tap task:
+   - **`editable: false`** → open roadmap session (`GET /api/learning/:goalId/sessions/:sessionId`); do not show task edit form
+   - **`editable: true`** → `GET /api/tasks/:id` for detail; `PATCH` / `DELETE` as usual
+4. Use `display_status` for normal task badges; use roadmap `session_state` for learning sessions
 
 ---
 
