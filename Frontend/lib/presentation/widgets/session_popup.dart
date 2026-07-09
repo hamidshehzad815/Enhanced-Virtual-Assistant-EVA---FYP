@@ -60,12 +60,6 @@ class _SessionPopupState extends State<SessionPopup> {
     super.dispose();
   }
 
-<<<<<<< HEAD
-  // bool get _isActive {
-  //   return _session.sessionState == 'ongoing' ||
-  //       _session.sessionState == 'overdue';
-  // }
-=======
   Future<void> _refreshSession() async {
     try {
       final updated = await widget.fetchLatestSession(_session.id);
@@ -78,7 +72,6 @@ class _SessionPopupState extends State<SessionPopup> {
       // ignore
     }
   }
->>>>>>> main
 
   bool get _canAct {
     return _session.isCurrent &&
