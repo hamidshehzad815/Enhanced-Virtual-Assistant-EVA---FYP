@@ -3,7 +3,7 @@
  */
 
 const mongoose = require("mongoose");
-const { LearningGoal, RoadmapTopic } = require("../models");
+const { LearningGoal, RoadmapTopic, UserSetting } = require("../models");
 const { BadRequestError, NotFoundError } = require("../middleware/errorHandler");
 const {
   subjectToDisplay,
@@ -15,11 +15,12 @@ const {
   serializeDateOnlyForApi,
   withApiTimezone,
 } = require("../utils/apiDateTime");
+const { buildPlanScheduleDates, MAX_HORIZON_WEEKS } = require("../utils/planScheduleDates");
 
 const GOAL_STATUSES = new Set(["active", "paused", "completed", "cancelled"]);
 
 const GOAL_LIST_PROJECTION =
-  "title subject roadmap_key status start_date end_date total_topics completed_topics created_at updated_at";
+  "title subject roadmap_key status start_date end_date total_topics completed_topics created_at updated_at learning_schedule_id";
 
 const TOPIC_LIST_PROJECTION =
   "goal_id order title status scheduled_date estimated_duration completed_at updated_at resources";
@@ -326,6 +327,64 @@ const listUserRoadmapPlans = async (userId, timezone = "UTC", filters = {}) => {
 };
 
 /**
+ * Reschedule-eligible calendar dates for a plan (learning-schedule weekdays only).
+ */
+const getPlanScheduleDatesForGoal = async (
+  userId,
+  goalIdInput,
+  timezone = "UTC",
+  options = {},
+) => {
+  const goalId = String(goalIdInput || "").trim();
+  if (!mongoose.Types.ObjectId.isValid(goalId)) {
+    throw new BadRequestError("Invalid goal id");
+  }
+
+  const goal = await LearningGoal.findOne({
+    _id: goalId,
+    user_id: userId,
+    is_deleted: false,
+  })
+    .select(`${GOAL_LIST_PROJECTION} duration_days`)
+    .lean();
+
+  if (!goal) {
+    throw new NotFoundError("Learning goal not found");
+  }
+
+  if (String(goal.status || "").toLowerCase() !== "active") {
+    throw new BadRequestError(
+      "Schedule dates are only available for active learning plans.",
+    );
+  }
+
+  const settings = await UserSetting.findOne({ user_id: userId }).lean();
+  if (!settings) {
+    throw new NotFoundError("User settings not found");
+  }
+
+  let horizonWeeks = Number(options.horizonWeeks);
+  if (options.horizonWeeks !== undefined && options.horizonWeeks !== null) {
+    if (!Number.isFinite(horizonWeeks) || horizonWeeks < 1) {
+      throw new BadRequestError("horizon_weeks must be a positive integer");
+    }
+    if (horizonWeeks > MAX_HORIZON_WEEKS) {
+      throw new BadRequestError(
+        `horizon_weeks cannot exceed ${MAX_HORIZON_WEEKS}`,
+      );
+    }
+  } else {
+    horizonWeeks = undefined;
+  }
+
+  const payload = buildPlanScheduleDates(goal, settings, timezone, {
+    horizonWeeks,
+  });
+
+  return withApiTimezone(payload, timezone);
+};
+
+/**
  * Refresh payload after session/plan mutations (roadmap + optional session slice).
  */
 const buildRoadmapMutationPayload = async (
@@ -394,6 +453,7 @@ module.exports = {
   GOAL_STATUSES,
   listUserRoadmapPlans,
   getUserRoadmapForGoalId,
+  getPlanScheduleDatesForGoal,
   buildRoadmapMutationPayload,
   buildSessionDetailPayload,
   serializeRoadmap,

@@ -276,7 +276,7 @@ class TestPhase7Pipeline(unittest.IsolatedAsyncioTestCase):
             learning_ner_extractor,
         )
         self.assertIs(
-            get_ner_extractor_for_intent("learning_show"),
+            get_ner_extractor_for_intent("learning_delete"),
             learning_ner_extractor,
         )
         self.assertIs(get_ner_extractor_for_intent("scheduling_add"), ner_extractor)

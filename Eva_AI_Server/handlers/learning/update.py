@@ -48,6 +48,7 @@ from utils.google_calendar_sync import resolve_google_calendar_sync
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
 from utils.learning_schedules import resolve_learning_slots
+from utils.task_notifications import build_task_rescheduled_notification
 from utils.quiet_hours import (
     find_quiet_hour_matches_for_datetime,
     format_quiet_hours_learning_block_message,
@@ -58,6 +59,7 @@ from utils.learning_utils import (
     compute_session_state,
     detect_learning_sub_intent,
     level_keys_for_language,
+    next_rebase_start_date,
     normalize_subtopic_entity,
     normalize_topic,
     resolve_subtopic_mapping,
@@ -407,9 +409,12 @@ async def _update_task_and_calendar(
     due_dt: datetime,
     timezone_name: str,
     google_integration: Optional[Dict[str, Any]],
+    duration_minutes: Optional[int] = None,
 ) -> None:
-    # Update task
-    await update_task(task_id, {"due_datetime": due_dt})
+    task_update: Dict[str, Any] = {"due_datetime": due_dt}
+    if duration_minutes is not None:
+        task_update["duration"] = int(duration_minutes)
+    await update_task(task_id, task_update)
 
     if not google_integration:
         return
@@ -430,7 +435,9 @@ async def _update_task_and_calendar(
             {
                 "due_datetime": due_dt,
                 "title": (task_doc or {}).get("title") or "Learning session",
-                "duration_minutes": (task_doc or {}).get("duration") or 90,
+                "duration_minutes": duration_minutes
+                if duration_minutes is not None
+                else (task_doc or {}).get("duration") or 90,
                 "timezone": timezone_name,
             },
         )
@@ -480,8 +487,13 @@ async def _rebuild_pending_schedule(
     last_dt: Optional[datetime] = None
     for topic, scheduled in zip(pending_topics, schedule_rows):
         due_dt = scheduled["scheduled_date"]
+        duration = int(scheduled.get("duration_minutes") or 90)
         last_dt = due_dt
-        await rt_reschedule_topic(str(topic.get("_id")), due_dt)
+        await rt_reschedule_topic(
+            str(topic.get("_id")),
+            due_dt,
+            estimated_duration_minutes=duration,
+        )
         task_id = str(topic.get("task_id") or "").strip()
         if task_id:
             await _update_task_and_calendar(
@@ -490,6 +502,7 @@ async def _rebuild_pending_schedule(
                 due_dt=due_dt,
                 timezone_name=timezone_name,
                 google_integration=google_integration,
+                duration_minutes=duration,
             )
 
     return last_dt
@@ -652,7 +665,7 @@ async def reschedule_session_for_api(
             "message": "That date is in the past. Pick today or a future learning day.",
         }
 
-    slot_time, _dur = _schedule_slot_for_day(learning_slots, new_d.weekday())
+    slot_time, slot_dur = _schedule_slot_for_day(learning_slots, new_d.weekday())
     new_dt = local_datetime_to_utc_naive(
         new_d.isoformat(),
         slot_time.strftime("%H:%M:%S"),
@@ -664,11 +677,7 @@ async def reschedule_session_for_api(
             "message": "Could not resolve scheduled_date in your timezone.",
         }
 
-    session_dur = int(
-        current.get("estimated_duration")
-        or current.get("duration")
-        or 90,
-    )
+    session_dur = slot_dur
     quiet_matches = find_quiet_hour_matches_for_datetime(
         settings,
         new_dt,
@@ -715,7 +724,11 @@ async def reschedule_session_for_api(
     linked_task_id = str(current.get("task_id") or "").strip()
 
     if next_dt is None or new_dt < next_dt:
-        ok = await rt_reschedule_topic(str(current.get("_id")), new_dt)
+        ok = await rt_reschedule_topic(
+            str(current.get("_id")),
+            new_dt,
+            estimated_duration_minutes=slot_dur,
+        )
         if not ok:
             return {
                 "status": "error",
@@ -728,6 +741,7 @@ async def reschedule_session_for_api(
                 due_dt=new_dt,
                 timezone_name=timezone_name,
                 google_integration=google,
+                duration_minutes=slot_dur,
             )
         return {
             "status": "success",
@@ -775,9 +789,8 @@ async def _resume_plan_with_rebase(
     goal = await get_goal_by_id(goal_id)
     slots = resolve_learning_slots(settings, goal=goal)
     google = await resolve_google_calendar_sync(user_id, integrations, settings)
-    days = _learning_days(slots)
-    today = datetime.now(get_zoneinfo(timezone_name)).date()
-    start_from = _next_learning_date(today + timedelta(days=1), days) if days else today + timedelta(days=1)
+    now_local = datetime.now(get_zoneinfo(timezone_name))
+    start_from = next_rebase_start_date(now_local, slots)
     pending_topics = await get_all_pending_sessions(goal_id)
     last_dt = await _rebuild_pending_schedule(
         user_id=user_id,
@@ -1014,7 +1027,7 @@ async def _execute_session_sub_intent(
                 sub_intent=sub_intent,
             )
 
-        slot_time, _dur = _schedule_slot_for_day(learning_slots, new_d.weekday())
+        slot_time, slot_dur = _schedule_slot_for_day(learning_slots, new_d.weekday())
         new_dt = local_datetime_to_utc_naive(
             new_d.isoformat(),
             slot_time.strftime("%H:%M:%S"),
@@ -1027,11 +1040,7 @@ async def _execute_session_sub_intent(
                 sub_intent=sub_intent,
             )
 
-        session_dur = int(
-            current.get("estimated_duration")
-            or current.get("duration")
-            or 90,
-        )
+        session_dur = slot_dur
         quiet_matches = find_quiet_hour_matches_for_datetime(
             settings,
             new_dt,
@@ -1076,7 +1085,11 @@ async def _execute_session_sub_intent(
         google = await resolve_google_calendar_sync(user_id, integrations, settings)
 
         if next_dt is None or new_dt < next_dt:
-            ok = await rt_reschedule_topic(str(current.get("_id")), new_dt)
+            ok = await rt_reschedule_topic(
+                str(current.get("_id")),
+                new_dt,
+                estimated_duration_minutes=slot_dur,
+            )
             if not ok:
                 return await finish(
                     "I couldn't move that session right now. Please try again.",
@@ -1091,11 +1104,27 @@ async def _execute_session_sub_intent(
                     due_dt=new_dt,
                     timezone_name=tz,
                     google_integration=google,
+                    duration_minutes=slot_dur,
                 )
             msg = "Done — I moved just your next session."
             if user_name:
                 msg = f"{msg} All set, {user_name}."
-            return await finish(msg, status="success", sub_intent="reschedule")
+            return await finish(
+                msg,
+                status="success",
+                sub_intent="reschedule",
+                notifications=[
+                    build_task_rescheduled_notification(
+                        user_id=str(user_id),
+                        user_name=user_name,
+                        task_title=str(current.get("title") or "Learning session"),
+                        due_datetime=new_dt,
+                        timezone_name=tz,
+                        reference_type="topic",
+                        reference_id=str(current.get("_id")),
+                    )
+                ],
+            )
 
         pending_all = [current] + later
         last_dt = await _rebuild_pending_schedule(
@@ -1112,7 +1141,22 @@ async def _execute_session_sub_intent(
         msg = "Done — I moved your next session and rebased the remaining sessions after it."
         if user_name:
             msg = f"{msg} You're all set, {user_name}."
-        return await finish(msg, status="success", sub_intent="reschedule")
+        return await finish(
+            msg,
+            status="success",
+            sub_intent="reschedule",
+            notifications=[
+                build_task_rescheduled_notification(
+                    user_id=str(user_id),
+                    user_name=user_name,
+                    task_title=str(current.get("title") or "Learning session"),
+                    due_datetime=new_dt,
+                    timezone_name=tz,
+                    reference_type="topic",
+                    reference_id=str(current.get("_id")),
+                )
+            ],
+        )
 
     return await finish("Ok.", status="ok", sub_intent=sub_intent)
 

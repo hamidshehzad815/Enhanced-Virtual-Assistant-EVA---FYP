@@ -81,7 +81,7 @@ def extract_learning_entities_fallback(text: str, intent_hint: str = "") -> Dict
     if subtopic:
         entities["subtopic"] = subtopic
 
-    if intent_hint in {"learning_create", "learning_update", "learning_delete", "learning_show"}:
+    if intent_hint in {"learning_create", "learning_update", "learning_delete"}:
         start_match = _START_DATE_PATTERN.search(text)
         if start_match:
             entities["start_date"] = _compact(start_match.group(1))

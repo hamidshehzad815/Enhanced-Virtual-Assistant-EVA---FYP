@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../../core/constants/api_constants.dart';
 import '../models/user_model.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthService {
   /// Login API
@@ -68,6 +69,8 @@ class AuthService {
     }
   }
 
+  //logout user
+
   static Future<Map<String, dynamic>> logoutUser(String token) async {
     final url = Uri.parse("${AppConstants.baseUrl}/auth/logout");
 
@@ -80,6 +83,69 @@ class AuthService {
         return {"success": true, "msg": "Logged out successfully"};
       }
       return {"success": false, "msg": "Logout failed"};
+    } catch (e) {
+      return {"success": false, "msg": "Server not reachable: $e"};
+    }
+  }
+
+  // Google Sign-In API
+  static Future<Map<String, dynamic>> signInWithGoogle({
+    String? timezone,
+  }) async {
+    final url = Uri.parse("${AppConstants.baseUrl}/auth/google");
+
+    const googleWebClientId = String.fromEnvironment('GOOGLE_WEB_CLIENT_ID');
+    if (googleWebClientId.isEmpty) {
+      return {
+        "success": false,
+        "msg":
+            "Google Sign-In is not configured. Set GOOGLE_WEB_CLIENT_ID via --dart-define.",
+      };
+    }
+
+    try {
+      await GoogleSignIn.instance.initialize(
+        serverClientId: googleWebClientId,
+      );
+      final GoogleSignInAccount? googleUser = await GoogleSignIn.instance
+          .authenticate(scopeHint: ['email', 'profile']);
+
+      if (googleUser == null) {
+        return {"success": false, "msg": "Sign-in cancelled by user"};
+      }
+
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+      final String? idToken = googleAuth.idToken;
+
+      if (idToken == null) {
+        return {"success": false, "msg": "Failed to obtain ID token"};
+      }
+
+      final response = await http
+          .post(
+            url,
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode({
+              "id_token": idToken,
+              if (timezone != null) "timezone": timezone,
+            }),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        return {
+          "success": true,
+          "data": data['data'],
+          "isNewUser": data['data']?['is_new_user'] ?? false,
+        };
+      }
+      return {
+        "success": false,
+        "msg": data['message'] ?? data['msg'] ?? "Google sign-in failed",
+      };
     } catch (e) {
       return {"success": false, "msg": "Server not reachable: $e"};
     }

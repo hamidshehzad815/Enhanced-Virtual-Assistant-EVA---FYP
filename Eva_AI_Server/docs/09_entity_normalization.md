@@ -34,10 +34,11 @@ _INTENT_ENTITY_SCOPE = {
     "learning_update":   {"topic", "subtopic", "date", "new_date", "new_duration",
                           "next_topic", "new_start_date"},
     "learning_delete":   {"topic", "subtopic", "date", "start_date"},
-    "learning_show":     {"topic", "subtopic", "date", "status", "start_date"},
     "behavioral":        {"day"},
 }
 ```
+
+**Not supported:** showing learning progress via chat (no `learning_show` intent). Use the app **Roadmap** APIs/screens instead.
 
 Any entity key not in the allowed set for the given intent is **silently dropped**.
 

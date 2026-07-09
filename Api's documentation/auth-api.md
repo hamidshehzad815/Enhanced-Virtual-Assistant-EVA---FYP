@@ -13,6 +13,7 @@ See [README.md](./README.md) for base URL, error envelopes, and rate limits.
 |--------|------|------|---------|
 | `POST` | `/api/auth/register` | No | Create account + send verification email |
 | `POST` | `/api/auth/login` | No | Email/password login → JWT tokens |
+| `POST` | `/api/auth/google` | No | Google ID token login/sign-up → JWT tokens — see [google-auth-api.md](./google-auth-api.md) |
 | `POST` | `/api/auth/refresh` | No | Rotate refresh token; get new access token |
 | `POST` | `/api/auth/logout` | **Yes** | Invalidate refresh token on server |
 | `GET` | `/api/auth/me` | **Yes** | Current user + key settings (bootstrap) |
@@ -241,6 +242,40 @@ Email is matched case-insensitively.
 | `401` | `Account is deactivated` |
 | `401` | `Please verify your email before logging in` |
 | `401` | `Please login with Google` (Google-only account, no local password) |
+
+---
+
+## `POST /api/auth/google`
+
+Google Sign-In / sign-up with a Google **ID token** from the client.
+
+**Full reference:** [google-auth-api.md](./google-auth-api.md) (flow, examples, frontend notes, env vars).
+
+| | |
+|---|---|
+| **Auth** | No |
+| **Content-Type** | `application/json` |
+
+### Request body
+
+| Field | Type | Required |
+|-------|------|----------|
+| `id_token` | `string` | Yes |
+| `timezone` | `string` | No (new users; default `Asia/Karachi`) |
+
+### Success
+
+- **`200`** — existing Google user login  
+- **`201`** — new Google user; `data.is_new_user: true`  
+- Same `data.user` + `data.tokens` envelope as login
+
+### Errors (typical)
+
+| Status | Message |
+|--------|---------|
+| `400` | `id_token is required` |
+| `401` | `Invalid Google sign-in token` |
+| `409` | Email registered with password — use email login |
 
 ---
 
@@ -542,7 +577,7 @@ The reset **email** link is built with `RESET_PASSWORD_URL` or defaults to
 |------|----------|-----|
 | Full profile + edit | `GET` / `PATCH /api/profile` | [profile-api.md](./profile-api.md) |
 | Theme / notifications / push token | `GET` / `PATCH /api/settings` | [settings-api.md](./settings-api.md) |
-| Google sign-in | Integrations (separate flow) | `Eva_Backend_Server/BACKEND_API_DOCUMENTATION.md` |
+| Google sign-in | Integrations (separate flow) | [google-auth-api.md](./google-auth-api.md) |
 
 ---
 

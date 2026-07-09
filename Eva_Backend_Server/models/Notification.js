@@ -22,6 +22,7 @@ const notificationSchema = new mongoose.Schema(
       type: String,
       enum: [
         "task_scheduled",
+        "task_rescheduled",
         "task_deleted",
         "task_reminder",
         "topic_reminder",

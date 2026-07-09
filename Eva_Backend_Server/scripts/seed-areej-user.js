@@ -11,7 +11,7 @@ require("dotenv").config({ path: path.join(__dirname, "..", ".env") });
 const { connectDB, disconnectDB } = require("../config/db");
 const { User, UserSetting, Task } = require("../models");
 
-const SEED_EMAIL = "areejFatima@gmail.com";
+const SEED_EMAIL = "areejfatima2954@gmail.com";
 const SEED_PASSWORD = "areejFatima@1234";
 const SEED_NAME = "Areej Fatima";
 const SEED_USERNAME = "areej_fatima";

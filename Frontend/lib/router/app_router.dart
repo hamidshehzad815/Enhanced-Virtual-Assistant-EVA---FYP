@@ -84,15 +84,14 @@ final appRouter = GoRouter(
         child: EditProfileScreen(viewModel: context.read<ProfileViewModel>()),
       ),
     ),
-GoRoute(
-  name: 'roadmap-detail', 
-  path: '/roadmap-detail/:goalId',
-  pageBuilder: (context, state) {
-    final goalId = state.pathParameters['goalId']!;
-    return MaterialPage(child: RoadmapSessionScreen(goalId: goalId));
-  },
-),
-
+    GoRoute(
+      name: 'roadmap-detail',
+      path: '/roadmap-detail/:goalId',
+      pageBuilder: (context, state) {
+        final goalId = state.pathParameters['goalId']!;
+        return MaterialPage(child: RoadmapSessionScreen(goalId: goalId));
+      },
+    ),
 
     // ── Main shell (shows bottom nav bar) ─────────────────────────────────────
     ShellRoute(

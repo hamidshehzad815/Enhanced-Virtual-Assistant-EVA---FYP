@@ -37,10 +37,13 @@ jest.mock("../models", () => ({
     find: jest.fn(),
     aggregate: jest.fn(),
   },
+  UserSetting: {
+    findOne: jest.fn(),
+  },
 }));
 
 const app = require("../app");
-const { User, LearningGoal, RoadmapTopic } = require("../models");
+const { User, LearningGoal, RoadmapTopic, UserSetting } = require("../models");
 
 const USER_ID = "507f1f77bcf86cd799439011";
 
@@ -56,6 +59,7 @@ const pythonGoal = {
   subject: "python",
   roadmap_key: "basics",
   status: "active",
+  learning_schedule_id: "sched-evening",
   start_date: new Date("2026-06-01"),
   end_date: new Date("2026-07-01"),
   duration_days: 30,
@@ -223,6 +227,63 @@ describe("User roadmaps API", () => {
     );
     expect(roadmap.sessions).toHaveLength(2);
     expect(roadmap.sessions[1].is_current).toBe(true);
+  });
+
+  test("GET /api/roadmaps/:goalId/schedule-dates returns learning weekdays only", async () => {
+    jest.useFakeTimers();
+    jest.setSystemTime(new Date("2026-06-27T10:00:00.000Z"));
+
+    const goalId = String(pythonGoal._id);
+
+    LearningGoal.findOne.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(pythonGoal),
+    });
+
+    UserSetting.findOne.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        preferred_learning_schedules: [
+          {
+            id: "sched-evening",
+            label: "Evening",
+            slots: [
+              { day: 0, time: "18:00", duration_minutes: 90 },
+              { day: 4, time: "18:00", duration_minutes: 90 },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const response = await request(app)
+      .get(`/api/roadmaps/${goalId}/schedule-dates`)
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(response.status).toBe(200);
+    expect(response.body.data.weekdays).toHaveLength(2);
+    expect(response.body.data.dates.length).toBeGreaterThan(0);
+    response.body.data.dates.forEach((row) => {
+      expect([0, 4]).toContain(row.day);
+    });
+
+    jest.useRealTimers();
+  });
+
+  test("GET /api/roadmaps/:goalId/schedule-dates rejects paused plan", async () => {
+    const goalId = String(pythonGoal._id);
+    const pausedGoal = { ...pythonGoal, status: "paused" };
+
+    LearningGoal.findOne.mockReturnValue({
+      select: jest.fn().mockReturnThis(),
+      lean: jest.fn().mockResolvedValue(pausedGoal),
+    });
+
+    const response = await request(app)
+      .get(`/api/roadmaps/${goalId}/schedule-dates`)
+      .set("Authorization", `Bearer ${makeToken()}`);
+
+    expect(response.status).toBe(400);
+    expect(response.body.message).toMatch(/active learning plans/i);
   });
 
   test("GET /api/roadmaps/:goalId not found -> 404", async () => {

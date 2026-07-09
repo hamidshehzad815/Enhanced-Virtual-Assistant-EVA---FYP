@@ -87,6 +87,8 @@ describe("taskDisplayStatus", () => {
         display_status: "pending",
         is_learning_task: true,
         learning_goal_id: "507f1f77bcf86cd799439099",
+        learning_session_id: "507f1f77bcf86cd799439088",
+        editable: false,
       }),
     );
     expect(out).not.toHaveProperty("owner_id");

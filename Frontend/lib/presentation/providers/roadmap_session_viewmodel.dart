@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../../data/models/roadmap_model.dart';
 import '../../data/repositories/roadmap_repository.dart';
+import '../../data/models/schedule_date_model.dart';
 
 class RoadmapSessionViewmodel extends ChangeNotifier {
   final RoadmapRepository _repository;
@@ -80,5 +81,14 @@ class RoadmapSessionViewmodel extends ChangeNotifier {
   void _setLoading(bool loading) {
     _isLoading = loading;
     notifyListeners();
+  }
+
+  Future<ScheduleDatesResponse> getScheduleDates({
+    int horizonWeeks = 12,
+  }) async {
+    return await _repository.getScheduleDates(
+      goalId,
+      horizonWeeks: horizonWeeks,
+    );
   }
 }

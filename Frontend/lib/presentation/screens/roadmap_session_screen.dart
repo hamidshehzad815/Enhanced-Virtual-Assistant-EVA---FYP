@@ -42,10 +42,10 @@ class _RoadmapSessionScreenContent extends StatefulWidget {
 
   @override
   State<_RoadmapSessionScreenContent> createState() =>
-      _PlanDetailScreenContentState();
+      _RoadmapSessionScreenContentState();
 }
 
-class _PlanDetailScreenContentState
+class _RoadmapSessionScreenContentState
     extends State<_RoadmapSessionScreenContent> {
   bool _initialized = false;
 
@@ -171,7 +171,7 @@ class _PlanDetailScreenContentState
     );
   }
 
-  // ─── Status Dropdown ──────────────────────────────────────────────────
+  // ─── Status Dropdown (menu only shows actions) ──────────────────────
   Widget _buildStatusDropdown(
     RoadmapSessionViewmodel vm,
     RoadmapDetail roadmap,
@@ -180,87 +180,102 @@ class _PlanDetailScreenContentState
     final currentStatus = roadmap.status;
     final statusColor = _getStatusColor(currentStatus);
 
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: statusColor.withOpacity(0.10),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: statusColor.withOpacity(0.2)),
-      ),
-      child: DropdownButton<String>(
-        value: currentStatus,
-        underline: const SizedBox(),
-        icon: Icon(Icons.arrow_drop_down_rounded, size: 20, color: statusColor),
-        dropdownColor: isDark ? const Color(0xFF2C2C2E) : Colors.white,
-        style: TextStyle(
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-          color: statusColor,
-          letterSpacing: 0.5,
+    // Determine actions based on current status
+    final actions = <String, String>{};
+    if (currentStatus == 'active') {
+      actions['pause'] = 'Pause';
+    } else if (currentStatus == 'paused') {
+      actions['resume'] = 'Resume';
+    }
+    actions['cancel'] = 'Cancel';
+
+    return PopupMenuButton<String>(
+      offset: const Offset(0, 40),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      color: isDark ? const Color(0xFF2C2C2E) : Colors.white,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: statusColor.withOpacity(0.10),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: statusColor.withOpacity(0.2)),
         ),
-        borderRadius: BorderRadius.circular(12),
-        items: [
-          if (currentStatus == 'active') ...[
-            const DropdownMenuItem<String>(
-              value: 'active',
-              child: Text('Active'),
-            ),
-            const DropdownMenuItem<String>(
-              value: 'paused',
-              child: Text('Pause'),
-            ),
-          ],
-          if (currentStatus == 'paused') ...[
-            const DropdownMenuItem<String>(
-              value: 'paused',
-              child: Text('Paused'),
-            ),
-            const DropdownMenuItem<String>(
-              value: 'active',
-              child: Text('Resume'),
-            ),
-          ],
-          const DropdownMenuItem<String>(
-            value: 'cancel',
-            child: Text('Cancel', style: TextStyle(color: Colors.red)),
-          ),
-        ],
-        onChanged: (value) async {
-          if (value == null) return;
-          if (value == 'cancel') {
-            final confirm = await showDialog<bool>(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: const Text('Cancel Plan?'),
-                content: const Text(
-                  'Are you sure you want to cancel this learning plan? This cannot be undone.',
-                ),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, false),
-                    child: const Text('No'),
-                  ),
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, true),
-                    child: const Text(
-                      'Yes',
-                      style: TextStyle(color: Colors.red),
-                    ),
-                  ),
-                ],
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              currentStatus.toUpperCase(),
+              style: AppTextStyles.body.copyWith(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: statusColor,
+                letterSpacing: 0.5,
               ),
-            );
-            if (confirm == true) {
-              await vm.updatePlanStatus('cancelled');
-              if (context.mounted) Navigator.pop(context);
-            }
-          } else if (value == 'paused') {
-            await vm.updatePlanStatus('paused');
-          } else if (value == 'active') {
-            await vm.updatePlanStatus('active');
-          }
-        },
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.arrow_drop_down_rounded, size: 18, color: statusColor),
+          ],
+        ),
       ),
+      onSelected: (value) async {
+        if (value == 'cancel') {
+          final confirm = await showDialog<bool>(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: const Text('Cancel Plan?'),
+              content: const Text(
+                'Are you sure you want to cancel this learning plan? This cannot be undone.',
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('No'),
+                ),
+                TextButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: const Text('Yes', style: TextStyle(color: Colors.red)),
+                ),
+              ],
+            ),
+          );
+          if (confirm == true) {
+            await vm.updatePlanStatus('cancelled');
+            if (context.mounted) Navigator.pop(context);
+          }
+        } else if (value == 'pause') {
+          await vm.updatePlanStatus('paused');
+        } else if (value == 'resume') {
+          await vm.updatePlanStatus('active');
+        }
+      },
+      itemBuilder: (context) {
+        return actions.entries.map((entry) {
+          final key = entry.key;
+          final label = entry.value;
+          IconData icon;
+          Color color;
+          if (key == 'pause') {
+            icon = Icons.pause_rounded;
+            color = Colors.orange;
+          } else if (key == 'resume') {
+            icon = Icons.play_arrow_rounded;
+            color = Colors.green;
+          } else {
+            icon = Icons.delete_outline_rounded;
+            color = Colors.red;
+          }
+          return PopupMenuItem<String>(
+            value: key,
+            child: Row(
+              children: [
+                Icon(icon, size: 16, color: color),
+                const SizedBox(width: 8),
+                Text(label, style: TextStyle(color: color)),
+              ],
+            ),
+          );
+        }).toList();
+      },
     );
   }
 
@@ -309,6 +324,10 @@ class _PlanDetailScreenContentState
         return SessionPopup(
           session: session,
           isDark: isDark,
+          fetchLatestSession: (sessionId) async {
+            return await vm.getSessionDetail(sessionId);
+          },
+          fetchScheduleDates: () => vm.getScheduleDates(),
           onUpdate: (updatedSession) async {
             await vm.loadRoadmap();
           },

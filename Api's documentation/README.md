@@ -19,7 +19,7 @@ Most endpoints in this folder require a logged-in user. **Auth routes** (`/api/a
 | `Authorization` | `Bearer <access_token>` |
 | `Content-Type` | `application/json` (for PATCH bodies). Avatar upload uses `multipart/form-data` — see [profile-api.md](./profile-api.md). |
 
-Get `access_token` from `POST /api/auth/login` → `data.tokens.access_token`. See [auth-api.md](./auth-api.md) for the full sign-up, verify, refresh, and logout flows.
+Get `access_token` from `POST /api/auth/login` or `POST /api/auth/google` → `data.tokens.access_token`. See [auth-api.md](./auth-api.md) and [google-auth-api.md](./google-auth-api.md) for full flows.
 
 ## Standard success envelope
 
@@ -77,7 +77,8 @@ Conflict responses (`409`) may include extra context:
 
 | File | APIs covered |
 |------|----------------|
-| [auth-api.md](./auth-api.md) | `POST /api/auth/register`, `login`, `refresh`, `logout`, `forgot-password`, `reset-password`, `resend-verification`; `GET /api/auth/me`, `verify-email` |
+| [auth-api.md](./auth-api.md) | `POST /api/auth/register`, `login`, `google`, `refresh`, `logout`, `forgot-password`, `reset-password`, `resend-verification`; `GET /api/auth/me`, `verify-email` |
+| [google-auth-api.md](./google-auth-api.md) | **`POST /api/auth/google`** — Google Sign-In flow, request/response, frontend integration notes |
 | [dashboard-api.md](./dashboard-api.md) | `GET /api/dashboard` |
 | [analytics-api.md](./analytics-api.md) | `GET /api/analytics/dashboard` |
 | [settings-api.md](./settings-api.md) | `GET /api/settings`, `PATCH /api/settings` |
@@ -86,6 +87,7 @@ Conflict responses (`409`) may include extra context:
 | [roadmaps-api.md](./roadmaps-api.md) | `GET /api/roadmaps/*`, `GET /api/learning/:goalId/sessions/:sessionId`, `PATCH /api/learning/:goalId/sessions/:sessionId`, `PATCH /api/learning/:goalId/status` |
 | [roadmaps-frontend-actions-guide.md](./roadmaps-frontend-actions-guide.md) | **UI tables:** plan/session actions, buttons by `session_state`, popup fields (frontend) |
 | [tasks-api.md](./tasks-api.md) | `GET /api/tasks/calendar`, `GET /api/tasks/:id`, `PATCH /api/tasks/:id`, `DELETE /api/tasks/:id` |
+| [friends-api.md](./friends-api.md) | `POST /api/friends/request`, `GET /api/friends`, `GET /api/friends/requests`, `GET /api/friends/search`, `PATCH /api/friends/:id/respond`, `DELETE /api/friends/:id` |
 | [push-notifications-frontend-setup.md](./push-notifications-frontend-setup.md) | FCM / push token registration (Flutter setup guide) |
 
 ## Quick frontend map
@@ -93,6 +95,7 @@ Conflict responses (`409`) may include extra context:
 | Screen | Read | Write |
 |--------|------|-------|
 | Sign up / Login / Forgot password | — | [auth-api.md](./auth-api.md): `register`, `login`, `refresh`, `forgot-password`, `reset-password`, `resend-verification` |
+| Google Sign-In | — | [google-auth-api.md](./google-auth-api.md): `POST /api/auth/google` |
 | App bootstrap (after login) | `GET /api/auth/me` | `POST /api/auth/logout` |
 | Home / Dashboard | `GET /api/dashboard` | — |
 | Analytics page | `GET /api/analytics/dashboard?days=7\|30\|90` | — |
@@ -102,5 +105,6 @@ Conflict responses (`409`) may include extra context:
 | Push device token (after login) | — | `PATCH /api/settings` with `push_token` — see [push-notifications-frontend-setup.md](./push-notifications-frontend-setup.md) |
 | Learning schedules UI | `GET /api/settings` or `GET /api/settings/learning-schedules` | `POST` / `PATCH` / `DELETE` on `/api/settings/learning-schedules` |
 | Calendar | `GET /api/tasks/calendar`, `GET /api/tasks/:id` | `PATCH /api/tasks/:id`, `DELETE /api/tasks/:id` — see [tasks-api.md](./tasks-api.md) |
+| Collaboration / Friends | `GET /api/friends`, `GET /api/friends/requests`, `GET /api/friends/search` | `POST /api/friends/request`, `PATCH /api/friends/:id/respond`, `DELETE /api/friends/:id` — see [friends-api.md](./friends-api.md) |
 
 **Do not** update `preferred_learning_schedules` via `PATCH /api/settings`. Use the learning-schedules CRUD routes only.

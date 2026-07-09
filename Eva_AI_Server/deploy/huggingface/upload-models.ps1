@@ -30,6 +30,12 @@ if (-not (Test-Path $hf)) {
 
 Write-Host "Using hf: $hf"
 Write-Host "Uploading $ModelsDir -> $ModelRepo"
-& $hf upload $ModelRepo $ModelsDir . --repo-type model
+Write-Host "Removing legacy folders: clf1, intent_classifier, ner_model, learning_ner"
+& $hf upload $ModelRepo $ModelsDir . --repo-type model `
+    --delete "clf1/**" `
+    --delete "intent_classifier/**" `
+    --delete "ner_model/**" `
+    --delete "learning_ner/**" `
+    --commit-message "Update EVA models (uncased distilbert) and remove legacy folders"
 
 Write-Host "Done. Models URL: https://huggingface.co/$ModelRepo"

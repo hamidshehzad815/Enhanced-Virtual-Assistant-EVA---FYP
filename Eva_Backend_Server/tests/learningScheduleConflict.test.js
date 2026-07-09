@@ -19,6 +19,56 @@ describe("learningScheduleConflict", () => {
   });
 });
 
+describe("findLearningScheduleTaskConflicts", () => {
+  const { findLearningScheduleTaskConflicts } = require("../utils/learningScheduleConflict");
+
+  test("ignores tasks belonging to excluded learning plans", async () => {
+    const saturday = new Date("2026-07-04T00:47:00+05:00");
+    const TaskModel = {
+      find: jest.fn().mockReturnValue({
+        select: jest.fn().mockReturnValue({
+          lean: jest.fn().mockResolvedValue([
+            {
+              _id: "task1",
+              title: "Learn: Python Hello World",
+              due_datetime: saturday,
+              status: "pending",
+              duration: 60,
+              learning_plan_id: "goal1",
+            },
+            {
+              _id: "task2",
+              title: "Buy groceries",
+              due_datetime: saturday,
+              status: "pending",
+              duration: 60,
+              learning_plan_id: null,
+            },
+          ]),
+        }),
+      }),
+    };
+
+    const schedule = [{ day: 5, time: "01:05", duration_minutes: 60 }];
+    const withExclusion = await findLearningScheduleTaskConflicts(
+      "user1",
+      schedule,
+      "Asia/Karachi",
+      TaskModel,
+      { excludeLearningPlanIds: ["goal1"] },
+    );
+    expect(withExclusion).toHaveLength(1);
+    expect(withExclusion[0].task._id).toBe("task2");
+
+    const withoutExclusion = await findLearningScheduleTaskConflicts(
+      "user1",
+      schedule,
+      "Asia/Karachi",
+      TaskModel,
+    );
+    expect(withoutExclusion).toHaveLength(2);
+  });
+});
 describe("dueDatetimeOverlapsSlot", () => {
   const { dueDatetimeOverlapsSlot } = require("../utils/learningScheduleConflict");
 

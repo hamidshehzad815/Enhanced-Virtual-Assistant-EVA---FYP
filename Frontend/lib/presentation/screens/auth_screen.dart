@@ -6,6 +6,7 @@ import '../../core/theme/app_colours.dart';
 import '../providers/auth_viewmodel.dart';
 import 'login_screen.dart';
 import 'signup_screen.dart';
+import 'package:go_router/go_router.dart';
 
 class AuthScreen extends StatefulWidget {
   final int initialIndex; // 0 = Log In, 1 = Sign Up
@@ -35,6 +36,23 @@ class _AuthScreenState extends State<AuthScreen>
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleGoogleSignIn(BuildContext context) async {
+    final authViewModel = context.read<AuthViewModel>();
+    if (authViewModel.isLoading) return;
+
+    final result = await authViewModel.signInWithGoogle(
+      timezone: 'Asia/Karachi',
+    );
+
+    if (result.success) {
+      context.go('/'); 
+    } else {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(result.message)));
+    }
   }
 
   Widget _buildSocialButtons(bool isDark) {
@@ -67,7 +85,9 @@ class _AuthScreenState extends State<AuthScreen>
         Center(
           child: FlutterSocialButton(
             buttonType: ButtonType.google,
-            onTap: () {},
+            onTap: () {
+              _handleGoogleSignIn(context);
+            },
             mini: true,
             title: '',
             iconSize: 26,
