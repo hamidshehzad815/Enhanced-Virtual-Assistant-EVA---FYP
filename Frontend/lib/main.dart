@@ -12,11 +12,8 @@ import 'presentation/providers/roadmap_viewmodel.dart';
 import 'presentation/providers/settings_viewmodel.dart';
 import 'presentation/providers/theme_provider.dart';
 import 'presentation/providers/profile_viewmodel.dart';
-<<<<<<< HEAD
 import 'presentation/providers/analytics_viewmodel.dart';
-=======
 import 'presentation/providers/friends_viewmodel.dart';
->>>>>>> main
 import 'package:firebase_core/firebase_core.dart';
 import '../../data/services/push_notification_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -26,12 +23,9 @@ import 'firebase_options.dart';
 import '../../data/services/analytics_service.dart';
 import '../../data/services/roadmap_service.dart';
 import '../../data/repositories/roadmap_repository.dart';
-<<<<<<< HEAD
 import '../../data/repositories/analytics_repository.dart';
-=======
 import 'data/services/friend_service.dart';
 import '../../data/repositories/friends_repository.dart';
->>>>>>> main
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -80,7 +74,6 @@ void main() async {
           create: (context) =>
               RoadmapViewmodel(context.read<RoadmapRepository>()),
         ),
-<<<<<<< HEAD
         Provider<AnalyticsService>(create: (_) => AnalyticsService()),
         Provider<AnalyticsRepository>(
           create: (context) =>
@@ -89,7 +82,7 @@ void main() async {
         ChangeNotifierProvider(
           create: (context) =>
               AnalyticsViewModel(context.read<AnalyticsRepository>()),
-=======
+        ),
         Provider<FriendsService>(create: (_) => FriendsService()),
         Provider<FriendsRepository>(
           create: (context) =>
@@ -98,7 +91,6 @@ void main() async {
         ChangeNotifierProvider(
           create: (context) =>
               FriendsViewModel(context.read<FriendsRepository>()),
->>>>>>> main
         ),
       ],
 
