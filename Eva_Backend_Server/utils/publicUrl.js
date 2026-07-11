@@ -9,7 +9,8 @@
  */
 
 const getBackendPort = () => {
-  const parsed = parseInt(process.env.BACKEND_PORT, 10);
+  // Prefer PORT (injected by hosts like Render/Heroku), then BACKEND_PORT, then default.
+  const parsed = parseInt(process.env.PORT || process.env.BACKEND_PORT, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 3000;
 };
 
