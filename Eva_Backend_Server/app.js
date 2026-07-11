@@ -31,6 +31,10 @@ const routes = require("./routes");
 // Create Express app
 const app = express();
 
+// Trust the first proxy hop (Render/hosting reverse proxy) so the client IP from
+// X-Forwarded-For is used correctly by express-rate-limit.
+app.set("trust proxy", 1);
+
 // ===========================================
 // Security Middleware
 // ===========================================
