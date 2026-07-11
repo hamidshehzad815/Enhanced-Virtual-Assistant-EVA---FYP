@@ -104,7 +104,9 @@ Notes:
 - `DELETE /api/profile/account` (protected)
 
 ### Chat
-- `POST /api/chat/session` (protected)
+- `GET /api/chat/sessions` (protected)
+- `GET /api/chat/sessions/:sessionId/messages` (protected)
+- `DELETE /api/chat/sessions/:sessionId` (protected)
 - `POST /api/chat/process` (protected)
 
 ### Tasks
@@ -386,17 +388,78 @@ Notes:
 
 ## 4.4 Chat APIs
 
-### `POST /api/chat/session`
+### `GET /api/chat/sessions`
 - Auth: Yes
-- Body:
+- Query:
+  - `limit` optional (default `50`, max `100`)
+- Behavior:
+  - Returns only sessions with at least one saved message (`last_message_at` set).
+  - Sorted by most recent activity.
+- Success:
 ```json
 {
-  "title": "string (optional)"
+  "status": "success",
+  "data": {
+    "sessions": [
+      {
+        "id": "...",
+        "title": "...",
+        "last_message_preview": "...",
+        "last_message_at": "...",
+        "created_at": "...",
+        "updated_at": "..."
+      }
+    ]
+  }
 }
 ```
+
+### `GET /api/chat/sessions/:sessionId/messages`
+- Auth: Yes
+- Query:
+  - `limit` optional (default `100`, max `200`)
+- Behavior:
+  - Owner-only message history for one session from `conversation_history`.
+  - Matches AI-server inserts (`session_id` string, no `is_deleted`) and Node inserts (`ObjectId`).
 - Success:
-  - `201`
-  - Creates `ChatSession` for current user.
+```json
+{
+  "status": "success",
+  "data": {
+    "session_id": "...",
+    "title": "...",
+    "messages": [
+      {
+        "id": "...",
+        "role": "user|eva",
+        "content": "...",
+        "input_type": "text|voice",
+        "intent": null,
+        "status": "processed|failed|pending",
+        "created_at": "..."
+      }
+    ]
+  }
+}
+```
+
+### `DELETE /api/chat/sessions/:sessionId`
+- Auth: Yes
+- Behavior:
+  - Soft-deletes owned session and all its messages.
+- Success:
+```json
+{
+  "status": "success",
+  "message": "Chat deleted successfully",
+  "data": {
+    "session_id": "..."
+  }
+}
+```
+- Errors:
+  - `400` invalid session id
+  - `404` session not found
 
 ### `POST /api/chat/process`
 - Auth: Yes
@@ -404,20 +467,22 @@ Notes:
 ```json
 {
   "message": "string (required)",
-  "session_id": "ObjectId string (required)",
+  "session_id": "ObjectId string (optional — omit on first message to create session lazily)",
   "input_type": "text|voice (optional, default text)"
 }
 ```
 - Behavior:
-  - validates session ownership
-  - forwards payload to AI server `/process`
-  - inserts/dispatches notifications returned by AI
+  - If `session_id` omitted: creates a new session, processes the message, returns `session_created: true`.
+  - If `session_id` provided: validates ownership and continues the conversation.
+  - Forwards payload to AI server `/process`, dispatches notifications, updates session preview/title.
 - Success:
 ```json
 {
   "status": "success",
-  "response_text": "...",
   "session_id": "...",
+  "session_created": false,
+  "title": "...",
+  "response_text": "...",
   "intent": "route intent or null",
   "ai_status": "handler_status or status from AI",
   "notifications": {
@@ -427,8 +492,7 @@ Notes:
     "dispatched_email": 0,
     "failed": 0,
     "results": []
-  },
-  "data": {}
+  }
 }
 ```
 - Errors:

@@ -18,8 +18,7 @@ It is designed for Postman/manual testing against the live integrated flow:
 
 Primary command endpoint:
 
-1. `POST /api/chat/session`
-2. `POST /api/chat/process`
+1. `POST /api/chat/process` (omit `session_id` on first message to create a session lazily)
 
 Setup/verification endpoints:
 
@@ -47,7 +46,7 @@ Recommended environment setup:
 2. Save:
    - `accessToken`
    - `userId`
-3. Create chat session via `POST /api/chat/session`, save `sessionId`
+3. Send first chat message via `POST /api/chat/process` (no `session_id`), save `sessionId` from response
 4. Set user timezone to the one you will validate (example: `Asia/Karachi`)
 5. Clear old task noise for this user (or use fresh DB user)
 

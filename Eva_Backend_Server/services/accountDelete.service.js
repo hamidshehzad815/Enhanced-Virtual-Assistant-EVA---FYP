@@ -9,10 +9,10 @@ const {
   RoadmapTopic,
   Task,
   ChatSession,
-  ConversationHistory,
   Friend,
   Integration,
 } = require("../models");
+const { softDeleteMessagesForSessions } = require("./chat.service");
 const { deleteProfilePicture } = require("./cloudinary.service");
 const logger = require("../config/logger");
 
@@ -121,18 +121,7 @@ const softDeleteUserAccount = async (user) => {
       },
     );
 
-    await ConversationHistory.updateMany(
-      {
-        session_id: { $in: sessionIds },
-        is_deleted: false,
-      },
-      {
-        $set: {
-          is_deleted: true,
-          deleted_at: now,
-        },
-      },
-    );
+    await softDeleteMessagesForSessions(sessionIds);
   }
 
   await Friend.deleteMany({
