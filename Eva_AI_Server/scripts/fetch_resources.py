@@ -22,7 +22,11 @@ if str(ROOT) not in sys.path:
 
 from config.database import database  # noqa: E402
 from config.settings import settings  # noqa: E402
-from db.roadmap_resources import count_unfetched, get_unfetched_topics  # noqa: E402
+from db.roadmap_resources import (  # noqa: E402
+    count_unfetched,
+    get_unfetched_topics,
+    list_languages,
+)
 from services.roadmap_youtube_worker import fetch_and_store_for_documents  # noqa: E402
 from services.youtube import resolve_youtube_api_keys  # noqa: E402
 
@@ -31,14 +35,24 @@ from services.youtube import resolve_youtube_api_keys  # noqa: E402
 # Leave empty strings out — only non-empty keys are used.
 # Falls back to YOUTUBE_API_KEYS / YOUTUBE_API_KEY in .env when this list is empty.
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Which languages to fetch resources for.
+#   []                      -> fetch ALL languages (default)
+#   ["Python"]              -> only Python
+#   ["Python", "C++"]       -> Python and C++
+# Case-insensitive; names are matched against what's in roadmap_resources.
+# ---------------------------------------------------------------------------
+LANGUAGES: list[str] = ["Python"]
+
+
 YOUTUBE_API_KEYS: list[str] = [
 #    "AIzaSyAd8Or7CL6gYrDk5eD6fUFJJwkQdzyc0Cw",
 #    "AIzaSyAELI4hxQ4EtS-BeiXDi_ChGtOHRmnBchQ",
-#    "AIzaSyDm1zRMi8V69rsGiokwe2hGMpdYFCkepmU",
-#    "AIzaSyCaHbKNzLXk1DnVhMTeggZN1sWk8SQvPTw",
-#    "AIzaSyA7Bwi4BF027JZ8cK5hKItEn37Lu8P8BY0",
+   "AIzaSyDm1zRMi8V69rsGiokwe2hGMpdYFCkepmU",
+#    "AIzaSyCaHbKNzLXk1DnVhMTeggZN1sWk8SQvPTw", #maybe invalid api
+#    "AIzaSyA7Bwi4BF027JZ8cK5hKItEn37Lu8P8BY0", #invalide api
 #    "AIzaSyD--i62NvQCOtYpjOMmSZKnppsLieIKiBw",
-    "AIzaSyAJ5FrLPyrrqgWd376ClL-pai5IY-F20p0"
+    # "AIzaSyAJ5FrLPyrrqgWd376ClL-pai5IY-F20p0"
 ]
 
 
@@ -78,16 +92,42 @@ async def run() -> None:
     if not ok:
         raise SystemExit("MongoDB connection failed")
 
+    # Resolve the LANGUAGES selection (case-insensitive) against the DB.
+    requested = [l.strip() for l in LANGUAGES if l and l.strip()]
+    selected: list[str] | None = None
+    if requested:
+        available = await list_languages()
+        if not available:
+            raise SystemExit(
+                "roadmap_resources is empty — nothing to fetch. Seed it first:\n"
+                "  cd ../Eva_Backend_Server\n"
+                "  node scripts/seed-roadmaps.js --json ../Eva_AI_Server/data/roadmaps.json",
+            )
+        lookup = {a.casefold(): a for a in available}
+        selected = []
+        unknown = []
+        for name in requested:
+            canon = lookup.get(name.casefold())
+            (selected.append(canon) if canon else unknown.append(name))
+        if unknown:
+            print(f"Ignoring unknown language(s): {unknown}")
+            print(f"Available: {', '.join(available)}")
+        if not selected:
+            raise SystemExit("None of the requested LANGUAGES exist in roadmap_resources.")
+        print(f"Fetching resources for: {', '.join(selected)}")
+    else:
+        print("Fetching resources for: ALL languages")
+
     total_updated = 0
     batch_no = 0
 
     try:
-        initial_left = await count_unfetched()
+        initial_left = await count_unfetched(languages=selected)
         print(f"Unfetched roadmap rows: {initial_left}")
 
         while True:
             batch_size = 50
-            docs = await get_unfetched_topics(limit=batch_size)
+            docs = await get_unfetched_topics(limit=batch_size, languages=selected)
             if not docs:
                 print("All roadmap resources have been fetched (or none pending).")
                 break
@@ -114,7 +154,13 @@ async def run() -> None:
 
 
 def main() -> None:
-    asyncio.run(run())
+    try:
+        asyncio.run(run())
+    except KeyboardInterrupt:
+        print(
+            "\nInterrupted by user (Ctrl+C). Rows already saved in Mongo are "
+            "untouched — re-run to continue from where it stopped.",
+        )
 
 
 if __name__ == "__main__":

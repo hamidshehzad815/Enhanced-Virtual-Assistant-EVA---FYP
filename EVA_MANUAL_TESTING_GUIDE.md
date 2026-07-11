@@ -86,7 +86,7 @@
 | `baseUrl`     | `http://localhost:3000` | Node                        |
 | `accessToken` | JWT                     | `POST /api/auth/login`      |
 | `userId`      | ObjectId string         | login / `GET /api/auth/me`  |
-| `sessionId`   | ObjectId string         | `POST /api/chat/session`    |
+| `sessionId`   | ObjectId string         | First `POST /api/chat/process` response (`session_id`) |
 | `goalId`      | ObjectId                | After learning create       |
 | `scheduleId`  | UUID string             | From learning schedules API |
 | `friendToken` | JWT                     | User B login                |
@@ -203,7 +203,7 @@ Run in order. If any step fails, fix environment before full regression.
 | --- | --------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | S1  | `GET /health` → Mongo + AI connected                                                                | ☐                                                |
 | S2  | Login → save token                                                                                  | Pass                                             |
-| S3  | `POST /api/chat/session` → `sessionId`                                                              | Pass                                             |
+| S3  | `POST /api/chat/process` without `session_id` → save `session_id` from response                     | Pass                                             |
 | S4  | Chat: `add team standup tomorrow 10am for 30 minutes` → success, task in DB                         | Pass                                             |
 | S5  | Chat: `show my tasks tomorrow` → lists task                                                         | Fail on this input Pass on "show tomorrow tasks" |
 | S6  | Chat: `when am i most productive` → reply (or not-enough-data if <20 logs)                          | pass                                             |
