@@ -3,7 +3,6 @@
  * Persists notifications and dispatches push/email channels.
  */
 
-const nodemailer = require("nodemailer");
 const mongoose = require("mongoose");
 const fs = require("fs");
 const path = require("path");
@@ -12,20 +11,8 @@ const jwt = require("jsonwebtoken");
 const logger = require("../config/logger");
 const { Notification, User, UserSetting } = require("../models");
 const { buildTokenLink } = require("../utils/publicUrl");
+const { sendEmail, isEmailConfigured } = require("./email.service");
 
-const SMTP_HOST = process.env.SMTP_HOST || process.env.EMAIL_HOST;
-const SMTP_PORT = Number(process.env.SMTP_PORT || process.env.EMAIL_PORT || 587);
-const SMTP_SECURE =
-  String(process.env.SMTP_SECURE || "false").toLowerCase() === "true";
-const SMTP_USER = process.env.SMTP_USER || process.env.EMAIL_USER;
-const SMTP_PASS = process.env.SMTP_PASS || process.env.EMAIL_PASS;
-const SMTP_FROM =
-  process.env.SMTP_FROM ||
-  process.env.EMAIL_FROM ||
-  process.env.EMAIL_USER ||
-  "no-reply@eva.local";
-
-let cachedTransporter = null;
 let cachedFirebaseAdmin = undefined;
 
 const getFirebaseAdmin = () => {
@@ -102,28 +89,6 @@ const toObjectId = (value) => {
   }
 
   return null;
-};
-
-const getTransporter = () => {
-  if (cachedTransporter) {
-    return cachedTransporter;
-  }
-
-  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
-    return null;
-  }
-
-  cachedTransporter = nodemailer.createTransport({
-    host: SMTP_HOST,
-    port: SMTP_PORT,
-    secure: SMTP_SECURE,
-    auth: {
-      user: SMTP_USER,
-      pass: SMTP_PASS,
-    },
-  });
-
-  return cachedTransporter;
 };
 
 const getCollaborationTokenSecret = () =>
@@ -444,12 +409,11 @@ const dispatch_email = async (userId, notification, userDoc) => {
     };
   }
 
-  const transporter = getTransporter();
-  if (!transporter) {
+  if (!isEmailConfigured()) {
     return {
       dispatched: false,
       channel: "email",
-      reason: "SMTP not configured",
+      reason: "Email not configured",
     };
   }
 
@@ -463,13 +427,20 @@ const dispatch_email = async (userId, notification, userDoc) => {
           html: `<p style="font-family: Arial, sans-serif; line-height:1.5;">${notification.message}</p>`,
         };
 
-    await transporter.sendMail({
-      from: SMTP_FROM,
+    const sent = await sendEmail({
       to: userDoc.email,
       subject: notification.title,
       text: messagePayload.text,
       html: messagePayload.html,
     });
+
+    if (!sent) {
+      return {
+        dispatched: false,
+        channel: "email",
+        reason: "Email send failed",
+      };
+    }
 
     return {
       dispatched: true,

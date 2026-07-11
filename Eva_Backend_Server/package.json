@@ -6,7 +6,6 @@
   "scripts": {
     "start": "node app.js",
     "dev": "nodemon app.js",
-
     "test": "cross-env NODE_ENV=test jest --runInBand",
     "seed:areej": "node scripts/seed-areej-user.js",
     "seed:roadmaps": "node scripts/seed-roadmaps.js",
@@ -41,7 +40,6 @@
     "morgan": "^1.10.0",
     "multer": "^2.1.1",
     "node-cron": "^4.2.1",
-    "nodemailer": "^6.9.12",
     "winston": "^3.11.0",
     "winston-daily-rotate-file": "^5.0.0"
   },
