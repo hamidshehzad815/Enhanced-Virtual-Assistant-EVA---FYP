@@ -45,7 +45,6 @@ class WindingTrail extends StatelessWidget {
         final xList = _xPositions(width, nodes.length);
 
         final centres = List.generate(nodes.length, (i) {
-          // i = 0 is first node → at bottom
           final y = totalHeight - 120 - i * nodeSpacing;
           final x = xList[i] + pillWidth / 2;
           return Offset(x, y);
@@ -53,7 +52,7 @@ class WindingTrail extends StatelessWidget {
 
         return SingleChildScrollView(
           physics: const BouncingScrollPhysics(),
-          reverse: true, // ─── SCROLL STARTS FROM BOTTOM ───
+          reverse: true,
           padding: EdgeInsets.only(top: topPadding, bottom: bottomPadding),
           child: SizedBox(
             width: width,
@@ -61,12 +60,10 @@ class WindingTrail extends StatelessWidget {
             child: Stack(
               clipBehavior: Clip.none,
               children: [
-                // ─── Connector lines ───
                 CustomPaint(
                   size: Size(width, totalHeight),
                   painter: _TrailPainter(centres: centres, isDark: isDark),
                 ),
-                // ─── Nodes ───
                 ...List.generate(nodes.length, (i) {
                   final session = nodes[i];
                   final centre = centres[i];
@@ -89,11 +86,10 @@ class WindingTrail extends StatelessWidget {
                         languageColor: languageColor,
                         showUpcoming: isUpcoming,
                         onTap: () {
-                          // ─── Only current sessions open dialog ───
-                          if (!isUpcoming && session.isCurrent) {
+                          // ─── All non‑upcoming sessions open the dialog ───
+                          if (!isUpcoming) {
                             onSessionTap(session);
                           }
-                          // Upcoming: do nothing
                         },
                       ),
                     ),
@@ -108,7 +104,6 @@ class WindingTrail extends StatelessWidget {
   }
 }
 
-// ─── _SessionPill
 class _SessionPill extends StatelessWidget {
   final Session session;
   final bool isDark;
@@ -126,6 +121,27 @@ class _SessionPill extends StatelessWidget {
     required this.onTap,
   });
 
+  IconData _getStatusIcon() {
+    if (session.status == 'completed') return Icons.check_rounded;
+    if (session.status == 'skipped') return Icons.skip_next_rounded;
+    if (session.isCurrent) return Icons.play_arrow_rounded;
+    return Icons.circle_rounded;
+  }
+
+  Color _getStatusColor() {
+    if (session.status == 'completed') return Colors.green;
+    if (session.status == 'skipped') return Colors.grey.shade500;
+    if (session.isCurrent) return const Color(0xFF22C55E);
+    return Colors.transparent;
+  }
+
+  String _getStatusLabel() {
+    if (session.status == 'completed') return 'COMPLETED';
+    if (session.status == 'skipped') return 'SKIPPED';
+    if (session.isCurrent) return 'CURRENT';
+    return '';
+  }
+
   @override
   Widget build(BuildContext context) {
     final pillBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
@@ -133,6 +149,11 @@ class _SessionPill extends StatelessWidget {
         ? const Color(0xFF2C2C2E)
         : const Color(0xFFE5E5EA);
     final primTxt = isDark ? Colors.white : const Color(0xFF1C1C1E);
+    final secTxt = isDark ? const Color(0xFF8E8E93) : const Color(0xFF6C6C70);
+
+    final sub = session.resources.isNotEmpty
+        ? session.resources.first.title
+        : '';
     final schedule = session.scheduledDate != null
         ? DateFormat('MMM d, y').format(session.scheduledDate!.toLocal())
         : 'Not scheduled';
@@ -142,6 +163,10 @@ class _SessionPill extends StatelessWidget {
         : 'TBD';
 
     final isLocked = session.sessionState == 'locked';
+    final statusIcon = _getStatusIcon();
+    final statusColor = _getStatusColor();
+    final statusLabel = _getStatusLabel();
+    final showStatusPill = statusLabel.isNotEmpty && !showUpcoming;
 
     return Material(
       color: Colors.transparent,
@@ -164,8 +189,9 @@ class _SessionPill extends StatelessWidget {
             ],
           ),
           child: Stack(
+            clipBehavior: Clip.none,
             children: [
-              // ─── Row ──────────────────────────────────────────────────────
+              // ─── Main row ──────────────────────────────────────────────
               Row(
                 children: [
                   const SizedBox(width: 5),
@@ -207,7 +233,29 @@ class _SessionPill extends StatelessWidget {
                             color: Colors.white,
                           ),
                         ),
-                        if (isLocked)
+                        if (!showUpcoming && statusIcon != Icons.circle_rounded)
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Container(
+                              width: 24,
+                              height: 24,
+                              decoration: BoxDecoration(
+                                color: statusColor,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.white,
+                                  width: 2,
+                                ),
+                              ),
+                              child: Icon(
+                                statusIcon,
+                                size: 14,
+                                color: Colors.white,
+                              ),
+                            ),
+                          ),
+                        if (isLocked && !showUpcoming)
                           Positioned(
                             top: 0,
                             right: 0,
@@ -221,24 +269,6 @@ class _SessionPill extends StatelessWidget {
                               child: Icon(
                                 Icons.lock_rounded,
                                 size: 14,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        if (session.isCurrent)
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Container(
-                              width: 18,
-                              height: 18,
-                              decoration: const BoxDecoration(
-                                color: Color(0xFF22C55E),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                Icons.play_arrow_rounded,
-                                size: 12,
                                 color: Colors.white,
                               ),
                             ),
@@ -262,7 +292,7 @@ class _SessionPill extends StatelessWidget {
                             color: primTxt,
                           ),
                         ),
-                        const SizedBox(height: 2),
+                        const SizedBox(height: 3),
                         Text(
                           '$schedule · $duration',
                           maxLines: 1,
@@ -288,7 +318,36 @@ class _SessionPill extends StatelessWidget {
                   const SizedBox(width: 14),
                 ],
               ),
-              // ─── "UPCOMING" overlay ──────────────────────────────────────
+              // ─── Status pill (smaller, constrained) ──────────────────
+              if (showStatusPill)
+                Positioned(
+                  top: 14,
+                  right: 10,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 3,
+                      vertical: 1,
+                    ),
+                    constraints: const BoxConstraints(maxWidth: 80),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: statusColor.withOpacity(0.3)),
+                    ),
+                    child: Text(
+                      statusLabel,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontSize: 7,
+                        fontWeight: FontWeight.w700,
+                        color: statusColor,
+                        letterSpacing: 0.3,
+                      ),
+                    ),
+                  ),
+                ),
+              // ─── Upcoming overlay ──────────────────────────────────────
               if (showUpcoming)
                 Positioned.fill(
                   child: Container(
@@ -327,7 +386,6 @@ class _SessionPill extends StatelessWidget {
   }
 }
 
-// ─── Trail Painter (dashed – original style) ─────────────────────────────
 class _TrailPainter extends CustomPainter {
   final List<Offset> centres;
   final bool isDark;
