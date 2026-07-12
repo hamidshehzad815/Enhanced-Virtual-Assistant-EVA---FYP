@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Palette, Globe, RefreshCw, Bell, BellOff, Mail, Moon, Clock, 
@@ -10,7 +10,7 @@ import './Settings.css';
 
 export const Settings = () => {
   const navigate = useNavigate();
-  const { user, logout, updateProfile } = useAuth();
+  const { user, logout, updateProfile, checkAuth } = useAuth();
   const { 
     settings, 
     learningSchedules, 
@@ -28,13 +28,18 @@ export const Settings = () => {
   const [profileName, setProfileName] = useState(user?.name || '');
   const [profileEmail, setProfileEmail] = useState(user?.email || '');
 
+  useEffect(() => {
+    setProfileName(user?.name || '');
+    setProfileEmail(user?.email || '');
+  }, [user]);
+
   // Forms
   const [newQuietHour, setNewQuietHour] = useState({ label: 'Sleep Time', start: '22:00', end: '07:00', enabled: true });
   const [newScheduleForm, setNewScheduleForm] = useState({ label: 'Weekday Slot', slots: [{ day_of_week: 1, start_time: '16:00', duration_minutes: 90 }] });
 
   const handleProfileSave = async (e) => {
     e.preventDefault();
-    const res = await updateProfile({ name: profileName, email: profileEmail });
+    const res = await updateProfile({ name: profileName });
     if (res.success) {
       setIsEditingProfile(false);
       alert('Profile updated successfully!');
@@ -72,7 +77,17 @@ export const Settings = () => {
       alert('Schedule label is required');
       return;
     }
-    const res = await addSchedule(newScheduleForm);
+    // Convert frontend form shape to backend-expected payload
+    // Backend expects: { label, slots: [{ day: number (0=Mon), time: 'HH:mm', duration_minutes: number }] }
+    const payload = {
+      label: String(newScheduleForm.label || '').trim(),
+      slots: (Array.isArray(newScheduleForm.slots) ? newScheduleForm.slots : []).map(s => ({
+        day: Number(s.day_of_week ?? s.day),
+        time: String((s.start_time ?? s.time) || '').trim(),
+        duration_minutes: Number(s.duration_minutes ?? s.durationMinutes ?? 0)
+      }))
+    };
+    const res = await addSchedule(payload);
     if (res.success) {
       alert('Schedule created!');
       setNewScheduleForm({ label: 'Weekday Slot', slots: [{ day_of_week: 1, start_time: '16:00', duration_minutes: 90 }] });
@@ -108,7 +123,42 @@ export const Settings = () => {
 
         {/* Profile Card Header */}
         <div className="settings-profile-summary">
-          <div className="settings-avatar-circle">{initials}</div>
+          <div className="settings-avatar-circle" style={{ position: 'relative' }}>
+            {user?.avatar_url ? (
+              <img src={user.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', borderRadius: '50%' }} />
+            ) : initials}
+            <button
+              className="avatar-edit-btn"
+              title="Edit avatar"
+              onClick={() => document.getElementById('avatar-file-input')?.click()}
+              style={{ position: 'absolute', right: -6, bottom: -6 }}
+            >
+              <Edit size={14} />
+            </button>
+            <input id="avatar-file-input" type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
+              const file = e.target.files && e.target.files[0];
+              if (!file) return;
+              const token = localStorage.getItem('access_token');
+              const baseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+              const url = `${baseUrl}/api/profile/avatar`;
+              const form = new FormData();
+              form.append('avatar', file);
+              try {
+                const res = await fetch(url, {
+                  method: 'POST',
+                  headers: token ? { Authorization: `Bearer ${token}` } : {},
+                  body: form
+                });
+                if (!res.ok) throw new Error('Upload failed');
+                // Refresh profile
+                if (checkAuth) await checkAuth();
+                alert('Avatar updated');
+              } catch (err) {
+                console.error('Avatar upload failed', err);
+                alert('Failed to upload avatar. Please try again.');
+              }
+            }} />
+          </div>
           <div className="settings-profile-details">
             <h4>{user?.name || 'Areej'}</h4>
             <p>@{user?.username || 'username'}</p>
@@ -194,8 +244,7 @@ export const Settings = () => {
                       type="email"
                       className="input-field"
                       value={profileEmail}
-                      onChange={(e) => setProfileEmail(e.target.value)}
-                      required
+                      disabled
                     />
                   </div>
                   <div className="profile-form-actions">
@@ -252,19 +301,16 @@ export const Settings = () => {
               <div className="settings-saas-row border-top">
                 <div className="row-meta">
                   <span className="row-title">Language (Localization)</span>
-                  <p className="row-desc">Select your preferred system locale language.</p>
+                  <p className="row-desc">English is the only supported interface language for this release.</p>
                 </div>
                 <select
-                  value={settings.language}
-                  onChange={(e) => updateSettings({ language: e.target.value })}
+                  value="en"
+                  disabled
                   className="row-select font-body"
                 >
                   <option value="en">English (EN)</option>
-                  <option value="ar">العربية (AR)</option>
-                  <option value="ur">اردو (UR)</option>
                 </select>
               </div>
-
               {/* Google Calendar Sync */}
               <div className="settings-saas-row border-top">
                 <div className="row-meta">
@@ -548,27 +594,32 @@ export const Settings = () => {
 
                 <div className="crud-list-saas border-top">
                   <span className="list-subtitle">Configured Schedules Directory</span>
-                  {learningSchedules.length > 0 ? (
-                    <div className="schedules-grid-list-saas">
-                      {learningSchedules.map((sched) => (
-                        <div key={sched.id} className="schedule-tile-saas">
-                          <div className="sched-left">
-                            <strong>{sched.label}</strong>
-                            {sched.slots && sched.slots.map((s, i) => (
-                              <span key={i} className="sched-slot-span">
-                                {getDayName(s.day_of_week)} at {s.start_time} ({s.duration_minutes} mins)
-                              </span>
-                            ))}
-                          </div>
-                          <button className="tile-delete-btn" onClick={() => handleRemoveSchedule(sched.id)}>
-                            <Trash2 size={14} />
-                          </button>
+                      {learningSchedules.length > 0 ? (
+                        <div className="schedules-grid-list-saas">
+                          {learningSchedules.map((sched) => (
+                            <div key={sched.id} className="schedule-tile-saas">
+                              <div className="sched-left">
+                                <strong>{sched.label}</strong>
+                                {sched.slots && sched.slots.map((s, i) => {
+                                  const dayNum = (s.day_of_week !== undefined && s.day_of_week !== null) ? s.day_of_week : (s.day !== undefined ? s.day : null);
+                                  const timeStr = (s.start_time ?? s.time) || '';
+                                  const dur = s.duration_minutes ?? s.durationMinutes ?? '';
+                                  return (
+                                    <span key={i} className="sched-slot-span">
+                                      {getDayName(dayNum)} at {timeStr} ({dur} mins)
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                              <button className="tile-delete-btn" onClick={() => handleRemoveSchedule(sched.id)}>
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="no-items-lbl">No custom learning schedule slots defined.</p>
-                  )}
+                      ) : (
+                        <p className="no-items-lbl">No custom learning schedule slots defined.</p>
+                      )}
                 </div>
               </div>
             </div>

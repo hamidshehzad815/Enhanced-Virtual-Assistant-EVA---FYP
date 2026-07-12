@@ -174,6 +174,7 @@ export const Roadmap = () => {
                 title: s.title,
                 description: s.description,
                 status: s.status,
+                scheduled_date_raw: s.scheduled_date,
                 scheduled_date: s.scheduled_date ? formatBackendDate(s.scheduled_date) : 'Flexible',
                 estimated_duration: s.estimated_duration || 60,
                 resources: s.resources || [],
@@ -488,9 +489,14 @@ export const Roadmap = () => {
               <div className="winding-nodes-list">
                 {currentRoadmap.sessions.map((node, index) => {
                   const isEven = index % 2 === 0;
-                  const isCompleted = node.status === 'completed' || node.status === 'complete';
-                  const isOngoing = node.status === 'ongoing' || node.status === 'active';
+                  const isCompleted = node.session_state === 'completed' || node.status === 'completed' || node.status === 'complete';
+                  const isOngoing = node.session_state === 'ongoing' || node.session_state === 'active';
+                  const isAvailable = isOngoing || node.session_state === 'available';
+                  const isUpcoming = node.session_state === 'locked' || node.session_state === 'upcoming' || node.session_state === 'unlocked_future';
+                  const isOverdue = node.session_state === 'overdue';
+                  const isFocused = activeNode?.id === node.id;
                   const color = currentRoadmap.color;
+                  const disabled = isUpcoming || isOverdue;
 
                   return (
                     <div 
@@ -498,9 +504,10 @@ export const Roadmap = () => {
                       className={`trail-node-row ${isEven ? 'left-align' : 'right-align'}`}
                     >
                       <button 
-                        className={`trail-node-card ${isCompleted ? 'completed' : ''} ${isOngoing ? 'active' : ''} ${activeNode?.id === node.id ? 'focused' : ''}`}
-                        onClick={() => handleNodeClick(node)}
+                        className={`trail-node-card ${isCompleted ? 'completed' : ''} ${isAvailable ? 'active' : ''} ${isUpcoming ? 'upcoming' : ''} ${isOverdue ? 'overdue' : ''} ${isFocused ? 'focused' : ''}`}
+                        onClick={() => !disabled ? handleNodeClick(node) : null}
                         style={{ borderLeft: `4px solid ${color}` }}
+                        disabled={disabled}
                       >
                         <div className="node-avatar-indicator">
                           <div className="indicator-pulse" style={{ backgroundColor: isOngoing ? color : 'transparent' }}></div>
@@ -521,6 +528,12 @@ export const Roadmap = () => {
                             <span className="badge date">{node.scheduled_date}</span>
                           </div>
                         </div>
+                        <div className="node-state-pill-row">
+                          {node.session_state === 'completed' && <span className="state-pill completed">Completed</span>}
+                          {node.session_state === 'ongoing' && <span className="state-pill available">Available</span>}
+                          {(node.session_state === 'locked' || node.session_state === 'upcoming' || node.session_state === 'unlocked_future') && <span className="state-pill upcoming">Upcoming</span>}
+                          {node.session_state === 'overdue' && <span className="state-pill overdue">Overdue</span>}
+                        </div>
                       </button>
                     </div>
                   );
@@ -532,7 +545,7 @@ export const Roadmap = () => {
               <AlertCircle size={44} className="empty-icon" />
               <h4>No roadmap generated</h4>
               <p>Ask EVA to generate a study roadmap for you in the AI Chat.</p>
-              <button className="goto-chat-btn" onClick={() => navigate('/chat')}>
+              <button className="goto-chat-btn" onClick={() => navigate('/chat', { state: { initialPrompt: 'Create a study roadmap for me. Include sessions, durations, and suggested schedule.' } })}>
                 Create Roadmap
               </button>
             </div>

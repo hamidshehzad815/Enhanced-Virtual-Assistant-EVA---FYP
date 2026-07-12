@@ -491,38 +491,23 @@ export const Auth = () => {
               </div>
 
               <p className="auth-card-subtitle font-body" style={{ marginBottom: 20 }}>
-                Can't find the email? Check your <strong>spam / junk</strong> folder,
-                or paste the verification link / token below to verify manually.
+                We emailed a verification link to <strong>{signupEmail || 'your inbox'}</strong>.
+                Check your <strong>spam / junk</strong> folder if you do not see it.
               </p>
 
               <Alert type={alertMsg.type} text={alertMsg.text} />
 
-              <form className="auth-form" onSubmit={handleVerify} noValidate>
-                <div className="input-group">
-                  <label className="input-label">Paste Verification Link or Token <span style={{ fontWeight: 400, color: 'var(--color-text-secondary)' }}>(optional)</span></label>
-                  <input
-                    id="verify-token-input"
-                    type="text"
-                    className={`input-field ${fieldErrors.verifyToken ? 'error' : ''}`}
-                    placeholder="Paste link or token from email here"
-                    value={verifyToken}
-                    onChange={e => setVerifyToken(e.target.value)}
-                    autoComplete="off"
-                  />
-                  {fieldErrors.verifyToken && <span className="error-text">{fieldErrors.verifyToken}</span>}
-                </div>
-
-                <button
-                  id="verify-submit-btn"
-                  type="submit"
-                  className="btn btn-primary auth-submit-btn"
-                  disabled={isLoading || !verifyToken.trim()}
-                >
-                  {isLoading
-                    ? <Loader2 className="spinner" size={20} />
-                    : <><ShieldCheck size={18} style={{ marginRight: 8 }} />Verify &amp; Activate</>}
-                </button>
-              </form>
+              <button
+                id="resend-email-only-btn"
+                type="button"
+                className="btn btn-primary auth-submit-btn"
+                onClick={handleResend}
+                disabled={isLoading || resendTimer > 0}
+              >
+                {isLoading
+                  ? <Loader2 className="spinner" size={20} />
+                  : `Resend verification email${resendTimer > 0 ? ` (${resendTimer}s)` : ''}`}
+              </button>
 
               {/* Resend row */}
               <div className="verify-resend-row">

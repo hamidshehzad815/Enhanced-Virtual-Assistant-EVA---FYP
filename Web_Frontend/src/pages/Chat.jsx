@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { History, Plus, Send, Mic, MicOff, AlertCircle, Sparkles, X, MessageSquare, Compass, Terminal, HelpCircle } from 'lucide-react';
 import { useChat } from '../contexts/ChatContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -9,7 +9,9 @@ import './Chat.css';
 export const Chat = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { messages, isEvaTyping, conversations, sendMessage, clearChat } = useChat();
+  const { messages, isEvaTyping, conversations, selectedSessionId, selectConversation, sendMessage, clearChat } = useChat();
+  const location = useLocation();
+  const initialPrompt = location.state?.initialPrompt;
 
   const [inputText, setInputText] = useState('');
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
@@ -81,6 +83,16 @@ export const Chat = () => {
     scrollToBottom();
   }, [messages, isEvaTyping]);
 
+  // If arriving with an initial prompt (e.g. from Roadmap "Create Roadmap"), send it
+  useEffect(() => {
+    if (initialPrompt) {
+      // sendMessage is safe to call; it will create a session if needed
+      sendMessage(initialPrompt, 'text');
+      // clear the location state to avoid re-sending on navigation
+      try { window.history.replaceState({}, document.title, window.location.pathname); } catch {}
+    }
+  }, [initialPrompt]);
+
   const handleSend = (e) => {
     e.preventDefault();
     if (!inputText.trim()) return;
@@ -104,7 +116,7 @@ export const Chat = () => {
       {/* 1. Left Sidebar: Conversations Log */}
       <div className={`chat-history-sidebar ${isHistoryOpen ? 'mobile-open' : ''}`}>
         <div className="sidebar-header-saas">
-          <div className="logo-brand-mini">
+          <div className="logo-brand-mini" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
             <span className="logo-text font-logo">Eva</span>
             <span className="logo-badge">AI</span>
           </div>
@@ -131,7 +143,14 @@ export const Chat = () => {
             </div>
           ) : (
             conversations.map(convo => (
-              <button key={convo.id} className="convo-row-btn" onClick={() => setIsHistoryOpen(false)}>
+              <button
+                key={convo.id}
+                className={`convo-row-btn ${selectedSessionId === convo.id ? 'active' : ''}`}
+                onClick={() => {
+                  selectConversation(convo.id);
+                  setIsHistoryOpen(false);
+                }}
+              >
                 <MessageSquare size={14} className="convo-icon" />
                 <div className="convo-row-text">
                   <span className="convo-title-label">{convo.title}</span>

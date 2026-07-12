@@ -4,8 +4,9 @@
  */
 
 const mongoose = require("mongoose");
+const logger = require("../config/logger");
 
-const { ChatSession } = require("../models");
+const { ChatSession, ConversationHistory } = require("../models");
 const { callAIServer } = require("../services/ai.service");
 const { insert_and_dispatch } = require("../services/notification.service");
 const {
@@ -24,6 +25,75 @@ const buildApiData = (req, payload) => {
  * POST /api/chat/session
  * Create a new chat session for the authenticated user.
  */
+const listSessions = async (req, res, next) => {
+  try {
+    const sessions = await ChatSession.find({
+      user_id: req.userId,
+      is_deleted: false,
+    })
+      .sort({ last_message_at: -1, created_at: -1 })
+      .lean();
+
+    res.json({
+      status: "success",
+      data: {
+        sessions: sessions.map((session) => ({
+          session_id: String(session._id),
+          title: session.title,
+          last_message_preview: session.last_message_preview,
+          last_message_at: session.last_message_at,
+          created_at: session.created_at,
+        })),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const getSessionHistory = async (req, res, next) => {
+  try {
+    const { sessionId } = req.params;
+    if (!mongoose.Types.ObjectId.isValid(sessionId)) {
+      throw new BadRequestError("Invalid session id");
+    }
+
+    const session = await ChatSession.findOne({
+      _id: sessionId,
+      user_id: req.userId,
+      is_deleted: false,
+    }).lean();
+
+    if (!session) {
+      throw new NotFoundError("Chat session not found");
+    }
+
+    const history = await ConversationHistory.find({
+      session_id: sessionId,
+      is_deleted: false,
+    })
+      .sort({ created_at: 1 })
+      .lean();
+
+    res.json({
+      status: "success",
+      data: {
+        session_id: String(session._id),
+        messages: history.map((item) => ({
+          id: String(item._id),
+          role: item.role,
+          content: item.content,
+          input_type: item.input_type,
+          intent: item.intent,
+          created_at: item.created_at,
+        })),
+      },
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const createSession = async (req, res, next) => {
   try {
     const { title } = req.body;
@@ -85,7 +155,17 @@ const processChat = async (req, res, next) => {
       timestamp: new Date().toISOString(),
     };
 
+    const userMessageRecord = {
+      session_id: session_id,
+      role: 'user',
+      content: message.trim(),
+      input_type: normalizedInputType,
+      intent: null,
+      status: 'processed',
+    };
+
     let aiResponse;
+    const requestStart = Date.now();
     try {
       aiResponse = await callAIServer(aiPayload);
     } catch (error) {
@@ -93,6 +173,26 @@ const processChat = async (req, res, next) => {
         `Failed to process message with AI server: ${error.message}`,
       );
     }
+
+    const responseText =
+      aiResponse?.response_text ||
+      aiResponse?.route?.response_text ||
+      'I processed your request.';
+
+    const routeIntent =
+      aiResponse?.route?.intent ||
+      aiResponse?.intent_classification?.label ||
+      null;
+
+    const evaMessageRecord = {
+      session_id: session_id,
+      role: 'eva',
+      content: responseText,
+      input_type: normalizedInputType,
+      intent: routeIntent,
+      status: 'processed',
+      response_time_ms: Date.now() - requestStart,
+    };
 
     const aiNotifications = Array.isArray(aiResponse?.notifications)
       ? aiResponse.notifications
@@ -109,15 +209,27 @@ const processChat = async (req, res, next) => {
       );
     }
 
-    const responseText =
-      aiResponse?.response_text ||
-      aiResponse?.route?.response_text ||
-      "I processed your request.";
+    try {
+      await ConversationHistory.create([userMessageRecord, evaMessageRecord]);
+    } catch (saveError) {
+      logger.warn('Failed to persist chat history', {
+        session_id,
+        error: saveError.message,
+      });
+    }
 
-    const routeIntent =
-      aiResponse?.route?.intent ||
-      aiResponse?.intent_classification?.label ||
-      null;
+    try {
+      await ChatSession.findByIdAndUpdate(
+        session_id,
+        {
+          last_message_preview: responseText.slice(0, 200),
+          last_message_at: new Date(),
+        },
+        { new: true },
+      );
+    } catch (_updateError) {
+      // Session recency update is best-effort and should not fail the request.
+    }
 
     const localizedAiResponse = buildApiData(req, aiResponse || {});
 
@@ -136,6 +248,8 @@ const processChat = async (req, res, next) => {
 };
 
 module.exports = {
+  listSessions,
+  getSessionHistory,
   createSession,
   processChat,
 };

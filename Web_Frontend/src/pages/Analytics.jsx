@@ -51,29 +51,43 @@ export const Analytics = () => {
     setIsLoading(true);
     try {
       const prodRes = await apiRequest('/api/analytics/productivity').catch(() => null);
-      if (prodRes && prodRes.status === 'success') {
-        setProductivity(prodRes.data);
+      if (prodRes && prodRes.status === 'success' && prodRes.data) {
+        const p = prodRes.data;
+        setProductivity(p);
+
+        // Map days and hours if returned under data.days / data.hours
+        if (Array.isArray(p.days) && p.days.length > 0) {
+          // days objects may contain { day, day_num, log_count, count }
+          setDaysData(p.days.map(d => ({ day: d.day || d.day_name || d.day_display || `${d.day_num}`, count: d.log_count ?? d.count ?? 0 })));
+        }
+
+        if (Array.isArray(p.hours) && p.hours.length > 0) {
+          setHoursData(p.hours.map(h => ({ hour: h.hour_display ?? (h.hour !== undefined ? `${h.hour}:00` : h.hour) , count: h.log_count ?? h.count ?? 0 })));
+        }
       } else {
         setProductivity(MOCK_PRODUCTIVITY);
       }
 
-      const hoursRes = await apiRequest('/api/analytics/hours').catch(() => null);
-      if (hoursRes && hoursRes.status === 'success' && Array.isArray(hoursRes.data)) {
-        setHoursData(hoursRes.data);
-      } else {
-        setHoursData(MOCK_HOURS);
+      // Fallback calls for hours/days/trend if productivity payload didn't include them
+      if (!hoursData || hoursData.length === 0) {
+        const hoursRes = await apiRequest('/api/analytics/hours').catch(() => null);
+        if (hoursRes && hoursRes.status === 'success' && hoursRes.data && Array.isArray(hoursRes.data.hours)) {
+          setHoursData(hoursRes.data.hours.map(h => ({ hour: h.hour_display ?? (h.hour !== undefined ? `${h.hour}:00` : h.hour), count: h.log_count ?? h.count ?? 0 })));
+        }
       }
 
-      const daysRes = await apiRequest('/api/analytics/days').catch(() => null);
-      if (daysRes && daysRes.status === 'success' && Array.isArray(daysRes.data)) {
-        setDaysData(daysRes.data);
-      } else {
-        setDaysData(MOCK_DAYS);
+      if (!daysData || daysData.length === 0) {
+        const daysRes = await apiRequest('/api/analytics/days').catch(() => null);
+        if (daysRes && daysRes.status === 'success' && daysRes.data && Array.isArray(daysRes.data.days)) {
+          setDaysData(daysRes.data.days.map(d => ({ day: d.day || d.day_name || `${d.day_num}`, count: d.log_count ?? d.count ?? 0 })));
+        }
       }
 
       const trendRes = await apiRequest('/api/analytics/completion-trend?weeks=4').catch(() => null);
       if (trendRes && trendRes.status === 'success' && trendRes.data?.trend) {
         setTrendData(trendRes.data.trend);
+      } else if (trendRes && trendRes.status === 'success' && Array.isArray(trendRes.data)) {
+        setTrendData(trendRes.data);
       } else {
         setTrendData(MOCK_TREND);
       }
@@ -92,11 +106,19 @@ export const Analytics = () => {
     fetchAnalytics();
   }, []);
 
-  const totalCompleted = productivity?.total_completed !== undefined ? productivity.total_completed : MOCK_PRODUCTIVITY.total_completed;
-  const onTimeRate = productivity?.on_time_percentage !== undefined ? productivity.on_time_percentage : MOCK_PRODUCTIVITY.on_time_percentage;
-  const completionSpeed = productivity?.completion_speed_mins !== undefined ? productivity.completion_speed_mins : MOCK_PRODUCTIVITY.completion_speed_mins;
-  const streak = productivity?.active_streak !== undefined ? productivity.active_streak : MOCK_PRODUCTIVITY.active_streak;
-  const efficiency = productivity?.study_efficiency || MOCK_PRODUCTIVITY.study_efficiency;
+  const totalCompleted = productivity?.total_completed ?? productivity?.completion_rate?.total_completed ?? MOCK_PRODUCTIVITY.total_completed;
+
+  // on_time_rate can be expressed as 0..1 or 0..100 depending on AI server; normalize to 0..100
+  let onTimeRate = MOCK_PRODUCTIVITY.on_time_percentage;
+  const rawOnTime = productivity?.completion_rate?.on_time_rate ?? productivity?.on_time_rate ?? productivity?.on_time_percentage;
+  if (rawOnTime !== undefined && rawOnTime !== null) {
+    const num = Number(rawOnTime) || 0;
+    onTimeRate = num <= 1 ? Math.round(num * 100) : Math.round(num);
+  }
+
+  const completionSpeed = productivity?.avg_time_taken ?? productivity?.completion_speed_mins ?? MOCK_PRODUCTIVITY.completion_speed_mins;
+  const streak = productivity?.active_streak ?? MOCK_PRODUCTIVITY.active_streak;
+  const efficiency = productivity?.study_efficiency ?? MOCK_PRODUCTIVITY.study_efficiency;
 
   // SVG Line Chart Helpers
   const trendMaxVal = Math.max(...trendData.map(d => d.count), 5);

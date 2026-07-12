@@ -407,6 +407,55 @@
   transition: all 0.22s ease;
 }
 
+.task-saas-card.upcoming {
+  opacity: 0.72;
+  filter: blur(0.02);
+}
+
+.task-saas-card.overdue {
+  border-color: rgba(239, 68, 68, 0.35);
+  background-color: rgba(239, 68, 68, 0.05);
+}
+
+.task-saas-card.completed {
+  opacity: 0.65;
+}
+
+.task-saas-badges-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.task-state-pill {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 4px 8px;
+  border-radius: 999px;
+}
+
+.task-state-pill.completed {
+  color: #15803d;
+  background-color: rgba(16, 185, 129, 0.15);
+}
+
+.task-state-pill.overdue {
+  color: #b91c1c;
+  background-color: rgba(239, 68, 68, 0.15);
+}
+
+.task-state-pill.upcoming {
+  color: #0369a1;
+  background-color: rgba(59, 130, 246, 0.12);
+}
+
+.task-state-pill.available {
+  color: #1d4ed8;
+  background-color: rgba(59, 130, 246, 0.12);
+}
+
 .task-saas-card:hover {
   border-color: var(--color-text-secondary);
 }

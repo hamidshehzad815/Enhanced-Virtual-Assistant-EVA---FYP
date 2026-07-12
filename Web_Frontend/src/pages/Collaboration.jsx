@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Search, UserPlus, UserMinus, ShieldAlert, Check, X, ShieldCheck, Quote, Edit2, Users, Compass, Ban } from 'lucide-react';
 import apiRequest from '../services/api';
 import { useAuth } from '../contexts/AuthContext';
@@ -102,17 +102,19 @@ export const Collaboration = () => {
     const idx = Math.abs(hash % colors.length);
     return colors[idx];
   };
+  const [selectedUser, setSelectedUser] = useState(null);
+  const debounceRef = useRef(null);
 
-  const handleSearchSubmit = async (e) => {
-    e.preventDefault();
-    if (searchQuery.trim().length < 2) {
-      setSearchError('Search query must be at least 2 characters');
+  const doSearch = async (q) => {
+    const trimmed = String(q || '').trim();
+    if (trimmed.length < 2) {
+      setSearchResults([]);
       return;
     }
     setSearchError('');
     setIsSearching(true);
     try {
-      const response = await apiRequest(`/api/friends/search?q=${encodeURIComponent(searchQuery)}`);
+      const response = await apiRequest(`/api/friends/search?q=${encodeURIComponent(trimmed)}`);
       if (response.status === 'success' && response.data?.users) {
         setSearchResults(response.data.users);
       } else {
@@ -121,10 +123,38 @@ export const Collaboration = () => {
     } catch (err) {
       console.error('Search error:', err);
       setSearchError('Search failed. Please try again.');
+      setSearchResults([]);
     } finally {
       setIsSearching(false);
     }
   };
+
+  const handleSearchSubmit = async (e) => {
+    e && e.preventDefault && e.preventDefault();
+    if (debounceRef.current) {
+      clearTimeout(debounceRef.current);
+      debounceRef.current = null;
+    }
+    await doSearch(searchQuery);
+  };
+
+  useEffect(() => {
+    setSelectedUser(null);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!searchQuery || searchQuery.trim().length < 2) {
+      setSearchResults([]);
+      setSearchError('');
+      setIsSearching(false);
+      return;
+    }
+    debounceRef.current = setTimeout(() => {
+      doSearch(searchQuery);
+      debounceRef.current = null;
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [searchQuery]);
 
   const sendRequest = async (username) => {
     try {
@@ -419,26 +449,45 @@ export const Collaboration = () => {
           <div className="directory-panel-saas">
             <h2 className="directory-title font-logo">Find Buddies</h2>
             
-            <form onSubmit={handleSearchSubmit} className="collab-search-form-saas">
+            <form onSubmit={handleSearchSubmit} className="collab-search-form-saas" autoComplete="off">
               <input
                 type="text"
                 value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search friend by username..."
+                onChange={(e) => { setSearchQuery(e.target.value); setSelectedUser(null); }}
+                placeholder="Search friend by username or name..."
                 className="collab-search-input-saas font-body"
+                aria-autocomplete="list"
               />
-              <button type="submit" className="collab-search-submit-saas">
-                <Search size={18} />
-              </button>
+              {selectedUser ? (
+                <button
+                  type="button"
+                  className="collab-search-submit-saas"
+                  onClick={() => sendRequest(selectedUser.username)}
+                  title={`Send friend request to ${selectedUser.username}`}
+                >
+                  Add
+                </button>
+              ) : (
+                <button type="submit" className="collab-search-submit-saas" title="Search">
+                  <Search size={18} />
+                </button>
+              )}
             </form>
 
             {searchError && <p className="search-error-msg-saas">{searchError}</p>}
-            {isSearching && <p className="search-loading-msg-saas">Searching directories...</p>}
 
             <div className="search-results-list-saas">
+              {isSearching && <p className="search-loading-msg-saas">Searching directories...</p>}
               {searchResults.length > 0 ? (
                 searchResults.map((u) => (
-                  <div key={u._id} className="collab-user-tile-saas">
+                  <div
+                    key={u._id}
+                    className={`collab-user-tile-saas ${selectedUser && selectedUser._id === u._id ? 'selected' : ''}`}
+                    onClick={() => { setSelectedUser(u); setSearchQuery(u.username); setSearchResults([]); }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter') { setSelectedUser(u); setSearchQuery(u.username); setSearchResults([]); } }}
+                  >
                     <div className="tile-avatar font-body" style={{ backgroundColor: getRandomColor(u.username) }}>
                       {getInitials(u.name)}
                     </div>
@@ -448,9 +497,9 @@ export const Collaboration = () => {
                     </div>
                     <div className="tile-actions">
                       {u.relationship_status === 'none' && (
-                        <button 
+                        <button
                           className="tile-action-btn add-btn"
-                          onClick={() => sendRequest(u.username)}
+                          onClick={(e) => { e.stopPropagation(); sendRequest(u.username); }}
                           title="Add Friend"
                         >
                           <UserPlus size={16} />

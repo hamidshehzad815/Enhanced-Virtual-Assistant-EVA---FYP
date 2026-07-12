@@ -47,10 +47,10 @@ export const AppShell = ({ children }) => {
     <div className="app-container">
       {/* Desktop Sidebar Navigation */}
       <aside className="desktop-sidebar">
-        <div className="sidebar-brand">
+        <button className="sidebar-brand" onClick={() => navigate('/') }>
           <span className="auth-logo font-logo" style={{ marginBottom: 0, fontSize: '28px' }}>Eva</span>
           <span className="brand-badge">WEB</span>
-        </div>
+        </button>
 
         {user && (
           <div className="sidebar-profile">

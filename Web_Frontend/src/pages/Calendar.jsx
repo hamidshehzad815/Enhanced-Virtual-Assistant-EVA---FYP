@@ -200,8 +200,15 @@ export const Calendar = () => {
             <div className="tasks-grid-list">
               {activeTasks.map(task => {
                 const isCompleted = task.status === 'complete';
+                const taskDate = task.due_datetime ? new Date(task.due_datetime) : null;
+                const now = new Date();
+                const isPast = taskDate ? taskDate.getTime() < now.getTime() : false;
+                const isOverdue = !isCompleted && isPast;
+                const isUpcoming = !isCompleted && taskDate && taskDate.getTime() > now.getTime() + 24 * 60 * 60 * 1000;
+                const isAvailable = !isCompleted && taskDate && taskDate.getTime() <= now.getTime() + 24 * 60 * 60 * 1000 && taskDate.getTime() >= now.getTime();
+
                 return (
-                  <div key={task._id} className={`task-saas-card ${isCompleted ? 'completed' : ''}`}>
+                  <div key={task._id} className={`task-saas-card ${isCompleted ? 'completed' : ''} ${isOverdue ? 'overdue' : ''} ${isUpcoming ? 'upcoming' : ''}`}>
                     <button className="task-saas-check" onClick={() => handleToggle(task._id, task.status)}>
                       {isCompleted ? (
                         <CheckCircle2 className="check-icon completed" size={18} />
@@ -215,6 +222,12 @@ export const Calendar = () => {
                       <span className="task-saas-time">
                         {task.due_datetime ? new Date(task.due_datetime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'All day'}
                       </span>
+                      <div className="task-saas-badges-row">
+                        {isCompleted && <span className="task-state-pill completed">Completed</span>}
+                        {isOverdue && <span className="task-state-pill overdue">Overdue</span>}
+                        {isUpcoming && <span className="task-state-pill upcoming">Upcoming</span>}
+                        {isAvailable && <span className="task-state-pill available">Available</span>}
+                      </div>
                     </div>
 
                     <div className="task-saas-actions">

@@ -77,11 +77,31 @@ export const AuthProvider = ({ children }) => {
         return { success: true, isVerified: true };
       }
       
-      return { success: false, message: response.message || response.msg || 'Login failed' };
+      // Map common backend responses to field-specific errors for better UX
+      const msg = response.message || response.msg || 'Login failed';
+      const lower = String(msg || '').toLowerCase();
+      if (response.status === 404 || lower.includes('not found') || lower.includes('no account')) {
+        setErrors({ loginEmail: 'No account found with this email. Please register first.' });
+      } else if (response.status === 401 || lower.includes('password') || lower.includes('incorrect')) {
+        setErrors({ loginPassword: 'Incorrect password. Please try again.' });
+      } else {
+        setErrors({ general: msg });
+      }
+      setIsLoading(false);
+      return { success: false, message: msg };
     } catch (err) {
       const field = err.field || (err.data?.field);
       const message = err.message || 'Server not reachable';
-      setErrors(field ? { [field]: message } : { general: message });
+      // Translate common error statuses into field errors
+      if (err.status === 404 || (err.data && String(err.data.message || '').toLowerCase().includes('not found'))) {
+        setErrors({ loginEmail: 'No account found with this email. Please register first.' });
+      } else if (err.status === 401 || (err.data && String(err.data.message || '').toLowerCase().includes('password'))) {
+        setErrors({ loginPassword: 'Incorrect password. Please try again.' });
+      } else if (field) {
+        setErrors({ [field]: message });
+      } else {
+        setErrors({ general: message });
+      }
       setIsLoading(false);
       return { success: false, message };
     }

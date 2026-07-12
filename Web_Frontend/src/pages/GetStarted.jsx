@@ -73,7 +73,7 @@ export const GetStarted = () => {
       <div className="getstarted-glow-mesh"></div>
 
       <header className="getstarted-navbar">
-        <div className="navbar-logo" onClick={() => navigate('/welcome')}>
+        <div className="navbar-logo" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
           <span className="logo-text font-logo">EVA</span>
           <span className="logo-badge">PREVIEW</span>
         </div>

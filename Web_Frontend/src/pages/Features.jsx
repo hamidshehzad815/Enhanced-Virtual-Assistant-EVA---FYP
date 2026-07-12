@@ -56,7 +56,7 @@ export const Features = () => {
       <div className="features-glow-mesh"></div>
       
       <header className="features-navbar">
-        <div className="navbar-logo" onClick={() => navigate('/welcome')}>
+        <div className="navbar-logo" onClick={() => navigate('/')} style={{ cursor: 'pointer' }}>
           <span className="logo-text font-logo">EVA</span>
           <span className="logo-badge">FEATURES</span>
         </div>
