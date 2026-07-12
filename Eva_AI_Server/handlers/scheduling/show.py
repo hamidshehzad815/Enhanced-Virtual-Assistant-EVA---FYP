@@ -12,7 +12,7 @@ from db.tasks import find_tasks_for_show
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from utils.date_utils import build_date_range, convert_tasks_to_local
-from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
+from utils.task_value_normalizer import canonicalize_priority, canonicalize_status, clean_task_name
 from utils.timezone_utils import get_zoneinfo, resolve_timezone_name
 
 
@@ -440,7 +440,7 @@ async def handle_scheduling_show(
     timezone_name = resolve_timezone_name(user.get("timezone"))
     now_utc = datetime.now(dt_timezone.utc).replace(tzinfo=None)
 
-    task_name = _coerce_text(_first_value(entities.get("task_name")))
+    task_name = clean_task_name(_coerce_text(_first_value(entities.get("task_name"))))
     date_raw = _coerce_text(_first_value(entities.get("date")))
     priority = _normalize_priority(_first_value(entities.get("priority")))
     status = _normalize_status(_first_value(entities.get("status")))
