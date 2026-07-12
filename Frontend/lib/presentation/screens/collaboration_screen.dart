@@ -865,7 +865,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                 fontStyle: FontStyle.italic,
                 height: 1.45,
               ),
-              maxLines: 3,
+              maxLines: 5,
               overflow: TextOverflow.ellipsis,
             ),
             if (author.isNotEmpty)
