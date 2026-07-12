@@ -6,15 +6,6 @@ plugins {
     id("com.google.gms.google-services")
 }
 
-import java.util.Properties
-
-val localProperties = Properties()
-val localPropertiesFile = rootProject.file("local.properties")
-if (localPropertiesFile.exists()) {
-    localPropertiesFile.inputStream().use { localProperties.load(it) }
-}
-val googleWebClientId = localProperties.getProperty("google.web.client.id", "")
-
 android {
     namespace = "com.example.eva"
     compileSdk = flutter.compileSdkVersion
@@ -36,7 +27,6 @@ android {
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
         versionName = flutter.versionName
-        resValue("string", "default_web_client_id", googleWebClientId)
     }
 
     buildTypes {

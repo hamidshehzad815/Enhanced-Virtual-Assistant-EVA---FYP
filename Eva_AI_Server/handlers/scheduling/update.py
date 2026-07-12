@@ -33,7 +33,7 @@ from utils.learning_schedule_conflicts import (
     format_learning_schedule_conflict_message,
 )
 from utils.quiet_hours import find_quiet_hour_matches, format_quiet_hour_labels
-from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
+from utils.task_value_normalizer import canonicalize_priority, canonicalize_status, clean_task_name
 from utils.timezone_utils import (
     local_datetime_to_utc_naive,
     local_day_bounds_to_utc_naive,
@@ -1088,7 +1088,7 @@ async def handle_scheduling_update(
 
     # STEP 1: identifier entity check.
     task_id_direct = _coerce_text(_first_value(entities.get("task_id")))
-    task_name = _coerce_text(_first_value(entities.get("task_name")))
+    task_name = clean_task_name(_coerce_text(_first_value(entities.get("task_name"))))
     date_raw = _to_date_text(_first_value(entities.get("date")))
     priority = _normalize_priority(_first_value(entities.get("priority")))
     status = _normalize_status(_first_value(entities.get("status")))

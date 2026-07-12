@@ -89,14 +89,14 @@ const logger = winston.createLogger({
   ],
 });
 
-// Add console transport in development
-if (process.env.NODE_ENV !== "production") {
-  logger.add(
-    new winston.transports.Console({
-      format: consoleFormat,
-    }),
-  );
-}
+// Console transport.
+// Development: colorized, human-readable output.
+// Production: plain output to stdout so hosted platforms (Render/Heroku) capture logs.
+logger.add(
+  new winston.transports.Console({
+    format: process.env.NODE_ENV === "production" ? logFormat : consoleFormat,
+  }),
+);
 
 // Stream for Morgan HTTP request logging
 logger.stream = {

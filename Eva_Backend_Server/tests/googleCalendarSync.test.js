@@ -30,12 +30,14 @@ describe("googleCalendarSync utils", () => {
     const soon = new Date(Date.now() + 60 * 1000);
     expect(
       tokenNeedsRefresh({
+        access_token: "token",
         token_expires: soon,
         refresh_token: "refresh",
       }),
     ).toBe(true);
     expect(
       tokenNeedsRefresh({
+        access_token: "token",
         token_expires: new Date(Date.now() + 60 * 60 * 1000),
         refresh_token: "refresh",
       }),
