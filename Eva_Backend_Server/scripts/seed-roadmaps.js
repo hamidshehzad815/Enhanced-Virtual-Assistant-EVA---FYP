@@ -88,8 +88,16 @@ const seedFromRoadmapsJson = async (data) => {
   const topicNames = Array.isArray(data.topics) ? data.topics : [];
   const now = new Date();
 
-  let inserted = 0;
-  let skipped = 0;
+  // Index on the natural key makes the idempotent upserts fast (and unique).
+  // Without it, every match is a collection scan — unusably slow on cloud Mongo.
+  await collection.createIndex(
+    { language: 1, level: 1, order: 1 },
+    { unique: true },
+  );
+
+  // Build all rows as upsert ops. $setOnInsert means existing rows are left
+  // untouched (fetched_at / resources preserved) — same "skip if present" behavior.
+  const ops = [];
   let expected = 0;
 
   for (const language of topicNames) {
@@ -129,33 +137,41 @@ const seedFromRoadmapsJson = async (data) => {
         const order = idx + 1;
         const title = String(titles[idx] || "").trim();
 
-        const exists = await collection.findOne(
-          { language, level, order },
-          { projection: { _id: 1 } },
-        );
-
-        if (exists) {
-          skipped += 1;
-          continue;
-        }
-
-        await collection.insertOne({
-          language,
-          level,
-          order,
-          title,
-          level_calendar_days: levelCalendarDays,
-          resources: [],
-          fetched_at: null,
-          created_at: now,
-          updated_at: now,
+        ops.push({
+          updateOne: {
+            filter: { language, level, order },
+            update: {
+              $setOnInsert: {
+                language,
+                level,
+                order,
+                title,
+                level_calendar_days: levelCalendarDays,
+                resources: [],
+                fetched_at: null,
+                created_at: now,
+                updated_at: now,
+              },
+            },
+            upsert: true,
+          },
         });
-        inserted += 1;
       }
     }
   }
 
-  return { inserted, skipped, expected };
+  // Run in chunks so a single bulkWrite payload isn't oversized. Turns thousands
+  // of sequential round-trips into a handful.
+  const CHUNK = 1000;
+  let inserted = 0;
+  for (let i = 0; i < ops.length; i += CHUNK) {
+    const res = await collection.bulkWrite(ops.slice(i, i + CHUNK), {
+      ordered: false,
+    });
+    inserted += res.upsertedCount || 0;
+  }
+
+  return { inserted, skipped: expected - inserted, expected };
 };
 
 const main = async () => {

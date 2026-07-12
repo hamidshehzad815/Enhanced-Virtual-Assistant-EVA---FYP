@@ -40,7 +40,7 @@ from utils.learning_schedule_conflicts import (
     format_learning_schedule_conflict_message,
 )
 from utils.quiet_hours import find_quiet_hour_matches, format_quiet_hour_labels
-from utils.task_value_normalizer import canonicalize_priority
+from utils.task_value_normalizer import canonicalize_priority, clean_task_name
 from utils.timezone_utils import (
     local_datetime_to_utc_naive,
     resolve_timezone_name,
@@ -673,7 +673,7 @@ async def handle_scheduling_add(
                     await redis_client.delete_context(user_id)
 
     # Step 1: required entity check in order: task_name -> date -> time.
-    task_name = _coerce_text(_first_value(entities.get("task_name")))
+    task_name = clean_task_name(_coerce_text(_first_value(entities.get("task_name"))))
     if not task_name:
         pending_entities = dict(entities)
         pending_entities.pop("task_name", None)
