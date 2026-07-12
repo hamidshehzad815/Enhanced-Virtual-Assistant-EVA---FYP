@@ -14,9 +14,12 @@ export const Calendar = () => {
     setSelectedDay,
     setFocusedDay,
     toggleTask,
+    rescheduleTask,
     deleteTask,
     formatDateString
   } = useCalendar();
+  const [rescheduleTargetId, setRescheduleTargetId] = useState(null);
+  const [rescheduleValue, setRescheduleValue] = useState('');
 
   // Month navigation helpers
   const handlePrevMonth = () => {
@@ -95,6 +98,8 @@ export const Calendar = () => {
   const monthTitle = `${monthNames[focusedDay.getMonth()]} ${focusedDay.getFullYear()}`;
   const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+  const getTaskId = (task) => task?._id || task?.id || task?.task_id || task?.taskId;
+
   const handleToggle = (taskId, currentStatus) => {
     toggleTask(taskId, currentStatus);
   };
@@ -106,6 +111,33 @@ export const Calendar = () => {
   };
 
   const activeTasks = tasks;
+
+  const formatDateTimeLocal = (value) => {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    const offset = date.getTimezoneOffset();
+    const localDate = new Date(date.getTime() - offset * 60000);
+    return localDate.toISOString().slice(0, 16);
+  };
+
+  const handleStartReschedule = (task) => {
+    const taskId = getTaskId(task);
+    setRescheduleTargetId(taskId);
+    setRescheduleValue(formatDateTimeLocal(task.due_datetime));
+  };
+
+  const handleCancelReschedule = () => {
+    setRescheduleTargetId(null);
+    setRescheduleValue('');
+  };
+
+  const handleSaveReschedule = async () => {
+    if (!rescheduleTargetId || !rescheduleValue) return;
+    await rescheduleTask(rescheduleTargetId, new Date(rescheduleValue).toISOString());
+    setRescheduleTargetId(null);
+    setRescheduleValue('');
+  };
 
   return (
     <div className="calendar-workspace animate-fade-in">
@@ -207,9 +239,11 @@ export const Calendar = () => {
                 const isUpcoming = !isCompleted && taskDate && taskDate.getTime() > now.getTime() + 24 * 60 * 60 * 1000;
                 const isAvailable = !isCompleted && taskDate && taskDate.getTime() <= now.getTime() + 24 * 60 * 60 * 1000 && taskDate.getTime() >= now.getTime();
 
+                const taskId = getTaskId(task);
+
                 return (
-                  <div key={task._id} className={`task-saas-card ${isCompleted ? 'completed' : ''} ${isOverdue ? 'overdue' : ''} ${isUpcoming ? 'upcoming' : ''}`}>
-                    <button className="task-saas-check" onClick={() => handleToggle(task._id, task.status)}>
+                  <div key={taskId || `${task.title}-${task.due_datetime || 'all-day'}`} className={`task-saas-card ${isCompleted ? 'completed' : ''} ${isOverdue ? 'overdue' : ''} ${isUpcoming ? 'upcoming' : ''}`}>
+                    <button className="task-saas-check" onClick={() => handleToggle(taskId, task.status)}>
                       {isCompleted ? (
                         <CheckCircle2 className="check-icon completed" size={18} />
                       ) : (
@@ -228,13 +262,30 @@ export const Calendar = () => {
                         {isUpcoming && <span className="task-state-pill upcoming">Upcoming</span>}
                         {isAvailable && <span className="task-state-pill available">Available</span>}
                       </div>
+                      {rescheduleTargetId === taskId ? (
+                        <div className="task-reschedule-inline">
+                          <input
+                            type="datetime-local"
+                            className="task-reschedule-input"
+                            value={rescheduleValue}
+                            onChange={(e) => setRescheduleValue(e.target.value)}
+                          />
+                          <div className="task-reschedule-actions">
+                            <button className="task-reschedule-save" onClick={handleSaveReschedule}>Save</button>
+                            <button className="task-reschedule-cancel" onClick={handleCancelReschedule}>Cancel</button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
 
                     <div className="task-saas-actions">
                       <span className={`priority-label ${task.priority}`}>
                         {task.priority}
                       </span>
-                      <button className="task-saas-delete" onClick={() => handleDelete(task._id)}>
+                      <button className="task-saas-reschedule" onClick={() => handleStartReschedule(task)}>
+                        Reschedule
+                      </button>
+                      <button className="task-saas-delete" onClick={() => handleDelete(taskId)}>
                         <Trash2 size={14} />
                       </button>
                     </div>

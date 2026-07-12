@@ -74,24 +74,28 @@ export const ChatProvider = ({ children }) => {
   const loadChatSessions = async () => {
     try {
       const response = await apiRequest('/api/chat/sessions');
-      const sessions = response.data?.sessions || [];
+      const sessions = response?.data?.sessions || response?.sessions || [];
       const mappedSessions = sessions.map(mapBackendSession);
-      setConversations(mappedSessions);
-      saveStoredConversations(mappedSessions);
-      return mappedSessions;
+      if (mappedSessions.length > 0) {
+        setConversations(mappedSessions);
+        saveStoredConversations(mappedSessions);
+        return mappedSessions;
+      }
     } catch (err) {
       console.warn('Could not load backend chat sessions, falling back to local history.', err);
-      const stored = getStoredConversations();
-      setConversations(stored);
-      return stored;
     }
+
+    const stored = getStoredConversations();
+    setConversations(stored);
+    return stored;
   };
 
   const loadSessionHistory = async (sessionId) => {
     if (!sessionId) return null;
+
     try {
       const response = await apiRequest(`/api/chat/sessions/${sessionId}/history`);
-      const history = response.data?.messages || [];
+      const history = response?.data?.messages || response?.messages || [];
       const mapped = mapBackendMessages(history);
       if (mapped.length > 0) {
         setMessages(mapped);
@@ -101,13 +105,16 @@ export const ChatProvider = ({ children }) => {
     } catch (err) {
       console.warn('Failed to load chat history from backend, using local cache.', err);
     }
+
     const storedMessages = getSessionMessages(sessionId);
     if (storedMessages && storedMessages.length > 0) {
       setMessages(storedMessages);
       return storedMessages;
     }
-    loadMockMessages();
-    return null;
+
+    setMessages([]);
+    saveSessionMessages(sessionId, []);
+    return [];
   };
 
   const createChatSession = async (title = 'New Conversation') => {
@@ -116,15 +123,28 @@ export const ChatProvider = ({ children }) => {
         method: 'POST',
         body: JSON.stringify({ title }),
       });
-      const newSessionId = response.data?.session_id || response.data?.session?._id || response.session_id;
+      const payload = response?.data || response || {};
+      const newSessionId = payload.session_id || payload.session?._id || payload.session?.id || payload.id;
+
       if (newSessionId) {
         localStorage.setItem('chat_session_id', newSessionId);
         setSessionId(newSessionId);
         setSelectedSessionId(newSessionId);
-        const nextConversations = [{ id: newSessionId, title, lastMessage: 'Start your chat with EVA', updated_at: new Date().toISOString() }, ...getStoredConversations().filter((item) => item.id !== newSessionId)];
+        setMessages([]);
+        saveSessionMessages(newSessionId, []);
+
+        const nextConversations = [
+          {
+            id: newSessionId,
+            title: payload.session?.title || title || 'New Conversation',
+            lastMessage: 'Start your chat with EVA',
+            updated_at: new Date().toISOString(),
+          },
+          ...getStoredConversations().filter((item) => item.id !== newSessionId),
+        ];
+
         setConversations(nextConversations);
         saveStoredConversations(nextConversations);
-        await loadChatSessions();
         return newSessionId;
       }
     } catch (err) {
@@ -174,10 +194,13 @@ export const ChatProvider = ({ children }) => {
     if (storedMessages && storedMessages.length > 0) {
       setMessages(storedMessages);
     } else {
-      loadMockMessages();
+      setMessages([]);
+      saveSessionMessages(id, []);
     }
+    setIsEvaTyping(false);
     setSessionId(id);
     setSelectedSessionId(id);
+    localStorage.setItem('chat_session_id', id);
   };
 
   // Load mock messages initially to preserve visual aesthetic
@@ -240,7 +263,16 @@ export const ChatProvider = ({ children }) => {
 
   const sendMessage = async (text, type = 'text') => {
     if (!text.trim()) return;
-    
+
+    let activeSession = sessionId || selectedSessionId || localStorage.getItem('chat_session_id');
+    if (!activeSession) {
+      activeSession = await getOrCreateSession();
+    }
+
+    if (!activeSession) {
+      throw new Error('Could not establish chat session');
+    }
+
     const userMsg = {
       id: Date.now().toString(),
       text: text.trim(),
@@ -248,23 +280,15 @@ export const ChatProvider = ({ children }) => {
       isEva: false,
       timestamp: new Date().toISOString(),
     };
-    
-    const nextMessages = [...messages, userMsg];
-    setMessages(nextMessages);
-    if (sessionId) saveSessionMessages(sessionId, nextMessages);
-    setIsEvaTyping(true);
-    
-    try {
-      // Ensure we have a session
-      let activeSession = sessionId;
-      if (!activeSession) {
-        activeSession = await getOrCreateSession();
-      }
-      
-      if (!activeSession) {
-        throw new Error('Could not establish chat session');
-      }
 
+    setMessages((prevMessages) => {
+      const nextMessages = [...prevMessages, userMsg];
+      saveSessionMessages(activeSession, nextMessages);
+      return nextMessages;
+    });
+    setIsEvaTyping(true);
+
+    try {
       let response;
       try {
         response = await apiRequest('/api/chat/process', {
@@ -272,37 +296,36 @@ export const ChatProvider = ({ children }) => {
           body: JSON.stringify({
             message: text.trim(),
             session_id: activeSession,
-            input_type: type
-          })
+            input_type: type,
+          }),
         });
       } catch (err) {
-        // If session was not found on server (stale local id), attempt to create a new session and retry once
         const msg = String(err.message || '').toLowerCase();
         if (err.status === 404 || msg.includes('chat session not found')) {
-          try {
-            const createRes = await apiRequest('/api/chat/session', {
-              method: 'POST',
-              body: JSON.stringify({ title: 'Workspace Chat' })
-            });
-            const newSessionId = createRes.data?.session_id || createRes.data?.session?._id || createRes.session_id;
-            if (newSessionId) {
-              localStorage.setItem('chat_session_id', newSessionId);
-              setSessionId(newSessionId);
-              activeSession = newSessionId;
-              response = await apiRequest('/api/chat/process', {
-                method: 'POST',
-                body: JSON.stringify({
-                  message: text.trim(),
-                  session_id: activeSession,
-                  input_type: type
-                })
-              });
-            } else {
-              throw err;
-            }
-          } catch (createErr) {
-            throw createErr;
+          const createRes = await apiRequest('/api/chat/session', {
+            method: 'POST',
+            body: JSON.stringify({ title: 'Workspace Chat' }),
+          });
+          const payload = createRes?.data || createRes || {};
+          const newSessionId = payload.session_id || payload.session?._id || payload.session?.id || payload.id;
+
+          if (!newSessionId) {
+            throw err;
           }
+
+          localStorage.setItem('chat_session_id', newSessionId);
+          setSessionId(newSessionId);
+          setSelectedSessionId(newSessionId);
+          activeSession = newSessionId;
+
+          response = await apiRequest('/api/chat/process', {
+            method: 'POST',
+            body: JSON.stringify({
+              message: text.trim(),
+              session_id: activeSession,
+              input_type: type,
+            }),
+          });
         } else {
           throw err;
         }
@@ -310,21 +333,22 @@ export const ChatProvider = ({ children }) => {
 
       const replyMsg = {
         id: (Date.now() + 1).toString(),
-        text: response.response_text || response.message || 'I processed your command.',
+        text: response?.response_text || response?.message || 'I processed your command.',
         role: 'eva',
         isEva: true,
         timestamp: new Date().toISOString(),
       };
 
-      const nextMessages = [...messages, replyMsg];
-      setMessages(nextMessages);
-      if (activeSession) saveSessionMessages(activeSession, nextMessages);
+      setMessages((prevMessages) => {
+        const nextMessages = [...prevMessages, replyMsg];
+        saveSessionMessages(activeSession, nextMessages);
+        return nextMessages;
+      });
       upsertConversation(activeSession, buildTitleFromMessage(text), replyMsg.text);
-      
-      if (response.intent && response.intent !== 'general') {
+
+      if (response?.intent && response.intent !== 'general') {
         fetchDashboard();
       }
-      
     } catch (err) {
       console.error('Failed to send message to AI:', err);
       const errMsg = {
@@ -334,23 +358,29 @@ export const ChatProvider = ({ children }) => {
         isEva: true,
         timestamp: new Date().toISOString(),
       };
-      const nextMessages = [...messages, errMsg];
-      setMessages(nextMessages);
-      if (activeSession) saveSessionMessages(activeSession, nextMessages);
-      if (activeSession) upsertConversation(activeSession, buildTitleFromMessage(text), errMsg.text);
+      setMessages((prevMessages) => {
+        const nextMessages = [...prevMessages, errMsg];
+        saveSessionMessages(activeSession, nextMessages);
+        return nextMessages;
+      });
+      upsertConversation(activeSession, buildTitleFromMessage(text), errMsg.text);
     } finally {
       setIsEvaTyping(false);
     }
   };
 
   const clearChat = async () => {
-    const newSessionId = await getOrCreateSession();
+    setIsEvaTyping(false);
+    const newSessionId = await createChatSession('New Conversation');
+
     if (newSessionId) {
       loadConversation(newSessionId);
-      saveStoredConversations(getStoredConversations());
-    } else {
-      loadMockMessages();
+      return newSessionId;
     }
+
+    setMessages([]);
+    saveStoredConversations(getStoredConversations());
+    return null;
   };
 
   return (

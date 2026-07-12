@@ -16,6 +16,8 @@ export const CalendarProvider = ({ children }) => {
   // Filters
   const [filterCategory, setFilterCategory] = useState(null);
 
+  const getTaskId = (task) => task?._id || task?.id || task?.task_id || task?.taskId;
+
   const fetchTasks = async () => {
     if (!isAuthenticated) return;
     setIsLoading(true);
@@ -79,10 +81,16 @@ export const CalendarProvider = ({ children }) => {
   }, [allTasks, selectedDay, filterCategory]);
 
   const toggleTask = async (taskId, currentStatus) => {
-    const newStatus = currentStatus === 'complete' ? 'pending' : 'complete';
+    if (!taskId) {
+      console.warn('Cannot toggle task without a valid id.');
+      return;
+    }
+
+    const isComplete = currentStatus === 'complete' || currentStatus === 'completed';
+    const newStatus = isComplete ? 'pending' : 'complete';
     try {
       // Optimistic update
-      setAllTasks(prev => prev.map(t => t._id === taskId ? { ...t, status: newStatus } : t));
+      setAllTasks(prev => prev.map(t => getTaskId(t) === taskId ? { ...t, status: newStatus } : t));
       
       const response = await apiRequest(`/api/tasks/${taskId}/status`, {
         method: 'PATCH',
@@ -90,7 +98,11 @@ export const CalendarProvider = ({ children }) => {
       });
       
       if (response.status === 'success') {
+        if (response.data?.task) {
+          setAllTasks(prev => prev.map(t => getTaskId(t) === taskId ? { ...t, status: response.data.task.status || newStatus } : t));
+        }
         fetchDashboard(); // update progress stats
+        fetchTasks();
       }
     } catch (err) {
       console.error('Failed to toggle task:', err);
@@ -98,10 +110,42 @@ export const CalendarProvider = ({ children }) => {
     }
   };
 
+  const rescheduleTask = async (taskId, newDueDatetime) => {
+    if (!taskId || !newDueDatetime) {
+      console.warn('Cannot reschedule task without a valid id and datetime.');
+      return;
+    }
+
+    try {
+      setAllTasks(prev => prev.map(t => getTaskId(t) === taskId ? { ...t, due_datetime: newDueDatetime } : t));
+
+      const response = await apiRequest(`/api/tasks/${taskId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ due_datetime: newDueDatetime })
+      });
+
+      if (response.status === 'success') {
+        if (response.data?.task) {
+          setAllTasks(prev => prev.map(t => getTaskId(t) === taskId ? { ...t, ...response.data.task } : t));
+        }
+        fetchDashboard();
+        fetchTasks();
+      }
+    } catch (err) {
+      console.error('Failed to reschedule task:', err);
+      fetchTasks();
+    }
+  };
+
   const deleteTask = async (taskId) => {
+    if (!taskId) {
+      console.warn('Cannot delete task without a valid id.');
+      return;
+    }
+
     try {
       // Optimistic delete
-      setAllTasks(prev => prev.filter(t => t._id !== taskId));
+      setAllTasks(prev => prev.filter(t => getTaskId(t) !== taskId));
       
       const response = await apiRequest(`/api/tasks/${taskId}`, {
         method: 'DELETE'
@@ -138,6 +182,7 @@ export const CalendarProvider = ({ children }) => {
       setFocusedDay,
       setFilterCategory,
       toggleTask,
+      rescheduleTask,
       deleteTask,
       fetchTasks,
       fetchDashboard,

@@ -4,6 +4,9 @@ import apiRequest from '../services/api';
 import { useCalendar } from '../contexts/CalendarContext';
 import './Roadmap.css';
 
+const MOCK_FIRST_PYTHON_SESSION_DATE = new Date(Date.now() + 10 * 60 * 60 * 1000).toISOString();
+const MOCK_FIRST_PYTHON_SESSION_TIMESTAMP = new Date(MOCK_FIRST_PYTHON_SESSION_DATE).getTime();
+
 const MOCK_ALL_ROADMAPS = [
   {
     id: '1',
@@ -72,16 +75,20 @@ const MOCK_USER_ROADMAPS = [
     color: '#F59E0B',
     bg: 'rgba(245, 158, 11, 0.15)',
     progress_percent: 33,
+    start_date: '2025-01-10',
+    end_date: '2025-06-20',
     sessions: [
       {
         id: 'py1',
         title: 'Basics',
         description: 'Syntax, variables, conditions, loops, and functions.',
-        status: 'completed',
-        scheduled_date: 'Mon · 9:00 AM',
+        status: 'pending',
+        scheduled_date_raw: MOCK_FIRST_PYTHON_SESSION_DATE,
+        scheduled_timestamp: MOCK_FIRST_PYTHON_SESSION_TIMESTAMP,
+        scheduled_date: 'Today · 10:00 AM',
         estimated_duration: 60,
         resources: [{ title: 'Watch Intro', url: 'https://youtube.com' }],
-        session_state: 'completed',
+        session_state: 'available',
         is_current: false,
       },
       {
@@ -116,6 +123,8 @@ const MOCK_USER_ROADMAPS = [
     color: '#3B82F6',
     bg: 'rgba(59, 130, 246, 0.15)',
     progress_percent: 50,
+    start_date: '2025-02-05',
+    end_date: '2025-07-15',
     sessions: [
       {
         id: 'js1',
@@ -150,8 +159,9 @@ export const Roadmap = () => {
   const [showInfoDrawer, setShowInfoDrawer] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [scheduleDates, setScheduleDates] = useState([]);
+  const [now, setNow] = useState(new Date());
 
-  const { fetchDashboard } = useCalendar() || {};
+  const { fetchDashboard, fetchTasks } = useCalendar() || {};
 
   const fetchRoadmapDetails = async (goalId) => {
     if (goalId === '1' || goalId === '2') return;
@@ -169,12 +179,15 @@ export const Roadmap = () => {
               category: r.track_label || 'Study Track',
               progress_percent: r.progress_percent || 0,
               status: r.status,
+              start_date: r.start_date || r.startDate || null,
+              end_date: r.end_date || r.endDate || null,
               sessions: (r.sessions || []).map(s => ({
                 id: s.id || s._id,
                 title: s.title,
                 description: s.description,
                 status: s.status,
                 scheduled_date_raw: s.scheduled_date,
+                scheduled_timestamp: s.scheduled_date ? new Date(s.scheduled_date).getTime() : null,
                 scheduled_date: s.scheduled_date ? formatBackendDate(s.scheduled_date) : 'Flexible',
                 estimated_duration: s.estimated_duration || 60,
                 resources: s.resources || [],
@@ -195,6 +208,8 @@ export const Roadmap = () => {
               title: freshNode.title,
               description: freshNode.description,
               status: freshNode.status,
+              scheduled_date_raw: freshNode.scheduled_date,
+              scheduled_timestamp: freshNode.scheduled_date ? new Date(freshNode.scheduled_date).getTime() : null,
               scheduled_date: freshNode.scheduled_date ? formatBackendDate(freshNode.scheduled_date) : 'Flexible',
               estimated_duration: freshNode.estimated_duration || 60,
               resources: freshNode.resources || [],
@@ -225,6 +240,8 @@ export const Roadmap = () => {
           bg: getLangBgColor(r.language),
           progress_percent: r.progress_percent || 0,
           status: r.status,
+          start_date: r.start_date || r.startDate || null,
+          end_date: r.end_date || r.endDate || null,
           sessions: []
         }));
         setUserRoadmaps(mapped);
@@ -282,6 +299,14 @@ export const Roadmap = () => {
     }
   }, [activeNode, selectedRoadmapId]);
 
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setNow(new Date());
+    }, 60000);
+
+    return () => window.clearInterval(timer);
+  }, []);
+
   const handleUpdateSessionStatus = async (status) => {
     if (!selectedRoadmapId || !activeNode) return;
     setIsLoading(true);
@@ -292,6 +317,7 @@ export const Roadmap = () => {
       });
       alert(`Topic marked as ${status}!`);
       if (fetchDashboard) fetchDashboard();
+      if (fetchTasks) fetchTasks();
       await fetchRoadmapDetails(selectedRoadmapId);
     } catch (err) {
       alert(err.message || `Failed to mark topic as ${status}`);
@@ -310,6 +336,7 @@ export const Roadmap = () => {
       });
       alert('Topic rescheduled successfully!');
       if (fetchDashboard) fetchDashboard();
+      if (fetchTasks) fetchTasks();
       await fetchRoadmapDetails(selectedRoadmapId);
     } catch (err) {
       alert(err.message || 'Failed to reschedule topic');
@@ -367,8 +394,42 @@ export const Roadmap = () => {
 
   const currentRoadmap = userRoadmaps.find(r => r.id === selectedRoadmapId) || userRoadmaps[0];
 
+  const formatRoadmapDate = (value) => {
+    if (!value) return '—';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+    return parsed.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    });
+  };
+
+  const getSessionActionState = (node) => {
+    const scheduledTimestamp = node?.scheduled_timestamp ||
+      (node?.scheduled_date_raw ? new Date(node.scheduled_date_raw).getTime() : null) ||
+      (node?.scheduled_date ? new Date(node.scheduled_date).getTime() : null);
+    if (!scheduledTimestamp || Number.isNaN(scheduledTimestamp)) return 'upcoming';
+
+    const diffMs = scheduledTimestamp - now.getTime();
+    const oneDayMs = 24 * 60 * 60 * 1000;
+
+    if (diffMs > oneDayMs) return 'upcoming';
+    if (diffMs <= 0) return 'active';
+    return 'near';
+  };
+
   const handleNodeClick = (node) => {
     setActiveNode(node);
+  };
+
+  const handleQuickReschedule = () => {
+    if (scheduleDates.length > 0 && scheduleDates[0]?.date) {
+      handleRescheduleSession(scheduleDates[0].date);
+      return;
+    }
+
+    alert('No reschedule slots are available right now.');
   };
 
   return (
@@ -381,73 +442,58 @@ export const Roadmap = () => {
           <h3 className="pane-title font-logo">Roadmaps</h3>
         </div>
 
-        {/* Current Roadmap Overview Card */}
-        {currentRoadmap && (
-          <div className="current-roadmap-overview-card" style={{ '--accent-color': currentRoadmap.color }}>
-            <span className="overview-lbl">Active Track</span>
-            <div className="custom-dropdown-container-saas">
-              <select
-                value={selectedRoadmapId}
-                onChange={(e) => setSelectedRoadmapId(e.target.value)}
-                className="roadmap-select-saas font-body"
-              >
-                {userRoadmaps.map((r) => (
-                  <option key={r.id} value={r.id}>
-                    {r.name}
-                  </option>
-                ))}
-              </select>
-              <ChevronDown size={16} className="dropdown-arrow-saas" />
-            </div>
+        <div className="active-tracks-section">
+          <span className="catalog-panel-title">Active Tracks</span>
+          <div className="active-tracks-list">
+            {userRoadmaps.map((roadmap) => {
+              const totalSessions = roadmap.sessions?.length || 0;
+              const completedSessions = roadmap.sessions?.filter((session) => {
+                const normalizedStatus = (session?.status || '').toLowerCase();
+                return normalizedStatus === 'completed' || normalizedStatus === 'complete';
+              }).length || 0;
+              const isSelected = selectedRoadmapId === roadmap.id;
 
-            <div className="overview-stats">
-              <div className="stat-row">
-                <span>Progress</span>
-                <strong>{currentRoadmap.progress_percent}%</strong>
-              </div>
-              <div className="progress-bar-container-saas">
-                <div 
-                  className="progress-bar-fill-saas" 
-                  style={{ width: `${currentRoadmap.progress_percent}%`, backgroundColor: currentRoadmap.color }}
-                />
-              </div>
-              {currentRoadmap.status && (
-                <>
-                  <div className="stat-row" style={{ marginTop: 12, marginBottom: 4 }}>
-                    <span>Status</span>
-                    <span className={`status-badge-saas ${currentRoadmap.status}`}>
-                      {currentRoadmap.status}
-                    </span>
+              return (
+                <button
+                  key={roadmap.id}
+                  type="button"
+                  className={`active-track-card ${isSelected ? 'selected' : ''}`}
+                  onClick={() => setSelectedRoadmapId(roadmap.id)}
+                >
+                  <div className="active-track-card-top">
+                    <div>
+                      <h4>{roadmap.name}</h4>
+                      <p>{roadmap.category || 'Study Track'}</p>
+                    </div>
+                    <span className="active-track-progress-badge">{roadmap.progress_percent || 0}%</span>
                   </div>
-                </>
-              )}
-            </div>
 
-            {selectedRoadmapId !== '1' && selectedRoadmapId !== '2' && currentRoadmap.status && (
-              <div className="goal-actions-row">
-                {currentRoadmap.status === 'active' && (
-                  <button className="goal-action-btn pause-btn" onClick={() => handleUpdateGoalStatus('paused')}>
-                    Pause Plan
-                  </button>
-                )}
-                {currentRoadmap.status === 'paused' && (
-                  <button className="goal-action-btn resume-btn" onClick={() => handleUpdateGoalStatus('active')}>
-                    Resume Plan
-                  </button>
-                )}
-                {currentRoadmap.status !== 'cancelled' && currentRoadmap.status !== 'completed' && (
-                  <button className="goal-action-btn cancel-btn" onClick={() => handleUpdateGoalStatus('cancelled')}>
-                    Cancel
-                  </button>
-                )}
-              </div>
-            )}
-            
-            <button className="directory-trigger-mobile-btn" onClick={() => setShowInfoDrawer(true)}>
-              <Info size={14} /> Browse Catalog
-            </button>
+                  <div className="active-track-progress-bar">
+                    <div
+                      className="active-track-progress-fill"
+                      style={{ width: `${roadmap.progress_percent || 0}%`, backgroundColor: roadmap.color }}
+                    />
+                  </div>
+
+                  <div className="active-track-session-meta">
+                    <strong>{completedSessions}/{totalSessions} Sessions Completed</strong>
+                  </div>
+
+                  <div className="active-track-dates">
+                    <div>
+                      <span>Start</span>
+                      <strong>{formatRoadmapDate(roadmap.start_date)}</strong>
+                    </div>
+                    <div>
+                      <span>End</span>
+                      <strong>{formatRoadmapDate(roadmap.end_date)}</strong>
+                    </div>
+                  </div>
+                </button>
+              );
+            })}
           </div>
-        )}
+        </div>
 
         {/* Catalog List (Visible on desktop sidebar by default) */}
         <div className="desktop-catalog-panel">
@@ -492,11 +538,10 @@ export const Roadmap = () => {
                   const isCompleted = node.session_state === 'completed' || node.status === 'completed' || node.status === 'complete';
                   const isOngoing = node.session_state === 'ongoing' || node.session_state === 'active';
                   const isAvailable = isOngoing || node.session_state === 'available';
-                  const isUpcoming = node.session_state === 'locked' || node.session_state === 'upcoming' || node.session_state === 'unlocked_future';
-                  const isOverdue = node.session_state === 'overdue';
+                  const sessionActionState = getSessionActionState(node);
+                  const isUpcoming = !isCompleted && !isOngoing && sessionActionState === 'upcoming';
                   const isFocused = activeNode?.id === node.id;
                   const color = currentRoadmap.color;
-                  const disabled = isUpcoming || isOverdue;
 
                   return (
                     <div 
@@ -504,24 +549,25 @@ export const Roadmap = () => {
                       className={`trail-node-row ${isEven ? 'left-align' : 'right-align'}`}
                     >
                       <button 
-                        className={`trail-node-card ${isCompleted ? 'completed' : ''} ${isAvailable ? 'active' : ''} ${isUpcoming ? 'upcoming' : ''} ${isOverdue ? 'overdue' : ''} ${isFocused ? 'focused' : ''}`}
-                        onClick={() => !disabled ? handleNodeClick(node) : null}
+                        type="button"
+                        className={`trail-node-card ${isCompleted ? 'completed' : ''} ${isAvailable ? 'active' : ''} ${isUpcoming ? 'upcoming' : ''} ${isFocused ? 'focused' : ''}`}
+                        onClick={() => handleNodeClick(node)}
                         style={{ borderLeft: `4px solid ${color}` }}
-                        disabled={disabled}
                       >
                         <div className="node-avatar-indicator">
                           <div className="indicator-pulse" style={{ backgroundColor: isOngoing ? color : 'transparent' }}></div>
                           <div className="indicator-core" style={{ backgroundColor: isCompleted ? '#22c55e' : (isOngoing ? color : 'var(--color-border)') }}>
                             {isCompleted ? (
                               <CheckCircle size={16} color="white" />
-                            ) : (
-                              <Play size={14} color={isOngoing ? 'white' : 'var(--color-text-secondary)'} style={{ marginLeft: isOngoing ? '1px' : '0' }} />
-                            )}
+                            ) : null}
                           </div>
                         </div>
 
                         <div className="node-card-body">
-                          <h4 className="node-title">{node.title}</h4>
+                          <div className="node-card-heading">
+                            <h4 className="node-title">{node.title}</h4>
+                            {isUpcoming && <span className="upcoming-card-label">Upcoming</span>}
+                          </div>
                           <p className="node-desc-trimmed">{node.description || 'Topic Overview'}</p>
                           <div className="node-badges-row">
                             <span className="badge duration">{node.estimated_duration} min</span>
@@ -529,10 +575,8 @@ export const Roadmap = () => {
                           </div>
                         </div>
                         <div className="node-state-pill-row">
-                          {node.session_state === 'completed' && <span className="state-pill completed">Completed</span>}
-                          {node.session_state === 'ongoing' && <span className="state-pill available">Available</span>}
-                          {(node.session_state === 'locked' || node.session_state === 'upcoming' || node.session_state === 'unlocked_future') && <span className="state-pill upcoming">Upcoming</span>}
-                          {node.session_state === 'overdue' && <span className="state-pill overdue">Overdue</span>}
+                          {isCompleted && <span className="state-pill completed">Completed</span>}
+                          {isOngoing && <span className="state-pill available">Available</span>}
                         </div>
                       </button>
                     </div>
@@ -579,27 +623,52 @@ export const Roadmap = () => {
                 </div>
               </div>
 
-              {activeNode.is_current && selectedRoadmapId !== '1' && selectedRoadmapId !== '2' && (
+              {activeNode && selectedRoadmapId !== '1' && selectedRoadmapId !== '2' && (
                 <div className="node-actions-container">
                   <span className="resource-section-lbl">Session Actions</span>
-                  <div className="action-buttons-row">
-                    {(activeNode.session_state === 'ongoing' || activeNode.session_state === 'overdue' || activeNode.status === 'ongoing') && (
-                      <button 
-                        className="action-btn complete-btn"
-                        onClick={() => handleUpdateSessionStatus('completed')}
-                      >
-                        <CheckCircle size={14} /> Complete Topic
-                      </button>
-                    )}
-                    {(activeNode.session_state === 'unlocked_future' || activeNode.session_state === 'upcoming') && (
-                      <button 
-                        className="action-btn skip-btn"
-                        onClick={() => handleUpdateSessionStatus('skipped')}
-                      >
-                        <Play size={14} /> Skip Topic
-                      </button>
-                    )}
-                  </div>
+                  {(() => {
+                    const sessionActionState = getSessionActionState(activeNode);
+
+                    if (sessionActionState === 'upcoming') {
+                      return (
+                        <div className="action-buttons-row">
+                          <button 
+                            className="action-btn reschedule-btn"
+                            onClick={handleQuickReschedule}
+                          >
+                            <ChevronDown size={14} /> Reschedule
+                          </button>
+                          <span className="upcoming-session-hint">This session is still upcoming.</span>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="action-buttons-row">
+                        <button 
+                          className="action-btn reschedule-btn"
+                          onClick={handleQuickReschedule}
+                        >
+                          <ChevronDown size={14} /> Reschedule
+                        </button>
+                        {sessionActionState === 'near' ? (
+                          <button 
+                            className="action-btn skip-btn"
+                            onClick={() => handleUpdateSessionStatus('skipped')}
+                          >
+                            <Play size={14} /> Skip
+                          </button>
+                        ) : (
+                          <button 
+                            className="action-btn complete-btn"
+                            onClick={() => handleUpdateSessionStatus('completed')}
+                          >
+                            <CheckCircle size={14} /> Mark as Completed
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })()}
                   
                   {/* Reschedule Dropdown */}
                   {scheduleDates.length > 0 && (

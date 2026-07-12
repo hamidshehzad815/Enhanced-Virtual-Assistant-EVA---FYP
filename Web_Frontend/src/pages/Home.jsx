@@ -23,68 +23,43 @@ export const Home = () => {
 
   const userName = user?.name || 'Areej';
 
-  // Fallbacks
-  const fallbackUpNext = {
-    title: 'NLP Mid Exam',
-    day: 'Thursday',
-    taskTime: '3:00 PM',
-  };
+  const upNext = dashboardData?.up_next
+    ? {
+        title: dashboardData.up_next.title,
+        day: dashboardData.up_next.day || null,
+        taskTime: dashboardData.up_next.time || null,
+      }
+    : null;
 
-  const fallbackProgress = {
-    completed_tasks: 3,
-    total_tasks: 5,
-    completion_percentage: 60
-  };
+  const progressPercent = dashboardData?.daily_progress
+    ? Math.round(dashboardData.daily_progress.completion_percentage)
+    : 0;
 
-  const fallbackLearning = [
-    {
-      title: 'Python Roadmap',
-      nextTopic: 'OOP Concepts',
-      time: '04:30 PM'
-    },
-    {
-      title: 'Flutter Animations',
-      nextTopic: 'CustomPaint',
-      time: '07:15 PM'
-    }
-  ];
+  const learningList = Array.isArray(dashboardData?.learning)
+    ? dashboardData.learning
+        .filter(Boolean)
+        .map((item) => ({
+          title: item.title || 'Untitled learning goal',
+          nextTopic: item.next_topic?.title || 'No upcoming topic',
+          time: item.next_topic?.time || item.next_topic?.day || 'Pending',
+        }))
+    : [];
 
-  const fallbackSchedule = [
-    { time: '08:00 AM', title: 'Math Lecture', tag: 'completed' },
-    { time: '10:00 AM', title: 'Intro to AI', tag: 'pending' },
-    { time: '01:00 PM', title: 'Physics Lab', tag: 'ongoing' },
-    { time: '03:30 PM', title: 'Group Study', tag: 'due' },
-    { time: '05:00 PM', title: 'NLP Exam Prep', tag: 'pending' }
-  ];
-
-  const upNext = dashboardData?.up_next ? {
-    title: dashboardData.up_next.title,
-    day: dashboardData.up_next.day || 'Today',
-    taskTime: dashboardData.up_next.time || 'All day'
-  } : fallbackUpNext;
-
-  const progressPercent = dashboardData?.daily_progress 
-    ? Math.round(dashboardData.daily_progress.completion_percentage) 
-    : fallbackProgress.completion_percentage;
-
-  const learningList = dashboardData?.learning && dashboardData.learning.length > 0 
-    ? dashboardData.learning.map(item => ({
-        title: item.title,
-        nextTopic: item.next_topic?.title || 'No upcoming topic',
-        time: item.next_topic?.time || 'Pending'
-      })) 
-    : fallbackLearning;
-
-  const scheduleList = dashboardData?.today_schedule && dashboardData.today_schedule.length > 0
-    ? dashboardData.today_schedule.map(item => ({
-        time: item.time || 'All day',
-        title: item.title,
-        tag: item.display_status || item.status
-      }))
-    : fallbackSchedule;
+  const scheduleList = Array.isArray(dashboardData?.today_schedule)
+    ? dashboardData.today_schedule
+        .filter(Boolean)
+        .map((item) => ({
+          time: item.time || null,
+          day: item.day || null,
+          title: item.title || 'Untitled session',
+          tag: item.display_status || item.status || 'pending',
+        }))
+    : [];
 
   const getTagColorClass = (tag) => {
-    switch (tag.toLowerCase()) {
+    const normalizedTag = String(tag || 'pending').toLowerCase();
+
+    switch (normalizedTag) {
       case 'completed':
       case 'complete':
         return 'tag-completed';
@@ -146,18 +121,22 @@ export const Home = () => {
             </div>
 
             <div className="focus-cards-grid">
-              {learningList.map((item, idx) => (
-                <div key={idx} className="focus-bento-tile">
-                  <div className="focus-tile-header">
-                    <h4>{item.title}</h4>
-                    <span className="time-badge">{item.time}</span>
+              {learningList.length > 0 ? (
+                learningList.map((item, idx) => (
+                  <div key={idx} className="focus-bento-tile">
+                    <div className="focus-tile-header">
+                      <h4>{item.title}</h4>
+                      <span className="time-badge">{item.time}</span>
+                    </div>
+                    <div className="focus-tile-detail">
+                      <Clock size={13} className="sub-icon" />
+                      <span>Next: <strong>{item.nextTopic}</strong></span>
+                    </div>
                   </div>
-                  <div className="focus-tile-detail">
-                    <Clock size={13} className="sub-icon" />
-                    <span>Next: <strong>{item.nextTopic}</strong></span>
-                  </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className="font-body">No learning activity available from the backend yet.</p>
+              )}
             </div>
           </div>
 
@@ -174,22 +153,32 @@ export const Home = () => {
             </div>
 
             <div className="timeline-wrapper">
-              {scheduleList.map((item, idx) => (
-                <div key={idx} className="timeline-item">
-                  <div className="timeline-time-col font-body">{item.time}</div>
-                  <div className="timeline-node">
-                    <div className={`timeline-dot-core ${item.tag.toLowerCase()}`}></div>
-                  </div>
-                  <div className="timeline-content-col">
-                    <div className="timeline-event-card">
-                      <span className="event-title">{item.title}</span>
-                      <span className={`schedule-tag font-body ${getTagColorClass(item.tag)}`}>
-                        {item.tag.toUpperCase()}
-                      </span>
+              {scheduleList.length > 0 ? (
+                scheduleList.map((item, idx) => {
+                  const normalizedTag = String(item.tag || 'pending').toLowerCase();
+
+                  return (
+                    <div key={idx} className="timeline-item">
+                      <div className="timeline-time-col font-body">
+                        {item.time || item.day || 'All day'}
+                      </div>
+                      <div className="timeline-node">
+                        <div className={`timeline-dot-core ${normalizedTag}`}></div>
+                      </div>
+                      <div className="timeline-content-col">
+                        <div className="timeline-event-card">
+                          <span className="event-title">{item.title}</span>
+                          <span className={`schedule-tag font-body ${getTagColorClass(item.tag)}`}>
+                            {String(item.tag || 'pending').toUpperCase()}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              ))}
+                  );
+                })
+              ) : (
+                <p className="font-body">No timeline sessions returned by the backend for this user.</p>
+              )}
             </div>
           </div>
         </div>
@@ -247,10 +236,10 @@ export const Home = () => {
             </div>
             
             <div className="up-next-core">
-              <h4 className="up-next-title">{upNext.title}</h4>
+              <h4 className="up-next-title">{upNext?.title || 'No upcoming task'}</h4>
               <div className="up-next-details">
-                <span className="detail-pill day">{upNext.day}</span>
-                <span className="detail-pill time">{upNext.taskTime}</span>
+                <span className="detail-pill day">{upNext?.day || 'No date'}</span>
+                <span className="detail-pill time">{upNext?.taskTime || 'No time'}</span>
               </div>
             </div>
 
