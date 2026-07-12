@@ -7,9 +7,9 @@ import 'presentation/providers/home_screen_viewmodel.dart';
 class AppProviders {
   static List<ChangeNotifierProvider> getProviders() {
     return [
-      ChangeNotifierProvider(
-        create: (_) => ChatViewModel(repository: ChatRepository()),
-      ),
+      // ChangeNotifierProvider(
+      //   create: (_) => ChatViewModel(repository: ChatRepository()),
+      // ),
       ChangeNotifierProvider(
         create: (_) => HomeScreenViewModel(repository: HomeScreenRepository()),
       ),
