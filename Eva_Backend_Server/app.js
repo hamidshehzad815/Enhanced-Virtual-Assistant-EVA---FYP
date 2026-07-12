@@ -31,6 +31,10 @@ const routes = require("./routes");
 // Create Express app
 const app = express();
 
+// Trust the first proxy hop (Render/hosting reverse proxy) so the client IP from
+// X-Forwarded-For is used correctly by express-rate-limit.
+app.set("trust proxy", 1);
+
 // ===========================================
 // Security Middleware
 // ===========================================
@@ -110,33 +114,46 @@ const PORT = getBackendPort();
 let reminderJobHandle = null;
 let learningAutoCompleteJobHandle = null;
 
+const DIVIDER = "─".repeat(52);
+
 const startServer = async () => {
-  logger.info("=".repeat(50));
-  logger.info("EVA Backend Server Starting...");
-  logger.info("=".repeat(50));
+  logger.info("");
+  logger.info(DIVIDER);
+  logger.info("  🚀 EVA Backend Server — starting up…");
+  logger.info(DIVIDER);
 
   // Connect to MongoDB
   const dbConnected = await connectDB();
 
   if (!dbConnected) {
-    logger.error("Failed to connect to MongoDB. Exiting...");
+    logger.error("❌ Failed to connect to MongoDB. Exiting...");
     process.exit(1);
   }
 
   // Start phase 12 reminder scheduler.
   reminderJobHandle = startReminderJob();
+  logger.info("  ⏰ Reminder scheduler        started");
 
   // Start phase 6 learning auto-complete scheduler.
   learningAutoCompleteJobHandle = startLearningAutoCompleteJob();
+  logger.info("  📚 Learning auto-complete    started");
 
   // Start HTTP server
   app.listen(PORT, () => {
-    logger.info("=".repeat(50));
-    logger.info(`Server running on port ${PORT}`);
-    logger.info(`Environment: ${process.env.NODE_ENV || "development"}`);
-    logger.info(`Health check: http://localhost:${PORT}/health`);
-    logger.info(`Email links base: ${buildBackendPublicUrl()}`);
-    logger.info("=".repeat(50));
+    const env = process.env.NODE_ENV || "development";
+    const baseUrl = buildBackendPublicUrl();
+    const aiServer = process.env.AI_SERVER_URL || "(not set)";
+
+    logger.info(DIVIDER);
+    logger.info("  ✅ EVA Backend is up and running");
+    logger.info(DIVIDER);
+    logger.info(`  • Port         : ${PORT}`);
+    logger.info(`  • Environment  : ${env}`);
+    logger.info(`  • Base URL     : ${baseUrl}`);
+    logger.info(`  • Health check : ${baseUrl}/health`);
+    logger.info(`  • AI server    : ${aiServer}`);
+    logger.info(DIVIDER);
+    logger.info("");
   });
 };
 

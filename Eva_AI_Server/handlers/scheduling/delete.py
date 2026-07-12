@@ -19,7 +19,7 @@ from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
 from utils.google_calendar_sync import resolve_google_calendar_sync
-from utils.task_value_normalizer import canonicalize_priority, canonicalize_status
+from utils.task_value_normalizer import canonicalize_priority, canonicalize_status, clean_task_name
 from utils.timezone_utils import (
     local_day_bounds_to_utc_naive,
     resolve_timezone_name,
@@ -578,7 +578,7 @@ async def handle_scheduling_delete(
             }
 
     # Step 1: entity check.
-    task_name = _coerce_text(_first_value(entities.get("task_name")))
+    task_name = clean_task_name(_coerce_text(_first_value(entities.get("task_name"))))
     date_raw = _to_date_text(_first_value(entities.get("date")))
     priority = _normalize_priority(_first_value(entities.get("priority")))
     status = _normalize_status(_first_value(entities.get("status")))

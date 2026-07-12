@@ -1,33 +1,34 @@
 /**
  * Email Service
- * Handles sending emails using Nodemailer
+ * Sends transactional email via the Brevo HTTP API.
  */
 
-const nodemailer = require("nodemailer");
+const axios = require("axios");
 const logger = require("../config/logger");
 const { buildTokenLink } = require("../utils/publicUrl");
 
-// Create reusable transporter
-let transporter = null;
+const BREVO_ENDPOINT = "https://api.brevo.com/v3/smtp/email";
 
 /**
- * Initialize email transporter
+ * Resolve the sender identity from EMAIL_FROM into Brevo's { name, email } shape.
+ * The email must be a sender verified in Brevo (single-sender or a verified domain).
+ * Accepts either a bare address ("me@gmail.com") or a formatted one
+ * ("EVA Assistant <me@gmail.com>"); a bare address gets a default display name.
  */
-const initializeTransporter = () => {
-  if (transporter) return transporter;
+const getSender = () => {
+  const raw = (process.env.EMAIL_FROM || "").trim();
+  if (!raw) return null;
 
-  transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
-    port: parseInt(process.env.EMAIL_PORT, 10),
-    secure: false, // true for 465, false for other ports
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS,
-    },
-  });
-
-  return transporter;
+  const match = raw.match(/^\s*(.*?)\s*<\s*([^>]+?)\s*>\s*$/);
+  if (match) {
+    return { name: match[1] || "EVA Assistant", email: match[2].trim() };
+  }
+  return { name: "EVA Assistant", email: raw };
 };
+
+/** Whether email sending is configured (API key + sender address both present). */
+const isEmailConfigured = () =>
+  Boolean(process.env.BREVO_API_KEY && getSender());
 
 /**
  * Send email
@@ -39,22 +40,56 @@ const initializeTransporter = () => {
  * @returns {Promise<boolean>}
  */
 const sendEmail = async ({ to, subject, text, html }) => {
-  try {
-    const transport = initializeTransporter();
+  const apiKey = process.env.BREVO_API_KEY;
+  const sender = getSender();
 
-    const mailOptions = {
-      from: `"EVA Assistant" <${process.env.EMAIL_USER}>`,
+  if (!apiKey || !sender) {
+    logger.warn("Email not sent: Brevo not configured", {
       to,
       subject,
-      text,
-      html,
-    };
+      hasApiKey: Boolean(apiKey),
+      hasFrom: Boolean(sender),
+    });
+    return false;
+  }
 
-    const info = await transport.sendMail(mailOptions);
-    logger.info("Email sent", { to, subject, messageId: info.messageId });
+  const recipients = Array.isArray(to)
+    ? to.map((email) => ({ email }))
+    : [{ email: to }];
+
+  try {
+    const response = await axios.post(
+      BREVO_ENDPOINT,
+      {
+        sender,
+        to: recipients,
+        subject,
+        htmlContent: html,
+        textContent: text,
+      },
+      {
+        headers: {
+          "api-key": apiKey,
+          "Content-Type": "application/json",
+          accept: "application/json",
+        },
+        timeout: 15000,
+      },
+    );
+
+    logger.info("Email sent", {
+      to,
+      subject,
+      messageId: response.data?.messageId,
+    });
     return true;
   } catch (error) {
-    logger.error("Email sending failed", { to, subject, error: error.message });
+    const detail = error.response?.data || error.message;
+    logger.error("Email sending failed", {
+      to,
+      subject,
+      error: typeof detail === "string" ? detail : JSON.stringify(detail),
+    });
     return false;
   }
 };
@@ -233,19 +268,20 @@ EVA Team
 };
 
 /**
- * Verify transporter connection
+ * Report whether the email service is ready to send.
+ * Brevo is a stateless HTTP API, so there is no connection to open — this
+ * just confirms the API key and sender address are configured.
  * @returns {Promise<boolean>}
  */
 const verifyConnection = async () => {
-  try {
-    const transport = initializeTransporter();
-    await transport.verify();
-    logger.info("Email service connected");
+  if (isEmailConfigured()) {
+    logger.info("Email service ready (Brevo)");
     return true;
-  } catch (error) {
-    logger.error("Email service connection failed", { error: error.message });
-    return false;
   }
+  logger.warn(
+    "Email service not configured (missing BREVO_API_KEY or EMAIL_FROM)",
+  );
+  return false;
 };
 
 module.exports = {
@@ -253,4 +289,5 @@ module.exports = {
   sendVerificationEmail,
   sendPasswordResetEmail,
   verifyConnection,
+  isEmailConfigured,
 };

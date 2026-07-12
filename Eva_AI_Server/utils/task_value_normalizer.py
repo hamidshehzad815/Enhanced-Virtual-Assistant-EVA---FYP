@@ -50,18 +50,24 @@ STATUS_USER_VALUES: Tuple[str, ...] = (
 
 _PRIORITY_MAP: Dict[str, str] = {
     "high": "high",
+    "high priority": "high",
     "urgent": "high",
+    "urgent priority": "high",
+    "top": "high",
+    "top priority": "high",
     "critical": "high",
     "immediate": "high",
     "asap": "high",
     "important": "high",
     "medium": "medium",
+    "medium priority": "medium",
     "normal": "medium",
     "standard": "medium",
     "moderate": "medium",
     "average": "medium",
     "regular": "medium",
     "low": "low",
+    "low priority": "low",
     "minor": "low",
     "trivial": "low",
     "backburner": "low",
@@ -110,6 +116,26 @@ def canonicalize_status(value: Any) -> str:
     if not normalized:
         return ""
     return _STATUS_MAP.get(normalized, "")
+
+
+_TASK_NAME_TRAILING_NOISE: frozenset = frozenset({
+    "task", "tasks", "item", "items", "event", "events",
+})
+
+
+def clean_task_name(value: Any) -> str:
+    """Strip generic trailing noise words from a NER-extracted task name.
+
+    "physics task" -> "physics"   "cs lab tasks" -> "cs lab"
+    If stripping would leave an empty string the original value is returned.
+    """
+    text = str(value or "").strip()
+    if not text:
+        return text
+    words = text.split()
+    while words and words[-1].lower() in _TASK_NAME_TRAILING_NOISE:
+        words.pop()
+    return " ".join(words) if words else text
 
 
 def build_value_regex(values: Iterable[str]) -> str:
