@@ -224,51 +224,6 @@ class _TypingIndicatorState extends State<TypingIndicator>
   }
 }
 
-// ─── Bubble tail (little peak) ─────────────────────────────────────────
-class _BubbleTail extends StatelessWidget {
-  final bool isUser;
-  final Color color;
-  const _BubbleTail({required this.isUser, required this.color});
-
-  @override
-  Widget build(BuildContext context) {
-    return CustomPaint(
-      size: const Size(8, 10),
-      painter: _TailPainter(isUser: isUser, color: color),
-    );
-  }
-}
-
-class _TailPainter extends CustomPainter {
-  final bool isUser;
-  final Color color;
-  _TailPainter({required this.isUser, required this.color});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color;
-    final path = Path();
-    if (isUser) {
-      // tail points down-right, tucked under the bubble's bottom-right corner
-      path.moveTo(0, 0);
-      path.lineTo(size.width, 0);
-      path.lineTo(size.width, size.height);
-      path.close();
-    } else {
-      // tail points down-left
-      path.moveTo(0, 0);
-      path.lineTo(size.width, 0);
-      path.lineTo(0, size.height);
-      path.close();
-    }
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _TailPainter oldDelegate) =>
-      oldDelegate.color != color || oldDelegate.isUser != isUser;
-}
-
 // ─── Main Chat Screen ──────────────────────────────────────────────────
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -790,7 +745,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final profileVm = context.watch<ProfileViewModel>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final messages = vm.messages;
-    final isSending = vm.isSending;
+
 
     // ─── User avatar data ─────────────────────────────────────────────
     final userInitial = _getUserInitial(profileVm);
