@@ -10,7 +10,7 @@ import '../../core/theme/app_colours.dart';
 import '../../core/theme/app_text_style.dart';
 import '../../data/models/chat_model.dart';
 import '../providers/chat_viewmodel.dart';
-import '../widgets/demo_chat_bubble.dart';
+import '../providers/profile_viewmodel.dart';
 
 const _kSuggestions = [
   ' Add FYP meeting Friday 3pm',
@@ -19,10 +19,98 @@ const _kSuggestions = [
   ' Show my weekly progress',
 ];
 
-// ─── Separate Typing Indicator Widget ───────────────────────────────────
+class ChatBubbleShape extends StatelessWidget {
+  final bool isUser;
+  final Color color;
+  final Widget child;
+  final EdgeInsets padding;
+
+  const ChatBubbleShape({
+    super.key,
+    required this.isUser,
+    required this.color,
+    required this.child,
+    this.padding = const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      painter: _BubblePainter(isUser: isUser, color: color),
+      child: Padding(
+        // extra side padding to leave room for the tail notch
+        padding: padding.add(
+          EdgeInsets.only(right: isUser ? 6 : 0, left: isUser ? 0 : 6),
+        ),
+        child: child,
+      ),
+    );
+  }
+}
+
+class _BubblePainter extends CustomPainter {
+  final bool isUser;
+  final Color color;
+  _BubblePainter({required this.isUser, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    const radius = 18.0;
+    const tailSize = 7.0;
+
+    final path = Path();
+
+    if (isUser) {
+      // tail on bottom-right
+      path.moveTo(radius, 0);
+      path.lineTo(size.width - tailSize, 0);
+      path.quadraticBezierTo(size.width, 0, size.width, tailSize);
+      path.lineTo(size.width, size.height - radius);
+      // little peak
+      path.lineTo(size.width + tailSize, size.height);
+      path.lineTo(size.width - 4, size.height - 2);
+      path.quadraticBezierTo(
+        size.width - radius,
+        size.height,
+        size.width - radius,
+        size.height,
+      );
+      path.lineTo(radius, size.height);
+      path.quadraticBezierTo(0, size.height, 0, size.height - radius);
+      path.lineTo(0, radius);
+      path.quadraticBezierTo(0, 0, radius, 0);
+    } else {
+      // tail on bottom-left
+      path.moveTo(radius, 0);
+      path.lineTo(size.width - radius, 0);
+      path.quadraticBezierTo(size.width, 0, size.width, radius);
+      path.lineTo(size.width, size.height - radius);
+      path.quadraticBezierTo(
+        size.width,
+        size.height,
+        size.width - radius,
+        size.height,
+      );
+      path.lineTo(tailSize, size.height);
+      path.lineTo(4, size.height - 2);
+      path.lineTo(-tailSize, size.height);
+      path.lineTo(0, size.height - radius);
+      path.lineTo(0, radius);
+      path.quadraticBezierTo(0, 0, radius, 0);
+    }
+
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _BubblePainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.isUser != isUser;
+}
+
+// ─── Typing Indicator ──────────────────────────────────────────────────
 class TypingIndicator extends StatefulWidget {
   final bool isDark;
-
   const TypingIndicator({super.key, required this.isDark});
 
   @override
@@ -31,7 +119,6 @@ class TypingIndicator extends StatefulWidget {
 
 class _TypingIndicatorState extends State<TypingIndicator>
     with TickerProviderStateMixin {
-  // ✅ supports multiple controllers
   late final List<AnimationController> _dotControllers;
   late final List<Animation<double>> _dotAnimations;
 
@@ -54,7 +141,6 @@ class _TypingIndicatorState extends State<TypingIndicator>
         )
         .toList();
 
-    // Start animation after first frame
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _startAnimation();
     });
@@ -68,9 +154,7 @@ class _TypingIndicatorState extends State<TypingIndicator>
 
   @override
   void dispose() {
-    for (final c in _dotControllers) {
-      c.dispose();
-    }
+    for (final c in _dotControllers) c.dispose();
     super.dispose();
   }
 
@@ -140,6 +224,51 @@ class _TypingIndicatorState extends State<TypingIndicator>
   }
 }
 
+// ─── Bubble tail (little peak) ─────────────────────────────────────────
+class _BubbleTail extends StatelessWidget {
+  final bool isUser;
+  final Color color;
+  const _BubbleTail({required this.isUser, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return CustomPaint(
+      size: const Size(8, 10),
+      painter: _TailPainter(isUser: isUser, color: color),
+    );
+  }
+}
+
+class _TailPainter extends CustomPainter {
+  final bool isUser;
+  final Color color;
+  _TailPainter({required this.isUser, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color;
+    final path = Path();
+    if (isUser) {
+      // tail points down-right, tucked under the bubble's bottom-right corner
+      path.moveTo(0, 0);
+      path.lineTo(size.width, 0);
+      path.lineTo(size.width, size.height);
+      path.close();
+    } else {
+      // tail points down-left
+      path.moveTo(0, 0);
+      path.lineTo(size.width, 0);
+      path.lineTo(0, size.height);
+      path.close();
+    }
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _TailPainter oldDelegate) =>
+      oldDelegate.color != color || oldDelegate.isUser != isUser;
+}
+
 // ─── Main Chat Screen ──────────────────────────────────────────────────
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -149,31 +278,31 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
-  // ── TTS ──────────────────────────────────────────────────────────────────
+  // ─── TTS ──────────────────────────────────────────────────────────────
   final FlutterTts _flutterTts = FlutterTts();
   bool _isTtsEnabled = false;
 
-  // ── Message state ─────────────────────────────────────────────────────────
+  // ─── Scroll ──────────────────────────────────────────────────────────
   final ScrollController _scrollController = ScrollController();
   bool _isEvaTyping = false;
-
-  // ── Input state ───────────────────────────────────────────────────────────
+  bool _messagesReady = false;
+  // ─── Input ───────────────────────────────────────────────────────────
   final TextEditingController _textController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
   bool _hasText = false;
   VoidCallback? _textListener;
 
-  // ── Speech to text ────────────────────────────────────────────────────────
+  // ─── Speech-to-text ─────────────────────────────────────────────────
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool _speechAvailable = false;
   bool _isListening = false;
   String _recognizedWords = '';
 
-  // ── Mic pulse animation ───────────────────────────────────────────────────
+  // ─── Mic pulse animation ────────────────────────────────────────────
   late final AnimationController _pulseController;
   late final Animation<double> _pulseAnimation;
 
-  // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────
   @override
   void initState() {
     super.initState();
@@ -202,14 +331,18 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       if (!mounted) return;
       final vm = context.read<ChatViewModel>();
       vm.loadSessions();
+      if (vm.messages.isNotEmpty) {
+        _scrollToBottom(animated: false);
+      } else {
+        setState(() => _messagesReady = true);
+      }
     });
   }
 
+  // ─── TTS methods ─────────────────────────────────────────────────────
   Future<void> _loadTtsPreference() async {
     final prefs = await SharedPreferences.getInstance();
-    setState(() {
-      _isTtsEnabled = prefs.getBool('tts_enabled') ?? false;
-    });
+    setState(() => _isTtsEnabled = prefs.getBool('tts_enabled') ?? false);
   }
 
   Future<void> _saveTtsPreference(bool value) async {
@@ -229,46 +362,26 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   void _toggleTts() {
-    setState(() {
-      _isTtsEnabled = !_isTtsEnabled;
-    });
+    setState(() => _isTtsEnabled = !_isTtsEnabled);
     _saveTtsPreference(_isTtsEnabled);
-    if (_isTtsEnabled) {
+    if (_isTtsEnabled)
       _speak("Voice output enabled");
-    } else {
+    else
       _flutterTts.stop();
-    }
   }
 
+  // ─── Speech-to-text ─────────────────────────────────────────────────
   Future<void> _initSpeech() async {
     _speechAvailable = await _speech.initialize(
       onStatus: (status) {
         if (!mounted) return;
-        if (status == 'done' || status == 'notListening') {
-          _stopListening();
-        }
+        if (status == 'done' || status == 'notListening') _stopListening();
       },
       onError: (_) => _stopListening(),
     );
     if (mounted) setState(() {});
   }
 
-  @override
-  void dispose() {
-    if (_textListener != null) {
-      _textController.removeListener(_textListener!);
-      _textListener = null;
-    }
-    _speech.stop();
-    _flutterTts.stop();
-    _textController.dispose();
-    _focusNode.dispose();
-    _scrollController.dispose();
-    _pulseController.dispose();
-    super.dispose();
-  }
-
-  // ─── Speech to text ──────────────────────────────────────────────────────
   void _startListening() async {
     if (!_speechAvailable || _isListening || !mounted) return;
     _focusNode.unfocus();
@@ -311,7 +424,22 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       _startListening();
   }
 
-  // ─── Messaging ────────────────────────────────────────────────────────────
+  @override
+  void dispose() {
+    if (_textListener != null) {
+      _textController.removeListener(_textListener!);
+      _textListener = null;
+    }
+    _speech.stop();
+    _flutterTts.stop();
+    _textController.dispose();
+    _focusNode.dispose();
+    _scrollController.dispose();
+    _pulseController.dispose();
+    super.dispose();
+  }
+
+  // ─── Messaging ──────────────────────────────────────────────────────
   Future<void> _sendMessage(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
@@ -331,13 +459,10 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
         sessionId: vm.currentSessionId,
         inputType: _isListening ? 'voice' : 'text',
       );
-      if (response.responseText.isNotEmpty) {
-        _speak(response.responseText);
-      }
-      // Refresh sessions after send (for sidebar)
+      if (response.responseText.isNotEmpty) _speak(response.responseText);
       vm.loadSessions();
     } catch (e) {
-      // ignore
+      /* ignore */
     } finally {
       if (!mounted) return;
       setState(() => _isEvaTyping = false);
@@ -346,22 +471,53 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
   }
 
   void _scrollToBottom({bool animated = true}) {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) return;
-      final max = _scrollController.position.maxScrollExtent;
-      if (animated) {
-        _scrollController.animateTo(
-          max,
-          duration: const Duration(milliseconds: 300),
-          curve: Curves.easeOut,
-        );
-      } else {
-        _scrollController.jumpTo(max);
+    // Safety net: never let the screen stay hidden longer than this,
+    // no matter how long extents take to settle (e.g. slow avatar images).
+    Future.delayed(const Duration(milliseconds: 250), () {
+      if (mounted && !_messagesReady && !animated) {
+        setState(() => _messagesReady = true);
       }
+    });
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _settleScroll(attempt: 0, animated: animated);
     });
   }
 
-  // ─── Drawer ──────────────────────────────────────────────────────────────
+  void _settleScroll({
+    required int attempt,
+    required bool animated,
+    double? lastMax,
+  }) {
+    if (!mounted || !_scrollController.hasClients) return;
+
+    final max = _scrollController.position.maxScrollExtent;
+
+    // Fewer retries + we now have the timeout above as a backstop,
+    // so this only needs to try briefly.
+    if (attempt < 3 && (lastMax == null || (max - lastMax).abs() > 0.5)) {
+      _scrollController.jumpTo(max);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _settleScroll(attempt: attempt + 1, animated: animated, lastMax: max);
+      });
+      return;
+    }
+
+    if (animated) {
+      _scrollController.animateTo(
+        max,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOut,
+      );
+    } else {
+      _scrollController.jumpTo(max);
+      if (!_messagesReady) {
+        setState(() => _messagesReady = true);
+      }
+    }
+  }
+
+  // ─── Drawer ──────────────────────────────────────────────────────────
   Widget _buildDrawer(ChatViewModel vm, bool isDark) {
     final bg = isDark ? AppColors.cardDark : Colors.white;
     final border = isDark ? AppColors.borderDark : const Color(0xFFE5E7EB);
@@ -440,13 +596,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                             child: Lottie.asset(
                               'assets/lottie/chat.json',
                               fit: BoxFit.contain,
-                              errorBuilder: (context, error, stackTrace) {
-                                return Icon(
-                                  Icons.chat_bubble_outline_rounded,
-                                  size: 80,
-                                  color: secondary,
-                                );
-                              },
+                              errorBuilder: (_, __, ___) => Icon(
+                                Icons.chat_bubble_outline_rounded,
+                                size: 80,
+                                color: secondary,
+                              ),
                             ),
                           ),
                           Text(
@@ -469,9 +623,12 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                         final session = vm.sessions[i];
                         final isActive = session.id == vm.currentSessionId;
                         return InkWell(
-                          onTap: () {
-                            vm.loadMessages(session.id);
+                          onTap: () async {
                             Navigator.pop(context);
+                            setState(() => _messagesReady = false);
+                            await vm.loadMessages(session.id);
+                            if (!mounted) return;
+                            _scrollToBottom(animated: false);
                           },
                           child: Container(
                             padding: const EdgeInsets.symmetric(
@@ -626,13 +783,18 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     return 'Just now';
   }
 
-  // ─── Build ────────────────────────────────────────────────────────────────
+  // ─── Build ──────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final vm = context.watch<ChatViewModel>();
+    final profileVm = context.watch<ProfileViewModel>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final messages = vm.messages;
     final isSending = vm.isSending;
+
+    // ─── User avatar data ─────────────────────────────────────────────
+    final userInitial = _getUserInitial(profileVm);
+    final userAvatar = _getUserAvatar(profileVm);
 
     return Scaffold(
       backgroundColor: isDark ? Colors.grey[900] : Colors.white,
@@ -643,7 +805,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           Expanded(
             child: messages.isEmpty
                 ? _buildEmptyState(isDark)
-                : _buildMessageList(vm, isDark),
+                : _buildMessageList(vm, isDark, userInitial, userAvatar),
           ),
           _buildInputBar(vm, isDark),
         ],
@@ -651,7 +813,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ─── App Bar ──────────────────────────────────────────────────────────────
+  // ─── App Bar ──────────────────────────────────────────────────────────
   PreferredSizeWidget _buildAppBar(ChatViewModel vm, bool isDark) {
     final barBg = isDark ? AppColors.cardDark : Colors.transparent;
     final border = isDark ? AppColors.borderDark : const Color(0xFFE5E7EB);
@@ -803,7 +965,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ─── Empty State ──────────────────────────────────────────────────────────
+  // ─── Empty State ──────────────────────────────────────────────────────
   Widget _buildEmptyState(bool isDark) {
     final primary = isDark
         ? AppColors.primaryTextDark
@@ -816,30 +978,11 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
       child: Column(
         children: [
-          Container(
-            width: 72,
-            height: 72,
-            decoration: BoxDecoration(
-              color: AppColors.primary.withOpacity(0.1),
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: AppColors.primary.withOpacity(0.3),
-                width: 2,
-              ),
-            ),
-            child: const Center(
-              child: Text(
-                'E',
-                style: TextStyle(
-                  color: AppColors.primary,
-                  fontSize: 30,
-                  fontWeight: FontWeight.bold,
-                  fontStyle: FontStyle.italic,
-                ),
-              ),
-            ),
+          SizedBox(
+            width: 220,
+            height: 220,
+            child: Lottie.asset('assets/lottie/robo.json', fit: BoxFit.contain),
           ),
-          const SizedBox(height: 20),
           Text(
             'How can I help you today?',
             style: AppTextStyles.headline.copyWith(
@@ -877,7 +1020,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
           _textController.selection = TextSelection.fromPosition(
             TextPosition(offset: prompt.length),
           );
-          setState(() => _hasText = true);
           _focusNode.requestFocus();
         },
         child: Container(
@@ -908,47 +1050,154 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     );
   }
 
-  // ─── Message List ──────────────────────────────────────────────────────────
-  Widget _buildMessageList(ChatViewModel vm, bool isDark) {
+  // ─── Message List ─────────────────────────────────────────────────────
+  Widget _buildMessageList(
+    ChatViewModel vm,
+    bool isDark,
+    String userInitial,
+    String? userAvatar,
+  ) {
     final messages = vm.messages;
     final isSending = vm.isSending;
 
-    return ListView.builder(
-      controller: _scrollController,
-      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-      itemCount: messages.length + (isSending ? 1 : 0),
-      itemBuilder: (_, index) {
-        if (isSending && index == messages.length) {
-          return TypingIndicator(isDark: isDark); // ✅ No 'const' here
-        }
+    return Stack(
+      children: [
+        // List is always built so the ScrollController attaches and
+        // heights get measured — just hidden via opacity until ready.
+        Opacity(
+          opacity: _messagesReady ? 1 : 0,
+          child: ListView.builder(
+            controller: _scrollController,
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+            itemCount: messages.length + (isSending ? 1 : 0),
+            itemBuilder: (_, index) {
+              if (isSending && index == messages.length) {
+                return TypingIndicator(isDark: isDark);
+              }
 
-        final msg = messages[index];
-        bool showTime = index == 0;
-        if (index > 0) {
-          final gap = msg.createdAt
-              .difference(messages[index - 1].createdAt)
-              .inMinutes;
-          if (gap >= 10) showTime = true;
-        }
+              final msg = messages[index];
+              bool showTime = index == 0;
+              if (index > 0) {
+                final gap = msg.createdAt
+                    .difference(messages[index - 1].createdAt)
+                    .inMinutes;
+                if (gap >= 10) showTime = true;
+              }
 
-        return Padding(
-          padding: const EdgeInsets.only(bottom: 12),
-          child: Column(
-            children: [
-              if (showTime)
-                _buildTimestampDivider(_formatTime(msg.createdAt), isDark),
-              DemoChatBubble(
-                text: msg.content,
-                isEva: msg.role == 'eva',
-                userInitial: 'A',
-              ),
-            ],
+              final isUser = msg.role == 'user';
+              final bubbleColor = isUser
+                  ? AppColors.primary
+                  : (isDark
+                        ? AppColors.cardElevatedDark
+                        : const Color(0xFFF2EFE9));
+              final textColor = isUser
+                  ? Colors.white
+                  : (isDark ? Colors.white : Colors.black87);
+
+              final avatar = isUser
+                  ? _buildUserAvatar(userInitial, userAvatar, radius: 18)
+                  : _buildEvaAvatar(radius: 18);
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 12),
+                child: Column(
+                  children: [
+                    if (showTime)
+                      _buildTimestampDivider(
+                        _formatTime(msg.createdAt),
+                        isDark,
+                      ),
+                    Row(
+                      mainAxisAlignment: isUser
+                          ? MainAxisAlignment.end
+                          : MainAxisAlignment.start,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (!isUser) avatar,
+                        if (!isUser) const SizedBox(width: 8),
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 14,
+                              vertical: 10,
+                            ),
+                            decoration: BoxDecoration(
+                              color: bubbleColor,
+                              borderRadius: isUser
+                                  ? const BorderRadius.only(
+                                      topLeft: Radius.circular(18),
+                                      bottomLeft: Radius.circular(18),
+                                      bottomRight: Radius.circular(18),
+                                    )
+                                  : const BorderRadius.only(
+                                      topRight: Radius.circular(18),
+                                      bottomLeft: Radius.circular(18),
+                                      bottomRight: Radius.circular(18),
+                                    ),
+                            ),
+                            child: Text(
+                              msg.content,
+                              style: TextStyle(color: textColor, fontSize: 14),
+                            ),
+                          ),
+                        ),
+                        if (isUser) const SizedBox(width: 8),
+                        if (isUser) avatar,
+                      ],
+                    ),
+                  ],
+                ),
+              );
+            },
           ),
-        );
-      },
+        ),
+        if (!_messagesReady) const Center(child: CircularProgressIndicator()),
+      ],
     );
   }
 
+  // ─── Avatar builders ──────────────────────────────────────────────────
+  Widget _buildUserAvatar(
+    String initial,
+    String? avatarUrl, {
+    double radius = 18,
+  }) {
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: AppColors.primary,
+      backgroundImage: avatarUrl != null && avatarUrl.isNotEmpty
+          ? NetworkImage(avatarUrl)
+          : null,
+      child: (avatarUrl == null || avatarUrl.isEmpty)
+          ? Text(
+              initial,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 14,
+              ),
+            )
+          : null,
+    );
+  }
+
+  Widget _buildEvaAvatar({double radius = 18}) {
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: AppColors.primary,
+      child: const Text(
+        'E',
+        style: TextStyle(
+          color: Colors.white,
+          fontWeight: FontWeight.bold,
+          fontSize: 14,
+          fontStyle: FontStyle.italic,
+        ),
+      ),
+    );
+  }
+
+  // ─── Timestamp divider ───────────────────────────────────────────────
   Widget _buildTimestampDivider(String time, bool isDark) {
     final color = isDark
         ? AppColors.secondaryTextDark
@@ -977,7 +1226,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
 
   String _formatTime(DateTime dt) => DateFormat('h:mm a').format(dt);
 
-  // ─── Input Bar ────────────────────────────────────────────────────────────
+  // ─── Input Bar ────────────────────────────────────────────────────────
   Widget _buildInputBar(ChatViewModel vm, bool isDark) {
     final border = isDark
         ? AppColors.borderDark
@@ -1108,5 +1357,20 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       ),
       child: Icon(icon, color: iconColor, size: 20),
     );
+  }
+
+  // ─── Profile helpers ──────────────────────────────────────────────────
+  String _getUserInitial(ProfileViewModel profileVm) {
+    final profile = profileVm.profile;
+    if (profile == null) return 'A';
+    final name = profile.name ?? 'User';
+    final parts = name.trim().split(' ');
+    if (parts.length >= 2)
+      return parts[0][0].toUpperCase() + parts[1][0].toUpperCase();
+    return parts.isNotEmpty ? parts[0][0].toUpperCase() : '?';
+  }
+
+  String? _getUserAvatar(ProfileViewModel profileVm) {
+    return profileVm.profile?.profilePicture;
   }
 }
