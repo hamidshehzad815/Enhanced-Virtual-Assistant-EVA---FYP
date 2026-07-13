@@ -1,44 +1,40 @@
-import '../models/chat_message.dart';
+// lib/data/repositories/chat_repository.dart
+import '../models/chat_model.dart';
 import '../services/chat_service.dart';
+import '../services/storage_service.dart';
 
-/// Repository pattern - Single responsibility: Data access layer
-/// Abstracts data source (API, local DB, mock) from business logic
-abstract class IChatRepository {
-  Future<List<ChatMessage>> getMessages();
-  Future<void> sendMessage(String text);
-  Stream<List<ChatMessage>> messagesStream();
-}
+class ChatRepository {
+  final ChatService _service;
 
-/// Implementation using ChatService as datasource
-class ChatRepository implements IChatRepository {
-  final ChatService _chatService;
+  ChatRepository(this._service);
 
-  ChatRepository({ChatService? chatService})
-    : _chatService = chatService ?? ChatService();
-
-  @override
-  Future<List<ChatMessage>> getMessages() async {
-    try {
-      return await _chatService.fetchMessages();
-    } catch (e) {
-      rethrow;
-    }
+  Future<String> _getToken() async {
+    final token = await StorageService.getAccessToken();
+    if (token == null) throw Exception('No access token');
+    return token;
   }
 
-  @override
-  Future<void> sendMessage(String text) async {
-    if (text.trim().isEmpty) {
-      throw ArgumentError('Message cannot be empty');
-    }
-    try {
-      await _chatService.sendMessage(text);
-    } catch (e) {
-      rethrow;
-    }
+  Future<List<SessionSummary>> getSessions({int limit = 50}) async {
+    final token = await _getToken();
+    return await _service.getSessions(token, limit: limit);
   }
 
-  @override
-  Stream<List<ChatMessage>> messagesStream() {
-    return _chatService.messagesStream();
+  Future<MessagesResponse> getMessages(String sessionId, {int limit = 100}) async {
+    final token = await _getToken();
+    return await _service.getMessages(token, sessionId, limit: limit);
+  }
+
+  Future<ProcessResponse> sendMessage(
+    String message, {
+    String? sessionId,
+    String inputType = 'text',
+  }) async {
+    final token = await _getToken();
+    return await _service.sendMessage(token, message, sessionId: sessionId, inputType: inputType);
+  }
+
+  Future<void> deleteSession(String sessionId) async {
+    final token = await _getToken();
+    return await _service.deleteSession(token, sessionId);
   }
 }

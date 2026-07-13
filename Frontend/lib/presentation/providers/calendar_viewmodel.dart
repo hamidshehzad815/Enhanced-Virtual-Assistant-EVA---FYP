@@ -27,7 +27,7 @@ class CalendarViewModel extends ChangeNotifier {
   String? get error => _error;
 
   CalendarViewModel(this._repository) {
-     loadTasks();
+    Future.microtask(() => loadTasks());
   }
 
   Future<void> loadTasks() async {

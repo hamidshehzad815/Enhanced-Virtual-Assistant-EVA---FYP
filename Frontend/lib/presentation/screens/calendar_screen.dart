@@ -26,6 +26,7 @@ class _CalendarScreenState extends State<CalendarScreen>
   bool _dialogOpenScheduled = false;
   VoidCallback? _viewModelListener;
   DateTime _lastLoadTime = DateTime.now();
+  CalendarViewModel? _vm;
 
   @override
   void initState() {
@@ -44,15 +45,19 @@ class _CalendarScreenState extends State<CalendarScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final vm = context.read<CalendarViewModel>(); // 👈 Add this
+    final vm = context.read<CalendarViewModel>();
+    _vm = vm;
     if (_viewModelListener == null) {
       _viewModelListener = _tryOpenDialog;
       vm.addListener(_viewModelListener!);
     }
     if (vm.tasks.isEmpty ||
         DateTime.now().difference(_lastLoadTime).inSeconds > 30) {
-      vm.loadTasks();
       _lastLoadTime = DateTime.now();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        vm.loadTasks();
+      });
     }
     _scheduleDialogTry();
   }
@@ -60,7 +65,7 @@ class _CalendarScreenState extends State<CalendarScreen>
   @override
   void dispose() {
     if (_viewModelListener != null) {
-      context.read<CalendarViewModel>().removeListener(_viewModelListener!);
+      _vm?.removeListener(_viewModelListener!);
     }
     _listAnimController.dispose();
     super.dispose();
@@ -77,7 +82,6 @@ class _CalendarScreenState extends State<CalendarScreen>
 
     try {
       final task = vm.tasks.firstWhere((t) => t.id == widget.initialTaskId);
-      // ─── Only show dialog for non‑learning tasks ───
       if (!task.isLearningTask) {
         _showEditDialog(context, vm, task);
         _dialogShown = true;

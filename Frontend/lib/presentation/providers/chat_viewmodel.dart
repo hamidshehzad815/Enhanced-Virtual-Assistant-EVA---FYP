@@ -1,91 +1,175 @@
-import 'package:flutter/foundation.dart';
-import '../../data/models/chat_message.dart';
+// lib/presentation/providers/chat_viewmodel.dart
+import 'package:flutter/material.dart';
+import '../../data/models/chat_model.dart';
 import '../../data/repositories/chat_repository.dart';
 
-/// ViewModel for Chat - Single responsibility: Business logic & state management
-/// Handles all chat-related logic without knowing about UI details
 class ChatViewModel extends ChangeNotifier {
   final ChatRepository _repository;
 
+  // ─── State ──────────────────────────────────────────────────────────
+  List<SessionSummary> _sessions = [];
   List<ChatMessage> _messages = [];
+  String? _currentSessionId;
   bool _isLoading = false;
+  bool _isSending = false;
   String? _error;
 
-  ChatViewModel({ChatRepository? repository})
-    : _repository = repository ?? ChatRepository();
+  ChatViewModel(this._repository) {
+    // Load sessions on creation if you want, or call explicitly.
+  }
 
-  // Getters
-  List<ChatMessage> get messages => List.unmodifiable(_messages);
+  // ─── Getters ────────────────────────────────────────────────────────
+  List<SessionSummary> get sessions => _sessions;
+  List<ChatMessage> get messages => _messages;
+  String? get currentSessionId => _currentSessionId;
   bool get isLoading => _isLoading;
+  bool get isSending => _isSending;
   String? get error => _error;
-  bool get hasMessages => _messages.isNotEmpty;
 
-  /// Load messages from repository
-  Future<void> loadMessages() async {
+  // ─── Load sessions ──────────────────────────────────────────────────
+  Future<void> loadSessions({int limit = 50}) async {
     _setLoading(true);
-    _clearError();
-
     try {
-      _messages = await _repository.getMessages();
-      notifyListeners();
+      _sessions = await _repository.getSessions(limit: limit);
+      _error = null;
     } catch (e) {
-      _setError('Failed to load messages: $e');
+      _error = e.toString();
+      _sessions = [];
     } finally {
       _setLoading(false);
     }
   }
 
-  /// Send a new message
-  Future<void> sendMessage(String text) async {
-    if (text.trim().isEmpty) {
-      _setError('Message cannot be empty');
+  // ─── Load messages for a session ────────────────────────────────────
+  Future<void> loadMessages(String sessionId) async {
+    if (sessionId.isEmpty) {
+      _messages = [];
+      _currentSessionId = null;
+      notifyListeners();
       return;
     }
-
-    _clearError();
-
+    _setLoading(true);
     try {
-      await _repository.sendMessage(text);
-      // Reload messages after sending
-      _messages = await _repository.getMessages();
-      notifyListeners();
+      final response = await _repository.getMessages(sessionId);
+      _messages = response.messages;
+      _currentSessionId = sessionId;
+      _error = null;
     } catch (e) {
-      _setError('Failed to send message: $e');
+      _error = e.toString();
+      _messages = [];
+    } finally {
+      _setLoading(false);
     }
   }
 
-  /// Listen to real-time message updates
-  void subscribeToMessages() {
-    _repository.messagesStream().listen(
-      (messages) {
-        _messages = messages;
-        notifyListeners();
-      },
-      onError: (error) {
-        _setError('Stream error: $error');
-      },
-    );
-  }
-
-  /// Clear all messages
-  void clearMessages() {
-    _messages.clear();
-    _clearError();
-    notifyListeners();
-  }
-
-  // Private helpers
-  void _setLoading(bool value) {
-    _isLoading = value;
-    notifyListeners();
-  }
-
-  void _setError(String? value) {
-    _error = value;
-    notifyListeners();
-  }
-
-  void _clearError() {
+  // ─── Start a new chat (draft) ──────────────────────────────────────
+  void startNewChat() {
+    _messages = [];
+    _currentSessionId = null;
     _error = null;
+    notifyListeners();
+  }
+
+  // ─── Send a message ────────────────────────────────────────────────
+  Future<ProcessResponse> sendMessage(
+    String message, {
+    String? sessionId,
+    String inputType = 'text',
+  }) async {
+    // optimistic update
+    final tempId = 'temp-${DateTime.now().millisecondsSinceEpoch}';
+    final tempMessage = ChatMessage(
+      id: tempId,
+      role: 'user',
+      content: message,
+      inputType: inputType,
+      status: 'pending',
+      createdAt: DateTime.now(),
+    );
+    _messages.add(tempMessage);
+    _isSending = true;
+    notifyListeners();
+
+    try {
+      final response = await _repository.sendMessage(
+        message,
+        sessionId: sessionId ?? _currentSessionId,
+        inputType: inputType,
+      );
+
+      // Replace temp with real message or keep (messages are stored)
+      // Remove temp and add both real user & EVA messages? Actually the response only gives EVA text.
+      // We'll remove the temp and append real messages.
+      _messages.removeWhere((m) => m.id == tempId);
+      // Add a real user message? The backend has already stored it, but we don't get it back.
+      // We can keep the temp as the real user message (replace id with actual if needed)
+      // Better: fetch messages again? Or keep our own.
+      // We'll keep our temp user message and add EVA response.
+      final realUserMessage = ChatMessage(
+        id: tempId, // keep the same id, or we could use a placeholder
+        role: 'user',
+        content: message,
+        inputType: inputType,
+        status: 'processed',
+        createdAt: DateTime.now(),
+      );
+      _messages.removeWhere((m) => m.id == tempId);
+      _messages.add(realUserMessage);
+
+      final evaMessage = ChatMessage(
+        id: 'eva-${DateTime.now().millisecondsSinceEpoch}',
+        role: 'eva',
+        content: response.responseText,
+        inputType: 'text',
+        intent: response.intent,
+        status: 'processed',
+        createdAt: DateTime.now(),
+      );
+      _messages.add(evaMessage);
+
+      // Update session id
+      if (response.sessionCreated) {
+        _currentSessionId = response.sessionId;
+        // Refresh sessions list
+        await loadSessions();
+      } else if (_currentSessionId == null) {
+        _currentSessionId = response.sessionId;
+      }
+
+      _error = null;
+      _isSending = false;
+      notifyListeners();
+      return response;
+    } catch (e) {
+      // Remove temp message
+      _messages.removeWhere((m) => m.id == tempId);
+      _error = e.toString();
+      _isSending = false;
+      notifyListeners();
+      rethrow;
+    }
+  }
+
+  // ─── Delete a session ──────────────────────────────────────────────
+  Future<void> deleteSession(String sessionId) async {
+    try {
+      await _repository.deleteSession(sessionId);
+      // Remove from list
+      _sessions.removeWhere((s) => s.id == sessionId);
+      if (_currentSessionId == sessionId) {
+        _messages = [];
+        _currentSessionId = null;
+      }
+      _error = null;
+      notifyListeners();
+    } catch (e) {
+      _error = e.toString();
+      rethrow;
+    }
+  }
+
+  void _setLoading(bool loading) {
+    _isLoading = loading;
+    notifyListeners();
   }
 }

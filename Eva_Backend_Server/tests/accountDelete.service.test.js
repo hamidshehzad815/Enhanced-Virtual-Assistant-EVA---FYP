@@ -8,6 +8,10 @@ jest.mock("../services/cloudinary.service", () => ({
   deleteProfilePicture: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock("../services/chat.service", () => ({
+  softDeleteMessagesForSessions: jest.fn().mockResolvedValue(undefined),
+}));
+
 const mockDistinct = jest.fn();
 const mockUpdateMany = jest.fn().mockResolvedValue({ modifiedCount: 1 });
 const mockUpdateOne = jest.fn().mockResolvedValue({ modifiedCount: 1 });
@@ -27,12 +31,12 @@ jest.mock("../models", () => ({
     find: (...args) => mockFind(...args),
     updateMany: (...args) => mockUpdateMany(...args),
   },
-  ConversationHistory: { updateMany: (...args) => mockUpdateMany(...args) },
   Friend: { deleteMany: (...args) => mockDeleteMany(...args) },
   Integration: { updateMany: (...args) => mockUpdateMany(...args) },
 }));
 
 const { deleteProfilePicture } = require("../services/cloudinary.service");
+const { softDeleteMessagesForSessions } = require("../services/chat.service");
 const {
   softDeleteUserAccount,
   buildDeletedIdentity,
@@ -69,6 +73,7 @@ describe("accountDelete.service", () => {
     expect(mockDeleteMany).toHaveBeenCalledWith({
       $or: [{ requester_id: USER_ID }, { recipient_id: USER_ID }],
     });
+    expect(softDeleteMessagesForSessions).toHaveBeenCalledWith(["sess1"]);
     expect(mockUpdateOne).toHaveBeenCalledWith(
       { _id: USER_ID },
       expect.objectContaining({

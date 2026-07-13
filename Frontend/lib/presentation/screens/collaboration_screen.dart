@@ -8,7 +8,7 @@ import '../../core/theme/app_text_style.dart';
 import '../providers/friends_viewmodel.dart';
 import '../providers/profile_viewmodel.dart';
 import 'package:lottie/lottie.dart';
-import '../../data/models/friend_model.dart';
+import '../../data/models/friend_model.dart'; // ✅ Use existing models
 
 class CollaborationScreen extends StatefulWidget {
   const CollaborationScreen({super.key});
@@ -52,7 +52,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     return '?';
   }
 
-  // ─── Generic Avatar Builder ──────────────────────────────────────
+  // ─── Avatar Builder (uses FriendUser or SearchUserResult) ──────
   Widget _buildAvatar(
     String name,
     String? profilePicture, {
@@ -240,7 +240,13 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
   // ─── Friend Requests Sheet ──────────────────────────────────────────
   void _showFriendRequests() {
     final vm = context.read<FriendsViewModel>();
-    if (vm.pendingRequests.isEmpty) {
+
+    // ─── Only show incoming requests ──────────────────────────────────
+    final incomingRequests = vm.pendingRequests
+        .where((r) => r.direction == 'incoming')
+        .toList();
+
+    if (incomingRequests.isEmpty) {
       _showSnackbar('No pending friend requests.', Colors.grey);
       return;
     }
@@ -283,7 +289,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      if (vm.pendingRequests.isNotEmpty) ...[
+                      if (incomingRequests.isNotEmpty) ...[
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(
@@ -295,7 +301,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                             borderRadius: BorderRadius.circular(10),
                           ),
                           child: Text(
-                            '${vm.pendingRequests.length}',
+                            '${incomingRequests.length}',
                             style: const TextStyle(
                               color: AppColors.primary,
                               fontSize: 12,
@@ -306,9 +312,18 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                       ],
                     ],
                   ),
+                  const SizedBox(height: 4),
+                  if (incomingRequests.isNotEmpty)
+                    Text(
+                      'Swipe left to decline',
+                      style: TextStyle(
+                        fontSize: 11,
+                        color: Theme.of(context).hintColor,
+                      ),
+                    ),
                   const SizedBox(height: 8),
                   Expanded(
-                    child: vm.pendingRequests.isEmpty
+                    child: incomingRequests.isEmpty
                         ? Center(
                             child: Column(
                               mainAxisSize: MainAxisSize.min,
@@ -332,78 +347,10 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                           )
                         : ListView.builder(
                             controller: scrollController,
-                            itemCount: vm.pendingRequests.length,
+                            itemCount: incomingRequests.length,
                             itemBuilder: (_, index) {
-                              final request = vm.pendingRequests[index];
-                              final user = _getFriend(request);
-                              final isIncoming =
-                                  request.direction == 'incoming';
-                              return Card(
-                                margin: const EdgeInsets.symmetric(vertical: 6),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(16),
-                                ),
-                                child: ListTile(
-                                  leading: _buildAvatar(
-                                    user.name,
-                                    user.profilePicture,
-                                    radius: 24,
-                                  ),
-                                  title: Text(
-                                    user.name,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.w600,
-                                    ),
-                                  ),
-                                  subtitle: Text(
-                                    isIncoming
-                                        ? 'Wants to be friends'
-                                        : 'Request sent',
-                                    style: TextStyle(
-                                      color: isIncoming
-                                          ? Colors.green
-                                          : Theme.of(context).hintColor,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  trailing: isIncoming
-                                      ? Row(
-                                          mainAxisSize: MainAxisSize.min,
-                                          children: [
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.check_circle,
-                                                color: Colors.green,
-                                              ),
-                                              onPressed: () {
-                                                _acceptFriendRequest(
-                                                  request.id,
-                                                  user.name,
-                                                );
-                                                sheetSetState(() {});
-                                              },
-                                            ),
-                                            IconButton(
-                                              icon: const Icon(
-                                                Icons.cancel,
-                                                color: Colors.red,
-                                              ),
-                                              onPressed: () {
-                                                _declineFriendRequest(
-                                                  request.id,
-                                                  user.name,
-                                                );
-                                                sheetSetState(() {});
-                                              },
-                                            ),
-                                          ],
-                                        )
-                                      : const Text(
-                                          'Pending',
-                                          style: TextStyle(color: Colors.grey),
-                                        ),
-                                ),
-                              );
+                              final request = incomingRequests[index];
+                              return _buildRequestTile(request, sheetSetState);
                             },
                           ),
                   ),
@@ -414,6 +361,117 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
         },
       ),
     );
+  }
+
+  Widget _buildRequestTile(Friendship request, StateSetter sheetSetState) {
+    final user = _getFriend(request);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final tileColor = isDark
+        ? Colors.white.withOpacity(0.06)
+        : AppColors.primary.withOpacity(0.06);
+
+    final timeAgo = _timeAgo(request.createdAt);
+
+    return Center(
+      child: SizedBox(
+        child: Dismissible(
+          key: ValueKey(request.id),
+          direction: DismissDirection.endToStart,
+          background: Container(
+            margin: const EdgeInsets.symmetric(vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 20),
+            alignment: Alignment.centerRight,
+            decoration: BoxDecoration(
+              color: Colors.red.shade400,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: const Icon(Icons.delete_outline, color: Colors.white),
+          ),
+          confirmDismiss: (_) async {
+            _declineFriendRequest(request.id, user.name);
+            sheetSetState(() {});
+            return true;
+          },
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+            decoration: BoxDecoration(
+              color: tileColor,
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Row(
+              children: [
+                _buildAvatar(user.name, user.profilePicture, radius: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        user.name,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 13,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 1),
+                      Text(
+                        '@${user.username} · $timeAgo',
+                        style: TextStyle(
+                          color: Theme.of(context).hintColor,
+                          fontSize: 10,
+                        ),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 6),
+                GestureDetector(
+                  onTap: () {
+                    _acceptFriendRequest(request.id, user.name);
+                    sheetSetState(() {});
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: AppColors.primary,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.primary.withOpacity(0.3),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: const Text(
+                      'Accept',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _timeAgo(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inDays > 0) return '${diff.inDays}d ago';
+    if (diff.inHours > 0) return '${diff.inHours}h ago';
+    if (diff.inMinutes > 0) return '${diff.inMinutes}m ago';
+    return 'Just now';
   }
 
   // ─── Build ─────────────────────────────────────────────────────────
@@ -428,7 +486,6 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
         color: bgColor,
         child: SafeArea(
           child: SingleChildScrollView(
-            // 👈 Make whole screen scrollable
             physics: const BouncingScrollPhysics(),
             padding: const EdgeInsets.only(bottom: 20),
             child: Column(
@@ -465,7 +522,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                   ),
                 ),
                 const SizedBox(height: 20),
-                _buildFriendsList(friendsVm), // 👈 No longer Expanded
+                _buildFriendsList(friendsVm),
               ],
             ),
           ),
@@ -555,14 +612,14 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     );
   }
 
-  // ─── Search result ──────────────────────────────────────────────────
+  // ─── Search result (aligned properly) ──────────────────────────────
   Widget _buildSearchResult(FriendsViewModel vm) {
     if (vm.isSearching) return const SizedBox.shrink();
 
     final results = vm.searchResults;
     if (results.isEmpty) {
       return Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 16),
+        padding: const EdgeInsets.symmetric(horizontal: 24),
         child: Container(
           padding: const EdgeInsets.all(12),
           decoration: BoxDecoration(
@@ -588,7 +645,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
 
     final user = results.first;
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
+      padding: const EdgeInsets.symmetric(horizontal: 24), // increased padding
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
         decoration: BoxDecoration(
@@ -603,16 +660,19 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
           ],
         ),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             _buildAvatar(user.name, user.profilePicture, radius: 22),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
                     user.name,
                     style: const TextStyle(fontWeight: FontWeight.w600),
+                    overflow: TextOverflow.ellipsis,
                   ),
                   Text(
                     '@${user.username}',
@@ -620,6 +680,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                       color: Theme.of(context).hintColor,
                       fontSize: 12,
                     ),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -804,14 +865,14 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     final text = quote?.text ?? 'Loading quote...';
     final author = quote?.author ?? '';
 
-    final snackBar = SnackBar(
-      content: Text('Custom quote coming soon!'),
-      backgroundColor: AppColors.hintDark,
-    );
-
     return GestureDetector(
       onTap: () {
-        ScaffoldMessenger.of(context).showSnackBar(snackBar);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Custom quote coming soon!'),
+            backgroundColor: AppColors.hintDark,
+          ),
+        );
       },
       child: Container(
         padding: const EdgeInsets.all(16),
@@ -865,7 +926,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                 fontStyle: FontStyle.italic,
                 height: 1.45,
               ),
-              maxLines: 3,
+              maxLines: 5,
               overflow: TextOverflow.ellipsis,
             ),
             if (author.isNotEmpty)
@@ -921,7 +982,9 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                       tooltip: 'Friend Requests',
                     ),
                   ),
-                  if (vm.pendingRequests.isNotEmpty)
+                  if (vm.pendingRequests
+                      .where((r) => r.direction == 'incoming')
+                      .isNotEmpty)
                     Positioned(
                       right: 4,
                       top: 4,
@@ -953,10 +1016,8 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
           const SizedBox(height: 10),
           hasFriends
               ? ListView.separated(
-                  shrinkWrap:
-                      true, // 👈 Important: makes ListView size to its content
-                  physics:
-                      const NeverScrollableScrollPhysics(), // 👈 Prevents nested scrolling
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
                   itemCount: vm.friends.length,
                   separatorBuilder: (_, __) => const SizedBox(height: 8),
                   itemBuilder: (_, index) {

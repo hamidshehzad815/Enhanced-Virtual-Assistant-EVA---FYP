@@ -18,11 +18,13 @@ import 'package:firebase_core/firebase_core.dart';
 import '../../data/services/push_notification_service.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import '../../data/services/calendar_service.dart';
+import '../../data/services/chat_service.dart';
 import '../../data/repositories/calendar_screen_repository.dart';
 import 'firebase_options.dart';
 import '../../data/services/analytics_service.dart';
 import '../../data/services/roadmap_service.dart';
 import '../../data/repositories/roadmap_repository.dart';
+import '../../data/repositories/chat_repository.dart';
 import '../../data/repositories/analytics_repository.dart';
 import 'data/services/friend_service.dart';
 import '../../data/repositories/friends_repository.dart';
@@ -54,7 +56,13 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => HomeScreenViewModel()),
         ChangeNotifierProvider(create: (_) => ProfileViewModel()),
-        ChangeNotifierProvider(create: (_) => ChatViewModel()),
+        Provider<ChatService>(create: (_) => ChatService()),
+        Provider<ChatRepository>(
+          create: (context) => ChatRepository(context.read<ChatService>()),
+        ),
+        ChangeNotifierProvider(
+          create: (context) => ChatViewModel(context.read<ChatRepository>()),
+        ),
         ChangeNotifierProvider(
           create: (_) {
             final service = CalendarService();
