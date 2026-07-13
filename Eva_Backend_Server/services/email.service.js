@@ -193,11 +193,10 @@ EVA Team
  */
 const sendPasswordResetEmail = async (to, name, token) => {
   if (!process.env.RESET_PASSWORD_URL) {
-    logger.warn(
-      "RESET_PASSWORD_URL is not set. The reset link will fall back to the backend "
-        + "API endpoint (/api/auth/reset-password) instead of the web reset form, so "
-        + "the emailed link will not open a usable page. Set RESET_PASSWORD_URL to your "
-        + "reset-password web page, e.g. https://<web-frontend>/reset-password",
+    logger.info(
+      "RESET_PASSWORD_URL is not set; the reset link will use the built-in backend "
+        + "reset page (GET /api/auth/reset-password). Set RESET_PASSWORD_URL only if you "
+        + "want the link to open a custom web frontend instead.",
     );
   }
 
