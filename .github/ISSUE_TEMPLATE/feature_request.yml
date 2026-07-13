@@ -1,0 +1,31 @@
+name: "✨ Feature / Improvement"
+description: "Request a new feature or an improvement to an existing one."
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: "What problem does this solve?"
+      placeholder: "Users can't tell which messages are unread."
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: "Proposed solution"
+      placeholder: "Show an unread badge on each chat in the list."
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: "Acceptance criteria (how we know it's done)"
+      placeholder: |
+        - [ ] Badge shows count of unread messages
+        - [ ] Badge clears when chat is opened
+        - [ ] Works after app restart
+    validations:
+      required: true
