@@ -213,9 +213,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
       icon: Icons.sync_rounded,
       iconColor: const Color(0xFF3B82F6),
       label: 'Google Calendar Sync',
-      subtitle: 'Sync tasks to Google Calendar',
+      subtitle: vm.googleCalendarConnected
+          ? 'Connected — syncs incomplete tasks to Google Calendar'
+          : 'Connect Google to sync incomplete tasks',
       toggleValue: settings.googleCalendarSyncEnabled,
-      onToggle: (v) async => vm.updateGoogleCalendarSync(v),
+      onToggle: (v) async {
+        try {
+          await vm.updateGoogleCalendarSync(v);
+        } catch (e) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                e.toString().replaceFirst('Exception: ', ''),
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      },
     ),
     SettingTileData(
       icon: Icons.show_chart_outlined,

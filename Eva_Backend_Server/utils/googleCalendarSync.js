@@ -41,6 +41,52 @@ const tokenNeedsRefresh = (integration) => {
   return expires.getTime() <= Date.now() + REFRESH_BUFFER_MS;
 };
 
+const exchangeServerAuthCode = async (serverAuthCode) => {
+  const clientId = process.env.GOOGLE_CLIENT_ID || "";
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
+  const code = String(serverAuthCode || "").trim();
+  if (!clientId || !clientSecret || !code) {
+    return null;
+  }
+
+  try {
+    const response = await axios.post(
+      "https://oauth2.googleapis.com/token",
+      new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        code,
+        grant_type: "authorization_code",
+      }).toString(),
+      {
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        timeout: 10000,
+        validateStatus: () => true,
+      },
+    );
+
+    if (response.status !== 200 || !response.data?.access_token) {
+      return null;
+    }
+
+    let tokenExpires = null;
+    if (response.data.expires_in != null) {
+      tokenExpires = new Date(Date.now() + Number(response.data.expires_in) * 1000);
+    }
+
+    return {
+      access_token: String(response.data.access_token).trim(),
+      refresh_token: response.data.refresh_token
+        ? String(response.data.refresh_token).trim()
+        : null,
+      token_expires: tokenExpires,
+      scope: response.data.scope ? String(response.data.scope) : null,
+    };
+  } catch (_error) {
+    return null;
+  }
+};
+
 const refreshGoogleAccessToken = async (refreshToken) => {
   const clientId = process.env.GOOGLE_CLIENT_ID || "";
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET || "";
@@ -147,6 +193,7 @@ const resolveGoogleCalendarSync = async (userId, userSettings, integrations = nu
 module.exports = {
   pickActiveGoogleIntegration,
   tokenNeedsRefresh,
+  exchangeServerAuthCode,
   refreshGoogleAccessToken,
   ensureFreshAccessToken,
   loadActiveGoogleIntegration,

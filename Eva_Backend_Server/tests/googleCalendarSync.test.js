@@ -4,6 +4,7 @@ const {
 const {
   pickActiveGoogleIntegration,
   tokenNeedsRefresh,
+  exchangeServerAuthCode,
   refreshGoogleAccessToken,
 } = require("../utils/googleCalendarSync");
 
@@ -51,6 +52,18 @@ describe("googleCalendarSync utils", () => {
     delete process.env.GOOGLE_CLIENT_SECRET;
 
     await expect(refreshGoogleAccessToken("refresh-token")).resolves.toBeNull();
+
+    process.env.GOOGLE_CLIENT_ID = originalId;
+    process.env.GOOGLE_CLIENT_SECRET = originalSecret;
+  });
+
+  test("exchangeServerAuthCode returns null without env credentials", async () => {
+    const originalId = process.env.GOOGLE_CLIENT_ID;
+    const originalSecret = process.env.GOOGLE_CLIENT_SECRET;
+    delete process.env.GOOGLE_CLIENT_ID;
+    delete process.env.GOOGLE_CLIENT_SECRET;
+
+    await expect(exchangeServerAuthCode("auth-code")).resolves.toBeNull();
 
     process.env.GOOGLE_CLIENT_ID = originalId;
     process.env.GOOGLE_CLIENT_SECRET = originalSecret;
