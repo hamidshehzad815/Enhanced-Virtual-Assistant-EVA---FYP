@@ -659,6 +659,97 @@ const resetPassword = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/auth/reset-password
+ * Serves a self-contained HTML page with a password-reset form so the emailed
+ * reset link works without a separate frontend. The form POSTs to
+ * POST /api/auth/reset-password and shows the result inline. A per-request CSP
+ * nonce is set so the inline script runs under Helmet's default CSP.
+ */
+const renderResetPasswordPage = (req, res) => {
+  const token = typeof req.query.token === "string" ? req.query.token : "";
+  const tokenJson = JSON.stringify(token);
+  const nonce = crypto.randomBytes(16).toString("base64");
+
+  const html = `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Reset your EVA password</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; background:#f5f7fb; margin:0; padding:24px; color:#111827; }
+    .card { max-width:440px; margin:40px auto; background:#fff; border-radius:12px; overflow:hidden; box-shadow:0 8px 28px rgba(0,0,0,0.08); }
+    .header { background:linear-gradient(135deg,#2563eb 0%,#0f766e 100%); padding:28px; text-align:center; color:#fff; }
+    .header h1 { margin:0; font-size:26px; letter-spacing:1px; }
+    .header p { margin:6px 0 0; opacity:.9; font-size:14px; }
+    .body { padding:28px; }
+    label { display:block; font-size:13px; font-weight:600; margin:14px 0 6px; }
+    input { width:100%; padding:12px 14px; border:1px solid #d1d5db; border-radius:8px; font-size:15px; }
+    input:focus { outline:none; border-color:#2563eb; }
+    button { width:100%; margin-top:22px; padding:13px; border:none; border-radius:8px; background:linear-gradient(135deg,#2563eb 0%,#0f766e 100%); color:#fff; font-size:15px; font-weight:700; cursor:pointer; }
+    button:disabled { opacity:.6; cursor:not-allowed; }
+    .msg { margin-top:16px; padding:12px 14px; border-radius:8px; font-size:14px; display:none; }
+    .msg.error { display:block; background:#fef2f2; color:#b91c1c; }
+    .msg.success { display:block; background:#ecfdf5; color:#047857; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="header">
+      <h1>EVA</h1>
+      <p>Reset your password</p>
+    </div>
+    <div class="body">
+      <form id="form">
+        <label for="pw">New password</label>
+        <input id="pw" type="password" autocomplete="new-password" placeholder="At least 6 characters" />
+        <label for="cpw">Confirm new password</label>
+        <input id="cpw" type="password" autocomplete="new-password" placeholder="Re-enter password" />
+        <button id="submit" type="submit">Reset password</button>
+      </form>
+      <div id="msg" class="msg"></div>
+    </div>
+  </div>
+  <script nonce="${nonce}">
+    var TOKEN = ${tokenJson};
+    var form = document.getElementById('form');
+    var msg = document.getElementById('msg');
+    var btn = document.getElementById('submit');
+    function show(kind, text){ msg.className = kind ? ('msg ' + kind) : 'msg'; msg.textContent = text; }
+    if (!TOKEN) { show('error', 'Invalid or missing reset link. Please request a new password reset from the app.'); btn.disabled = true; }
+    form.addEventListener('submit', function(e){
+      e.preventDefault();
+      var pw = document.getElementById('pw').value;
+      var cpw = document.getElementById('cpw').value;
+      if (pw.length < 6) { show('error', 'Password must be at least 6 characters.'); return; }
+      if (pw !== cpw) { show('error', 'Passwords do not match.'); return; }
+      btn.disabled = true; show('', 'Resetting…');
+      fetch('/api/auth/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ token: TOKEN, new_password: pw, confirm_password: cpw })
+      })
+      .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, d: d }; }); })
+      .then(function(res){
+        if (res.ok) { form.style.display = 'none'; show('success', 'Password reset successful. Open the EVA app and log in with your new password.'); }
+        else { show('error', (res.d && res.d.message) ? res.d.message : 'Reset failed. The link may have expired.'); btn.disabled = false; }
+      })
+      .catch(function(){ show('error', 'Network error. Please try again.'); btn.disabled = false; });
+    });
+  </script>
+</body>
+</html>`;
+
+  res.setHeader(
+    "Content-Security-Policy",
+    `default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'nonce-${nonce}'; connect-src 'self'`,
+  );
+  res.set("Content-Type", "text/html; charset=utf-8");
+  return res.send(html);
+};
+
 module.exports = {
   register,
   login,
@@ -670,4 +761,5 @@ module.exports = {
   resendVerification,
   forgotPassword,
   resetPassword,
+  renderResetPasswordPage,
 };
