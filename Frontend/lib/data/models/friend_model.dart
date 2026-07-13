@@ -72,6 +72,22 @@ class Friendship {
       since: json['since'] != null ? DateTime.parse(json['since']) : null,
     );
   }
+
+    factory Friendship.fromFriendListItem(Map<String, dynamic> json) {
+    final since = json['since'] != null ? DateTime.parse(json['since']) : null;
+    return Friendship(
+      id: json['friendship_id'] ?? json['_id'] ?? json['id'] ?? '',
+      status: 'accepted',
+      respondedAt: since,
+      createdAt: since ?? DateTime.now(),
+      updatedAt: since ?? DateTime.now(),
+      requester: null,
+      recipient: null,
+      direction: null,
+      friend: json['friend'] != null ? FriendUser.fromJson(json['friend']) : null,
+      since: since,
+    );
+  }
 }
 
 class Quote {
@@ -102,7 +118,7 @@ class FriendListResponse {
       quote = Quote.fromJson(quoteJson);
     }
     return FriendListResponse(
-      friends: list.map((f) => Friendship.fromJson(f)).toList(),
+      friends: list.map((f) => Friendship.fromFriendListItem(f)).toList(),
       quote: quote,
     );
   }

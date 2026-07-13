@@ -31,7 +31,7 @@ class FriendsViewModel extends ChangeNotifier {
     try {
       final response = await _repository.getFriends();
       _friends = response.friends;
-      _dailyQuote = response.quote;
+      _dailyQuote = response.quote; 
       _error = null;
     } catch (e) {
       _error = e.toString();

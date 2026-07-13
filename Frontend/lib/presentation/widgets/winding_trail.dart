@@ -149,11 +149,6 @@ class _SessionPill extends StatelessWidget {
         ? const Color(0xFF2C2C2E)
         : const Color(0xFFE5E5EA);
     final primTxt = isDark ? Colors.white : const Color(0xFF1C1C1E);
-    final secTxt = isDark ? const Color(0xFF8E8E93) : const Color(0xFF6C6C70);
-
-    final sub = session.resources.isNotEmpty
-        ? session.resources.first.title
-        : '';
     final schedule = session.scheduledDate != null
         ? DateFormat('MMM d, y').format(session.scheduledDate!.toLocal())
         : 'Not scheduled';
