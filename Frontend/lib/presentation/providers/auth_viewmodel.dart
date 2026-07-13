@@ -159,6 +159,31 @@ class AuthViewModel extends ChangeNotifier {
     }
   }
 
+  // forget-password
+  Future<AuthResult> forgetPassword(String email) async {
+    _clearErrors();
+    _setLoading(true);
+
+    try {
+      final response = await AuthService.forgetPassword(email);
+
+      final result = AuthResult.fromMap(response);
+      _lastResult = result;
+
+      if (!result.success) {
+        _applyFieldError(result);
+      }
+
+      return result;
+    } catch (e) {
+      _generalError = e.toString();
+      notifyListeners();
+      return AuthResult(success: false, message: "Something went wrong");
+    } finally {
+      _setLoading(false);
+    }
+  }
+
   void clearErrors() {
     _clearErrors();
     notifyListeners();
