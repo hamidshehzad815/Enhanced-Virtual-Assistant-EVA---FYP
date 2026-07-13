@@ -43,11 +43,34 @@ async def get_topic(language: str, level: str, order: int) -> Optional[Dict[str,
     return _normalize_out(doc)
 
 
-async def get_unfetched_topics(limit: int = 50) -> List[Dict[str, Any]]:
-    """Topics with no YouTube fetch yet (fetched_at is null or missing)."""
+def _unfetched_query(languages: Optional[List[str]] = None) -> Dict[str, Any]:
+    """Base filter for topics not yet fetched, optionally scoped to languages."""
+    query: Dict[str, Any] = {
+        "$or": [{"fetched_at": None}, {"fetched_at": {"$exists": False}}],
+    }
+    langs = [str(l) for l in (languages or []) if str(l).strip()]
+    if langs:
+        query["language"] = {"$in": langs}
+    return query
+
+
+async def list_languages() -> List[str]:
+    """Distinct language values present in roadmap_resources, sorted."""
     db = get_db()
-    query = {"$or": [{"fetched_at": None}, {"fetched_at": {"$exists": False}}]}
-    cursor = db.roadmap_resources.find(query).sort(
+    langs = await db.roadmap_resources.distinct("language")
+    return sorted(str(l) for l in langs if l)
+
+
+async def get_unfetched_topics(
+    limit: int = 50,
+    languages: Optional[List[str]] = None,
+) -> List[Dict[str, Any]]:
+    """Topics with no YouTube fetch yet (fetched_at is null or missing).
+
+    Pass ``languages`` to scope to specific languages (e.g. ["Python"]).
+    """
+    db = get_db()
+    cursor = db.roadmap_resources.find(_unfetched_query(languages)).sort(
         [("language", 1), ("level", 1), ("order", 1)]
     ).limit(limit)
     rows = await cursor.to_list(length=limit)
@@ -91,10 +114,9 @@ async def update_resources(doc_id: str, resources: List[Dict[str, Any]]) -> bool
     return result.matched_count == 1
 
 
-async def count_unfetched() -> int:
-    query = {"$or": [{"fetched_at": None}, {"fetched_at": {"$exists": False}}]}
+async def count_unfetched(languages: Optional[List[str]] = None) -> int:
     db = get_db()
-    return await db.roadmap_resources.count_documents(query)
+    return await db.roadmap_resources.count_documents(_unfetched_query(languages))
 
 
 async def get_sessions_required(language: str, level: str) -> int:

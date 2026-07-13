@@ -105,4 +105,5 @@ module.exports = {
   connectDB,
   disconnectDB,
   healthCheck,
+  getDatabaseName,
 };

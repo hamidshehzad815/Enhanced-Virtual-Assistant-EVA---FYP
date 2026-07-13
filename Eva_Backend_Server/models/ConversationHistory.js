@@ -8,8 +8,7 @@ const mongoose = require("mongoose");
 const conversationHistorySchema = new mongoose.Schema(
   {
     session_id: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "ChatSession",
+      type: String,
       required: true,
       index: true,
     },
@@ -67,6 +66,7 @@ const conversationHistorySchema = new mongoose.Schema(
       createdAt: "created_at",
       updatedAt: "updated_at",
     },
+    collection: "conversation_history", // canonical name — not Mongoose default conversationhistories
   },
 );
 
