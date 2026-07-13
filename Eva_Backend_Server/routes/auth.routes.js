@@ -16,6 +16,7 @@ const {
   resendVerification,
   forgotPassword,
   resetPassword,
+  renderResetPasswordPage,
 } = require("../controllers/auth.controller");
 
 // Public routes
@@ -26,6 +27,8 @@ router.post("/refresh", refresh);
 router.get("/verify-email", verifyEmail);
 router.post("/resend-verification", resendVerification);
 router.post("/forgot-password", forgotPassword);
+// GET serves the reset-password web form; POST performs the reset.
+router.get("/reset-password", renderResetPasswordPage);
 router.post("/reset-password", resetPassword);
 
 // Protected routes
