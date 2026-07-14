@@ -235,9 +235,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text(
-                e.toString().replaceFirst('Exception: ', ''),
-              ),
+              content: Text(e.toString().replaceFirst('Exception: ', '')),
               backgroundColor: Colors.red,
             ),
           );
@@ -643,6 +641,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     showModalBottomSheet(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
@@ -847,6 +846,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
       context: context,
+      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
@@ -875,8 +875,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           style: AppTextStyles.logo.copyWith(fontSize: 18),
                         ),
                         IconButton(
-                          icon: const Icon(Icons.add),
-                          onPressed: () => _showCreateScheduleSheet(vm),
+                                                            icon: const Icon(Icons.add),
+                          onPressed: () => _showCreateScheduleSheet(vm, ctx),
                           color: AppColors.primary,
                         ),
                       ],
@@ -926,7 +926,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                             child: InkWell(
                               borderRadius: BorderRadius.circular(14),
-                              onTap: () => _showScheduleDetail(vm, schedule),
+                              onTap: () =>
+                                  _showScheduleDetail(vm, schedule, ctx),
                               child: Padding(
                                 padding: const EdgeInsets.symmetric(
                                   horizontal: 14,
@@ -1039,14 +1040,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   // ==================== CREATE SCHEDULE ====================
-  void _showCreateScheduleSheet(SettingsViewModel vm) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+  void _showCreateScheduleSheet(SettingsViewModel vm, BuildContext sheetCtx) {
+    final isDark = Theme.of(sheetCtx).brightness == Brightness.dark;
     final labelController = TextEditingController();
     String label = '';
     List<_NewSlotData> slots = [];
 
     showModalBottomSheet(
-      context: context,
+      context: sheetCtx,
+      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
@@ -1084,7 +1086,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       TextField(
                         controller: labelController,
                         style: TextStyle(
-                          color: Theme.of(context).textTheme.bodyMedium?.color,
+                          color: Theme.of(ctx).textTheme.bodyMedium?.color,
                         ),
                         decoration: InputDecoration(
                           labelText: 'Title',
@@ -1105,7 +1107,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         'Select days',
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
-                          color: Theme.of(context).textTheme.bodyMedium?.color,
+                          color: Theme.of(ctx).textTheme.bodyMedium?.color,
                         ),
                       ),
                       const SizedBox(height: 8),
@@ -1144,7 +1146,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       else
                         ...slots.map(
                           (slot) =>
-                              _buildNewSlotRow(slot, setSheetState, slots),
+                              _buildNewSlotRow(slot, setSheetState, slots, ctx),
                         ),
                       const SizedBox(height: 20),
                       Row(
@@ -1253,8 +1255,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         )
                                         .toList(),
                                   );
-                                  if (ctx.mounted) {
-                                    Navigator.pop(ctx);
+                                  Navigator.pop(ctx);
+                                  if (mounted) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       const SnackBar(
                                         content: Text('Schedule created'),
@@ -1305,9 +1307,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _NewSlotData slot,
     StateSetter setSheetState,
     List<_NewSlotData> slots,
+    BuildContext ctx,
   ) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor = Theme.of(context).textTheme.bodyMedium?.color;
+    final isDark = Theme.of(ctx).brightness == Brightness.dark;
+    final textColor = Theme.of(ctx).textTheme.bodyMedium?.color;
     final bgColor = isDark ? AppColors.cardElevatedDark : Colors.grey.shade50;
     final borderColor = isDark ? AppColors.borderDark : AppColors.borderLight;
 
@@ -1333,7 +1336,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           GestureDetector(
             onTap: () async {
               final picked = await showTimePicker(
-                context: context,
+                context: ctx,
                 initialTime: slot.time ?? const TimeOfDay(hour: 9, minute: 0),
               );
               if (picked != null) setSheetState(() => slot.time = picked);
@@ -1348,7 +1351,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  slot.time?.format(context) ?? 'Set time',
+                  slot.time?.format(ctx) ?? 'Set time',
                   style: TextStyle(
                     fontSize: 13,
                     color: slot.time == null ? Colors.orange : textColor,
@@ -1362,7 +1365,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () async {
               int temp = slot.durationMinutes ?? 60;
               await showModalBottomSheet(
-                context: context,
+                context: ctx,
                 backgroundColor: isDark ? AppColors.cardDark : Colors.white,
                 builder: (_) => StatefulBuilder(
                   builder: (dCtx, setDurationState) => Padding(
@@ -1456,8 +1459,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   // ==================== SCHEDULE DETAIL / EDIT ====================
-  void _showScheduleDetail(SettingsViewModel vm, LearningSchedule schedule) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+  void _showScheduleDetail(
+    SettingsViewModel vm,
+    LearningSchedule schedule,
+    BuildContext sheetCtx,
+  ) {
+    final isDark = Theme.of(sheetCtx).brightness == Brightness.dark;
     bool isEditing = false;
 
     String label = schedule.label;
@@ -1484,7 +1491,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final labelController = TextEditingController(text: label);
 
     showModalBottomSheet(
-      context: context,
+      context: sheetCtx,
+      useRootNavigator: true,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
@@ -1508,7 +1516,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               return false;
             }
 
-            final textColor = Theme.of(context).textTheme.bodyMedium?.color;
+            final textColor = Theme.of(ctx).textTheme.bodyMedium?.color;
 
             return Container(
               decoration: BoxDecoration(
@@ -1589,11 +1597,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       const SizedBox(height: 16),
                       if (isEditing)
                         ...slots.map(
-                          (slot) =>
-                              _buildEditableSlotRow(slot, setSheetState, slots),
+                          (slot) => _buildEditableSlotRow(
+                            slot,
+                            setSheetState,
+                            slots,
+                            ctx,
+                          ),
                         )
                       else
-                        ...slots.map((slot) => _buildReadOnlySlotRow(slot)),
+                        ...slots.map(
+                          (slot) => _buildReadOnlySlotRow(slot, ctx),
+                        ),
                       if (isEditing) ...[
                         const SizedBox(height: 12),
                         Text(
@@ -1734,9 +1748,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     );
                                     if (ctx.mounted) {
                                       Navigator.pop(ctx);
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
+                                      ScaffoldMessenger.of(ctx).showSnackBar(
                                         const SnackBar(
                                           content: Text('Schedule updated'),
                                           backgroundColor: Colors.green,
@@ -1782,9 +1794,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
     );
   }
 
-  Widget _buildReadOnlySlotRow(_SlotData slot) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor = Theme.of(context).textTheme.bodyMedium?.color;
+  Widget _buildReadOnlySlotRow(_SlotData slot, BuildContext ctx) {
+    final isDark = Theme.of(ctx).brightness == Brightness.dark;
+    final textColor = Theme.of(ctx).textTheme.bodyMedium?.color;
     final subColor = isDark
         ? AppColors.secondaryTextDark
         : AppColors.secondaryTextLight;
@@ -1828,7 +1840,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               const Icon(Icons.access_time, size: 14, color: AppColors.primary),
               const SizedBox(width: 4),
               Text(
-                slot.time.format(context),
+                slot.time.format(ctx),
                 style: TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.w500,
@@ -1857,9 +1869,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _SlotData slot,
     StateSetter setSheetState,
     List<_SlotData> slots,
+    BuildContext ctx,
   ) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
-    final textColor = Theme.of(context).textTheme.bodyMedium?.color;
+    final isDark = Theme.of(ctx).brightness == Brightness.dark;
+    final textColor = Theme.of(ctx).textTheme.bodyMedium?.color;
     final bgColor = isDark ? AppColors.cardElevatedDark : Colors.grey.shade50;
     final borderColor = isDark ? AppColors.borderDark : AppColors.borderLight;
 
@@ -1890,7 +1903,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           GestureDetector(
             onTap: () async {
               final picked = await showTimePicker(
-                context: context,
+                context: ctx,
                 initialTime: slot.time,
               );
               if (picked != null) setSheetState(() => slot.time = picked);
@@ -1905,7 +1918,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ),
                 const SizedBox(width: 4),
                 Text(
-                  slot.time.format(context),
+                  slot.time.format(ctx),
                   style: TextStyle(fontSize: 13, color: textColor),
                 ),
               ],
@@ -1917,7 +1930,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             onTap: () async {
               int temp = slot.durationMinutes;
               await showModalBottomSheet(
-                context: context,
+                context: ctx,
                 backgroundColor: isDark ? AppColors.cardDark : Colors.white,
                 builder: (_) => StatefulBuilder(
                   builder: (dCtx, setDurationState) => Padding(
@@ -2022,7 +2035,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             exTime,
             exSlot.durationMinutes,
           )) {
-            return '"${existing.label}" on ${fullDayNames[newSlot.day]} at ${exTime.format(context)}';
+            return '"${existing.label}" on ${fullDayNames[newSlot.day]} at ${_formatTimeStatic(exTime)}';
           }
         }
       }

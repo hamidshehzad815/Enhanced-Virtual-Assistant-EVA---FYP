@@ -244,6 +244,23 @@ class _NotificationTileState extends State<_NotificationTile> {
     }
   }
 
+  Future<void> _deleteNotification() async {
+    final vm = context.read<NotificationViewModel>();
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await vm.deleteNotification(widget.notification.id);
+    } catch (e) {
+      if (!mounted) return;
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text(
+            'Failed to delete notification: ${e.toString().replaceAll('Exception: ', '')}',
+          ),
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final n = widget.notification;
@@ -251,13 +268,23 @@ class _NotificationTileState extends State<_NotificationTile> {
     final primaryText =
         isDark ? AppColors.primaryTextDark : AppColors.primaryTextLight;
 
-    return InkWell(
-      onTap: n.isRead
-          ? null
-          : () => context.read<NotificationViewModel>().markRead(n.id),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Column(
+    return Dismissible(
+      key: ValueKey(n.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        decoration: const BoxDecoration(color: Colors.red),
+        child: const Icon(Icons.delete_outline, color: Colors.white, size: 24),
+      ),
+      onDismissed: (_) => _deleteNotification(),
+      child: InkWell(
+        onTap: n.isRead
+            ? null
+            : () => context.read<NotificationViewModel>().markRead(n.id),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+          child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
@@ -352,6 +379,7 @@ class _NotificationTileState extends State<_NotificationTile> {
               ),
             ],
           ],
+          ),
         ),
       ),
     );
