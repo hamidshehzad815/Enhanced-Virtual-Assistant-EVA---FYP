@@ -28,6 +28,9 @@ import '../../data/repositories/chat_repository.dart';
 import '../../data/repositories/analytics_repository.dart';
 import 'data/services/friend_service.dart';
 import '../../data/repositories/friends_repository.dart';
+import 'data/services/notification_service.dart';
+import '../../data/repositories/notification_repository.dart';
+import 'presentation/providers/notification_viewmodel.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -99,6 +102,15 @@ void main() async {
         ChangeNotifierProvider(
           create: (context) =>
               FriendsViewModel(context.read<FriendsRepository>()),
+        ),
+        Provider<NotificationService>(create: (_) => NotificationService()),
+        Provider<NotificationRepository>(
+          create: (context) =>
+              NotificationRepository(context.read<NotificationService>()),
+        ),
+        ChangeNotifierProvider(
+          create: (context) =>
+              NotificationViewModel(context.read<NotificationRepository>()),
         ),
       ],
 
