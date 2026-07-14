@@ -136,7 +136,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     }
   }
 
-  void _acceptFriendRequest(String friendshipId, String name) async {
+  Future<void> _acceptFriendRequest(String friendshipId, String name) async {
     try {
       final vm = context.read<FriendsViewModel>();
       await vm.respondFriendRequest(friendshipId, 'accept');
@@ -149,7 +149,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     }
   }
 
-  void _declineFriendRequest(String friendshipId, String name) async {
+  Future<void> _declineFriendRequest(String friendshipId, String name) async {
     try {
       final vm = context.read<FriendsViewModel>();
       await vm.respondFriendRequest(friendshipId, 'reject');
@@ -356,7 +356,11 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                             itemCount: currentIncoming.length,
                             itemBuilder: (_, index) {
                               final request = currentIncoming[index];
-                              return _buildRequestTile(request, sheetSetState);
+                              return _buildRequestTile(
+                                request,
+                                sheetSetState,
+                                ctx,
+                              );
                             },
                           ),
                   ),
@@ -369,7 +373,11 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
     );
   }
 
-  Widget _buildRequestTile(Friendship request, StateSetter sheetSetState) {
+  Widget _buildRequestTile(
+    Friendship request,
+    StateSetter sheetSetState,
+    BuildContext sheetContext,
+  ) {
     final user = _getFriend(request);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final tileColor = isDark
@@ -394,8 +402,8 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
             child: const Icon(Icons.delete_outline, color: Colors.white),
           ),
           confirmDismiss: (_) async {
-            _declineFriendRequest(request.id, user.name);
-            sheetSetState(() {});
+            await _declineFriendRequest(request.id, user.name);
+            if (sheetContext.mounted) sheetSetState(() {});
             return true;
           },
           child: Container(
@@ -434,9 +442,9 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
                 ),
                 const SizedBox(width: 6),
                 GestureDetector(
-                  onTap: () {
-                    _acceptFriendRequest(request.id, user.name);
-                    sheetSetState(() {});
+                  onTap: () async {
+                    await _acceptFriendRequest(request.id, user.name);
+                    if (sheetContext.mounted) sheetSetState(() {});
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(
