@@ -38,6 +38,7 @@ Behavior summary
 ----------------
 - Toggle OFF: skip all Google Calendar API calls; integration may stay connected
 - Toggle ON + no integration: skip sync silently until user connects
-- Disconnect: is_active=false, google_calendar_sync_enabled=false
-- Connect: stores tokens, is_active=true, google_calendar_sync_enabled=true
+- Connect: stores tokens, is_active=true, google_calendar_sync_enabled=true, backfills incomplete owned tasks
+- Enable sync toggle (false -> true): backfills incomplete owned tasks when integration exists
+- Backfill scope: all owner tasks with is_deleted=false and status not complete (past + future)
 - Existing Google events are NOT bulk-deleted when toggle turns off

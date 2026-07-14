@@ -6,6 +6,10 @@
 const { Integration, UserSetting } = require("../models");
 const { BadRequestError, NotFoundError } = require("../middleware/errorHandler");
 const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
+const {
+  scheduleGoogleCalendarBackfill,
+} = require("../services/googleCalendarBackfill.service");
+const { exchangeServerAuthCode } = require("../utils/googleCalendarSync");
 
 const buildApiData = (req, payload) => {
   const timezone = (req.user && req.user.timezone) || "UTC";
@@ -59,34 +63,55 @@ const disableGoogleCalendarSyncSetting = async (userId) => {
  */
 const connectGoogleCalendar = async (req, res, next) => {
   try {
-    const { access_token, refresh_token, token_expires, calendar_id, scope } =
-      req.body;
+    const {
+      access_token,
+      refresh_token,
+      server_auth_code,
+      token_expires,
+      calendar_id,
+      scope,
+    } = req.body;
 
-    if (!access_token || typeof access_token !== "string") {
-      throw new BadRequestError("access_token is required");
-    }
-
+    let resolvedAccessToken = null;
+    let resolvedRefreshToken =
+      typeof refresh_token === "string" && refresh_token.trim()
+        ? refresh_token.trim()
+        : null;
     let tokenExpiryValue = null;
-    if (token_expires) {
-      const parsed = new Date(token_expires);
-      if (Number.isNaN(parsed.getTime())) {
-        throw new BadRequestError("token_expires must be a valid date/time");
+    let resolvedScope =
+      typeof scope === "string" && scope.trim() ? scope.trim() : null;
+
+    if (typeof server_auth_code === "string" && server_auth_code.trim()) {
+      const exchanged = await exchangeServerAuthCode(server_auth_code);
+      if (!exchanged?.access_token) {
+        throw new BadRequestError("Failed to exchange Google authorization code");
       }
-      tokenExpiryValue = parsed;
+      resolvedAccessToken = exchanged.access_token;
+      resolvedRefreshToken = exchanged.refresh_token || resolvedRefreshToken;
+      tokenExpiryValue = exchanged.token_expires || null;
+      resolvedScope = exchanged.scope || resolvedScope;
+    } else if (typeof access_token === "string" && access_token.trim()) {
+      resolvedAccessToken = access_token.trim();
+      if (token_expires) {
+        const parsed = new Date(token_expires);
+        if (Number.isNaN(parsed.getTime())) {
+          throw new BadRequestError("token_expires must be a valid date/time");
+        }
+        tokenExpiryValue = parsed;
+      }
+    } else {
+      throw new BadRequestError("access_token or server_auth_code is required");
     }
 
     const updatePayload = {
-      access_token: access_token.trim(),
-      refresh_token:
-        typeof refresh_token === "string" && refresh_token.trim()
-          ? refresh_token.trim()
-          : null,
+      access_token: resolvedAccessToken,
+      refresh_token: resolvedRefreshToken,
       token_expires: tokenExpiryValue,
       calendar_id:
         typeof calendar_id === "string" && calendar_id.trim()
           ? calendar_id.trim()
           : "primary",
-      scope: typeof scope === "string" && scope.trim() ? scope.trim() : null,
+      scope: resolvedScope,
       is_active: true,
       updated_at: new Date(),
     };
@@ -111,6 +136,7 @@ const connectGoogleCalendar = async (req, res, next) => {
     ).lean();
 
     await enableGoogleCalendarSyncSetting(req.userId);
+    scheduleGoogleCalendarBackfill(req.userId);
 
     res.status(200).json({
       status: "success",

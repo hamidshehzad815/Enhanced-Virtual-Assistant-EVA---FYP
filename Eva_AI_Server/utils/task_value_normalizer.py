@@ -127,7 +127,7 @@ def clean_task_name(value: Any) -> str:
     """Strip generic trailing noise words from a NER-extracted task name.
 
     "physics task" -> "physics"   "cs lab tasks" -> "cs lab"
-    If stripping would leave an empty string the original value is returned.
+    "task" / "tasks" alone -> "" so handlers treat task_name as missing.
     """
     text = str(value or "").strip()
     if not text:
@@ -135,7 +135,7 @@ def clean_task_name(value: Any) -> str:
     words = text.split()
     while words and words[-1].lower() in _TASK_NAME_TRAILING_NOISE:
         words.pop()
-    return " ".join(words) if words else text
+    return " ".join(words) if words else ""
 
 
 def build_value_regex(values: Iterable[str]) -> str:

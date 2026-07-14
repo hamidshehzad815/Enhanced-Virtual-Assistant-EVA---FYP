@@ -62,16 +62,22 @@ jest.mock("../models", () => ({
   LearningGoal: {},
 }));
 
-jest.mock("../utils/googleCalendarSync", () => ({
-  resolveGoogleCalendarSync: jest.fn(),
+jest.mock("../services/googleCalendarBackfill.service", () => ({
+  scheduleGoogleCalendarBackfill: jest.fn(),
 }));
 
-jest.mock("../services/googleCalendar.service", () => ({
-  deleteEvent: jest.fn(),
-}));
+jest.mock("../utils/googleCalendarSync", () => {
+  const actual = jest.requireActual("../utils/googleCalendarSync");
+  return {
+    ...actual,
+    exchangeServerAuthCode: jest.fn(),
+  };
+});
 
 const app = require("../app");
 const { User } = require("../models");
+const { scheduleGoogleCalendarBackfill } = require("../services/googleCalendarBackfill.service");
+const { exchangeServerAuthCode } = require("../utils/googleCalendarSync");
 
 const USER_ID = "507f1f77bcf86cd799439011";
 
@@ -123,6 +129,40 @@ describe("Integrations API", () => {
         $set: expect.objectContaining({ google_calendar_sync_enabled: true }),
       }),
     );
+    expect(scheduleGoogleCalendarBackfill).toHaveBeenCalledWith(USER_ID);
+  });
+
+  test("POST /api/integrations/google/connect accepts server_auth_code", async () => {
+    exchangeServerAuthCode.mockResolvedValue({
+      access_token: "exchanged-access",
+      refresh_token: "exchanged-refresh",
+      token_expires: new Date("2030-01-01T00:00:00.000Z"),
+      scope: "calendar.events",
+    });
+    mockFindOneAndUpdate.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({
+        _id: "int1",
+        user_id: USER_ID,
+        provider: "google_calendar",
+        calendar_id: "primary",
+        is_active: true,
+        created_at: new Date(),
+        updated_at: new Date(),
+      }),
+    });
+    mockUserSettingUpdate.mockResolvedValue({});
+
+    const response = await request(app)
+      .post("/api/integrations/google/connect")
+      .set("Authorization", `Bearer ${makeToken()}`)
+      .send({
+        server_auth_code: "server-code",
+        access_token: "client-access",
+      });
+
+    expect(response.status).toBe(200);
+    expect(exchangeServerAuthCode).toHaveBeenCalledWith("server-code");
+    expect(mockFindOneAndUpdate).toHaveBeenCalled();
   });
 
   test("DELETE /api/integrations/google disconnects and disables sync", async () => {

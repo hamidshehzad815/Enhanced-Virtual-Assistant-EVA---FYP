@@ -1,4 +1,4 @@
 {
-  "API_BASE_URL": "http://10.0.2.2:4500/api",
+  "API_BASE_URL": "http://192.168.1.2:4500/api",
   "GOOGLE_WEB_CLIENT_ID": "424904983644-1r590marhlk27lgab1pja3ufcirtfkqb.apps.googleusercontent.com"
 }

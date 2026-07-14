@@ -30,6 +30,9 @@ const {
 } = require("../utils/learningSchedules");
 const { localizeApiPayload, withApiTimezone } = require("../utils/apiDateTime");
 const { allowFriendRequestsToBoolean } = require("../utils/friendSettings");
+const {
+  scheduleGoogleCalendarBackfill,
+} = require("../services/googleCalendarBackfill.service");
 
 const buildApiData = (req, payload) => {
   const timezone = userTimeZone(req);
@@ -456,6 +459,10 @@ const updateSettings = async (req, res, next) => {
       update.behavioral_analytics_enabled = behavioralAnalyticsEnabled;
     }
 
+    const shouldBackfillGoogleCalendar =
+      googleCalendarSyncEnabled === true
+      && settings.google_calendar_sync_enabled !== true;
+
     if (googleCalendarSyncEnabled !== undefined) {
       update.google_calendar_sync_enabled = googleCalendarSyncEnabled;
     }
@@ -482,6 +489,10 @@ const updateSettings = async (req, res, next) => {
     if (Object.keys(update).length > 0) {
       Object.assign(settings, update);
       await settings.save();
+    }
+
+    if (shouldBackfillGoogleCalendar) {
+      scheduleGoogleCalendarBackfill(req.userId);
     }
 
     if (pushToken !== undefined) {
