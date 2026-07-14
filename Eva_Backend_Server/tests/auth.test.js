@@ -114,7 +114,7 @@ describe("Auth API", () => {
       name: "Hamid",
       username: "hamid",
       email: "hamid@example.com",
-      password: "secret123",
+      password: "Secret123!",
       timezone: "Asia/Karachi",
     });
 
@@ -123,6 +123,36 @@ describe("Auth API", () => {
     expect(response.body.data.user).toEqual(authUser);
     expect(UserSetting.createDefaultSettings).toHaveBeenCalledWith(USER_ID);
     expect(sendVerificationEmail).toHaveBeenCalledTimes(1);
+  });
+
+  test("POST /api/auth/register -> 400 with per-field errors for invalid input", async () => {
+    const response = await request(app).post("/api/auth/register").send({
+      name: "H", // too short
+      username: "Bad Name", // uppercase + space
+      email: "not-an-email",
+      password: "weak", // too short + no complexity
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.status).toBe("fail");
+    expect(response.body.errors).toHaveProperty("name");
+    expect(response.body.errors).toHaveProperty("username");
+    expect(response.body.errors).toHaveProperty("email");
+    expect(response.body.errors).toHaveProperty("password");
+    // Validation must run before any DB lookup.
+    expect(User.findOne).not.toHaveBeenCalled();
+  });
+
+  test("POST /api/auth/register -> 400 when password lacks complexity", async () => {
+    const response = await request(app).post("/api/auth/register").send({
+      name: "Hamid",
+      username: "hamid",
+      email: "hamid@example.com",
+      password: "alllowercase1", // no uppercase, no symbol
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.errors).toHaveProperty("password");
   });
 
   test("POST /api/auth/login -> 200 and tokens", async () => {
@@ -258,25 +288,37 @@ describe("Auth API", () => {
 
     const response = await request(app).post("/api/auth/reset-password").send({
       token: "plain-token",
-      new_password: "secret123",
-      confirm_password: "secret123",
+      new_password: "Secret123!",
+      confirm_password: "Secret123!",
     });
 
     expect(response.status).toBe(200);
     expect(response.body.status).toBe("success");
     expect(response.body.message).toMatch(/Password reset successful/i);
-    expect(userDoc.password_hash).toBe("secret123");
+    expect(userDoc.password_hash).toBe("Secret123!");
   });
 
-  test("POST /api/auth/reset-password -> mismatch password validation", async () => {
+  test("POST /api/auth/reset-password -> 400 when passwords mismatch", async () => {
     const response = await request(app).post("/api/auth/reset-password").send({
       token: "plain-token",
-      new_password: "secret123",
-      confirm_password: "secret999",
+      new_password: "Secret123!",
+      confirm_password: "Secret999!",
     });
 
     expect(response.status).toBe(400);
     expect(response.body.status).toBe("fail");
+    expect(response.body.errors).toHaveProperty("confirm_password");
+  });
+
+  test("POST /api/auth/reset-password -> 400 with errors.password when weak", async () => {
+    const response = await request(app).post("/api/auth/reset-password").send({
+      token: "plain-token",
+      new_password: "weakpass",
+      confirm_password: "weakpass",
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.errors).toHaveProperty("password");
   });
 
   test("POST /api/auth/google -> 201 for new Google user", async () => {
@@ -287,12 +329,12 @@ describe("Auth API", () => {
       name: "Google User",
       picture: "https://example.com/photo.jpg",
     });
-    generateUniqueUsername.mockResolvedValue("google_user");
+    generateUniqueUsername.mockResolvedValue("googleuser");
 
     const googleUser = {
       _id: USER_ID,
       name: "Google User",
-      username: "google_user",
+      username: "googleuser",
       email: "google@example.com",
       is_verified: true,
       profile_picture: "https://example.com/photo.jpg",
