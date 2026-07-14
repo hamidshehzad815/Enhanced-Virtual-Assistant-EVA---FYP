@@ -54,8 +54,10 @@ class _CalendarScreenState extends State<CalendarScreen>
       _viewModelListener = _tryOpenDialog;
       vm.addListener(_viewModelListener!);
     }
-    if (vm.tasks.isEmpty ||
+    if (refreshNotifier.needsRefresh ||
+        vm.tasks.isEmpty ||
         DateTime.now().difference(_lastLoadTime).inSeconds > 30) {
+      refreshNotifier.consume();
       _lastLoadTime = DateTime.now();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -107,6 +109,8 @@ class _CalendarScreenState extends State<CalendarScreen>
 
   void _onRefreshSignal() {
     if (!mounted) return;
+    context.read<TaskRefreshNotifier>().consume();
+    _lastLoadTime = DateTime.now();
     final vm = context.read<CalendarViewModel>();
     vm.loadTasks(); // reload tasks from database
     // optional: animate the list again
