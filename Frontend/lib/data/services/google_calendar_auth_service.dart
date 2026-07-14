@@ -1,5 +1,4 @@
 import 'package:google_sign_in/google_sign_in.dart';
-
 import '../../core/constants/google_calendar_constants.dart';
 
 class GoogleCalendarAuthTokens {
