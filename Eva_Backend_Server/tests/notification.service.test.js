@@ -165,15 +165,24 @@ describe("Notification Service", () => {
     expect(savedDoc.sent_at).toBeUndefined();
   });
 
-  test("isEmailEnabled forces email for collaboration invites when master on", () => {
-    const settings = {
+  test("isEmailEnabled respects the email toggle for ALL types, including invites", () => {
+    // Email OFF (master on): nothing emails — collaboration invites no longer
+    // override the user's choice (issue #29).
+    const emailOff = {
       notifications_enabled: true,
       email_notifications_enabled: false,
     };
+    expect(isEmailEnabled(emailOff, "collaboration_invite")).toBe(false);
+    expect(isEmailEnabled(emailOff, "learning_collaboration_invite")).toBe(false);
+    expect(isEmailEnabled(emailOff, "task_reminder")).toBe(false);
 
-    expect(isEmailEnabled(settings, "collaboration_invite")).toBe(true);
-    expect(isEmailEnabled(settings, "learning_collaboration_invite")).toBe(true);
-    expect(isEmailEnabled(settings, "task_reminder")).toBe(false);
+    // Email ON: every type may email, including invites.
+    const emailOn = {
+      notifications_enabled: true,
+      email_notifications_enabled: true,
+    };
+    expect(isEmailEnabled(emailOn, "collaboration_invite")).toBe(true);
+    expect(isEmailEnabled(emailOn, "task_reminder")).toBe(true);
   });
 
   test("preference helpers respect master switch", () => {
