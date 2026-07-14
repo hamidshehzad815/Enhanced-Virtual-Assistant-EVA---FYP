@@ -17,6 +17,7 @@ See [README.md](./README.md) for base URL, auth headers, and error envelopes.
 | `GET` | `/api/notifications/unread-count` | **Yes** | Just the unread count (cheap — poll this for the badge) |
 | `PATCH` | `/api/notifications/:id/read` | **Yes** | Mark one notification as read |
 | `PATCH` | `/api/notifications/read-all` | **Yes** | Mark all of the user's notifications as read |
+| `DELETE` | `/api/notifications/:id` | **Yes** | Delete one of the user's notifications (swipe-to-delete) |
 
 All routes require:
 
@@ -137,6 +138,23 @@ Mark every unread notification for the user as read (clears the badge).
   "data": { "marked_read": 5 }   // how many were flipped to read
 }
 ```
+
+---
+
+## `DELETE /api/notifications/:id`
+
+Delete a single notification (e.g. swipe-to-delete). Scoped to the user.
+
+**Response `200`:**
+
+```jsonc
+{
+  "status": "success",
+  "data": { "deleted_id": "665f0c..." }
+}
+```
+
+**Errors:** `400` invalid id · `404` not found or not owned by the user.
 
 ---
 

@@ -191,9 +191,40 @@ const markAllNotificationsRead = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /api/notifications/:id
+ * Delete one of the user's own notifications.
+ * -> { status, data: { deleted_id } }   (404 if the id isn't the user's)
+ */
+const deleteNotification = async (req, res, next) => {
+  try {
+    const notificationId = String(req.params.id || "").trim();
+    if (!mongoose.Types.ObjectId.isValid(notificationId)) {
+      throw new BadRequestError("Invalid notification id");
+    }
+
+    const deleted = await Notification.findOneAndDelete({
+      _id: notificationId,
+      user_id: req.userId,
+    }).lean();
+
+    if (!deleted) {
+      throw new NotFoundError("Notification not found");
+    }
+
+    res.json({
+      status: "success",
+      data: buildApiData(req, { deleted_id: notificationId }),
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   listNotifications,
   getUnreadCount,
   markNotificationRead,
+  deleteNotification,
   markAllNotificationsRead,
 };
