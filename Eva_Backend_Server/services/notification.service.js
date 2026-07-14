@@ -198,21 +198,9 @@ const isPushEnabled = (userSettings) =>
   isMasterNotificationsEnabled(userSettings)
   && userSettings?.push_notifications_enabled !== false;
 
-const isEmailEnabled = (userSettings, notificationType) => {
-  if (!isMasterNotificationsEnabled(userSettings)) {
-    return false;
-  }
-
-  const forceEmailForInvite = (
-    notificationType === "collaboration_invite"
-    || notificationType === "learning_collaboration_invite"
-  );
-  if (forceEmailForInvite) {
-    return true;
-  }
-
-  return userSettings?.email_notifications_enabled === true;
-};
+const isEmailEnabled = (userSettings) =>
+  isMasterNotificationsEnabled(userSettings)
+  && userSettings?.email_notifications_enabled === true;
 
 const normalizeChannels = (channels) => {
   if (!Array.isArray(channels) || channels.length === 0) {
@@ -538,7 +526,7 @@ const insert_and_dispatch = async (notifications = []) => {
       }
 
       if (channels.includes("email")) {
-        if (isEmailEnabled(userSettings, saved.type)) {
+        if (isEmailEnabled(userSettings)) {
           const result = await dispatch_email(doc.user_id, saved, userDoc);
           channelResults.push(result);
           if (result.dispatched) {
