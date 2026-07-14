@@ -44,7 +44,11 @@ class AuthViewModel extends ChangeNotifier {
   String? get generalError => _generalError;
   AuthResult? get lastResult => _lastResult;
 
-  Future<AuthResult> login(String email, String password) async {
+  Future<AuthResult> login(
+    String email,
+    String password, {
+    bool rememberMe = true,
+  }) async {
     _clearErrors();
     _setLoading(true);
 
@@ -59,16 +63,16 @@ class AuthViewModel extends ChangeNotifier {
           throw Exception('Access token missing in login response');
         }
 
-        await StorageService.saveAccessToken(accessToken);
-        await StorageService.saveRefreshToken(refreshToken);
+        await StorageService.saveAccessToken(accessToken, persist: rememberMe);
+        await StorageService.saveRefreshToken(
+          refreshToken,
+          persist: rememberMe,
+        );
 
-        // Push setup – best effort; don't fail login if it fails
         try {
           await PushNotificationService.init();
         } catch (pushError) {
-          // Log but don't rethrow – login is still successful
           print('Push notification setup failed: $pushError');
-          // Optionally, you could set a flag to show a user-friendly message later.
         }
       }
 
@@ -141,6 +145,31 @@ class AuthViewModel extends ChangeNotifier {
           print('Push notification setup failed: $pushError');
         }
       }
+
+      final result = AuthResult.fromMap(response);
+      _lastResult = result;
+
+      if (!result.success) {
+        _applyFieldError(result);
+      }
+
+      return result;
+    } catch (e) {
+      _generalError = e.toString();
+      notifyListeners();
+      return AuthResult(success: false, message: "Something went wrong");
+    } finally {
+      _setLoading(false);
+    }
+  }
+
+  // forget-password
+  Future<AuthResult> forgetPassword(String email) async {
+    _clearErrors();
+    _setLoading(true);
+
+    try {
+      final response = await AuthService.forgetPassword(email);
 
       final result = AuthResult.fromMap(response);
       _lastResult = result;

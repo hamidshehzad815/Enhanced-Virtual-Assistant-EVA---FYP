@@ -46,13 +46,6 @@ class _FeaturesScreenState extends State<FeaturesScreen> {
     },
     {
       "number": "05",
-      "emoji": "⛓️",
-      "title": "Chained Commands",
-      "description":
-          "\"Add exam revision before exam\" — EVA understands dependencies and schedules everything.",
-    },
-    {
-      "number": "06",
       "emoji": "🤝",
       "title": "Collaboration",
       "description":
@@ -292,7 +285,10 @@ class _FeaturesScreenState extends State<FeaturesScreen> {
                 isActive: isActive,
                 start: 0.12,
                 end: 0.5,
-                child: Text(feature["emoji"], style: const TextStyle(fontSize: 40)),
+                child: Text(
+                  feature["emoji"],
+                  style: const TextStyle(fontSize: 40),
+                ),
               ),
               const SizedBox(height: 12),
               _staggerItem(
@@ -302,7 +298,10 @@ class _FeaturesScreenState extends State<FeaturesScreen> {
                 end: 0.68,
                 child: Text(
                   feature["title"],
-                  style: AppTextStyles.logo.copyWith(fontSize: 20, color: titleColor),
+                  style: AppTextStyles.logo.copyWith(
+                    fontSize: 20,
+                    color: titleColor,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -354,10 +353,7 @@ class _FeaturesScreenState extends State<FeaturesScreen> {
 
     return Opacity(
       opacity: opacity,
-      child: Transform.translate(
-        offset: Offset(0, dy),
-        child: child,
-      ),
+      child: Transform.translate(offset: Offset(0, dy), child: child),
     );
   }
 }

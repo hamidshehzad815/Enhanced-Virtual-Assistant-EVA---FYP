@@ -24,14 +24,11 @@ class AuthService {
       final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
 
       if (response.statusCode == 200) {
-        return {
-          "success": true, // ✅ added for UI check
-          ...data,
-        };
+        return {"success": true, ...data};
       }
       return {
         "success": false,
-        "field": data["field"], // keep if backend sends field-specific error
+        "field": data["field"],
         "msg": data["message"] ?? data["msg"] ?? "Login failed",
       };
     } catch (e) {
@@ -104,9 +101,7 @@ class AuthService {
     }
 
     try {
-      await GoogleSignIn.instance.initialize(
-        serverClientId: googleWebClientId,
-      );
+      await GoogleSignIn.instance.initialize(serverClientId: googleWebClientId);
       final GoogleSignInAccount? googleUser = await GoogleSignIn.instance
           .authenticate(scopeHint: ['email', 'profile']);
 
@@ -146,6 +141,30 @@ class AuthService {
         "success": false,
         "msg": data['message'] ?? data['msg'] ?? "Google sign-in failed",
       };
+    } catch (e) {
+      return {"success": false, "msg": "Server not reachable: $e"};
+    }
+  }
+
+  static Future<Map<String, dynamic>> forgetPassword(String email) async {
+    final url = Uri.parse("${AppConstants.baseUrl}/auth/forgot-password");
+
+    try {
+      final response = await http
+          .post(
+            url,
+            headers: {"Content-Type": "application/json"},
+            body: jsonEncode({"email": email}),
+          )
+          .timeout(const Duration(seconds: 15));
+
+      if (response.statusCode == 200) {
+        return {
+          "success": true,
+          "msg": "Password reset link sent to your email",
+        };
+      }
+      return {"success": false, "msg": "Failed to send reset link"};
     } catch (e) {
       return {"success": false, "msg": "Server not reachable: $e"};
     }

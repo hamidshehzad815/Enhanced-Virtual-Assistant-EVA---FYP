@@ -918,7 +918,7 @@ class _CollaborationScreenState extends State<CollaborationScreen> {
   // ─── Quote Card ──────────────────────────────────────────────────────
   Widget _buildQuoteCard(FriendsViewModel vm) {
     final quote = vm.dailyQuote;
-    final text = quote?.text ?? '✨ Loading quote...';
+    final text = quote?.text ?? 'Loading quote...';
     final author = quote?.author ?? '';
 
     return GestureDetector(
