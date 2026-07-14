@@ -1,6 +1,24 @@
 /**
  * Notifications Controller
  * In-app notification inbox APIs for the authenticated user.
+ *
+ * Response shapes (for the Flutter client). Every endpoint is scoped to the
+ * authenticated user (req.userId) — a user can only read/modify their own rows.
+ *
+ *   GET /api/notifications?limit&skip&unread_only
+ *     { status, data: {
+ *         notifications: [{ _id, type, title, message, reference_type, reference_id,
+ *           is_read, action_required, action_taken, delivery_channel, sent_at,
+ *           created_at, sender: { _id, name, username, profile_picture } | null }],
+ *         pagination: { limit, skip, total, has_more },
+ *         unread_count } }
+ *
+ *   GET /api/notifications/unread-count
+ *     { status, data: { unread_count } }
+ *
+ *   PATCH /api/notifications/:id/read      -> { status, data: { notification } }
+ *                                             (404 if the id isn't the user's)
+ *   PATCH /api/notifications/read-all      -> { status, data: { marked_read } }
  */
 
 const mongoose = require("mongoose");
