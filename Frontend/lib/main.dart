@@ -31,21 +31,22 @@ import '../../data/repositories/friends_repository.dart';
 import 'data/services/notification_service.dart';
 import '../../data/repositories/notification_repository.dart';
 import 'presentation/providers/notification_viewmodel.dart';
+import 'presentation/providers/task_refresh_notifier.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setPreferredOrientations([DeviceOrientation.portraitUp]);
 
-  print('🔥 Checking Firebase apps count: ${Firebase.apps.length}');
+  // print('🔥 Checking Firebase apps count: ${Firebase.apps.length}');
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
   } catch (e) {
     if (e.toString().contains('duplicate-app')) {
-      print('🔥 Firebase already initialized (duplicate-app ignored).');
+      // print('🔥 Firebase already initialized (duplicate-app ignored).');
     } else {
-      print('🔥 Firebase init error: $e');
+      // print('🔥 Firebase init error: $e');
       rethrow;
     }
   }
@@ -66,6 +67,7 @@ void main() async {
         ChangeNotifierProvider(
           create: (context) => ChatViewModel(context.read<ChatRepository>()),
         ),
+        ChangeNotifierProvider(create: (_) => TaskRefreshNotifier()),
         ChangeNotifierProvider(
           create: (_) {
             final service = CalendarService();

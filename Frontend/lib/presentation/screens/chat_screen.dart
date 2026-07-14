@@ -11,6 +11,7 @@ import '../../core/theme/app_text_style.dart';
 import '../../data/models/chat_model.dart';
 import '../providers/chat_viewmodel.dart';
 import '../providers/profile_viewmodel.dart';
+import '../providers/task_refresh_notifier.dart';
 
 const _kSuggestions = [
   ' Add FYP meeting Friday 3pm',
@@ -400,6 +401,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     if (trimmed.isEmpty) return;
 
     final vm = context.read<ChatViewModel>();
+    final refreshNotifier = context.read<TaskRefreshNotifier>(); // <-- ADD
     _stopListening();
     _textController.clear();
     setState(() {
@@ -416,6 +418,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
       );
       if (response.responseText.isNotEmpty) _speak(response.responseText);
       vm.loadSessions();
+      refreshNotifier.refresh();
     } catch (e) {
       /* ignore */
     } finally {
@@ -745,7 +748,6 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final profileVm = context.watch<ProfileViewModel>();
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final messages = vm.messages;
-
 
     // ─── User avatar data ─────────────────────────────────────────────
     final userInitial = _getUserInitial(profileVm);
