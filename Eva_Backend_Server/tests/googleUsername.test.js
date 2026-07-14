@@ -7,27 +7,39 @@ const { generateUniqueUsername } = require("../utils/googleUsername");
 
 const USERNAME_RE = /^[a-z]{3,30}$/;
 
-describe("generateUniqueUsername (letters-only)", () => {
+describe("generateUniqueUsername (name-based, letters-only)", () => {
   beforeEach(() => jest.clearAllMocks());
 
-  it("strips digits/symbols to produce a letters-only username", async () => {
+  it("uses the first name word when it is long enough (ignores the email)", async () => {
     User.findOne.mockResolvedValue(null); // no collision
-    const username = await generateUniqueUsername("Hamid.815@gmail.com", "Hamid Shehzad");
+    // Roll-number email has no useful letters, so the name must drive it.
+    const username = await generateUniqueUsername(
+      "f2022266297@umt.edu.pk",
+      "Hamid Shehzad",
+    );
     expect(username).toMatch(USERNAME_RE);
     expect(username).toBe("hamid");
   });
 
-  it("falls back to a valid default when the source has no letters", async () => {
+  it("appends the second word when the first is too short", async () => {
     User.findOne.mockResolvedValue(null);
-    const username = await generateUniqueUsername("12345@x.com", "");
+    const username = await generateUniqueUsername("x@y.com", "Al Rehman");
     expect(username).toMatch(USERNAME_RE);
+    expect(username).toBe("alrehman");
+  });
+
+  it("falls back to evauser when the name has no usable letters", async () => {
+    User.findOne.mockResolvedValue(null);
+    const username = await generateUniqueUsername("f2022266297@umt.edu.pk", "");
+    expect(username).toMatch(USERNAME_RE);
+    expect(username).toBe("evauser");
   });
 
   it("appends an alphabetic suffix on collision (still letters-only)", async () => {
     User.findOne
       .mockResolvedValueOnce({ _id: "taken" }) // "hamid" is taken
       .mockResolvedValueOnce(null); // "hamida" is free
-    const username = await generateUniqueUsername("hamid@x.com", "Hamid");
+    const username = await generateUniqueUsername("x@y.com", "Hamid");
     expect(username).toMatch(USERNAME_RE);
     expect(username).toBe("hamida");
   });
