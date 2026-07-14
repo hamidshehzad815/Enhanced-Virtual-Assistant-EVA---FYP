@@ -21,6 +21,11 @@ const { renderEmailVerificationPage } = require("../utils/verificationPage");
 const { allowFriendRequestsToBoolean } = require("../utils/friendSettings");
 const { verifyGoogleIdToken } = require("../utils/googleIdToken");
 const { generateUniqueUsername } = require("../utils/googleUsername");
+const {
+  validateRegistration,
+  validatePassword,
+  throwIfErrors,
+} = require("../utils/authValidation");
 
 const serializeAuthUser = (user) => ({
   _id: user._id,
@@ -108,12 +113,8 @@ const register = async (req, res, next) => {
   try {
     const { name, username, email, password, timezone } = req.body;
 
-    // Validate required fields
-    if (!name || !username || !email || !password) {
-      throw new BadRequestError(
-        "Name, username, email, and password are required",
-      );
-    }
+    // Validate fields (required + format) with per-field error messages.
+    throwIfErrors(validateRegistration({ name, username, email, password }));
 
     // Check if email already exists
     const existingEmail = await User.findOne({ email: email.toLowerCase() });
@@ -623,12 +624,16 @@ const resetPassword = async (req, res, next) => {
       );
     }
 
-    if (String(new_password).length < 6) {
-      throw new BadRequestError("Password must be at least 6 characters");
+    // Enforce the same password policy as registration.
+    const passwordError = validatePassword(new_password);
+    if (passwordError) {
+      throwIfErrors({ password: passwordError });
     }
 
     if (new_password !== confirm_password) {
-      throw new BadRequestError("new_password and confirm_password do not match");
+      throwIfErrors({
+        confirm_password: "New password and confirm password do not match",
+      });
     }
 
     const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
