@@ -4,18 +4,24 @@ import '../../data/repositories/settings_repository.dart';
 import '../../data/services/storage_service.dart';
 import '../../data/services/auth_service.dart';
 import '../../data/services/push_notification_service.dart';
+import '../../data/repositories/integrations_repository.dart';
 
 class SettingsViewModel extends ChangeNotifier {
   final SettingsRepository _repository;
+  final IntegrationsRepository _integrationsRepository;
 
   SettingsModel _settings = SettingsModel();
   String _searchQuery = '';
   bool _isSaving = false;
   bool _isLoading = false;
   String? _error;
+  bool _googleCalendarConnected = false;
 
-  SettingsViewModel({SettingsRepository? repository})
-    : _repository = repository ?? SettingsRepository();
+  SettingsViewModel({
+    SettingsRepository? repository,
+    IntegrationsRepository? integrationsRepository,
+  })  : _repository = repository ?? SettingsRepository(),
+        _integrationsRepository = integrationsRepository ?? IntegrationsRepository();
 
   // Getters
   SettingsModel get settings => _settings;
@@ -23,6 +29,7 @@ class SettingsViewModel extends ChangeNotifier {
   bool get isSaving => _isSaving;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get googleCalendarConnected => _googleCalendarConnected;
 
   void updateSearchQuery(String query) {
     _searchQuery = query.toLowerCase();
@@ -51,6 +58,13 @@ class SettingsViewModel extends ChangeNotifier {
 
       final response = await _repository.getSettings(token);
       _settings = SettingsModel.fromJson(response);
+      try {
+        _googleCalendarConnected =
+            await _integrationsRepository.isGoogleCalendarConnected(token);
+      } catch (e) {
+        debugPrint('Integrations load error: $e');
+        _googleCalendarConnected = false;
+      }
       _isLoading = false;
       notifyListeners();
     } catch (e) {
@@ -108,10 +122,47 @@ class SettingsViewModel extends ChangeNotifier {
   }
 
   Future<void> updateGoogleCalendarSync(bool value) async {
+    final token = await StorageService.getAccessToken();
+    if (token == null) throw Exception('Not authenticated');
+
+    if (value) {
+      final alreadyConnected =
+          _googleCalendarConnected ||
+          await _integrationsRepository.isGoogleCalendarConnected(token);
+
+      if (!alreadyConnected) {
+        final oldSettings = _settings;
+        _settings = _settings.copyWith(googleCalendarSyncEnabled: true);
+        _isSaving = true;
+        notifyListeners();
+
+        try {
+          await _integrationsRepository.connectGoogleCalendar(token);
+          _googleCalendarConnected = true;
+          await loadSettings();
+        } catch (e) {
+          _settings = oldSettings;
+          _error = e.toString();
+          notifyListeners();
+          rethrow;
+        } finally {
+          _isSaving = false;
+          notifyListeners();
+        }
+        return;
+      }
+    }
+
     await _safeUpdate(
       newSettings: _settings.copyWith(googleCalendarSyncEnabled: value),
       apiBody: {'google_calendar_sync_enabled': value},
     );
+
+    if (!value) {
+      _googleCalendarConnected =
+          await _integrationsRepository.isGoogleCalendarConnected(token);
+      notifyListeners();
+    }
   }
 
   Future<void> updateBehaviorAnalytics(bool value) async {
