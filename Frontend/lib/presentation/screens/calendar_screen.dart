@@ -6,6 +6,7 @@ import 'package:table_calendar/table_calendar.dart';
 import '../../core/theme/app_colours.dart';
 import '../../data/models/calendar_task_model.dart';
 import '../providers/calendar_viewmodel.dart';
+import '../providers/task_refresh_notifier.dart';
 import 'package:lottie/lottie.dart';
 
 class CalendarScreen extends StatefulWidget {
@@ -45,6 +46,8 @@ class _CalendarScreenState extends State<CalendarScreen>
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
+    final refreshNotifier = context.read<TaskRefreshNotifier>();
+    refreshNotifier.addListener(_onRefreshSignal);
     final vm = context.read<CalendarViewModel>();
     _vm = vm;
     if (_viewModelListener == null) {
@@ -64,6 +67,8 @@ class _CalendarScreenState extends State<CalendarScreen>
 
   @override
   void dispose() {
+    final refreshNotifier = context.read<TaskRefreshNotifier>();
+    refreshNotifier.removeListener(_onRefreshSignal); // <-- add this
     if (_viewModelListener != null) {
       _vm?.removeListener(_viewModelListener!);
     }
@@ -98,6 +103,15 @@ class _CalendarScreenState extends State<CalendarScreen>
       _dialogOpenScheduled = false;
       _tryOpenDialog();
     });
+  }
+
+  void _onRefreshSignal() {
+    if (!mounted) return;
+    final vm = context.read<CalendarViewModel>();
+    vm.loadTasks(); // reload tasks from database
+    // optional: animate the list again
+    _listAnimController.reset();
+    _listAnimController.forward();
   }
 
   @override
@@ -490,56 +504,63 @@ class _CalendarScreenState extends State<CalendarScreen>
           topLeft: Radius.circular(32),
           topRight: Radius.circular(32),
         ),
-        child: CustomScrollView(
-          slivers: [
-            SliverToBoxAdapter(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Grey drag handle – kept for visual cue
-                  const SizedBox(height: 6),
-                  Center(
-                    child: Container(
-                      width: 42,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: (isDark ? Colors.white : Colors.grey)
-                            .withOpacity(0.28),
-                        borderRadius: BorderRadius.circular(99),
+        child: RefreshIndicator(
+          onRefresh: () async {
+            await vm.loadTasks();
+            _listAnimController.reset();
+            _listAnimController.forward();
+          },
+          child: CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Grey drag handle – kept for visual cue
+                    const SizedBox(height: 6),
+                    Center(
+                      child: Container(
+                        width: 42,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: (isDark ? Colors.white : Colors.grey)
+                              .withOpacity(0.28),
+                          borderRadius: BorderRadius.circular(99),
+                        ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  // Header – now with less top padding
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 20),
-                    child: _buildTaskListHeaderContent(context, vm, isDark),
-                  ),
-                ],
-              ),
-            ),
-            if (vm.filteredTasks.isEmpty)
-              SliverToBoxAdapter(child: _buildEmptyState(isDark))
-            else
-              SliverPadding(
-                padding: const EdgeInsets.only(bottom: 15),
-                sliver: SliverList(
-                  delegate: SliverChildBuilderDelegate(
-                    (_, i) => FadeTransition(
-                      opacity: _listFadeAnim,
-                      child: _buildTaskTile(
-                        context,
-                        vm,
-                        vm.filteredTasks[i],
-                        isDark,
-                        i,
-                      ),
+                    const SizedBox(height: 8),
+                    // Header – now with less top padding
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 20),
+                      child: _buildTaskListHeaderContent(context, vm, isDark),
                     ),
-                    childCount: vm.filteredTasks.length,
-                  ),
+                  ],
                 ),
               ),
-          ],
+              if (vm.filteredTasks.isEmpty)
+                SliverToBoxAdapter(child: _buildEmptyState(isDark))
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.only(bottom: 15),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (_, i) => FadeTransition(
+                        opacity: _listFadeAnim,
+                        child: _buildTaskTile(
+                          context,
+                          vm,
+                          vm.filteredTasks[i],
+                          isDark,
+                          i,
+                        ),
+                      ),
+                      childCount: vm.filteredTasks.length,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     );
