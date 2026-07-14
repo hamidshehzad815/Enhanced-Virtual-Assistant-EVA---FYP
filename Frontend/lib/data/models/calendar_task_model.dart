@@ -65,6 +65,23 @@ class CalendarTask {
     );
   }
 
+  // Backend Task status enum is: pending | ongoing | complete (note the backend
+  // sends "complete", not "completed"). Map it to the Dart enum so completed
+  // tasks keep their strikethrough + sort-to-bottom after an API reload.
+  static TaskStatus _statusFromApi(dynamic value) {
+    switch (value?.toString().toLowerCase()) {
+      case 'complete':
+      case 'completed':
+        return TaskStatus.completed;
+      case 'ongoing':
+        return TaskStatus.ongoing;
+      case 'overdue':
+        return TaskStatus.overdue;
+      default:
+        return TaskStatus.pending;
+    }
+  }
+
 factory CalendarTask.fromJson(Map<String, dynamic> json) {
   return CalendarTask(
     id: json['id'],
@@ -76,10 +93,7 @@ factory CalendarTask.fromJson(Map<String, dynamic> json) {
       (e) => e.name == json['priority'],
       orElse: () => TaskPriority.medium,
     ),
-    status: TaskStatus.values.firstWhere(
-      (e) => e.name == json['status'],
-      orElse: () => TaskStatus.pending,
-    ),
+    status: _statusFromApi(json['status']),
     displayStatus: json['display_status'] ?? 'pending',
     isLearningTask: json['is_learning_task'] ?? false,
     learningGoalId: json['learning_goal_id'],
