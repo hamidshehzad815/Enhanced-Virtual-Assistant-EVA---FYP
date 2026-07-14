@@ -5,6 +5,7 @@ jest.mock("../models", () => ({
     find: jest.fn(),
     countDocuments: jest.fn(),
     findOneAndUpdate: jest.fn(),
+    findOneAndDelete: jest.fn(),
     updateMany: jest.fn(),
   },
 }));
@@ -16,6 +17,7 @@ const {
   getUnreadCount,
   markNotificationRead,
   markAllNotificationsRead,
+  deleteNotification,
 } = require("../controllers/notifications.controller");
 
 const USER_ID = new mongoose.Types.ObjectId();
@@ -241,5 +243,56 @@ describe("notifications.controller", () => {
         timezone: "UTC",
       }),
     });
+  });
+
+  test("deleteNotification removes the user's own notification", async () => {
+    const notificationId = new mongoose.Types.ObjectId();
+    Notification.findOneAndDelete.mockReturnValue({
+      lean: jest.fn().mockResolvedValue({ _id: notificationId }),
+    });
+
+    const req = mockReq({ params: { id: String(notificationId) } });
+    const res = mockRes();
+    const next = jest.fn();
+
+    await deleteNotification(req, res, next);
+
+    expect(Notification.findOneAndDelete).toHaveBeenCalledWith({
+      _id: String(notificationId),
+      user_id: USER_ID,
+    });
+    expect(res.json).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "success",
+        data: expect.objectContaining({ deleted_id: String(notificationId) }),
+      }),
+    );
+  });
+
+  test("deleteNotification -> 404 when the notification is not the user's", async () => {
+    const notificationId = new mongoose.Types.ObjectId();
+    Notification.findOneAndDelete.mockReturnValue({
+      lean: jest.fn().mockResolvedValue(null),
+    });
+
+    const req = mockReq({ params: { id: String(notificationId) } });
+    const res = mockRes();
+    const next = jest.fn();
+
+    await deleteNotification(req, res, next);
+
+    expect(res.json).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].statusCode).toBe(404);
+  });
+
+  test("deleteNotification -> 400 on an invalid id (no DB call)", async () => {
+    const req = mockReq({ params: { id: "nope" } });
+    const res = mockRes();
+    const next = jest.fn();
+
+    await deleteNotification(req, res, next);
+
+    expect(Notification.findOneAndDelete).not.toHaveBeenCalled();
+    expect(next.mock.calls[0][0].statusCode).toBe(400);
   });
 });
