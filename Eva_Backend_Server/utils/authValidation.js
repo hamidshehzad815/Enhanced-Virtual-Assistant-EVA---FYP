@@ -6,7 +6,7 @@
  *
  * Canonical rules:
  *   name     : 2–100 characters
- *   username : ^[a-z0-9_]{3,30}$  (lowercase letters, numbers, underscore)
+ *   username : ^[a-z]{3,30}$  (lowercase letters only — no numbers/underscore/symbols)
  *   email    : basic valid email format
  *   password : min 8, with lowercase + uppercase + number + symbol
  */
@@ -15,7 +15,7 @@ const { BadRequestError } = require("../middleware/errorHandler");
 
 const NAME_MIN = 2;
 const NAME_MAX = 100;
-const USERNAME_RE = /^[a-z0-9_]{3,30}$/;
+const USERNAME_RE = /^[a-z]{3,30}$/;
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
 const PASSWORD_MIN = 8;
 
@@ -31,7 +31,7 @@ const validateUsername = (value) => {
   const username = typeof value === "string" ? value.trim() : "";
   if (!username) return "Username is required";
   if (!USERNAME_RE.test(username)) {
-    return "Username must be 3-30 characters using only lowercase letters, numbers, and underscores";
+    return "Username must be 3-30 lowercase letters (a-z) only — no numbers, spaces, or symbols";
   }
   return null;
 };

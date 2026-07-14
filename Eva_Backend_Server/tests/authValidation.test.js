@@ -20,15 +20,17 @@ describe("authValidation", () => {
   });
 
   describe("validateUsername", () => {
-    it("accepts lowercase letters, numbers, underscore (3–30)", () => {
-      expect(validateUsername("hamid_815")).toBeNull();
+    it("accepts lowercase letters only (3–30)", () => {
+      expect(validateUsername("hamid")).toBeNull();
       expect(validateUsername("abc")).toBeNull();
     });
-    it("rejects uppercase, spaces, symbols, and bad length", () => {
-      expect(validateUsername("Hamid")).toMatch(/lowercase/i);
+    it("rejects numbers, underscore, uppercase, spaces, and bad length", () => {
+      expect(validateUsername("hamid815")).toMatch(/lowercase/i); // numbers
+      expect(validateUsername("hamid_ali")).toMatch(/lowercase/i); // underscore
+      expect(validateUsername("Hamid")).toMatch(/lowercase/i); // uppercase
       expect(validateUsername("has space")).toMatch(/lowercase/i);
-      expect(validateUsername("ab")).toMatch(/3-30/);
-      expect(validateUsername("a".repeat(31))).toMatch(/3-30/);
+      expect(validateUsername("ab")).toMatch(/lowercase/i); // too short
+      expect(validateUsername("a".repeat(31))).toMatch(/lowercase/i); // too long
       expect(validateUsername("")).toMatch(/required/i);
     });
   });

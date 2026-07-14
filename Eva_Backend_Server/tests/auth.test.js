@@ -329,12 +329,12 @@ describe("Auth API", () => {
       name: "Google User",
       picture: "https://example.com/photo.jpg",
     });
-    generateUniqueUsername.mockResolvedValue("google_user");
+    generateUniqueUsername.mockResolvedValue("googleuser");
 
     const googleUser = {
       _id: USER_ID,
       name: "Google User",
-      username: "google_user",
+      username: "googleuser",
       email: "google@example.com",
       is_verified: true,
       profile_picture: "https://example.com/photo.jpg",
