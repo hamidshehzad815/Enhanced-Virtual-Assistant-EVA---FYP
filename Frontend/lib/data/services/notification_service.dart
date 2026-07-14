@@ -66,6 +66,16 @@ class NotificationService {
     }
   }
 
+  Future<void> deleteNotification(String token, String id) async {
+    final response = await http.delete(
+      Uri.parse('${AppConstants.baseUrl}/notifications/$id'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode != 200 && response.statusCode != 204) {
+      throw Exception('Failed to delete notification: ${response.statusCode}');
+    }
+  }
+
   /// Accept/reject a collaboration invite (Tasks endpoint).
   /// Returns whether the invite had already been responded to.
   Future<bool> respondCollaboration(

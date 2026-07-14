@@ -36,6 +36,11 @@ class NotificationRepository {
     return _service.markAllRead(token);
   }
 
+  Future<void> deleteNotification(String id) async {
+    final token = await _getToken();
+    return _service.deleteNotification(token, id);
+  }
+
   Future<bool> respondCollaboration(String taskId, String action) async {
     final token = await _getToken();
     return _service.respondCollaboration(token, taskId, action);

@@ -88,6 +88,32 @@ class NotificationViewModel extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
+  Future<void> deleteNotification(String id) async {
+    final idx = _notifications.indexWhere((n) => n.id == id);
+    if (idx == -1) return;
+
+    final notification = _notifications[idx];
+    final wasUnread = !notification.isRead;
+    _notifications.removeAt(idx);
+    if (wasUnread && _unreadCount > 0) {
+      _unreadCount--;
+    }
+    notifyListeners();
+
+    try {
+      await _repository.deleteNotification(id);
+      _error = null;
+    } catch (e) {
+      _notifications.insert(idx, notification);
+      if (wasUnread) {
+        _unreadCount++;
+      }
+      _error = e.toString();
+      notifyListeners();
+      throw Exception('Failed to delete notification');
+    }
+  }
+
   Future<void> markAllRead() async {
     try {
       await _repository.markAllRead();
