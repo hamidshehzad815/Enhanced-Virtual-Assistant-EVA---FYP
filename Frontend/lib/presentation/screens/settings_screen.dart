@@ -20,6 +20,16 @@ class SettingsScreen extends StatefulWidget {
 class _SettingsScreenState extends State<SettingsScreen> {
   final TextEditingController _searchController = TextEditingController();
 
+  static const List<String> fullDayNames = [
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
+  ];
+
   @override
   void initState() {
     super.initState();
@@ -51,7 +61,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Scaffold(
       backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-
       body: SafeArea(
         child: Column(
           children: [
@@ -200,7 +209,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Failed to update theme: $e'),
+                  content: Text(
+                    'Failed to update theme: ${_friendlyErrorMessage(e)}',
+                  ),
                   backgroundColor: Colors.red,
                 ),
               );
@@ -248,7 +259,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         label: 'Push Notifications',
         subtitle: 'Alerts on your device',
         toggleValue: settings.pushNotificationsEnabled,
-        enabled: settings.notificationsEnabled, // 👈 ADD THIS LINE
+        enabled: settings.notificationsEnabled,
         onToggle: (v) async => vm.updatePushNotificationsEnabled(v),
       ),
       SettingTileData(
@@ -257,7 +268,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         label: 'Email Notifications',
         subtitle: 'Summaries sent to your email',
         toggleValue: settings.emailNotificationsEnabled,
-        enabled: settings.notificationsEnabled, // 👈 ADD THIS LINE
+        enabled: settings.notificationsEnabled,
         onToggle: (v) async => vm.updateEmailNotificationsEnabled(v),
       ),
       SettingTileData(
@@ -478,7 +489,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('Logout failed: $e'),
+                            content: Text(
+                              'Logout failed: ${_friendlyErrorMessage(e)}',
+                            ),
                             backgroundColor: Colors.red,
                           ),
                         );
@@ -539,7 +552,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       if (mounted) {
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                            content: Text('Account deletion failed: $e'),
+                            content: Text(
+                              'Account deletion failed: ${_friendlyErrorMessage(e)}',
+                            ),
                             backgroundColor: Colors.red,
                           ),
                         );
@@ -715,7 +730,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         if (ctx.mounted) {
                           ScaffoldMessenger.of(ctx).showSnackBar(
                             SnackBar(
-                              content: Text('Failed to save: $e'),
+                              content: Text(
+                                'Failed to save: ${_friendlyErrorMessage(e)}',
+                              ),
                               backgroundColor: Colors.red,
                             ),
                           );
@@ -810,7 +827,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   // ==================== LEARNING SCHEDULES MANAGER ====================
-
   void _showLearningSchedulesManager(SettingsViewModel vm) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     showModalBottomSheet(
@@ -818,11 +834,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
+        return AnimatedBuilder(
+          animation: vm,
+          builder: (ctx, _) {
+            final schedules = vm.settings.learningSchedules;
             return Container(
               decoration: BoxDecoration(
-                color: isDark ? Colors.grey[900] : Colors.white,
+                color: isDark ? AppColors.cardDark : Colors.white,
                 borderRadius: const BorderRadius.vertical(
                   top: Radius.circular(24),
                 ),
@@ -836,39 +854,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
-                        const Text(
+                        Text(
                           'Learning Schedules',
-                          style: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.bold,
-                          ),
+                          style: AppTextStyles.logo.copyWith(fontSize: 18),
                         ),
                         IconButton(
                           icon: const Icon(Icons.add),
-                          onPressed: () async {
-                            await vm.createLearningSchedule('New Schedule', [
-                              ScheduleSlot(
-                                day: 0,
-                                time: '09:00',
-                                durationMinutes: 60,
-                              ),
-                            ]);
-                            setSheetState(() {});
-                          },
+                          onPressed: () => _showCreateScheduleSheet(vm),
+                          color: AppColors.primary,
                         ),
                       ],
                     ),
                   ),
-                  if (vm.settings.learningSchedules.isEmpty)
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 40),
+                  if (schedules.isEmpty)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 40),
                       child: Column(
                         children: [
-                          Icon(Icons.schedule, size: 48, color: Colors.grey),
-                          SizedBox(height: 12),
+                          Icon(
+                            Icons.schedule,
+                            size: 48,
+                            color: Colors.grey.shade400,
+                          ),
+                          const SizedBox(height: 12),
                           Text(
                             'No learning schedules',
-                            style: TextStyle(color: Colors.grey),
+                            style: TextStyle(color: Colors.grey.shade500),
                           ),
                         ],
                       ),
@@ -880,15 +891,128 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       child: ListView.builder(
                         shrinkWrap: true,
-                        itemCount: vm.settings.learningSchedules.length,
-                        itemBuilder: (_, idx) => _EditableScheduleTile(
-                          schedule: vm.settings.learningSchedules[idx],
-                          vm: vm,
-                          onRefresh: () => setSheetState(() {}),
-                          isDark: isDark,
-                        ),
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        itemCount: schedules.length,
+                        itemBuilder: (_, idx) {
+                          final schedule = schedules[idx];
+                          return Container(
+                            margin: const EdgeInsets.only(bottom: 10),
+                            decoration: BoxDecoration(
+                              color: isDark
+                                  ? AppColors.cardElevatedDark
+                                  : Colors.grey.shade50,
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: isDark
+                                    ? AppColors.borderDark
+                                    : AppColors.borderLight,
+                              ),
+                            ),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(14),
+                              onTap: () => _showScheduleDetail(vm, schedule),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 12,
+                                ),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 36,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: AppColors.primary.withOpacity(
+                                          0.12,
+                                        ),
+                                        borderRadius: BorderRadius.circular(10),
+                                      ),
+                                      child: const Icon(
+                                        Icons.schedule_rounded,
+                                        size: 18,
+                                        color: AppColors.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            schedule.label,
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.w600,
+                                              fontSize: 14,
+                                              color: isDark
+                                                  ? AppColors.primaryTextDark
+                                                  : AppColors.primaryTextLight,
+                                            ),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          const SizedBox(height: 2),
+                                          Text(
+                                            '${schedule.slots.length} day(s) scheduled',
+                                            style: TextStyle(
+                                              fontSize: 12,
+                                              color: isDark
+                                                  ? AppColors.secondaryTextDark
+                                                  : AppColors
+                                                        .secondaryTextLight,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.delete_outline,
+                                        color: Colors.red,
+                                        size: 20,
+                                      ),
+                                      onPressed: () => _showConfirmDialog(
+                                        title: 'Delete Schedule',
+                                        message:
+                                            'Delete "${schedule.label}"? This cannot be undone.',
+                                        confirmLabel: 'Delete',
+                                        confirmColor: Colors.red,
+                                        onConfirm: () async {
+                                          try {
+                                            await vm.deleteLearningSchedule(
+                                              schedule.id,
+                                            );
+                                          } catch (e) {
+                                            if (ctx.mounted) {
+                                              ScaffoldMessenger.of(
+                                                ctx,
+                                              ).showSnackBar(
+                                                SnackBar(
+                                                  content: Text(
+                                                    'Failed to delete schedule: ${_friendlyErrorMessage(e)}',
+                                                  ),
+                                                  backgroundColor: Colors.red,
+                                                ),
+                                              );
+                                            }
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                    Icon(
+                                      Icons.chevron_right,
+                                      color: isDark
+                                          ? AppColors.secondaryTextDark
+                                          : AppColors.secondaryTextLight,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
                       ),
                     ),
+                  const SizedBox(height: 12),
                 ],
               ),
             );
@@ -896,6 +1020,1015 @@ class _SettingsScreenState extends State<SettingsScreen> {
         );
       },
     );
+  }
+
+  // ==================== CREATE SCHEDULE ====================
+  void _showCreateScheduleSheet(SettingsViewModel vm) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final labelController = TextEditingController();
+    String label = '';
+    List<_NewSlotData> slots = [];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            return Container(
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.cardDark : Colors.white,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+              ),
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: 20,
+                    right: 20,
+                    top: 20,
+                    bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSheetHandle(isDark),
+                      const SizedBox(height: 16),
+                      Text(
+                        'New Learning Schedule',
+                        style: AppTextStyles.logo.copyWith(fontSize: 18),
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: labelController,
+                        style: TextStyle(
+                          color: Theme.of(context).textTheme.bodyMedium?.color,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: 'Title',
+                          hintText: 'e.g. Morning Study Block',
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: isDark
+                                  ? AppColors.borderDark
+                                  : AppColors.borderLight,
+                            ),
+                          ),
+                        ),
+                        onChanged: (v) => setSheetState(() => label = v),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Select days',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: Theme.of(context).textTheme.bodyMedium?.color,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        runSpacing: 6,
+                        children: List.generate(7, (day) {
+                          final selected = slots.any((s) => s.day == day);
+                          return FilterChip(
+                            label: Text(fullDayNames[day]),
+                            selected: selected,
+                            selectedColor: AppColors.primary.withOpacity(0.2),
+                            checkmarkColor: AppColors.primary,
+                            backgroundColor: isDark
+                                ? AppColors.cardElevatedDark
+                                : Colors.grey.shade100,
+                            onSelected: (sel) => setSheetState(() {
+                              if (sel) {
+                                slots.add(_NewSlotData(day: day));
+                              } else {
+                                slots.removeWhere((s) => s.day == day);
+                              }
+                            }),
+                          );
+                        }),
+                      ),
+                      const SizedBox(height: 12),
+                      if (slots.isEmpty)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: Text(
+                            'Pick at least one day, then set its time and duration',
+                            style: TextStyle(color: Colors.grey.shade500),
+                          ),
+                        )
+                      else
+                        ...slots.map(
+                          (slot) =>
+                              _buildNewSlotRow(slot, setSheetState, slots),
+                        ),
+                      const SizedBox(height: 20),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton(
+                              onPressed: () => Navigator.pop(ctx),
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Theme.of(
+                                  ctx,
+                                ).textTheme.bodyMedium?.color,
+                                side: BorderSide(
+                                  color: isDark
+                                      ? AppColors.borderDark
+                                      : AppColors.borderLight,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                              ),
+                              child: const Text('Cancel'),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                // 1. Validate title
+                                if (label.trim().isEmpty) {
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Please enter a title'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                // 2. Validate at least one day selected
+                                if (slots.isEmpty) {
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Select at least one day'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                // 3. Validate time & duration are set for every slot
+                                if (slots.any(
+                                  (s) =>
+                                      s.time == null ||
+                                      s.durationMinutes == null,
+                                )) {
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    const SnackBar(
+                                      content: Text(
+                                        'Please set time and duration for all selected days',
+                                      ),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                // 4. Check for conflicts (convert to _SlotData for compatibility)
+                                final conflictSlots = slots
+                                    .map(
+                                      (s) => _SlotData(
+                                        day: s.day,
+                                        time: s.time!,
+                                        durationMinutes: s.durationMinutes!,
+                                      ),
+                                    )
+                                    .toList();
+                                final conflict = _findScheduleConflict(
+                                  vm,
+                                  conflictSlots,
+                                  excludeId: null,
+                                );
+                                if (conflict != null) {
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    SnackBar(
+                                      content: Text('Conflicts with $conflict'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                  return;
+                                }
+
+                                // 5. Create the schedule
+                                try {
+                                  await vm.createLearningSchedule(
+                                    label.trim(),
+                                    slots
+                                        .map(
+                                          (s) => ScheduleSlot(
+                                            day: s.day,
+                                            time: _formatTimeStatic(s.time!),
+                                            durationMinutes: s.durationMinutes!,
+                                          ),
+                                        )
+                                        .toList(),
+                                  );
+                                  if (ctx.mounted) {
+                                    Navigator.pop(ctx);
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Schedule created'),
+                                        backgroundColor: Colors.green,
+                                      ),
+                                    );
+                                  }
+                                } catch (e) {
+                                  if (ctx.mounted) {
+                                    ScaffoldMessenger.of(ctx).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Failed to create: ${_friendlyErrorMessage(e)}',
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                  }
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: AppColors.primary,
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
+                              ),
+                              child: const Text('Save'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildNewSlotRow(
+    _NewSlotData slot,
+    StateSetter setSheetState,
+    List<_NewSlotData> slots,
+  ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = Theme.of(context).textTheme.bodyMedium?.color;
+    final bgColor = isDark ? AppColors.cardElevatedDark : Colors.grey.shade50;
+    final borderColor = isDark ? AppColors.borderDark : AppColors.borderLight;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        children: [
+          Text(
+            fullDayNames[slot.day],
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          GestureDetector(
+            onTap: () async {
+              final picked = await showTimePicker(
+                context: context,
+                initialTime: slot.time ?? const TimeOfDay(hour: 9, minute: 0),
+              );
+              if (picked != null) setSheetState(() => slot.time = picked);
+            },
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.access_time,
+                  size: 14,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  slot.time?.format(context) ?? 'Set time',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: slot.time == null ? Colors.orange : textColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          GestureDetector(
+            onTap: () async {
+              int temp = slot.durationMinutes ?? 60;
+              await showModalBottomSheet(
+                context: context,
+                backgroundColor: isDark ? AppColors.cardDark : Colors.white,
+                builder: (_) => StatefulBuilder(
+                  builder: (dCtx, setDurationState) => Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Duration',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: textColor,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.remove),
+                              color: textColor,
+                              onPressed: () => setDurationState(
+                                () => temp = (temp - 15).clamp(15, 480),
+                              ),
+                            ),
+                            Text(
+                              '$temp min',
+                              style: TextStyle(fontSize: 20, color: textColor),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.add),
+                              color: textColor,
+                              onPressed: () => setDurationState(
+                                () => temp = (temp + 15).clamp(15, 480),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(dCtx),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Set'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+              setSheetState(() => slot.durationMinutes = temp);
+            },
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.timer_outlined,
+                  size: 14,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  slot.durationMinutes == null
+                      ? 'Set min'
+                      : '${slot.durationMinutes} min',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: slot.durationMinutes == null
+                        ? Colors.orange
+                        : textColor,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Spacer(),
+          IconButton(
+            icon: const Icon(Icons.close, size: 16, color: Colors.red),
+            onPressed: () => setSheetState(
+              () => slots.removeWhere((s) => s.day == slot.day),
+            ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==================== SCHEDULE DETAIL / EDIT ====================
+  void _showScheduleDetail(SettingsViewModel vm, LearningSchedule schedule) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    bool isEditing = false;
+
+    String label = schedule.label;
+    final String originalLabel = schedule.label;
+    List<_SlotData> slots = schedule.slots
+        .map(
+          (s) => _SlotData(
+            day: s.day,
+            time: _parseTimeStatic(s.time),
+            durationMinutes: s.durationMinutes,
+          ),
+        )
+        .toList();
+    final List<_SlotData> originalSlots = schedule.slots
+        .map(
+          (s) => _SlotData(
+            day: s.day,
+            time: _parseTimeStatic(s.time),
+            durationMinutes: s.durationMinutes,
+          ),
+        )
+        .toList();
+
+    final labelController = TextEditingController(text: label);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setSheetState) {
+            bool hasChanges() {
+              if (label.trim() != originalLabel.trim()) return true;
+              if (slots.length != originalSlots.length) return true;
+              for (final s in slots) {
+                final matches = originalSlots
+                    .where((o) => o.day == s.day)
+                    .toList();
+                if (matches.isEmpty) return true;
+                final o = matches.first;
+                if (o.time.hour != s.time.hour ||
+                    o.time.minute != s.time.minute ||
+                    o.durationMinutes != s.durationMinutes) {
+                  return true;
+                }
+              }
+              return false;
+            }
+
+            final textColor = Theme.of(context).textTheme.bodyMedium?.color;
+
+            return Container(
+              decoration: BoxDecoration(
+                color: isDark ? AppColors.cardDark : Colors.white,
+                borderRadius: const BorderRadius.vertical(
+                  top: Radius.circular(24),
+                ),
+              ),
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+              ),
+              child: SingleChildScrollView(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildSheetHandle(isDark),
+                      const SizedBox(height: 10),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: isEditing
+                                ? TextField(
+                                    controller: labelController,
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: textColor,
+                                    ),
+                                    decoration: const InputDecoration(
+                                      hintText: 'Schedule title',
+                                      border: InputBorder.none,
+                                    ),
+                                    onChanged: (v) =>
+                                        setSheetState(() => label = v),
+                                  )
+                                : Text(
+                                    label,
+                                    style: TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.bold,
+                                      color: textColor,
+                                    ),
+                                  ),
+                          ),
+                          if (!isEditing)
+                            TextButton.icon(
+                              onPressed: () =>
+                                  setSheetState(() => isEditing = true),
+                              icon: const Icon(
+                                Icons.edit_outlined,
+                                size: 18,
+                                color: AppColors.primary,
+                              ),
+                              label: const Text(
+                                'Edit',
+                                style: TextStyle(color: AppColors.primary),
+                              ),
+                            ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        '${slots.length} day(s) scheduled',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: isDark
+                              ? AppColors.secondaryTextDark
+                              : AppColors.secondaryTextLight,
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      if (isEditing)
+                        ...slots.map(
+                          (slot) =>
+                              _buildEditableSlotRow(slot, setSheetState, slots),
+                        )
+                      else
+                        ...slots.map((slot) => _buildReadOnlySlotRow(slot)),
+                      if (isEditing) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          'Select days',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: textColor,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: List.generate(7, (day) {
+                            final selected = slots.any((s) => s.day == day);
+                            return FilterChip(
+                              label: Text(fullDayNames[day]),
+                              selected: selected,
+                              selectedColor: AppColors.primary.withOpacity(0.2),
+                              checkmarkColor: AppColors.primary,
+                              backgroundColor: isDark
+                                  ? AppColors.cardElevatedDark
+                                  : Colors.grey.shade100,
+                              onSelected: (sel) => setSheetState(() {
+                                if (sel) {
+                                  slots.add(
+                                    _SlotData(
+                                      day: day,
+                                      time: const TimeOfDay(hour: 9, minute: 0),
+                                      durationMinutes: 60,
+                                    ),
+                                  );
+                                } else {
+                                  slots.removeWhere((s) => s.day == day);
+                                }
+                              }),
+                            );
+                          }),
+                        ),
+                      ],
+                      const SizedBox(height: 20),
+                      if (isEditing)
+                        Row(
+                          children: [
+                            Expanded(
+                              child: OutlinedButton(
+                                onPressed: () {
+                                  setSheetState(() {
+                                    isEditing = false;
+                                    label = originalLabel;
+                                    labelController.text = originalLabel;
+                                    slots = originalSlots
+                                        .map(
+                                          (o) => _SlotData(
+                                            day: o.day,
+                                            time: o.time,
+                                            durationMinutes: o.durationMinutes,
+                                          ),
+                                        )
+                                        .toList();
+                                  });
+                                },
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: textColor,
+                                  side: BorderSide(
+                                    color: isDark
+                                        ? AppColors.borderDark
+                                        : AppColors.borderLight,
+                                  ),
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                ),
+                                child: const Text('Cancel'),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: ElevatedButton(
+                                onPressed: () async {
+                                  if (label.trim().isEmpty) {
+                                    ScaffoldMessenger.of(ctx).showSnackBar(
+                                      const SnackBar(
+                                        content: Text('Please enter a title'),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                    return;
+                                  }
+                                  if (slots.isEmpty) {
+                                    ScaffoldMessenger.of(ctx).showSnackBar(
+                                      const SnackBar(
+                                        content: Text(
+                                          'Select at least one day',
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                    return;
+                                  }
+                                  if (!hasChanges()) {
+                                    Navigator.pop(ctx);
+                                    return;
+                                  }
+                                  final conflict = _findScheduleConflict(
+                                    vm,
+                                    slots,
+                                    excludeId: schedule.id,
+                                  );
+                                  if (conflict != null) {
+                                    ScaffoldMessenger.of(ctx).showSnackBar(
+                                      SnackBar(
+                                        content: Text(
+                                          'Conflicts with $conflict',
+                                        ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                    return;
+                                  }
+                                  try {
+                                    await vm.updateLearningSchedule(
+                                      schedule.id,
+                                      label: label.trim(),
+                                      slots: slots
+                                          .map(
+                                            (s) => ScheduleSlot(
+                                              day: s.day,
+                                              time: _formatTimeStatic(s.time),
+                                              durationMinutes:
+                                                  s.durationMinutes,
+                                            ),
+                                          )
+                                          .toList(),
+                                    );
+                                    if (ctx.mounted) {
+                                      Navigator.pop(ctx);
+                                      ScaffoldMessenger.of(
+                                        context,
+                                      ).showSnackBar(
+                                        const SnackBar(
+                                          content: Text('Schedule updated'),
+                                          backgroundColor: Colors.green,
+                                        ),
+                                      );
+                                    }
+                                  } catch (e) {
+                                    if (ctx.mounted) {
+                                      ScaffoldMessenger.of(ctx).showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                            'Failed to save: ${_friendlyErrorMessage(e)}',
+                                          ),
+                                          backgroundColor: Colors.red,
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: AppColors.primary,
+                                  foregroundColor: Colors.white,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  padding: const EdgeInsets.symmetric(
+                                    vertical: 12,
+                                  ),
+                                ),
+                                child: const Text('Save'),
+                              ),
+                            ),
+                          ],
+                        ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildReadOnlySlotRow(_SlotData slot) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = Theme.of(context).textTheme.bodyMedium?.color;
+    final subColor = isDark
+        ? AppColors.secondaryTextDark
+        : AppColors.secondaryTextLight;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6), // reduced from 10
+      padding: const EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: 6,
+      ), // reduced
+      decoration: BoxDecoration(
+        color: isDark ? AppColors.cardElevatedDark : Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: isDark ? AppColors.borderDark : AppColors.borderLight,
+        ),
+      ),
+      child: Row(
+        children: [
+          // Day chip – smaller
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(0.12),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              fullDayNames[slot.day],
+              style: const TextStyle(
+                fontWeight: FontWeight.w600,
+                fontSize: 11,
+                color: AppColors.primary,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8), // reduced
+          // Time and duration – now tightly packed
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.access_time, size: 14, color: AppColors.primary),
+              const SizedBox(width: 4),
+              Text(
+                slot.time.format(context),
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: textColor,
+                ),
+              ),
+              const SizedBox(width: 12), // reduced separator
+              const Icon(
+                Icons.timer_outlined,
+                size: 14,
+                color: AppColors.primary,
+              ),
+              const SizedBox(width: 4),
+              Text(
+                '${slot.durationMinutes} min',
+                style: TextStyle(fontSize: 12, color: subColor),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEditableSlotRow(
+    _SlotData slot,
+    StateSetter setSheetState,
+    List<_SlotData> slots,
+  ) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final textColor = Theme.of(context).textTheme.bodyMedium?.color;
+    final bgColor = isDark ? AppColors.cardElevatedDark : Colors.grey.shade50;
+    final borderColor = isDark ? AppColors.borderDark : AppColors.borderLight;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 4), // tight gap between tiles
+      padding: const EdgeInsets.symmetric(
+        horizontal: 10,
+        vertical: 6,
+      ), // minimal padding
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        children: [
+          // Day label
+          Text(
+            fullDayNames[slot.day],
+            style: TextStyle(
+              fontWeight: FontWeight.w600,
+              fontSize: 13,
+              color: AppColors.primary,
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Time – tappable
+          GestureDetector(
+            onTap: () async {
+              final picked = await showTimePicker(
+                context: context,
+                initialTime: slot.time,
+              );
+              if (picked != null) setSheetState(() => slot.time = picked);
+            },
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.access_time,
+                  size: 14,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  slot.time.format(context),
+                  style: TextStyle(fontSize: 13, color: textColor),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 16),
+          // Duration – tappable
+          GestureDetector(
+            onTap: () async {
+              int temp = slot.durationMinutes;
+              await showModalBottomSheet(
+                context: context,
+                backgroundColor: isDark ? AppColors.cardDark : Colors.white,
+                builder: (_) => StatefulBuilder(
+                  builder: (dCtx, setDurationState) => Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Duration',
+                          style: TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: textColor,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            IconButton(
+                              icon: const Icon(Icons.remove),
+                              color: textColor,
+                              onPressed: () => setDurationState(
+                                () => temp = (temp - 15).clamp(15, 480),
+                              ),
+                            ),
+                            Text(
+                              '$temp min',
+                              style: TextStyle(fontSize: 20, color: textColor),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.add),
+                              color: textColor,
+                              onPressed: () => setDurationState(
+                                () => temp = (temp + 15).clamp(15, 480),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 12),
+                        ElevatedButton(
+                          onPressed: () => Navigator.pop(dCtx),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.primary,
+                            foregroundColor: Colors.white,
+                          ),
+                          child: const Text('Set'),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+              setSheetState(() => slot.durationMinutes = temp);
+            },
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(
+                  Icons.timer_outlined,
+                  size: 14,
+                  color: AppColors.primary,
+                ),
+                const SizedBox(width: 4),
+                Text(
+                  '${slot.durationMinutes} min',
+                  style: TextStyle(fontSize: 13, color: textColor),
+                ),
+              ],
+            ),
+          ),
+          const Spacer(),
+          // Delete icon – small
+          IconButton(
+            icon: const Icon(Icons.close, size: 16, color: Colors.red),
+            onPressed: () => setSheetState(
+              () => slots.removeWhere((s) => s.day == slot.day),
+            ),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==================== CONFLICT DETECTION ====================
+  String? _findScheduleConflict(
+    SettingsViewModel vm,
+    List<_SlotData> slots, {
+    String? excludeId,
+  }) {
+    for (final existing in vm.settings.learningSchedules) {
+      if (existing.id == excludeId) continue;
+      for (final exSlot in existing.slots) {
+        final exTime = _parseTimeStatic(exSlot.time);
+        for (final newSlot in slots) {
+          if (newSlot.day != exSlot.day) continue;
+          if (_slotsOverlap(
+            newSlot.time,
+            newSlot.durationMinutes,
+            exTime,
+            exSlot.durationMinutes,
+          )) {
+            return '"${existing.label}" on ${fullDayNames[newSlot.day]} at ${exTime.format(context)}';
+          }
+        }
+      }
+    }
+    return null;
+  }
+
+  bool _slotsOverlap(TimeOfDay aStart, int aDur, TimeOfDay bStart, int bDur) {
+    final aStartMin = aStart.hour * 60 + aStart.minute;
+    final aEndMin = aStartMin + aDur;
+    final bStartMin = bStart.hour * 60 + bStart.minute;
+    final bEndMin = bStartMin + bDur;
+    return aStartMin < bEndMin && bStartMin < aEndMin;
+  }
+
+  TimeOfDay _parseTimeStatic(String timeStr) {
+    final parts = timeStr.split(':');
+    return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
+  }
+
+  String _formatTimeStatic(TimeOfDay time) {
+    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
   }
 
   // ==================== HELPER WIDGETS ====================
@@ -990,10 +2123,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
   // ==================== UTILITIES ====================
   String _formatTimeOfDay(TimeOfDay time) {
-    final hour = time.hourOfPeriod;
+    final hour = time.hourOfPeriod == 0 ? 12 : time.hourOfPeriod;
     final minute = time.minute.toString().padLeft(2, '0');
     final period = time.period == DayPeriod.am ? 'AM' : 'PM';
     return '$hour:$minute $period';
+  }
+
+  String _friendlyErrorMessage(Object error) {
+    final raw = error.toString();
+    final cleaned = raw.replaceFirst(RegExp(r'^(Exception:|Error:)\s*'), '');
+    final lower = cleaned.toLowerCase();
+    if (lower.contains('linked to an active learning plan') ||
+        lower.contains('active learning plan')) {
+      return 'This schedule is linked to an active learning plan. Pause, complete, or delete that plan before changing its times.';
+    }
+    return cleaned;
   }
 
   // ==================== GENERIC BOTTOM SHEETS ====================
@@ -1322,357 +2466,13 @@ class _SlotData {
   });
 }
 
-class _EditableScheduleTile extends StatefulWidget {
-  final LearningSchedule schedule;
-  final SettingsViewModel vm;
-  final VoidCallback onRefresh;
-  final bool isDark;
+class _NewSlotData {
+  final int day;
+  TimeOfDay? time;
+  int? durationMinutes;
 
-  const _EditableScheduleTile({
-    required this.schedule,
-    required this.vm,
-    required this.onRefresh,
-    required this.isDark,
+  _NewSlotData({
+    required this.day,
+    // this.time, this.durationMinutes
   });
-
-  @override
-  State<_EditableScheduleTile> createState() => _EditableScheduleTileState();
-}
-
-class _EditableScheduleTileState extends State<_EditableScheduleTile> {
-  late String label;
-  late List<_SlotData> slots; // List of slot data for selected days
-  final List<String> fullDayNames = [
-    'Monday',
-    'Tuesday',
-    'Wednesday',
-    'Thursday',
-    'Friday',
-    'Saturday',
-    'Sunday',
-  ];
-
-  @override
-  void initState() {
-    super.initState();
-    label = widget.schedule.label;
-
-    // Initialize slots from existing schedule slots
-    slots = widget.schedule.slots.map((s) {
-      final time = _parseTime(s.time);
-      return _SlotData(
-        day: s.day,
-        time: time,
-        durationMinutes: s.durationMinutes,
-      );
-    }).toList();
-
-    // If no slots exist, add a default slot for Monday (day 0) as a starting point
-    if (slots.isEmpty) {
-      slots.add(
-        _SlotData(
-          day: 0,
-          time: const TimeOfDay(hour: 9, minute: 0),
-          durationMinutes: 60,
-        ),
-      );
-    }
-  }
-
-  TimeOfDay _parseTime(String timeStr) {
-    final parts = timeStr.split(':');
-    return TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
-  }
-
-  String _formatTime(TimeOfDay time) {
-    return '${time.hour.toString().padLeft(2, '0')}:${time.minute.toString().padLeft(2, '0')}';
-  }
-
-  // Toggle a day: add or remove a slot
-  void _toggleDay(int day, bool selected) {
-    setState(() {
-      if (selected) {
-        // Add a default slot if not already present
-        if (!slots.any((s) => s.day == day)) {
-          slots.add(
-            _SlotData(
-              day: day,
-              time: const TimeOfDay(hour: 9, minute: 0),
-              durationMinutes: 60,
-            ),
-          );
-        }
-      } else {
-        slots.removeWhere((s) => s.day == day);
-      }
-    });
-  }
-
-  bool _isDaySelected(int day) {
-    return slots.any((s) => s.day == day);
-  }
-
-  void _updateSlotTime(int day, TimeOfDay newTime) {
-    setState(() {
-      final index = slots.indexWhere((s) => s.day == day);
-      if (index != -1) {
-        slots[index].time = newTime;
-      }
-    });
-  }
-
-  void _updateSlotDuration(int day, int newDuration) {
-    setState(() {
-      final index = slots.indexWhere((s) => s.day == day);
-      if (index != -1) {
-        slots[index].durationMinutes = newDuration;
-      }
-    });
-  }
-
-  void _removeSlot(int day) {
-    setState(() {
-      slots.removeWhere((s) => s.day == day);
-    });
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final labelController = TextEditingController(text: label);
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-      color: widget.isDark ? Colors.grey[850] : Colors.grey[50],
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ---- Label row ----
-            Row(
-              children: [
-                Expanded(
-                  child: TextField(
-                    controller: labelController,
-                    decoration: const InputDecoration(
-                      hintText: 'Schedule label',
-                      border: InputBorder.none,
-                    ),
-                    onChanged: (value) => label = value,
-                  ),
-                ),
-                IconButton(
-                  icon: const Icon(Icons.delete_outline, color: Colors.red),
-                  onPressed: () async {
-                    await widget.vm.deleteLearningSchedule(widget.schedule.id);
-                    widget.onRefresh();
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-
-            // ---- Day selection chips ----
-            const Text(
-              'Select days',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 6),
-            Wrap(
-              spacing: 6,
-              runSpacing: 6,
-              children: List.generate(7, (day) {
-                final isSelected = _isDaySelected(day);
-                return FilterChip(
-                  label: Text(fullDayNames[day]),
-                  selected: isSelected,
-                  onSelected: (selected) => _toggleDay(day, selected),
-                );
-              }),
-            ),
-            const SizedBox(height: 12),
-
-            // ---- Slots for selected days ----
-            if (slots.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
-                child: Text('Select at least one day above'),
-              )
-            else
-              Column(
-                children: slots.map((slot) {
-                  return _buildSlotRow(slot);
-                }).toList(),
-              ),
-            const SizedBox(height: 12),
-
-            // ---- Save button ----
-            SizedBox(
-              width: double.infinity,
-              child: ElevatedButton(
-                onPressed: () async {
-                  // Build list of ScheduleSlot from the slots data
-                  final scheduleSlots = slots.map((s) {
-                    return ScheduleSlot(
-                      day: s.day,
-                      time: _formatTime(s.time),
-                      durationMinutes: s.durationMinutes,
-                    );
-                  }).toList();
-
-                  await widget.vm.updateLearningSchedule(
-                    widget.schedule.id,
-                    label: label,
-                    slots: scheduleSlots,
-                  );
-                  widget.onRefresh();
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Schedule updated')),
-                  );
-                },
-                child: const Text('Save Changes'),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // Build a single slot row with day label, time picker, duration picker, and remove button
-  Widget _buildSlotRow(_SlotData slot) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: widget.isDark ? Colors.grey[800] : Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade300),
-      ),
-      child: Row(
-        children: [
-          // Day label (fixed width)
-          SizedBox(
-            width: 70,
-            child: Text(
-              fullDayNames[slot.day],
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // Time picker
-          Flexible(
-            flex: 1,
-            child: InkWell(
-              onTap: () async {
-                final picked = await showTimePicker(
-                  context: context,
-                  initialTime: slot.time,
-                );
-                if (picked != null) {
-                  _updateSlotTime(slot.day, picked);
-                }
-              },
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.access_time, size: 16),
-                    const SizedBox(width: 4),
-                    Text(slot.time.format(context)),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 8),
-
-          // Duration picker
-          Flexible(
-            flex: 1,
-            child: InkWell(
-              onTap: () => _showDurationPickerForSlot(slot),
-              child: Container(
-                padding: const EdgeInsets.symmetric(vertical: 8),
-                decoration: BoxDecoration(
-                  border: Border.all(color: Colors.grey.shade300),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(Icons.timer_outlined, size: 16),
-                    const SizedBox(width: 4),
-                    Text('${slot.durationMinutes} min'),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(width: 4),
-          // Remove this slot button
-          IconButton(
-            icon: const Icon(Icons.close, size: 18),
-            onPressed: () => _removeSlot(slot.day),
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-            color: Colors.red,
-          ),
-        ],
-      ),
-    );
-  }
-
-  void _showDurationPickerForSlot(_SlotData slot) {
-    int temp = slot.durationMinutes;
-    showModalBottomSheet(
-      context: context,
-      builder: (_) => StatefulBuilder(
-        builder: (ctx, setState) => Container(
-          padding: const EdgeInsets.all(20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text(
-                'Duration',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 20),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.remove),
-                    onPressed: () =>
-                        setState(() => temp = (temp - 15).clamp(15, 480)),
-                  ),
-                  Text('$temp min', style: const TextStyle(fontSize: 24)),
-                  IconButton(
-                    icon: const Icon(Icons.add),
-                    onPressed: () =>
-                        setState(() => temp = (temp + 15).clamp(15, 480)),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              ElevatedButton(
-                onPressed: () {
-                  _updateSlotDuration(slot.day, temp);
-                  Navigator.pop(ctx);
-                },
-                child: const Text('Set'),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
 }
