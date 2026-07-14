@@ -2,8 +2,27 @@
 Duckling HTTP client for date/time resolution
 """
 from typing import Optional
+import re
 import httpx
 from config.settings import settings
+
+# Month names (full + common abbreviations) used to repair NER "gluing" artifacts.
+_MONTH_RE = (
+    r"jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|"
+    r"aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?"
+)
+
+
+def _space_out_month_dates(text: str) -> str:
+    """Insert a space when a day number and a month name are glued together so
+    Duckling can parse NER artifacts like "17july" -> "17 july" and
+    "july17" -> "july 17". Only fires next to a month name, so times/durations
+    (e.g. "5pm", "2hours") are left untouched."""
+    if not text:
+        return text
+    text = re.sub(rf"(\d)({_MONTH_RE})", r"\1 \2", text, flags=re.IGNORECASE)
+    text = re.sub(rf"({_MONTH_RE})(\d)", r"\1 \2", text, flags=re.IGNORECASE)
+    return text
 
 
 class DucklingClient:
@@ -79,6 +98,7 @@ class DucklingClient:
             List of parsed entities or None on error
         """
         dims = dims or ["time"]
+        text = _space_out_month_dates(text)
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
