@@ -9,6 +9,7 @@ import '../../data/models/focus_data.dart';
 import '../../data/models/schedule_item.dart';
 import '../providers/home_screen_viewmodel.dart';
 import '../providers/profile_viewmodel.dart';
+import '../widgets/notification_bell.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -223,29 +224,7 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           Row(
             children: [
-              GestureDetector(
-                onTap: () {},
-                child: Container(
-                  width: 42,
-                  height: 42,
-                  decoration: BoxDecoration(
-                    color: isDark ? AppColors.cardElevatedDark : Colors.white,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(
-                      color: isDark
-                          ? AppColors.borderDark
-                          : AppColors.borderLight,
-                    ),
-                  ),
-                  child: Icon(
-                    Icons.notifications_outlined,
-                    size: 20,
-                    color: isDark
-                        ? AppColors.secondaryTextDark
-                        : AppColors.secondaryTextLight,
-                  ),
-                ),
-              ),
+              const NotificationBell(),
               const SizedBox(width: 12),
               GestureDetector(
                 onTap: () => context.go('/settings'),
