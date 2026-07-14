@@ -29,7 +29,7 @@ _TASK_NAME_GENERIC_WORDS = {
     "plans",
 }
 
-_WEEK_SCOPE_PATTERN = re.compile(r"\b(this|next|last|previous)\s+week\b", flags=re.IGNORECASE)
+_WEEK_SCOPE_PATTERN = re.compile(r"\b(this|next|last|previous)\s+weeks?\b", flags=re.IGNORECASE)
 _WEEKDAY_PATTERN = re.compile(
     r"\b(monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b",
     flags=re.IGNORECASE,

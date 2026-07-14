@@ -53,6 +53,13 @@ def extract_learning_subject_hint(message_lower: str) -> Optional[str]:
 def looks_like_learning_completion(message_lower: str) -> bool:
     if not message_lower or len(message_lower) < 10:
         return False
+    # Scheduling reads/updates ("show completed tasks", "list done tasks") mention
+    # "task" or start with a query verb — they are NOT learning-session completions.
+    # Don't hijack them here; let the intent classifier route them (e.g. scheduling_show).
+    if "task" in message_lower or re.search(
+        r"\b(show|list|display|view|see|what|which)\b", message_lower
+    ):
+        return False
     if message_implies_reschedule(message_lower):
         return False
     # Let learning_update handle skip / reschedule / pause / resume.
