@@ -30,7 +30,7 @@ class _GetStartedScreenState extends State<GetStartedScreen>
   bool _buttonsVisible = false;
 
   final List<Map<String, dynamic>> _messages = [
-    {'text': 'Hey Areej! What do you need today? 😊', 'isEva': true},
+    {'text': 'Hey Areej! What do you need today?', 'isEva': true},
     {'text': 'Add NLP Mid exam at Monday 5pm high priority', 'isEva': false},
     {
       'text': 'Done! "NLP Mid exam" added for Monday at 5pm. Anything else?',

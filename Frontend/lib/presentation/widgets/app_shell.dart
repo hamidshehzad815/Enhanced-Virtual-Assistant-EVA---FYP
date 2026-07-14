@@ -105,6 +105,26 @@ class _AppShellState extends State<AppShell>
     if (_tabs[index].route == '__more__') {
       _showMoreSheet(ctx);
     } else {
+      // If any modal (eg. bottom sheet) is open, dismiss it first so it
+      // doesn't persist on the destination screen.
+      // Try dismissing any modal routes opened either on the root navigator
+      // or the current navigator so bottom sheets don't persist after tab switch.
+      // Try dismissing modal routes multiple times (root + local)
+      // Dismiss root modal routes first, then the local navigator.
+      for (int i = 0; i < 3; i++) {
+        try {
+          if (Navigator.of(ctx, rootNavigator: true).canPop()) {
+            Navigator.of(ctx, rootNavigator: true).pop();
+            continue;
+          }
+        } catch (_) {}
+        try {
+          if (Navigator.of(ctx).canPop()) {
+            Navigator.of(ctx).pop();
+          }
+        } catch (_) {}
+      }
+
       if (index == 2) {
         ctx.push('/chat');
       } else {
