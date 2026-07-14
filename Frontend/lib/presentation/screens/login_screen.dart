@@ -28,10 +28,11 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _performLogin() async {
     final auth = context.read<AuthViewModel>();
-    final result = await auth.login(
-      _emailController.text.trim(),
-      _passwordController.text.trim(),
-    );
+      final result = await auth.login(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+        rememberMe: _rememberMe,
+      );
 
     if (!mounted) return;
 
