@@ -9,7 +9,7 @@ from config.settings import settings
 
 _INTENT_ENTITY_SCOPE: Dict[str, Set[str]] = {
     "scheduling_add": {"task_name", "date", "time", "priority", "duration", "collaborator"},
-    "scheduling_delete": {"task_name", "date", "priority", "status"},
+    "scheduling_delete": {"task_name", "date", "time", "priority", "status"},
     "scheduling_update": {
         "task_name",
         "date",
