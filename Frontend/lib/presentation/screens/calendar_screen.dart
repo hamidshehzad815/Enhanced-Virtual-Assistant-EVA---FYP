@@ -649,7 +649,7 @@ class _CalendarScreenState extends State<CalendarScreen>
         onTap: isLearning ? null : () => _showEditDialog(context, vm, task),
         child: AnimatedOpacity(
           duration: const Duration(milliseconds: 300),
-          opacity: task.status == TaskStatus.completed ? 0.65 : 1.0,
+          opacity: task.isCompleted ? 0.65 : 1.0,
           child: Container(
             decoration: BoxDecoration(
               color: bg,
@@ -707,9 +707,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                                             fontSize: 14,
                                             fontWeight: FontWeight.w600,
                                             color: primary,
-                                            decoration:
-                                                task.status ==
-                                                    TaskStatus.completed
+                                            decoration: task.isCompleted
                                                 ? TextDecoration.lineThrough
                                                 : null,
                                             decorationColor: secondary,
@@ -785,12 +783,12 @@ class _CalendarScreenState extends State<CalendarScreen>
                                   width: 28,
                                   height: 28,
                                   decoration: BoxDecoration(
-                                    color: task.status == TaskStatus.completed
+                                    color: task.isCompleted
                                         ? const Color(0xFF22C55E)
                                         : Colors.transparent,
                                     shape: BoxShape.circle,
                                     border: Border.all(
-                                      color: task.status == TaskStatus.completed
+                                      color: task.isCompleted
                                           ? const Color(0xFF22C55E)
                                           : (isDark
                                                 ? const Color(0xFF3A3A3A)
@@ -798,7 +796,7 @@ class _CalendarScreenState extends State<CalendarScreen>
                                       width: 2,
                                     ),
                                   ),
-                                  child: task.status == TaskStatus.completed
+                                  child: task.isCompleted
                                       ? const Icon(
                                           Icons.check_rounded,
                                           color: Colors.white,
