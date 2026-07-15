@@ -111,6 +111,18 @@ def _to_time_text(value: Any) -> str:
     return raw
 
 
+def _format_date_display(date_str: str) -> str:
+    try:
+        dt = datetime.strptime(date_str[:10], "%Y-%m-%d")
+        return dt.strftime("%A, %d %b %Y")
+    except ValueError:
+        return date_str
+
+
+def _utc_now_naive() -> datetime:
+    return datetime.now(dt_timezone.utc).replace(tzinfo=None)
+
+
 def _normalize_priority(value: Any) -> str:
     return canonicalize_priority(value)
 
@@ -1640,6 +1652,76 @@ async def handle_scheduling_update(
                 "response_text": response_text,
                 "notifications": [],
                 "pending": {"expected_response": "free_text", "stage": "what_to_update"},
+            }
+
+        # Never allow rescheduling into the past (mirrors scheduling add Step 3.5).
+        now_utc = _utc_now_naive()
+        if candidate_due_utc <= now_utc:
+            local_due = utc_naive_to_local(candidate_due_utc, timezone_name)
+            local_now = utc_naive_to_local(now_utc, timezone_name)
+            ask_for_time_only = bool(
+                local_due
+                and local_now
+                and local_due.date() == local_now.date()
+            )
+            task_title = _coerce_text(matched_task.get("title"))
+
+            if ask_for_time_only:
+                await _set_what_to_update_context(
+                    user_id=user_id,
+                    entities={**combined_entities, **normalized_updates_for_entities},
+                    task_id=selected_task_id,
+                    task_preview=selected_task,
+                    remove_keys=["new_time"],
+                )
+                if user_name:
+                    response_text = (
+                        f"That time has already passed today, {user_name}. "
+                        f"What future time should I use for {task_title} on "
+                        f"{_format_date_display(resolved_new_date)}?"
+                    )
+                else:
+                    response_text = (
+                        f"That time has already passed today. What future time should I use "
+                        f"for {task_title} on {_format_date_display(resolved_new_date)}?"
+                    )
+            else:
+                await _set_what_to_update_context(
+                    user_id=user_id,
+                    entities={**combined_entities, **normalized_updates_for_entities},
+                    task_id=selected_task_id,
+                    task_preview=selected_task,
+                    remove_keys=["new_date"],
+                )
+                if user_name:
+                    response_text = (
+                        f"I cannot schedule {task_title} in the past, {user_name}. "
+                        "Please share a future date."
+                    )
+                else:
+                    response_text = (
+                        f"I cannot schedule {task_title} in the past. "
+                        "Please share a future date."
+                    )
+
+            await _save_turn(
+                session_id,
+                user_message,
+                response_text,
+                input_type,
+                "scheduling_update",
+                combined_entities,
+            )
+            return {
+                "status": "pending",
+                "intent": "scheduling_update",
+                "response_text": response_text,
+                "notifications": [],
+                "pending": {
+                    "expected_response": "free_text",
+                    "stage": "what_to_update",
+                    "reason": "past_datetime",
+                },
             }
 
         overlap_duration = int(update_data.get("duration") or current_duration)
