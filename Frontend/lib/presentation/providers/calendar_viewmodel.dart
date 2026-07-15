@@ -101,20 +101,18 @@ class CalendarViewModel extends ChangeNotifier {
 
   // ---- API operations ----
   Future<void> toggleTask(CalendarTask task) async {
-    final oldStatus = task.status;
-    final newStatus = oldStatus == TaskStatus.completed
-        ? TaskStatus.pending
-        : TaskStatus.completed;
+    final markComplete = !task.isCompleted;
     final index = _allTasks.indexWhere((t) => t.id == task.id);
     if (index == -1) return;
 
-    _allTasks[index] = task.copyWith(status: newStatus);
+    final previous = _allTasks[index];
+    _allTasks[index] = task.withCompleted(markComplete);
     notifyListeners();
 
     try {
       await _repository.updateTask(_allTasks[index]);
     } catch (e) {
-      _allTasks[index] = task.copyWith(status: oldStatus);
+      _allTasks[index] = previous;
       notifyListeners();
       rethrow;
     }

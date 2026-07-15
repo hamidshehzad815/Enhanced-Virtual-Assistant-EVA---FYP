@@ -18,6 +18,26 @@ class CalendarTask {
 
   // convenience
   TimeOfDay get startTime => TimeOfDay.fromDateTime(dueDateTime);
+  bool get isCompleted => status == TaskStatus.completed;
+
+  CalendarTask withCompleted(bool completed) {
+    if (completed) {
+      return copyWith(
+        status: TaskStatus.completed,
+        displayStatus: 'complete',
+        completedAt: completedAt ?? DateTime.now(),
+      );
+    }
+    return copyWith(
+      status: TaskStatus.pending,
+      displayStatus: 'pending',
+      completedAt: null,
+    );
+  }
+
+  String get statusApiValue =>
+      status == TaskStatus.completed ? 'complete' : 'pending';
+
   TimeOfDay get endTime {
     final end = dueDateTime.add(Duration(minutes: durationMinutes));
     return TimeOfDay.fromDateTime(end);
@@ -109,7 +129,7 @@ factory CalendarTask.fromJson(Map<String, dynamic> json) {
     'due_datetime': dueDateTime.toIso8601String(),
     'duration': durationMinutes,
     'priority': priority.name,
-    'status': status.name,
+    'status': statusApiValue,
   };
 
   @override
