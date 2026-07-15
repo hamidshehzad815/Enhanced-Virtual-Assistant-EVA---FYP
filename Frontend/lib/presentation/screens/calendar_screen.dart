@@ -8,6 +8,7 @@ import '../../data/models/calendar_task_model.dart';
 import '../providers/calendar_viewmodel.dart';
 import '../providers/task_refresh_notifier.dart';
 import 'package:lottie/lottie.dart';
+import '../widgets/task_edit_sheet.dart';
 
 class CalendarScreen extends StatefulWidget {
   final DateTime? initialDate;
@@ -899,260 +900,20 @@ class _CalendarScreenState extends State<CalendarScreen>
     );
   }
 
-  // ========== EDIT DIALOG ==========
+  // ========== EDIT SHEET ==========
   void _showEditDialog(
     BuildContext context,
     CalendarViewModel vm,
     CalendarTask task,
   ) {
-    CalendarTask editedTask = task.copyWith();
-
-    showDialog(
-      context: context,
-      builder: (context) {
-        return StatefulBuilder(
-          builder: (context, setState) {
-            return AlertDialog(
-              title: Row(
-                children: [
-                  Icon(Icons.edit_note_rounded, color: AppColors.primary),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Edit Task',
-                    style: AppTextStyles.body.copyWith(
-                      fontSize: 18,
-                      fontWeight: FontWeight.w700,
-                      color: Theme.of(context).textTheme.bodyMedium!.color,
-                    ),
-                  ),
-                ],
-              ),
-              content: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // ── Title ──
-                    TextFormField(
-                      initialValue: editedTask.title,
-                      decoration: const InputDecoration(
-                        labelText: 'Title',
-                        hintText: 'Enter task title',
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: (val) => setState(
-                        () => editedTask = editedTask.copyWith(title: val),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // ── Row: Priority + Duration ──
-                    Row(
-                      children: [
-                        Expanded(
-                          child: DropdownButtonFormField<TaskPriority>(
-                            value: editedTask.priority,
-                            isExpanded: true,
-                            items: TaskPriority.values
-                                .map(
-                                  (p) => DropdownMenuItem(
-                                    value: p,
-                                    child: Row(
-                                      children: [
-                                        Icon(
-                                          p == TaskPriority.high
-                                              ? Icons.priority_high
-                                              : p == TaskPriority.medium
-                                              ? Icons.flag
-                                              : Icons.flag_outlined,
-                                          color: _priorityColor(p),
-                                          size: 18,
-                                        ),
-                                        const SizedBox(width: 8),
-                                        Expanded(
-                                          child: Text(
-                                            p.name.toUpperCase(),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                )
-                                .toList(),
-                            onChanged: (val) => setState(
-                              () => editedTask = editedTask.copyWith(
-                                priority: val!,
-                              ),
-                            ),
-                            decoration: const InputDecoration(
-                              labelText: 'Priority',
-                              hintText: 'Select priority',
-                              border: OutlineInputBorder(),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextFormField(
-                            initialValue: editedTask.durationMinutes.toString(),
-                            keyboardType: TextInputType.number,
-                            decoration: const InputDecoration(
-                              labelText: 'Duration (min)',
-                              hintText: 'e.g. 60',
-                              border: OutlineInputBorder(),
-                            ),
-                            onChanged: (val) {
-                              final minutes = int.tryParse(val);
-                              if (minutes != null &&
-                                  minutes >= 5 &&
-                                  minutes <= 1440) {
-                                setState(
-                                  () => editedTask = editedTask.copyWith(
-                                    durationMinutes: minutes,
-                                  ),
-                                );
-                              }
-                            },
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-
-                    // ── Description ──
-                    TextFormField(
-                      initialValue: editedTask.description ?? '',
-                      decoration: const InputDecoration(
-                        labelText: 'Description',
-                        hintText: 'Add details (optional)',
-                        border: OutlineInputBorder(),
-                      ),
-                      onChanged: (val) => setState(
-                        () => editedTask = editedTask.copyWith(
-                          description: val.isEmpty ? null : val,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 12),
-
-                    // ── Date Picker ──
-                    InkWell(
-                      onTap: () async {
-                        final date = await showDatePicker(
-                          context: context,
-                          initialDate: editedTask.dueDateTime,
-                          firstDate: DateTime(2024),
-                          lastDate: DateTime(2027),
-                        );
-                        if (date != null) {
-                          final time = await showTimePicker(
-                            context: context,
-                            initialTime: TimeOfDay.fromDateTime(
-                              editedTask.dueDateTime,
-                            ),
-                          );
-                          if (time != null) {
-                            final newDateTime = DateTime(
-                              date.year,
-                              date.month,
-                              date.day,
-                              time.hour,
-                              time.minute,
-                            );
-                            setState(
-                              () => editedTask = editedTask.copyWith(
-                                dueDateTime: newDateTime,
-                              ),
-                            );
-                          }
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 16,
-                          horizontal: 12,
-                        ),
-                        decoration: BoxDecoration(
-                          border: Border.all(
-                            color: Colors.grey.shade400,
-                            width: 1,
-                          ),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.calendar_today,
-                              color: AppColors.primary,
-                              size: 20,
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Text(
-                                'Due: ${editedTask.dueDateTime.toLocal().toString().substring(0, 16)}',
-                                style: AppTextStyles.body.copyWith(
-                                  fontSize: 14,
-                                  color: Theme.of(
-                                    context,
-                                  ).textTheme.bodyMedium!.color,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: Text(
-                    'Cancel',
-                    style: TextStyle(color: Colors.grey.shade600),
-                  ),
-                ),
-                ElevatedButton(
-                  onPressed: () async {
-                    if (editedTask.durationMinutes < 5) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Duration must be at least 5 minutes'),
-                        ),
-                      );
-                      return;
-                    }
-                    try {
-                      await vm.updateTask(editedTask);
-                      if (!mounted) return;
-                      Navigator.pop(context);
-                      _listAnimController.reset();
-                      _listAnimController.forward();
-                    } catch (e) {
-                      if (!mounted) return;
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Failed to save task: $e')),
-                      );
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.primary,
-                    foregroundColor: Colors.white,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text('Save'),
-                ),
-              ],
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              constraints: const BoxConstraints(maxWidth: 480),
-            );
-          },
-        );
+    showTaskEditSheet(
+      context,
+      viewModel: vm,
+      task: task,
+      onSaved: () {
+        if (!mounted) return;
+        _listAnimController.reset();
+        _listAnimController.forward();
       },
     );
   }
