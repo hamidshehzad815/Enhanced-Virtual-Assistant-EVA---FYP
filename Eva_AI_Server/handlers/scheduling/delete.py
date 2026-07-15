@@ -4,7 +4,7 @@ Implements:
 - Step 1-4: entity check, date resolution, DB query, and result presentation.
 - Step 5-7: confirmed deletion, log/calendar/notifications, save-turn and return.
 """
-from datetime import datetime, timezone as dt_timezone
+from datetime import datetime, timedelta, timezone as dt_timezone
 import re
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -21,6 +21,7 @@ from services.google_calendar import google_calendar_client
 from utils.google_calendar_sync import resolve_google_calendar_sync
 from utils.task_value_normalizer import canonicalize_priority, canonicalize_status, clean_task_name
 from utils.timezone_utils import (
+    local_datetime_to_utc_naive,
     local_day_bounds_to_utc_naive,
     resolve_timezone_name,
     utc_naive_to_local,
@@ -57,6 +58,42 @@ def _to_date_text(value: Any) -> str:
         return raw
     if "T" in raw and re.match(r"^\d{4}-\d{2}-\d{2}T", raw):
         return raw.split("T")[0]
+    return raw
+
+
+def _to_time_text(value: Any) -> str:
+    raw = _coerce_text(value)
+    if not raw:
+        return ""
+
+    iso_time_match = re.search(r"(\d{2}:\d{2}:\d{2})(?:\.\d+)?(?:Z|[+-]\d{2}:?\d{2})?$", raw)
+    if iso_time_match:
+        return iso_time_match.group(1)
+
+    if re.match(r"^\d{2}:\d{2}$", raw):
+        return f"{raw}:00"
+    if re.match(r"^\d{2}:\d{2}:\d{2}$", raw):
+        return raw
+    if "T" in raw and re.match(r"^\d{4}-\d{2}-\d{2}T", raw):
+        return _to_time_text(raw.split("T", 1)[1])
+
+    fragment_match = re.search(r"\b(\d{2}:\d{2}(?::\d{2})?)\b", raw)
+    if fragment_match:
+        fragment = fragment_match.group(1)
+        return fragment if len(fragment) == 8 else f"{fragment}:00"
+
+    ampm_match = re.search(r"\b(\d{1,2})(?::(\d{2}))?\s*([ap]m)\b", raw, flags=re.IGNORECASE)
+    if ampm_match:
+        hour = int(ampm_match.group(1))
+        minute = int(ampm_match.group(2) or 0)
+        meridiem = ampm_match.group(3).lower()
+        if meridiem == "pm" and hour != 12:
+            hour += 12
+        if meridiem == "am" and hour == 12:
+            hour = 0
+        if 0 <= hour <= 23 and 0 <= minute <= 59:
+            return f"{hour:02d}:{minute:02d}:00"
+
     return raw
 
 
@@ -179,6 +216,10 @@ def _filters_summary(filters_used: Dict[str, Any]) -> str:
     date_value = _coerce_text(filters_used.get("date"))
     if date_value:
         parts.append(f"date {date_value}")
+
+    time_value = _coerce_text(filters_used.get("time"))
+    if time_value:
+        parts.append(f"time {time_value}")
 
     priority = _coerce_text(filters_used.get("priority"))
     if priority:
@@ -580,6 +621,7 @@ async def handle_scheduling_delete(
     # Step 1: entity check.
     task_name = clean_task_name(_coerce_text(_first_value(entities.get("task_name"))))
     date_raw = _to_date_text(_first_value(entities.get("date")))
+    time_raw = _to_time_text(_first_value(entities.get("time")))
     priority = _normalize_priority(_first_value(entities.get("priority")))
     status = _normalize_status(_first_value(entities.get("status")))
 
@@ -588,6 +630,8 @@ async def handle_scheduling_delete(
         extracted_filters["task_name"] = task_name
     if date_raw:
         extracted_filters["date"] = date_raw
+    if time_raw:
+        extracted_filters["time"] = time_raw
     if priority:
         extracted_filters["priority"] = priority
     if status:
@@ -673,6 +717,62 @@ async def handle_scheduling_delete(
 
         resolved_filters["date"] = resolved_date
         query_filters["date_range"] = date_range
+
+    if time_raw and resolved_filters.get("date"):
+        resolved_time = time_raw
+        if not re.match(r"^\d{2}:\d{2}:\d{2}$", resolved_time):
+            duckling_time = await duckling_client.resolve_time(resolved_time, timezone=timezone)
+            resolved_time = _to_time_text(duckling_time) or resolved_time
+
+        due_utc = local_datetime_to_utc_naive(
+            resolved_filters["date"],
+            resolved_time,
+            timezone,
+        )
+        if due_utc is None:
+            pending_entities = dict(extracted_filters)
+            pending_entities.pop("time", None)
+            await redis_client.set_context(
+                user_id,
+                _pending_payload(
+                    "delete",
+                    pending_entities,
+                    expected_response="free_text",
+                    missing_entity="time",
+                ),
+            )
+            response_text = gemini_service.generate_reply(
+                {
+                    "action": "delete_invalid_time",
+                    "time": time_raw,
+                },
+                user_name,
+                history,
+            )
+            await _save_turn(
+                session_id,
+                user_message,
+                response_text,
+                input_type,
+                "scheduling_delete",
+                entities,
+            )
+            return {
+                "status": "pending",
+                "intent": "scheduling_delete",
+                "response_text": response_text,
+                "notifications": [],
+                "pending": {
+                    "expected_response": "free_text",
+                    "missing_entity": "time",
+                },
+            }
+
+        resolved_filters["time"] = resolved_time
+        query_filters["date_range"] = {
+            "start": due_utc - timedelta(minutes=15),
+            "end": due_utc + timedelta(minutes=15),
+        }
 
     if task_name:
         query_filters["task_name"] = task_name

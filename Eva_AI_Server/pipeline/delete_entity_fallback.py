@@ -1,6 +1,10 @@
 """
 Deterministic fallback extraction for scheduling delete entities.
 Used to improve delete intent robustness when model extraction misses fields.
+
+Note: task_name is intentionally NOT inferred here. NER must extract it, or the
+delete handler identifies tasks by date/time/priority/status and asks the user
+to pick when multiple matches exist.
 """
 import re
 from typing import Dict, Optional
@@ -30,23 +34,6 @@ _DAY_OF_WEEK_PATTERN = re.compile(
 )
 _ISO_DATE_PATTERN = re.compile(r"\b\d{4}-\d{2}-\d{2}\b")
 
-_TASK_NAME_STOPWORDS = {
-    "all",
-    "of",
-    "them",
-    "my",
-    "the",
-    "a",
-    "an",
-    "task",
-    "tasks",
-    "every",
-    "everything",
-    "please",
-    "just",
-}
-_TASK_NAME_INVALID = {"something", "anything", "it", "this", "that"}
-
 
 def _normalize_status(raw_status: str) -> str:
     return canonicalize_status(raw_status)
@@ -66,40 +53,6 @@ def _extract_date(text: str) -> Optional[str]:
         return dow_match.group(0)
 
     return None
-
-
-def _extract_task_name(text: str) -> Optional[str]:
-    verb_match = _DELETE_VERB_PATTERN.search(text)
-    if not verb_match:
-        return None
-
-    candidate = text[verb_match.end():]
-
-    # Remove common filter fragments first.
-    candidate = _PRIORITY_PATTERN.sub(" ", candidate)
-    candidate = _STATUS_PATTERN.sub(" ", candidate)
-    candidate = _ISO_DATE_PATTERN.sub(" ", candidate)
-    candidate = _RELATIVE_DATE_PATTERN.sub(" ", candidate)
-    candidate = _DAY_OF_WEEK_PATTERN.sub(" ", candidate)
-    candidate = re.sub(r"\bon\b", " ", candidate, flags=re.IGNORECASE)
-
-    # Remove punctuation and compact.
-    candidate = re.sub(r"[^\w\s-]", " ", candidate)
-    tokens = [
-        token
-        for token in candidate.split()
-        if token.lower() not in _TASK_NAME_STOPWORDS
-    ]
-    if not tokens:
-        return None
-
-    task_name = " ".join(tokens).strip()
-    if not task_name:
-        return None
-    if task_name.lower() in _TASK_NAME_INVALID:
-        return None
-
-    return task_name
 
 
 def extract_delete_entities_fallback(text: str) -> Dict[str, str]:
@@ -127,9 +80,5 @@ def extract_delete_entities_fallback(text: str) -> Dict[str, str]:
     date_value = _extract_date(text)
     if date_value:
         entities["date"] = date_value
-
-    task_name = _extract_task_name(text)
-    if task_name:
-        entities["task_name"] = task_name
 
     return entities
