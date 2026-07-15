@@ -62,7 +62,7 @@ class _TaskEditSheetState extends State<_TaskEditSheet> {
     super.dispose();
   }
 
-  bool get _isComplete => _editedTask.status == TaskStatus.completed;
+  bool get _isComplete => _editedTask.isCompleted;
 
   Color _priorityColor(TaskPriority priority) {
     switch (priority) {
@@ -610,12 +610,7 @@ class _TaskEditSheetState extends State<_TaskEditSheet> {
                             activeThumbColor: const Color(0xFF22C55E),
                             onChanged: (value) {
                               setState(() {
-                                _editedTask = _editedTask.copyWith(
-                                  status: value
-                                      ? TaskStatus.completed
-                                      : TaskStatus.pending,
-                                  displayStatus: value ? 'complete' : 'pending',
-                                );
+                                _editedTask = _editedTask.withCompleted(value);
                               });
                             },
                           ),
