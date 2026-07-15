@@ -229,6 +229,40 @@ class TestDeletePhase16Handler(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "too_broad")
         mock_set.assert_not_awaited()
 
+    async def test_delete_by_date_and_time_without_task_name(self):
+        one_match = [
+            {
+                "_id": "task1",
+                "title": "Physics exam",
+                "due_datetime": datetime(2026, 7, 15, 9, 0, 0),
+                "priority": "medium",
+            }
+        ]
+
+        with patch(
+            "handlers.scheduling.delete.find_tasks_for_delete",
+            new=AsyncMock(return_value=one_match),
+        ) as mock_find, patch(
+            "handlers.scheduling.delete.redis_client.set_context",
+            new=AsyncMock(return_value=True),
+        ), patch(
+            "handlers.scheduling.delete.gemini_service.generate_reply",
+            side_effect=_gemini_stub,
+        ), patch(
+            "handlers.scheduling.delete._save_turn",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await handle_scheduling_delete(
+                entities={"date": "2026-07-15", "time": "14:00:00"},
+                context=_base_context(),
+            )
+
+        self.assertEqual(result["status"], "pending")
+        self.assertEqual(result["pending"]["expected_response"], "yes_no")
+        query_filters = mock_find.await_args.args[1]
+        self.assertNotIn("task_name", query_filters)
+        self.assertIn("date_range", query_filters)
+
 
 if __name__ == "__main__":
     unittest.main()
