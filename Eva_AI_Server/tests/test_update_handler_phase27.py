@@ -37,7 +37,7 @@ class TestUpdateHandlerPhase27(unittest.IsolatedAsyncioTestCase):
             {
                 "_id": "task1",
                 "title": "Physics exam",
-                "due_datetime": datetime(2026, 4, 1, 12, 0, 0),
+                "due_datetime": datetime(2026, 7, 15, 12, 0, 0),
                 "priority": "medium",
                 "status": "pending",
                 "duration": 120,
@@ -59,6 +59,9 @@ class TestUpdateHandlerPhase27(unittest.IsolatedAsyncioTestCase):
         ), patch(
             "handlers.scheduling.update._save_turn",
             new=AsyncMock(return_value=None),
+        ), patch(
+            "handlers.scheduling.update._utc_now_naive",
+            return_value=datetime(2026, 7, 15, 10, 0, 0),
         ):
             result = await handle_scheduling_update(
                 entities={"task_name": "physics exam", "new_time": "6pm"},
@@ -232,3 +235,79 @@ class TestUpdateHandlerPhase27(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result["status"], "success")
         mock_calendar_update.assert_awaited_once()
+
+    async def test_reschedule_to_past_date_is_rejected(self):
+        one_match = [
+            {
+                "_id": "task1",
+                "title": "Physics exam",
+                "due_datetime": datetime(2026, 7, 15, 12, 0, 0),
+                "priority": "medium",
+                "status": "pending",
+                "duration": 120,
+            }
+        ]
+        with patch(
+            "handlers.scheduling.update.find_tasks_for_update",
+            new=AsyncMock(return_value=one_match),
+        ), patch(
+            "handlers.scheduling.update.check_update_overlap",
+            new=AsyncMock(return_value=False),
+        ) as mock_overlap, patch(
+            "handlers.scheduling.update.redis_client.set_context",
+            new=AsyncMock(return_value=True),
+        ) as mock_set, patch(
+            "handlers.scheduling.update._save_turn",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "handlers.scheduling.update._utc_now_naive",
+            return_value=datetime(2026, 7, 15, 10, 0, 0),
+        ):
+            result = await handle_scheduling_update(
+                entities={"task_name": "physics exam", "new_date": "2026-07-10"},
+                context=_base_context("move physics exam to 10 july"),
+            )
+
+        self.assertEqual(result["status"], "pending")
+        self.assertEqual(result["pending"]["reason"], "past_datetime")
+        self.assertIn("cannot schedule", result["response_text"].lower())
+        mock_overlap.assert_not_awaited()
+        mock_set.assert_awaited()
+
+    async def test_reschedule_to_past_time_today_is_rejected(self):
+        one_match = [
+            {
+                "_id": "task1",
+                "title": "Physics exam",
+                "due_datetime": datetime(2026, 7, 15, 12, 0, 0),
+                "priority": "medium",
+                "status": "pending",
+                "duration": 120,
+            }
+        ]
+        with patch(
+            "handlers.scheduling.update.find_tasks_for_update",
+            new=AsyncMock(return_value=one_match),
+        ), patch(
+            "handlers.scheduling.update.check_update_overlap",
+            new=AsyncMock(return_value=False),
+        ) as mock_overlap, patch(
+            "handlers.scheduling.update.redis_client.set_context",
+            new=AsyncMock(return_value=True),
+        ) as mock_set, patch(
+            "handlers.scheduling.update._save_turn",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "handlers.scheduling.update._utc_now_naive",
+            return_value=datetime(2026, 7, 15, 11, 0, 0),
+        ):
+            result = await handle_scheduling_update(
+                entities={"task_name": "physics exam", "new_time": "15:00:00"},
+                context=_base_context("move physics exam to 3pm"),
+            )
+
+        self.assertEqual(result["status"], "pending")
+        self.assertEqual(result["pending"]["reason"], "past_datetime")
+        self.assertIn("already passed today", result["response_text"].lower())
+        mock_overlap.assert_not_awaited()
+        mock_set.assert_awaited()
