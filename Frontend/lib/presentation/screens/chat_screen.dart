@@ -1216,7 +1216,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                   controller: _textController,
                   focusNode: _focusNode,
                   maxLines: null,
-                  enabled: !vm.isSending,
+                  readOnly: vm.isSending,
                   textInputAction: TextInputAction.newline,
                   style: AppTextStyles.body.copyWith(
                     color: textCol,
