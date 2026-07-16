@@ -175,6 +175,45 @@ EXTRA_OOS_TEXTS = [
     "can you pay my bills", "make a payment",
 ]
 
+# ── Bare / entity-less command templates ─────────────────────────────────────
+# CLF1 was misclassifying short imperatives with a generic object and no real
+# entity (e.g. "add a task", "delete a task", "show a task", "update a task").
+# The old command bucket has entity-rich phrasings but almost none of these
+# bare forms, so the model was unsure. These are all unambiguously `command`.
+EXTRA_COMMAND_TEXTS = [
+    # add / create / schedule
+    "add a task", "add task", "add a new task", "add a task please",
+    "add a task for me", "add something", "add a reminder", "add a new reminder",
+    "create a task", "create task", "create a new task", "make a task",
+    "set a task", "new task", "schedule a task", "schedule task",
+    "schedule something", "can you add a task", "please add a task",
+    "i want to add a task", "i need to add a task", "add a task for tomorrow",
+    # delete / remove / cancel
+    "delete a task", "delete task", "delete a task please", "delete my task",
+    "delete one task", "delete one of my tasks", "delete something",
+    "delete a scheduled task", "remove a task", "remove task", "remove my task",
+    "remove something", "cancel a task", "cancel task", "can you delete a task",
+    "please delete a task", "i want to delete a task", "i need to delete a task",
+    # show / view / list
+    "show a task", "show task", "show my tasks", "show tasks", "show me a task",
+    "show me my tasks", "show all tasks", "show something", "view a task",
+    "view tasks", "view my tasks", "list tasks", "list my tasks", "see my tasks",
+    "display my tasks", "check my tasks", "what are my tasks",
+    "can you show my tasks", "show me the tasks",
+    # update / edit / reschedule
+    "update a task", "update task", "update my task", "update my tasks",
+    "update something", "update a task please", "update a scheduled task",
+    "edit a task", "edit task", "edit my task", "change a task", "change my task",
+    "modify a task", "reschedule a task", "reschedule task", "reschedule my task",
+    "can you update a task", "i want to update a task", "i need to update a task",
+    # learning (still input-type `command`)
+    "create a roadmap", "create roadmap", "make a roadmap", "build a roadmap",
+    "create a plan", "create a learning plan", "make a learning plan",
+    "start a roadmap", "start learning", "add a learning plan",
+    "delete a roadmap", "delete my roadmap", "remove a roadmap",
+    "update my roadmap", "update a roadmap",
+]
+
 # ── Multiple command ──────────────────────────────────────────────────────────
 EXTRA_MULTIPLE_COMMAND_TEXTS = [
     "add math exam on monday and also add physics exam on tuesday",
@@ -231,8 +270,18 @@ def run():
 
     all_examples = []
 
-    # command — copy all 6500
+    # command — copy all 6500 + inject bare/entity-less imperatives
     all_examples.extend(old_by_intent['command'])
+    extra_cmd = _build_clf1_examples(EXTRA_COMMAND_TEXTS, 'command')
+    # ~90 unique bare-command forms; cycle to give them enough weight against
+    # the 6500 entity-rich command examples (same approach used for `help`).
+    generic_cmd_target = 300
+    cycled_cmd = []
+    while len(cycled_cmd) < generic_cmd_target:
+        shuffled_cmd = list(extra_cmd)
+        rng.shuffle(shuffled_cmd)
+        cycled_cmd.extend(shuffled_cmd)
+    all_examples.extend(cycled_cmd[:generic_cmd_target])
 
     # multiple_command — 1000 old + 200 new synthetic
     all_examples.extend(old_by_intent['multiple_command'])
