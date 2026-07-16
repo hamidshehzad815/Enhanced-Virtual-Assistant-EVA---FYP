@@ -263,6 +263,41 @@ class TestDeletePhase16Handler(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("task_name", query_filters)
         self.assertIn("date_range", query_filters)
 
+    async def test_delete_by_time_only_applies_time_of_day_filter(self):
+        one_match = [
+            {
+                "_id": "task1",
+                "title": "Physics exam",
+                "due_datetime": datetime(2026, 7, 20, 12, 0, 0),
+                "priority": "medium",
+            }
+        ]
+
+        with patch(
+            "handlers.scheduling.delete.find_tasks_for_delete",
+            new=AsyncMock(return_value=one_match),
+        ) as mock_find, patch(
+            "handlers.scheduling.delete.redis_client.set_context",
+            new=AsyncMock(return_value=True),
+        ), patch(
+            "handlers.scheduling.delete.gemini_service.generate_reply",
+            side_effect=_gemini_stub,
+        ), patch(
+            "handlers.scheduling.delete._save_turn",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await handle_scheduling_delete(
+                entities={"time": "17:00:00"},
+                context=_base_context(),
+            )
+
+        self.assertEqual(result["status"], "pending")
+        self.assertEqual(result["pending"]["expected_response"], "yes_no")
+        query_filters = mock_find.await_args.args[1]
+        self.assertEqual(query_filters.get("time_of_day"), "17:00:00")
+        self.assertNotIn("date_range", query_filters)
+        self.assertNotIn("task_name", query_filters)
+
 
 if __name__ == "__main__":
     unittest.main()
