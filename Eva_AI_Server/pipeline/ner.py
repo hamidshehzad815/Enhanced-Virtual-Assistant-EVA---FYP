@@ -191,6 +191,17 @@ class NERExtractor:
         for tag, start, end in tags_with_offsets:
             prefix, entity_type = self._parse_tag(tag)
 
+            # Wordpiece subword of the SAME whitespace-delimited word as the
+            # currently open entity (zero-gap offsets => no space between the
+            # tokens). Keep it attached and let the word's first subword decide
+            # the entity type, regardless of this subword's own (often
+            # mis-predicted) tag. This mirrors the notebook decoder and stops
+            # glued tokens like "17july" from fragmenting into
+            # date="17" + time="ju".
+            if current_type and current_end >= 0 and start == current_end:
+                current_end = end
+                continue
+
             if prefix == "O":
                 if current_type:
                     self._finalize(grouped, current_type, text[current_start:current_end])

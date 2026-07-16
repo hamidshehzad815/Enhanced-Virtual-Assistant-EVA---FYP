@@ -483,6 +483,86 @@ class _SessionPopupState extends State<SessionPopup> {
 
         return StatefulBuilder(
           builder: (context, setState) {
+            // ─── Unified disabled palette (theme-aware) ──────────────────
+            final Color disabledBg =
+                widget.isDark ? Colors.white10 : Colors.grey.shade100;
+            final Color disabledText =
+                widget.isDark ? Colors.white30 : Colors.grey.shade400;
+
+            // ─── Shared cell: one consistent look for every day ──────────
+            // Available learning-schedule days are highlighted + tappable.
+            // Everything else (past, out-of-range, and in-range non-learning
+            // days) gets the same disabled treatment so the grid reads as one.
+            Widget buildDayCell(
+              BuildContext cellContext,
+              DateTime day,
+              DateTime focused, {
+              required bool isAvailable,
+            }) {
+              // outsideDaysVisible is false, but guard cross-month cells too.
+              if (day.month != focused.month || day.year != focused.year) {
+                return const SizedBox.shrink();
+              }
+
+              final dateStr = DateFormat('yyyy-MM-dd').format(day);
+              final slot = dateMap[dateStr];
+
+              String timeDisplay = '';
+              if (isAvailable && slot != null) {
+                timeDisplay = _formatTime(slot.scheduledDatetime, slot.time);
+              }
+
+              return GestureDetector(
+                onTap: isAvailable
+                    ? () {
+                        Navigator.pop(cellContext);
+                        widget.onReschedule(_session.id, dateStr);
+                      }
+                    : null,
+                child: Container(
+                  margin: const EdgeInsets.all(2),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: isAvailable
+                        ? AppColors.primary.withOpacity(0.12)
+                        : disabledBg,
+                    borderRadius: BorderRadius.circular(8),
+                    border: isAvailable
+                        ? Border.all(
+                            color: AppColors.primary.withOpacity(0.4),
+                            width: 1,
+                          )
+                        : null,
+                  ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text(
+                        '${day.day}',
+                        style: TextStyle(
+                          color:
+                              isAvailable ? AppColors.primary : disabledText,
+                          fontWeight: isAvailable
+                              ? FontWeight.bold
+                              : FontWeight.normal,
+                          fontSize: 14,
+                        ),
+                      ),
+                      if (isAvailable && timeDisplay.isNotEmpty)
+                        Text(
+                          timeDisplay,
+                          style: TextStyle(
+                            fontSize: 8,
+                            color: AppColors.primary.withOpacity(0.7),
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            }
+
             return AlertDialog(
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(20),
@@ -536,29 +616,10 @@ class _SessionPopupState extends State<SessionPopup> {
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  calendarStyle: CalendarStyle(
-                    // ─── Hide outside days ──────────────────────────────────
+                  calendarStyle: const CalendarStyle(
+                    // Every day cell is drawn by calendarBuilders below, so the
+                    // only thing that matters here is hiding outside days.
                     outsideDaysVisible: false,
-                    defaultDecoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    weekendDecoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    todayDecoration: BoxDecoration(
-                      color: AppColors.primary.withOpacity(0.15),
-                      shape: BoxShape.circle,
-                    ),
-                    todayTextStyle: TextStyle(
-                      color: AppColors.primary,
-                      fontWeight: FontWeight.bold,
-                    ),
-                    disabledDecoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    disabledTextStyle: TextStyle(color: Colors.grey.shade400),
-                    defaultTextStyle: const TextStyle(color: Colors.grey),
                   ),
                   eventLoader: (day) {
                     final dateStr = DateFormat('yyyy-MM-dd').format(day);
@@ -566,73 +627,32 @@ class _SessionPopupState extends State<SessionPopup> {
                     return slot != null ? [slot] : [];
                   },
                   calendarBuilders: CalendarBuilders(
-                    defaultBuilder: (context, day, focusedDay) {
-                      final dateStr = DateFormat('yyyy-MM-dd').format(day);
-                      final slot = dateMap[dateStr];
-                      final isAvailable = slot != null;
-
-                      String timeDisplay = '';
-                      if (isAvailable && slot != null) {
-                        timeDisplay = _formatTime(
-                          slot.scheduledDatetime,
-                          slot.time,
-                        );
-                      }
-
-                      // ─── Only show if the day is in the current month ──
-                      final isCurrentMonth = day.month == focusedDay.month;
-                      if (!isCurrentMonth) return const SizedBox.shrink();
-
-                      return GestureDetector(
-                        onTap: isAvailable
-                            ? () {
-                                Navigator.pop(context);
-                                widget.onReschedule(_session.id, dateStr);
-                              }
-                            : null,
-                        child: Container(
-                          alignment: Alignment.center,
-                          decoration: BoxDecoration(
-                            color: isAvailable
-                                ? AppColors.primary.withOpacity(0.12)
-                                : Colors.transparent,
-                            borderRadius: BorderRadius.circular(8),
-                            border: isAvailable
-                                ? Border.all(
-                                    color: AppColors.primary.withOpacity(0.4),
-                                    width: 1,
-                                  )
-                                : null,
-                          ),
-                          child: Column(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text(
-                                '${day.day}',
-                                style: TextStyle(
-                                  color: isAvailable
-                                      ? AppColors.primary
-                                      : Colors.grey.shade400,
-                                  fontWeight: isAvailable
-                                      ? FontWeight.bold
-                                      : FontWeight.normal,
-                                  fontSize: 14,
-                                ),
-                              ),
-                              if (isAvailable && timeDisplay.isNotEmpty)
-                                Text(
-                                  timeDisplay,
-                                  style: TextStyle(
-                                    fontSize: 8,
-                                    color: AppColors.primary.withOpacity(0.7),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                            ],
-                          ),
-                        ),
-                      );
-                    },
+                    defaultBuilder: (context, day, focusedDay) => buildDayCell(
+                      context,
+                      day,
+                      focusedDay,
+                      isAvailable: dateMap.containsKey(
+                        DateFormat('yyyy-MM-dd').format(day),
+                      ),
+                    ),
+                    // Out-of-range days (before `from` / after `to`) now share
+                    // the exact same disabled look as in-range non-slot days.
+                    disabledBuilder: (context, day, focusedDay) => buildDayCell(
+                      context,
+                      day,
+                      focusedDay,
+                      isAvailable: false,
+                    ),
+                    // Today follows the same rule: highlighted only if it is an
+                    // available slot, otherwise disabled like every other day.
+                    todayBuilder: (context, day, focusedDay) => buildDayCell(
+                      context,
+                      day,
+                      focusedDay,
+                      isAvailable: dateMap.containsKey(
+                        DateFormat('yyyy-MM-dd').format(day),
+                      ),
+                    ),
                   ),
                   onPageChanged: (day) {
                     setState(() {
