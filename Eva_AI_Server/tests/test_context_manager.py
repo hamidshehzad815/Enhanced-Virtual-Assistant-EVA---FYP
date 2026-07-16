@@ -104,7 +104,14 @@ class TestContextManager(unittest.IsolatedAsyncioTestCase):
     def test_yes_no_handling(self):
         self.assertEqual(handle_yes_no_reply("yes"), "yes")
         self.assertEqual(handle_yes_no_reply("go ahead"), "yes")
+        self.assertEqual(handle_yes_no_reply("do it"), "yes")
         self.assertEqual(handle_yes_no_reply("nope"), "no")
+        self.assertEqual(handle_yes_no_reply("don't do it"), "no")
+        self.assertEqual(handle_yes_no_reply("please don't do it"), "no")
+        self.assertEqual(handle_yes_no_reply("dont do it"), "no")
+        self.assertEqual(handle_yes_no_reply("do not"), "no")
+        self.assertEqual(handle_yes_no_reply("not now"), "no")
+        self.assertEqual(handle_yes_no_reply("leave it"), "no")
         self.assertEqual(handle_yes_no_reply("maybe"), "invalid")
 
     def test_number_handling(self):
