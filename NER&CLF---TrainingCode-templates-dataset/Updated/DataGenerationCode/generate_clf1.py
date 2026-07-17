@@ -259,6 +259,71 @@ def _build_clf1_examples(texts, intent):
     return [{"text": t, "intent": intent} for t in texts]
 
 
+# Conflict resolution: most specific class wins, `general` always loses.
+# `general` is the catch-all chat bucket — if a text is also plausibly `help`
+# or `confirmation`, that reading is the meaningful one. Resolving "what can
+# you do" / "i need help" to `general` is exactly what taught CLF1 to answer
+# help questions with chat replies.
+_INTENT_PRECEDENCE = [
+    "help",
+    "confirmation",
+    "multiple_command",
+    "command",
+    "out_of_scope",
+    "general",
+]
+
+
+def _dedupe(examples):
+    """
+    Collapse duplicate texts and resolve contradictory labels.
+
+    Two separate problems are fixed here:
+
+    1. Duplicates. Copies teach the model nothing the first one did not, they
+       inflate confidence, and — because the split is a plain shuffle — they
+       leak the same string into both train and test. That is what pinned the
+       reported F1 near 100%. Class counts only mean something after this runs.
+
+    2. Label conflicts. The same text appearing under two intents is worse than
+       a duplicate: it is contradictory supervision, and the model cannot do
+       better than guess. These are resolved by _INTENT_PRECEDENCE (specific
+       beats `general`) and reported so they can be fixed at the source.
+    """
+    by_text = {}
+    order = []
+    for ex in examples:
+        key = " ".join(str(ex["text"]).lower().split())
+        if key not in by_text:
+            by_text[key] = {"text": ex["text"], "intents": []}
+            order.append(key)
+        if ex["intent"] not in by_text[key]["intents"]:
+            by_text[key]["intents"].append(ex["intent"])
+
+    def rank(intent):
+        return _INTENT_PRECEDENCE.index(intent) if intent in _INTENT_PRECEDENCE else len(_INTENT_PRECEDENCE)
+
+    unique = []
+    conflicts = []
+    for key in order:
+        entry = by_text[key]
+        intents = entry["intents"]
+        if len(intents) > 1:
+            winner = sorted(intents, key=rank)[0]
+            conflicts.append((key, sorted(intents), winner))
+        else:
+            winner = intents[0]
+        unique.append({"text": entry["text"], "intent": winner})
+
+    removed = len(examples) - len(unique)
+    print(f"[dedupe] {len(examples)} -> {len(unique)} ({removed} duplicates removed)")
+    if conflicts:
+        print(f"[dedupe] resolved {len(conflicts)} label conflict(s) via precedence:")
+        for text, intents, winner in conflicts:
+            print(f"    {text!r}: {intents} -> {winner}")
+    return unique
+
+
 def run():
     old_data = _load_old_clf1()
 
@@ -270,18 +335,9 @@ def run():
 
     all_examples = []
 
-    # command — copy all 6500 + inject bare/entity-less imperatives
+    # command — copy old + inject bare/entity-less imperatives (unique only)
     all_examples.extend(old_by_intent['command'])
-    extra_cmd = _build_clf1_examples(EXTRA_COMMAND_TEXTS, 'command')
-    # ~90 unique bare-command forms; cycle to give them enough weight against
-    # the 6500 entity-rich command examples (same approach used for `help`).
-    generic_cmd_target = 300
-    cycled_cmd = []
-    while len(cycled_cmd) < generic_cmd_target:
-        shuffled_cmd = list(extra_cmd)
-        rng.shuffle(shuffled_cmd)
-        cycled_cmd.extend(shuffled_cmd)
-    all_examples.extend(cycled_cmd[:generic_cmd_target])
+    all_examples.extend(_build_clf1_examples(EXTRA_COMMAND_TEXTS, 'command'))
 
     # multiple_command — 1000 old + 200 new synthetic
     all_examples.extend(old_by_intent['multiple_command'])
@@ -307,19 +363,11 @@ def run():
     rng.shuffle(extra_conf)
     all_examples.extend(extra_conf[:277])
 
-    # help — 62 old + 438 new (use all HELP_TEXTS we have; sample if needed)
+    # help — old + every unique HELP_TEXT (no cycling: copies add no signal)
     all_examples.extend(old_by_intent['help'])
-    help_examples = _build_clf1_examples(HELP_TEXTS, 'help')
-    rng.shuffle(help_examples)
-    # HELP_TEXTS has ~130 unique strings; cycle to reach 438
-    needed = 438
-    cycled_help = []
-    while len(cycled_help) < needed:
-        shuffled_copy = list(help_examples)
-        rng.shuffle(shuffled_copy)
-        cycled_help.extend(shuffled_copy)
-    all_examples.extend(cycled_help[:needed])
+    all_examples.extend(_build_clf1_examples(HELP_TEXTS, 'help'))
 
+    all_examples = _dedupe(all_examples)
     rng.shuffle(all_examples)
 
     split = int(len(all_examples) * 0.9)

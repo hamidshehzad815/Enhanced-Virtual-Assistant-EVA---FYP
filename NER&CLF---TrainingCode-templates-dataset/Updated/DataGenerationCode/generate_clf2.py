@@ -74,6 +74,36 @@ LEARN_ENTITIES = {
     "date"       : START_DATES,
 }
 
+def _dedupe(examples):
+    """
+    Drop duplicate texts, keeping first occurrence.
+
+    generator_engine.generate() is a blind `for _ in range(count)` with no
+    dedup, so when a class's template x slot space is smaller than the requested
+    count it simply repeats itself (e.g. BEHAVIORAL has 26 templates but is
+    asked for 2300 -> each unique string ~22x). Those copies teach nothing,
+    inflate confidence, and leak across the shuffle split. The post-dedupe count
+    is the class's real coverage.
+    """
+    seen = {}
+    unique = []
+    conflicts = {}
+    for ex in examples:
+        key = " ".join(str(ex["text"]).lower().split())
+        if key in seen:
+            if seen[key] != ex["intent"]:
+                conflicts.setdefault(key, {seen[key]}).add(ex["intent"])
+            continue
+        seen[key] = ex["intent"]
+        unique.append(ex)
+
+    if conflicts:
+        print(f"[dedupe] WARNING: {len(conflicts)} text(s) labelled with multiple intents:")
+        for text, intents in list(conflicts.items())[:10]:
+            print(f"    {text!r}: {sorted(intents)}")
+    return unique
+
+
 def run():
     rng = random.Random(SEED)
     all_examples = []
@@ -103,9 +133,18 @@ def run():
         )
         # CLF2 only needs text + intent — drop entity spans
         clf2_clean = [{"text": ex["text"], "intent": ex["intent"]} for ex in clean]
-        print(f"  examples={len(clf2_clean)}  flagged={len(flagged)}")
-        all_examples.extend(clf2_clean)
+        # The engine repeats itself once `count` exceeds the template x slot
+        # space, so the requested number is aspirational. Report the real one.
+        clf2_unique = _dedupe(clf2_clean)
+        print(
+            f"  requested={count}  generated={len(clf2_clean)}  "
+            f"UNIQUE={len(clf2_unique)}  (templates={len(templates)})  flagged={len(flagged)}"
+        )
+        all_examples.extend(clf2_unique)
 
+    before = len(all_examples)
+    all_examples = _dedupe(all_examples)
+    print(f"\n[clf2] cross-intent dedupe: {before} -> {len(all_examples)}")
     rng.shuffle(all_examples)
 
     split = int(len(all_examples) * 0.9)
