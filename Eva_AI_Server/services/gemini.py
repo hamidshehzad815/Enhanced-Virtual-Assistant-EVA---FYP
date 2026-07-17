@@ -74,7 +74,28 @@ _ACTION_GUIDANCE: Dict[str, str] = {
     "quiet_hours_conflict": "Explain that the requested time falls inside the user's quiet hours and ask whether to schedule anyway.",
     "quiet_hours_alternative_time": "Acknowledge the quiet-hours conflict and ask for another time outside those quiet hours.",
     "cancelled": "Acknowledge cancellation warmly.",
-    "general_greeting": "Reply like a friendly assistant greeting/chat response.",
+    "general_greeting": (
+        "The user is making small talk (greeting, 'how are you', 'what's going on', thanks, goodbye). "
+        "Actually answer what they said — if they asked how you are, say how you are — then warmly "
+        "offer one concrete next step. Never reply with a generic canned greeting that ignores their "
+        "message, and never say you could not understand: you understood, it is just chat."
+    ),
+    "help": (
+        "The user is asking what EVA can do or how to do something in EVA. Answer their SPECIFIC "
+        "question directly and concretely, and include one short example command they can copy. "
+        "For this action you may use up to 4 short lines or a small bullet list. "
+        "EVA's capabilities are: "
+        "(1) Scheduling — add, show, update/reschedule and delete tasks, with date, time, "
+        "priority (low/medium/high), status (pending/ongoing/complete), reminders, collaborators, "
+        "and Google Calendar sync. Example: 'add physics exam on monday at 5pm'. "
+        "(2) Learning — create a learning roadmap for a topic, which schedules study sessions on the "
+        "user's learning days; also update and delete roadmaps. Example: 'create a python roadmap from monday'. "
+        "(3) Insights — most productive hours, most productive days, completion rate, productivity report. "
+        "Example: 'when am i most productive'. "
+        "(4) Settings — quiet hours, learning schedules, default task duration and priority, notifications. "
+        "Describe ONLY these capabilities; never invent features. If the user asks for something EVA "
+        "cannot do, say so briefly and point them to the closest thing it can do."
+    ),
     "out_of_scope": "Politely state scope limitation and redirect to supported capabilities.",
     "validation_error": "Explain input was unclear and suggest a simple valid format.",
     "multiple_command": "Ask user to provide one command at a time.",
@@ -112,6 +133,14 @@ _FALLBACK_RESPONSES: Dict[str, List[str]] = {
         "Hello {name}! Share a task or topic and I will help you organize it.",
         "Hi {name}, I can help with tasks, roadmaps, and productivity guidance.",
         "Great to hear from you, {name}. What should we work on right now?",
+    ],
+    "help": [
+        "I can handle your schedule and your learning, {name}. Try “add physics exam on monday at 5pm”, "
+        "“show my tasks tomorrow”, “create a python roadmap from monday”, or “when am i most productive”.",
+        "Here is what I do, {name}: tasks (add, show, update, delete), learning roadmaps, and productivity "
+        "insights. For example: “delete physics exam on monday” or “create a python roadmap from monday”.",
+        "Ask me in plain words, {name}. Scheduling: “add fyp meeting tomorrow at 3pm”. "
+        "Learning: “create a java roadmap from monday”. Insights: “what are my productive days”.",
     ],
     "out_of_scope": [
         "I cannot help with that directly, {name}, but I can help with tasks, study plans, and progress tracking.",
