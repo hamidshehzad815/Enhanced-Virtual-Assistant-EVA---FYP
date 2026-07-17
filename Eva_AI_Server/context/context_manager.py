@@ -704,7 +704,9 @@ async def process_learning_create_free_text_reply(
             }
 
         sessions_needed = await get_sessions_required(str(topic), roadmap_key)
-        available = calculate_available_sessions(start_d, int(days), learning_days)
+        available = calculate_available_sessions(
+            start_d, int(days), preferred_learning_schedule
+        )
         if sessions_needed > 0 and available < sessions_needed:
             return {
                 "outcome": "retry",

@@ -859,23 +859,125 @@ def duration_entity_to_days(value: Any) -> Optional[int]:
     return extract_duration_days(s)
 
 
+def _slot_time_sort_key(slot: Dict[str, Any]) -> Tuple[int, int]:
+    try:
+        parsed = _parse_hhmm(str(slot.get("time") or "18:00"))
+        return parsed.hour, parsed.minute
+    except ValueError:
+        return 18, 0
+
+
+def schedule_slots_by_weekday(
+    preferred_learning_schedule: Any,
+    *,
+    default_duration_minutes: int = 90,
+) -> Dict[int, List[Dict[str, Any]]]:
+    """
+    Group learning slots by weekday (0=Mon .. 6=Sun), preserving multiple
+    same-day sessions sorted by time.
+    """
+    by_day: Dict[int, List[Dict[str, Any]]] = {}
+    fallback_dur = max(15, min(240, int(default_duration_minutes or 90)))
+    if not isinstance(preferred_learning_schedule, (list, tuple, set)):
+        return by_day
+
+    # Plain set of weekdays → one synthetic slot per day (legacy callers).
+    if isinstance(preferred_learning_schedule, set) or (
+        preferred_learning_schedule
+        and all(isinstance(x, int) for x in preferred_learning_schedule)
+        and not any(isinstance(x, dict) for x in preferred_learning_schedule)
+    ):
+        for day in preferred_learning_schedule:
+            try:
+                d = int(day)
+            except (TypeError, ValueError):
+                continue
+            by_day.setdefault(d, []).append(
+                {"time": "18:00", "duration_minutes": fallback_dur},
+            )
+        return by_day
+
+    for slot in preferred_learning_schedule:
+        if not isinstance(slot, dict):
+            continue
+        try:
+            day = int(slot.get("day"))
+        except (TypeError, ValueError):
+            continue
+        dur = fallback_dur
+        if slot.get("duration_minutes") is not None:
+            try:
+                dur = max(15, min(240, int(slot.get("duration_minutes"))))
+            except (TypeError, ValueError):
+                dur = fallback_dur
+        by_day.setdefault(day, []).append(
+            {
+                "time": str(slot.get("time") or "18:00"),
+                "duration_minutes": dur,
+            },
+        )
+
+    for day, slots in by_day.items():
+        slots.sort(key=_slot_time_sort_key)
+    return by_day
+
+
 def calculate_available_sessions(
     start_date: date,
     duration_days: int,
-    learning_days: Set[int],
+    learning_schedule: Any,
 ) -> int:
     """
-    Count learning_days (0=Mon .. 6=Sun, same as Python weekday()) in
+    Count available learning sessions in
     [start_date, start_date + duration_days - 1].
+
+    ``learning_schedule`` may be:
+    - a slot list ``[{day, time, duration_minutes}, ...]`` (multi slots/day OK)
+    - a ``Set[int]`` / iterable of weekdays (legacy: 1 session per matching day)
+    - a ``Dict[int, int]`` of weekday → sessions-per-day counts
     """
     if duration_days < 1:
         return 0
+
+    if isinstance(learning_schedule, dict) and learning_schedule and all(
+        isinstance(k, int) and isinstance(v, int) for k, v in learning_schedule.items()
+    ):
+        per_day = {int(k): max(0, int(v)) for k, v in learning_schedule.items()}
+    else:
+        by_day = schedule_slots_by_weekday(learning_schedule)
+        per_day = {day: len(slots) for day, slots in by_day.items()}
+
+    if not per_day:
+        return 0
+
     total = 0
     for i in range(int(duration_days)):
         d = start_date + timedelta(days=i)
-        if d.weekday() in learning_days:
-            total += 1
+        total += per_day.get(d.weekday(), 0)
     return total
+
+
+def calculate_min_days_needed(
+    start_date: date,
+    sessions_required: int,
+    learning_schedule: Any,
+    *,
+    max_days: int = 730,
+) -> Optional[int]:
+    """
+    Smallest duration (days from start_date) that yields at least
+    ``sessions_required`` learning sessions for the given schedule.
+    """
+    if sessions_required <= 0:
+        return 1
+    by_day = schedule_slots_by_weekday(learning_schedule)
+    if not by_day:
+        return None
+    needed = int(sessions_required)
+    for days in range(1, int(max_days) + 1):
+        if calculate_available_sessions(start_date, days, learning_schedule) >= needed:
+            return days
+    return None
 
 
 def calculate_min_weeks_needed(sessions_required: int, sessions_per_week: int) -> int:
@@ -897,27 +999,12 @@ def _schedule_slots_by_weekday(
     preferred_learning_schedule: List[Dict[str, Any]],
     *,
     default_duration_minutes: int = 90,
-) -> Dict[int, Dict[str, Any]]:
-    by_day: Dict[int, Dict[str, Any]] = {}
-    for slot in preferred_learning_schedule or []:
-        if not isinstance(slot, dict):
-            continue
-        try:
-            day = int(slot.get("day"))
-        except (TypeError, ValueError):
-            continue
-        dur = default_duration_minutes
-        if slot.get("duration_minutes") is not None:
-            try:
-                dur = int(slot.get("duration_minutes"))
-            except (TypeError, ValueError):
-                dur = default_duration_minutes
-        dur = max(15, min(240, dur))
-        by_day[day] = {
-            "time": str(slot.get("time") or "18:00"),
-            "duration_minutes": dur,
-        }
-    return by_day
+) -> Dict[int, List[Dict[str, Any]]]:
+    """Backward-compatible alias; returns lists of slots per weekday. """
+    return schedule_slots_by_weekday(
+        preferred_learning_schedule,
+        default_duration_minutes=default_duration_minutes,
+    )
 
 
 def next_rebase_start_date(
@@ -925,12 +1012,10 @@ def next_rebase_start_date(
     preferred_learning_schedule: List[Dict[str, Any]],
 ) -> date:
     """
-    First calendar date whose schedule slot start is still at or after ``now_local``.
-
-    Walks forward from today so resume/rebuild can use a same-day slot when it has
-    not started yet (instead of always skipping to tomorrow).
+    First calendar date that still has at least one schedule slot starting
+    at or after ``now_local``.
     """
-    by_day = _schedule_slots_by_weekday(preferred_learning_schedule)
+    by_day = schedule_slots_by_weekday(preferred_learning_schedule)
     if not by_day:
         return now_local.date() + timedelta(days=1)
 
@@ -938,8 +1023,8 @@ def next_rebase_start_date(
     current = now_local.date()
     for _ in range(14):
         wd = current.weekday()
-        if wd in by_day:
-            slot_start = datetime.combine(current, _parse_hhmm(str(by_day[wd]["time"])))
+        for slot_info in by_day.get(wd, []):
+            slot_start = datetime.combine(current, _parse_hhmm(str(slot_info["time"])))
             if now_cmp <= slot_start:
                 return current
         current = current + timedelta(days=1)
@@ -959,7 +1044,8 @@ def build_schedule(
     Assign each roadmap topic to the next calendar learning slot.
 
     `preferred_learning_schedule`: [{ \"day\": 0-6, \"time\": \"HH:MM\", \"duration_minutes\"? }, ...]
-    weekday 0 = Monday (matches Python date.weekday()).
+    weekday 0 = Monday (matches Python date.weekday()). Multiple slots on the
+    same weekday are all used (ordered by time) before advancing the date.
 
     Slot times are interpreted in ``timezone_name`` (user profile), then stored as UTC-naive
     datetimes — same convention as ``scheduling_add`` task ``due_datetime``.
@@ -969,39 +1055,30 @@ def build_schedule(
     if not topics:
         return []
 
-    by_day: Dict[int, Dict[str, Any]] = {}
-    fallback_dur = max(15, min(240, int(default_duration_minutes or 90)))
-    for slot in preferred_learning_schedule or []:
-        if not isinstance(slot, dict):
-            continue
-        day = int(slot["day"])
-        dur = fallback_dur
-        if slot.get("duration_minutes") is not None:
-            try:
-                dur = max(15, min(240, int(slot["duration_minutes"])))
-            except (TypeError, ValueError):
-                dur = fallback_dur
-        by_day[day] = {
-            "time": str(slot["time"]),
-            "duration_minutes": dur,
-        }
-
-    learning_days = set(by_day.keys())
-    if not learning_days:
+    by_day = schedule_slots_by_weekday(
+        preferred_learning_schedule,
+        default_duration_minutes=default_duration_minutes,
+    )
+    if not by_day:
         return []
 
     out: List[Dict[str, Any]] = []
     current = start_date
     topic_index = 0
+    # Guard against pathological empty schedules / infinite loops.
+    max_days = max(3650, len(topics) * 14)
 
-    while topic_index < len(topics):
+    for _ in range(max_days):
+        if topic_index >= len(topics):
+            break
         wd = current.weekday()
-        if wd in learning_days:
+        for slot_info in by_day.get(wd, []):
+            if topic_index >= len(topics):
+                break
             row = topics[topic_index]
             title = str(row.get("title") or "")
             resources = row.get("resources") if isinstance(row.get("resources"), list) else []
             order = int(row.get("order", topic_index + 1))
-            slot_info = by_day[wd]
             tstr = slot_info["time"]
             parsed_time = _parse_hhmm(tstr)
             time_str = f"{parsed_time.hour:02d}:{parsed_time.minute:02d}:00"
