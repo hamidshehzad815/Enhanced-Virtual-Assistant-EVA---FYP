@@ -260,6 +260,47 @@ describe("Chat API", () => {
     );
   });
 
+  test("POST /api/chat/process learning_create -> includes See roadmap action", async () => {
+    ChatSession.findOne.mockResolvedValue(mockSessionDoc());
+
+    callAIServer.mockResolvedValue({
+      status: "ok",
+      response_text: "Your Python plan is ready.",
+      handler_status: "success",
+      route: {
+        intent: "learning_create",
+        learning_goal_id: "507f1f77bcf86cd799439099",
+      },
+      notifications: [],
+    });
+
+    const response = await request(app)
+      .post("/api/chat/process")
+      .set("Authorization", `Bearer ${makeToken()}`)
+      .send({
+        message: "create python roadmap from monday",
+        session_id: SESSION_ID,
+        input_type: "text",
+      });
+
+    expect(response.status).toBe(200);
+    expect(response.body.action).toEqual({
+      type: "see_roadmap",
+      id: "507f1f77bcf86cd799439099",
+      label: "See roadmap",
+    });
+    expect(chatService.saveConversationTurn).toHaveBeenCalledWith(
+      SESSION_ID,
+      expect.objectContaining({
+        action: {
+          type: "see_roadmap",
+          id: "507f1f77bcf86cd799439099",
+          label: "See roadmap",
+        },
+      }),
+    );
+  });
+
   test("POST /api/chat/process without session_id -> creates session on first message", async () => {
     ChatSession.create.mockResolvedValue(mockSessionDoc());
 
