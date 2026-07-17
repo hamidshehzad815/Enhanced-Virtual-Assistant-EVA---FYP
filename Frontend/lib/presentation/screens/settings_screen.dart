@@ -1139,7 +1139,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         Padding(
                           padding: const EdgeInsets.symmetric(vertical: 12),
                           child: Text(
-                            'Pick at least one day, then set its time and duration',
+                            'Pick days and set each session time. Use Add session for a second time on the same day.',
                             style: TextStyle(color: Colors.grey.shade500),
                           ),
                         )
@@ -1148,6 +1148,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
                           (slot) =>
                               _buildNewSlotRow(slot, setSheetState, slots, ctx),
                         ),
+                      if (slots.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: () async {
+                              final day = await showDialog<int>(
+                                context: ctx,
+                                builder: (dCtx) => SimpleDialog(
+                                  title: const Text('Add session on'),
+                                  children: [
+                                    for (var day = 0; day < 7; day++)
+                                      SimpleDialogOption(
+                                        onPressed: () => Navigator.pop(dCtx, day),
+                                        child: Text(fullDayNames[day]),
+                                      ),
+                                  ],
+                                ),
+                              );
+                              if (day == null) return;
+                              setSheetState(() {
+                                slots.add(_NewSlotData(day: day));
+                              });
+                            },
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Add session'),
+                          ),
+                        ),
+                      ],
                       const SizedBox(height: 20),
                       Row(
                         children: [
@@ -1193,6 +1222,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   ScaffoldMessenger.of(ctx).showSnackBar(
                                     const SnackBar(
                                       content: Text('Select at least one day'),
+                                      backgroundColor: Colors.red,
+                                    ),
+                                  );
+                                  return;
+                                }
+                                final internalOverlap = _findInternalNewSlotOverlap(slots);
+                                if (internalOverlap != null) {
+                                  ScaffoldMessenger.of(ctx).showSnackBar(
+                                    SnackBar(
+                                      content: Text(internalOverlap),
                                       backgroundColor: Colors.red,
                                     ),
                                   );
@@ -1448,7 +1487,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           IconButton(
             icon: const Icon(Icons.close, size: 16, color: Colors.red),
             onPressed: () => setSheetState(
-              () => slots.removeWhere((s) => s.day == slot.day),
+              () => slots.remove(slot),
             ),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
@@ -1586,7 +1625,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       ),
                       const SizedBox(height: 16),
                       Text(
-                        '${slots.length} day(s) scheduled',
+                        '${slots.length} session(s) scheduled',
                         style: TextStyle(
                           fontSize: 13,
                           color: isDark
@@ -1647,6 +1686,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             );
                           }),
                         ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: () async {
+                              final day = await showDialog<int>(
+                                context: ctx,
+                                builder: (dCtx) => SimpleDialog(
+                                  title: const Text('Add session on'),
+                                  children: [
+                                    for (var day = 0; day < 7; day++)
+                                      SimpleDialogOption(
+                                        onPressed: () => Navigator.pop(dCtx, day),
+                                        child: Text(fullDayNames[day]),
+                                      ),
+                                  ],
+                                ),
+                              );
+                              if (day == null) return;
+                              setSheetState(() {
+                                slots.add(
+                                  _SlotData(
+                                    day: day,
+                                    time: const TimeOfDay(hour: 18, minute: 0),
+                                    durationMinutes: 60,
+                                  ),
+                                );
+                              });
+                            },
+                            icon: const Icon(Icons.add, size: 18),
+                            label: const Text('Add session'),
+                          ),
+                        ),
                       ],
                       const SizedBox(height: 20),
                       if (isEditing)
@@ -1706,6 +1778,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                         content: Text(
                                           'Select at least one day',
                                         ),
+                                        backgroundColor: Colors.red,
+                                      ),
+                                    );
+                                    return;
+                                  }
+                                  final internalOverlap = _findInternalSlotOverlap(slots);
+                                  if (internalOverlap != null) {
+                                    ScaffoldMessenger.of(ctx).showSnackBar(
+                                      SnackBar(
+                                        content: Text(internalOverlap),
                                         backgroundColor: Colors.red,
                                       ),
                                     );
@@ -2007,7 +2089,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           IconButton(
             icon: const Icon(Icons.close, size: 16, color: Colors.red),
             onPressed: () => setSheetState(
-              () => slots.removeWhere((s) => s.day == slot.day),
+              () => slots.remove(slot),
             ),
             padding: EdgeInsets.zero,
             constraints: const BoxConstraints(),
@@ -2015,6 +2097,40 @@ class _SettingsScreenState extends State<SettingsScreen> {
         ],
       ),
     );
+  }
+
+
+  String? _findInternalNewSlotOverlap(List<_NewSlotData> slots) {
+    for (var i = 0; i < slots.length; i++) {
+      for (var j = i + 1; j < slots.length; j++) {
+        final a = slots[i];
+        final b = slots[j];
+        if (a.day != b.day) continue;
+        final aTime = a.time;
+        final bTime = b.time;
+        if (aTime == null || bTime == null) continue;
+        final aDur = a.durationMinutes ?? 60;
+        final bDur = b.durationMinutes ?? 60;
+        if (_slotsOverlap(aTime, aDur, bTime, bDur)) {
+          return 'Sessions on ${fullDayNames[a.day]} overlap (${_formatTimeStatic(aTime)} and ${_formatTimeStatic(bTime)})';
+        }
+      }
+    }
+    return null;
+  }
+
+  String? _findInternalSlotOverlap(List<_SlotData> slots) {
+    for (var i = 0; i < slots.length; i++) {
+      for (var j = i + 1; j < slots.length; j++) {
+        final a = slots[i];
+        final b = slots[j];
+        if (a.day != b.day) continue;
+        if (_slotsOverlap(a.time, a.durationMinutes, b.time, b.durationMinutes)) {
+          return 'Sessions on ${fullDayNames[a.day]} overlap (${_formatTimeStatic(a.time)} and ${_formatTimeStatic(b.time)})';
+        }
+      }
+    }
+    return null;
   }
 
   // ==================== CONFLICT DETECTION ====================

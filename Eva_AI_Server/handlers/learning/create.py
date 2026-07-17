@@ -393,7 +393,7 @@ async def handle_learning_create(
         return await finish(msg, status="pending")
 
     sessions_needed = await get_sessions_required(canonical_topic, roadmap_key)
-    available = calculate_available_sessions(start_d, int(dur_days), learning_days)
+    available = calculate_available_sessions(start_d, int(dur_days), schedule_slots)
     if sessions_needed > 0 and available < sessions_needed:
         msg = (
             f"In {dur_days} days you only have {available} learning session(s) on your schedule, "

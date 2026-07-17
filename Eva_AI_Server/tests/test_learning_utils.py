@@ -173,6 +173,23 @@ class DurationEntityToDaysTests(unittest.TestCase):
         learning = {0, 2, 4}
         self.assertEqual(lu.calculate_available_sessions(start, 7, learning), 3)
 
+    def test_two_monday_slots_count_twice(self):
+        start = date(2025, 1, 6)  # Monday
+        slots = [
+            {"day": 0, "time": "09:00", "duration_minutes": 60},
+            {"day": 0, "time": "19:00", "duration_minutes": 60},
+        ]
+        self.assertEqual(lu.calculate_available_sessions(start, 7, slots), 2)
+        self.assertEqual(lu.calculate_available_sessions(start, 14, slots), 4)
+
+    def test_min_days_needed_with_multi_slot_monday(self):
+        start = date(2025, 1, 6)
+        slots = [
+            {"day": 0, "time": "09:00", "duration_minutes": 60},
+            {"day": 0, "time": "19:00", "duration_minutes": 60},
+        ]
+        self.assertEqual(lu.calculate_min_days_needed(start, 4, slots), 8)
+
 
 class MinWeeksTests(unittest.TestCase):
     def test_ceil(self):
@@ -208,6 +225,27 @@ class BuildScheduleTests(unittest.TestCase):
         self.assertEqual(out[1]["scheduled_date"], datetime(2025, 1, 8, 14, 0))
         self.assertEqual(out[2]["scheduled_date"], datetime(2025, 1, 10, 9, 0))
         self.assertEqual(out[1]["resources"], [{"url": "x"}])
+
+    def test_two_slots_same_monday(self):
+        start = date(2025, 1, 6)  # Monday
+        schedule_slots = [
+            {"day": 0, "time": "09:00", "duration_minutes": 60},
+            {"day": 0, "time": "19:00", "duration_minutes": 45},
+        ]
+        topics = [
+            {"order": 1, "title": "Morning", "resources": []},
+            {"order": 2, "title": "Evening", "resources": []},
+            {"order": 3, "title": "NextMonAM", "resources": []},
+        ]
+        out = lu.build_schedule(start, topics, schedule_slots, timezone_name="UTC")
+        self.assertEqual(len(out), 3)
+        self.assertEqual(out[0]["scheduled_date"], datetime(2025, 1, 6, 9, 0))
+        self.assertEqual(out[0]["duration_minutes"], 60)
+        self.assertEqual(out[1]["scheduled_date"], datetime(2025, 1, 6, 19, 0))
+        self.assertEqual(out[1]["duration_minutes"], 45)
+        self.assertEqual(out[2]["scheduled_date"], datetime(2025, 1, 13, 9, 0))
+        self.assertEqual(out[0]["title"], "Morning")
+        self.assertEqual(out[1]["title"], "Evening")
 
     def test_converts_user_local_slot_to_utc_naive(self):
         """09:40 Asia/Karachi on Friday → 04:40 UTC stored."""

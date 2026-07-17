@@ -60,8 +60,8 @@ const normalizeScheduleSlots = (value, pathPrefix, options = {}) => {
     throw new Error(`${pathPrefix} must include at least one day`);
   }
 
-  const seenDays = new Set();
-  return value.map((slot, index) => {
+  const seenDayTimes = new Set();
+  const normalized = value.map((slot, index) => {
     const base = `${pathPrefix}[${index}]`;
     if (!slot || typeof slot !== "object" || Array.isArray(slot)) {
       throw new Error(`${base} must be an object with day, time, and duration_minutes`);
@@ -71,12 +71,16 @@ const normalizeScheduleSlots = (value, pathPrefix, options = {}) => {
     if (day < 0 || day > 6) {
       throw new Error(`${base}.day must be between 0 and 6`);
     }
-    if (seenDays.has(day)) {
-      throw new Error(`${pathPrefix}: duplicate day ${day}; at most one slot per weekday`);
-    }
-    seenDays.add(day);
 
     const time = normalizeTime(slot.time, `${base}.time`);
+    const dayTimeKey = `${day}:${time}`;
+    if (seenDayTimes.has(dayTimeKey)) {
+      throw new Error(
+        `${pathPrefix}: duplicate slot ${formatSlotLabel(day, time)}; each day+time must be unique`,
+      );
+    }
+    seenDayTimes.add(dayTimeKey);
+
     let durationMinutes;
     if (slot.duration_minutes === undefined || slot.duration_minutes === null) {
       if (legacyDefaultDuration === null) {
@@ -97,6 +101,40 @@ const normalizeScheduleSlots = (value, pathPrefix, options = {}) => {
 
     return { day, time, duration_minutes: durationMinutes };
   });
+
+  // Allow multiple slots on the same weekday; reject overlapping time windows.
+  const byDay = new Map();
+  for (const slot of normalized) {
+    if (!byDay.has(slot.day)) {
+      byDay.set(slot.day, []);
+    }
+    byDay.get(slot.day).push(slot);
+  }
+  const toMinutes = (hhmm) => {
+    const [h, m] = String(hhmm).split(":").map((part) => Number.parseInt(part, 10));
+    return h * 60 + m;
+  };
+  for (const [day, daySlots] of byDay.entries()) {
+    daySlots.sort((a, b) => toMinutes(a.time) - toMinutes(b.time));
+    for (let i = 0; i < daySlots.length; i += 1) {
+      const a = daySlots[i];
+      const aStart = toMinutes(a.time);
+      const aEnd = aStart + a.duration_minutes;
+      for (let j = i + 1; j < daySlots.length; j += 1) {
+        const b = daySlots[j];
+        const bStart = toMinutes(b.time);
+        const bEnd = bStart + b.duration_minutes;
+        if (aStart < bEnd && bStart < aEnd) {
+          throw new Error(
+            `${pathPrefix}: overlapping slots on ${DAY_LABELS[day] || `day ${day}`} ` +
+              `(${a.time} and ${b.time})`,
+          );
+        }
+      }
+    }
+  }
+
+  return normalized;
 };
 
 /**

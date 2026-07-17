@@ -47,6 +47,33 @@ describe("learningSchedules cross-schedule slots", () => {
     ).toThrow(/Monday 18:00|same weekday/i);
   });
 
+  test("allows multiple non-overlapping slots on the same weekday", () => {
+    const schedules = normalizePreferredLearningSchedules([
+      {
+        label: "Double Monday",
+        slots: [
+          { day: 0, time: "09:00", duration_minutes: 60 },
+          { day: 0, time: "19:00", duration_minutes: 60 },
+        ],
+      },
+    ]);
+    expect(schedules[0].slots).toHaveLength(2);
+  });
+
+  test("rejects overlapping slots on the same weekday", () => {
+    expect(() =>
+      normalizePreferredLearningSchedules([
+        {
+          label: "Overlap",
+          slots: [
+            { day: 0, time: "09:00", duration_minutes: 90 },
+            { day: 0, time: "10:00", duration_minutes: 60 },
+          ],
+        },
+      ]),
+    ).toThrow(/overlapping slots on Monday/i);
+  });
+
   test("bulk normalize requires duration_minutes on each slot", () => {
     expect(() =>
       normalizePreferredLearningSchedules([
