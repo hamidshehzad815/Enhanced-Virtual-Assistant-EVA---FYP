@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from typing import Any, Dict, Optional
 
 from config.settings import settings
@@ -204,24 +205,39 @@ class GeminiInputClassifier:
         if not self.enabled or not self.model or not text or not text.strip():
             return None
 
+        started = time.monotonic()
         try:
             response = self.model.generate_content(
                 _PROMPT.format(message=text, user_name=user_name or "the user"),
+                # No response_mime_type here: it is unsupported by
+                # google-generativeai 0.4.0, which is what requirements.txt pins
+                # and therefore what the HF Space installs. Passing it raised
+                # "Unknown field for GenerationConfig" on every call, so the
+                # classifier silently fell back to CLF1 100% of the time in any
+                # environment matching requirements. The prompt already demands
+                # raw JSON and _strip_fence() tolerates a markdown fence.
                 generation_config={
                     "temperature": 0.0,
                     "max_output_tokens": 20000,
-                    "response_mime_type": "application/json",
                 },
                 request_options={"timeout": float(settings.GEMINI_TIMEOUT_SECONDS)},
             )
             payload = json.loads(_strip_fence(response.text))
         except Exception as error:
-            print(f"[GeminiCLF1] Call failed, falling back to CLF1: {error}")
+            elapsed_ms = (time.monotonic() - started) * 1000
+            print(
+                f"[GeminiCLF1] CALL  via {self.model_name}  {elapsed_ms:.0f}ms  "
+                f"FAILED -> CLF1 fallback: {error}"
+            )
             return None
 
+        elapsed_ms = (time.monotonic() - started) * 1000
         label = str(payload.get("input_type") or "").strip().lower()
         if label not in VALID_LABELS:
-            print(f"[GeminiCLF1] Invalid label {label!r}, falling back to CLF1")
+            print(
+                f"[GeminiCLF1] CALL  via {self.model_name}  {elapsed_ms:.0f}ms  "
+                f"INVALID label {label!r} -> CLF1 fallback"
+            )
             return None
 
         cleaned = self._validate_cleaned(text, str(payload.get("cleaned_text") or ""))
@@ -229,6 +245,13 @@ class GeminiInputClassifier:
         # Never let a generated reply through on the command path: the handlers
         # own that, and an invented "I've added it" would be a lie to the user.
         reply = "" if label == "command" else str(payload.get("response_text") or "").strip()
+
+        print(
+            f"[GeminiCLF1] CALL  via {self.model_name}  {elapsed_ms:.0f}ms  "
+            f"-> {label}{'  +reply' if reply else ''}"
+        )
+        if cleaned.strip().lower() != text.strip().lower():
+            print(f"[GeminiCLF1]   cleaned: {text!r} -> {cleaned!r}")
 
         # Gemini gives no calibrated score. Report 1.0 so downstream threshold
         # checks pass, but `source` marks it so it is never mistaken for a real

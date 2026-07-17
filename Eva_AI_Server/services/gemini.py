@@ -803,6 +803,7 @@ class GeminiService:
         action = str(action_context.get("action", "general_greeting"))
 
         if self._is_available():
+            started = time.monotonic()
             try:
                 prompt = self._build_prompt(action_context, user_name, conversation_history)
                 future = self._executor.submit(
@@ -812,22 +813,43 @@ class GeminiService:
                 )
                 response = future.result(timeout=self.timeout_seconds + 0.25)
                 text = (getattr(response, "text", "") or "").strip()
+                elapsed_ms = (time.monotonic() - started) * 1000
 
                 # Enforce variation even if model repeats exactly.
                 if text:
                     self._record_success()
+                    print(
+                        f"[Gemini] CALL  {action}  via {self.model_name}  "
+                        f"{elapsed_ms:.0f}ms  OK"
+                    )
                     if self._last_response_by_action.get(action) == text:
                         text = self._pick_fallback(action_context, user_name)
+                        print(f"[Gemini] repeated reply for {action}, using fallback for variety")
                     self._last_response_by_action[action] = text
                     return text
                 # Empty text is not an error worth tripping the breaker on.
                 self._record_success()
+                print(
+                    f"[Gemini] CALL  {action}  via {self.model_name}  "
+                    f"{elapsed_ms:.0f}ms  EMPTY -> fallback"
+                )
             except FuturesTimeoutError:
-                print("[Gemini] generate_reply timed out, using fallback.")
+                print(
+                    f"[Gemini] CALL  {action}  via {self.model_name}  "
+                    f"TIMEOUT after {self.timeout_seconds}s -> fallback"
+                )
                 self._record_failure()
             except Exception as e:
-                print(f"[Gemini] generate_reply failed, using fallback: {e}")
+                print(
+                    f"[Gemini] CALL  {action}  via {self.model_name}  "
+                    f"FAILED -> fallback: {e}"
+                )
                 self._record_failure()
+        elif self.enabled:
+            # Breaker is open — say so, otherwise this looks identical to Gemini
+            # working and quietly returning bland text.
+            remaining = max(0.0, self._paused_until - time.monotonic())
+            print(f"[Gemini] SKIP  {action}  breaker open, {remaining:.0f}s left -> fallback")
 
         fallback = self._pick_fallback(action_context, user_name)
         self._last_response_by_action[action] = fallback

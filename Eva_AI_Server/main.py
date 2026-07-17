@@ -148,6 +148,8 @@ async def lifespan(app: FastAPI):
     ner_ok = ner_extractor.load()
     learning_ner_ok = learning_ner_extractor.load()
 
+    _print_gemini_config()
+
     print("=" * 50)
     if (
         mongodb_ok
@@ -300,6 +302,45 @@ def _repair_weekday_fragment_date(raw_entities: dict, source_text: str) -> dict:
     if match:
         entities["date"] = str(match.group(1)).lower()
     return entities
+
+
+def _print_gemini_config() -> None:
+    """
+    Show exactly what Gemini will and will not do at startup.
+
+    Both services fail *silently* by design (a bad key, a retired model name or
+    an open circuit breaker all just fall back to canned strings), so without
+    this the only symptom is "the replies look robotic" — which is how a dead
+    hardcoded model name went unnoticed. Print the config instead of guessing.
+    """
+    print("-" * 50)
+    print("Gemini configuration")
+
+    if not settings.GEMINI_API_KEY:
+        print("  Replies      : DISABLED (no GEMINI_API_KEY) -> canned fallbacks")
+    elif not settings.GEMINI_ENABLED:
+        print("  Replies      : DISABLED (GEMINI_ENABLED=false) -> canned fallbacks")
+    elif not gemini_service.enabled:
+        print("  Replies      : DISABLED (init failed) -> canned fallbacks")
+    else:
+        print(f"  Replies      : ENABLED  {gemini_service.model_name}")
+
+    if gemini_input_classifier.enabled:
+        print(f"  Input router : ENABLED  {gemini_input_classifier.model_name}  (CLF1 = fallback)")
+    elif settings.USE_GEMINI_CLF1:
+        print("  Input router : DISABLED (init failed) -> CLF1")
+    else:
+        print("  Input router : CLF1 (USE_GEMINI_CLF1=false)")
+
+    print(f"  Timeout      : {settings.GEMINI_TIMEOUT_SECONDS}s")
+    if settings.GEMINI_DISABLE_AFTER_FAILURE:
+        print(
+            f"  Breaker      : pause {settings.GEMINI_COOLDOWN_SECONDS:.0f}s after "
+            f"{settings.GEMINI_FAILURE_THRESHOLD} consecutive failures"
+        )
+    else:
+        print("  Breaker      : off (always retry)")
+    print("-" * 50)
 
 
 def _classify_input_type(
