@@ -26,7 +26,7 @@ import sys, os, json, random
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'Templates'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'SlotArrays'))
 
-from generator_engine import generate
+from generator_engine import generate, template_disjoint_split
 from scheduling_templates import (
     ADD_TEMPLATES, DELETE_TEMPLATES, UPDATE_TEMPLATES,
     SHOW_TEMPLATES, BEHAVIORAL_TEMPLATES,
@@ -131,8 +131,12 @@ def run():
             noise_rate    = 0.0,     # No noise for CLF — clean intent signals
             seed          = rng.randint(0, 2**31),
         )
-        # CLF2 only needs text + intent — drop entity spans
-        clf2_clean = [{"text": ex["text"], "intent": ex["intent"]} for ex in clean]
+        # CLF2 only needs text + intent — drop entity spans, but keep the
+        # source template so the split can be template-disjoint.
+        clf2_clean = [
+            {"text": ex["text"], "intent": ex["intent"], "_template": ex.get("_template")}
+            for ex in clean
+        ]
         # The engine repeats itself once `count` exceeds the template x slot
         # space, so the requested number is aspirational. Report the real one.
         clf2_unique = _dedupe(clf2_clean)
@@ -145,11 +149,10 @@ def run():
     before = len(all_examples)
     all_examples = _dedupe(all_examples)
     print(f"\n[clf2] cross-intent dedupe: {before} -> {len(all_examples)}")
-    rng.shuffle(all_examples)
 
-    split = int(len(all_examples) * 0.9)
-    train = all_examples[:split]
-    test  = all_examples[split:]
+    # Template-disjoint: no template may appear in both train and test, so the
+    # test set only contains phrasings the model has never seen.
+    train, test = template_disjoint_split(all_examples, test_ratio=0.10, seed=SEED)
 
     out_dir = os.path.join(os.path.dirname(__file__), '..', 'Datasets')
     os.makedirs(out_dir, exist_ok=True)
