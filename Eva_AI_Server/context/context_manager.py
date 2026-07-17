@@ -544,19 +544,6 @@ def should_block_new_command(model1_label: str) -> bool:
     return model1_label in {"command", "multiple_command"}
 
 
-def _learning_weekday_set(schedule: Any) -> Set[int]:
-    days: Set[int] = set()
-    if not isinstance(schedule, list):
-        return days
-    for slot in schedule:
-        if isinstance(slot, dict) and "day" in slot:
-            try:
-                days.add(int(slot["day"]))
-            except (TypeError, ValueError):
-                continue
-    return days
-
-
 def _today_in_user_tz(tz_name: str) -> date:
     tz = get_zoneinfo(tz_name)
     return datetime.now(tz).date()
