@@ -124,6 +124,7 @@ class ChatViewModel extends ChangeNotifier {
         intent: response.intent,
         status: 'processed',
         createdAt: DateTime.now(),
+        action: response.action,
       );
       _messages.add(evaMessage);
 

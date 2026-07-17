@@ -29,6 +29,32 @@ class SessionSummary {
   }
 }
 
+class ChatAction {
+  final String type;
+  final String id;
+  final String label;
+
+  ChatAction({
+    required this.type,
+    required this.id,
+    required this.label,
+  });
+
+  factory ChatAction.fromJson(Map<String, dynamic> json) {
+    return ChatAction(
+      type: (json['type'] ?? '').toString(),
+      id: (json['id'] ?? '').toString(),
+      label: (json['label'] ?? 'Open').toString(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'type': type,
+        'id': id,
+        'label': label,
+      };
+}
+
 class ChatMessage {
   final String id;
   final String role; // "user" or "eva"
@@ -37,6 +63,7 @@ class ChatMessage {
   final String? intent;
   final String status; // "processed", "pending", "failed"
   final DateTime createdAt;
+  final ChatAction? action;
 
   ChatMessage({
     required this.id,
@@ -46,9 +73,11 @@ class ChatMessage {
     this.intent,
     this.status = 'processed',
     required this.createdAt,
+    this.action,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
+    final rawAction = json['action'];
     return ChatMessage(
       id: json['id'],
       role: json['role'],
@@ -57,6 +86,9 @@ class ChatMessage {
       intent: json['intent'],
       status: json['status'] ?? 'processed',
       createdAt: DateTime.parse(json['created_at']),
+      action: rawAction is Map<String, dynamic>
+          ? ChatAction.fromJson(rawAction)
+          : (rawAction is Map ? ChatAction.fromJson(Map<String, dynamic>.from(rawAction)) : null),
     );
   }
 }
@@ -69,6 +101,7 @@ class ProcessResponse {
   final String? intent;
   final String? aiStatus;
   final NotificationSummary? notifications;
+  final ChatAction? action;
 
   ProcessResponse({
     required this.sessionId,
@@ -78,9 +111,11 @@ class ProcessResponse {
     this.intent,
     this.aiStatus,
     this.notifications,
+    this.action,
   });
 
   factory ProcessResponse.fromJson(Map<String, dynamic> json) {
+    final rawAction = json['action'];
     return ProcessResponse(
       sessionId: json['session_id'],
       sessionCreated: json['session_created'] ?? false,
@@ -91,6 +126,9 @@ class ProcessResponse {
       notifications: json['notifications'] != null
           ? NotificationSummary.fromJson(json['notifications'])
           : null,
+      action: rawAction is Map<String, dynamic>
+          ? ChatAction.fromJson(rawAction)
+          : (rawAction is Map ? ChatAction.fromJson(Map<String, dynamic>.from(rawAction)) : null),
     );
   }
 }
