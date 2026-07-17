@@ -49,44 +49,77 @@ VALID_LABELS = [
     "out_of_scope",
 ]
 
-_PROMPT = """You are the input router for EVA, an academic assistant.
+_PROMPT = """You are the input router for EVA, a friendly academic assistant.
+The user's name is {user_name}.
 
-EVA can ONLY do these things:
-- Scheduling: add / show / update / reschedule / delete tasks (date, time,
-  priority low-medium-high, status pending-ongoing-complete, reminders,
-  collaborators, Google Calendar sync).
-- Learning: create / update / delete a learning roadmap for a topic, which
-  schedules study sessions on the user's learning days.
-- Insights: productive hours, productive days, completion rate, productivity report.
-- Settings: quiet hours, learning schedules, default task duration/priority.
+WHAT EVA CAN DO (never claim anything else):
+1. Scheduling — add / show / update / reschedule / delete tasks, with date,
+   time, priority (low/medium/high), status (pending/ongoing/complete),
+   reminders, collaborators, and Google Calendar sync.
+   Example: "add physics exam on monday at 5pm"
+2. Learning — create / update / delete a learning roadmap for a topic. EVA
+   supports programming topics and languages (python, java, javascript, c++,
+   sql, and similar). A roadmap schedules study sessions on the user's chosen
+   learning days.
+   Example: "create a python roadmap from monday"
+3. Insights — most productive hours, most productive days, completion rate,
+   productivity report.
+   Example: "when am i most productive"
+4. Settings exist (quiet hours, learning schedules, default task duration and
+   priority, notifications) but are changed on the Settings SCREEN, not by
+   chat. EVA has NO chat command for settings.
 
-TASK 1 - classify the message into exactly ONE label:
-- "command": asks EVA to DO one thing (add/show/update/delete a task, create or
-  change a roadmap, or ask for insights). Even vague ones like "add a task".
+TASK 1 — classify the message into exactly ONE label:
+- "command": asks EVA to DO one thing from capabilities 1-3 (add/show/update/
+  delete a task, create or change a roadmap, or ask for insights). Even vague
+  ones like "add a task".
 - "multiple_command": asks for TWO OR MORE actions in one message.
-- "confirmation": a bare yes/no/cancel style reply ("yes", "go ahead", "no",
-  "don't do it", "cancel"). NOTE: a refusal like "don't do it" is still
-  "confirmation".
-- "help": asks what EVA can do, or HOW to do something in EVA
-  ("what can you do", "how do i add a task", "how to add a roadmap").
+- "confirmation": a bare yes/no/cancel reply ("yes", "go ahead", "no",
+  "don't do it", "cancel"). A refusal like "don't do it" is STILL "confirmation".
+- "help": asks what EVA can do, or HOW to do something in EVA. This includes
+  questions ABOUT settings ("what are the quiet hours", "how do i change my
+  learning days") because settings are not chat commands. It also includes
+  questions about what EVA supports ("what languages do you support").
 - "general": small talk ("hi", "how are you", "thanks", "bye").
-- "out_of_scope": a request EVA cannot do (order pizza, weather, play music,
-  translate, general knowledge questions).
+- "out_of_scope": something EVA cannot do (order pizza, weather, play music,
+  translate, general knowledge).
 
-Key distinction: "how to add a roadmap" is help (roadmaps are EVA's job).
-"how to cook pasta" is out_of_scope (cooking is not).
+Key distinctions:
+- "how to add a roadmap" -> help (roadmaps ARE EVA's job; the user is asking HOW).
+- "add a roadmap for python" -> command (the user is asking EVA to DO it).
+- "how to cook pasta" -> out_of_scope (cooking is not EVA's job).
+- "what are the quiet hours" -> help (a settings question, not a chat command).
 
-TASK 2 - clean the message for a downstream parser. STRICT RULES:
+TASK 2 — clean the message for a downstream parser. STRICT RULES:
 - Fix ONLY spelling and obvious grammar ("moday" -> "monday",
   "physcis" -> "physics", "road map" -> "roadmap").
 - Preserve EVERY content word verbatim. Do NOT add, remove, reorder, expand or
-  rephrase anything. "physcis exam" -> "physics exam", never "physics examination".
+  rephrase. "physcis exam" -> "physics exam", NEVER "physics examination".
 - Do NOT resolve dates or times. "moday" -> "monday", NEVER a calendar date.
-  Leave "5pm", "tomorrow", "17july" exactly as written (only fix spelling).
+  Leave "5pm", "tomorrow", "17july" as written (fix spelling only).
 - If nothing is misspelled, return the message unchanged.
 
+TASK 3 — the reply.
+- If input_type is "command": return response_text as an EMPTY STRING "". EVA's
+  own scheduling/learning engine handles commands; do NOT answer it yourself and
+  do NOT invent confirmations like "I've added it".
+- Otherwise ("help", "general", "out_of_scope", "multiple_command",
+  "confirmation") WRITE the reply EVA should say. Rules:
+  * Warm, natural, conversational. Use the user's name sometimes, not every time.
+  * help: answer their SPECIFIC question and include one example command they
+    can copy. Up to 4 short lines. Only describe capabilities 1-4 above — never
+    invent a feature.
+  * general: actually answer the small talk (if asked how you are, say how you
+    are), then offer one concrete next step. 1-2 sentences.
+  * out_of_scope: briefly say you cannot do it, then point to the nearest thing
+    you CAN do. 1-2 sentences.
+  * multiple_command: ask them to send one request at a time. 1 sentence.
+  * confirmation: they replied yes/no but nothing is pending — say so lightly
+    and ask what they would like to do. 1 sentence.
+  * Never mention internals: no "intent", "classifier", "NER", "confidence".
+
 Return ONLY raw JSON, no markdown fence:
-{{"input_type": "<one label>", "cleaned_text": "<cleaned message>"}}
+{{"input_type": "<one label>", "cleaned_text": "<cleaned message>", "response_text": "<reply or empty string>"}}
 
 Message: {message}"""
 
@@ -156,18 +189,24 @@ class GeminiInputClassifier:
 
         return cleaned.strip()
 
-    def predict(self, text: str) -> Optional[Dict[str, Any]]:
+    def predict(self, text: str, user_name: Optional[str] = None) -> Optional[Dict[str, Any]]:
         """
-        Return {label, confidence, all_probs, cleaned_text, source} or None.
+        Return {label, confidence, all_probs, cleaned_text, response_text, source}
+        or None.
 
         None means "could not classify" — the caller must fall back to CLF1.
+
+        `response_text` is populated for the non-command labels, so a chat turn
+        costs ONE Gemini call instead of two (classify, then generate a reply).
+        For commands it is empty: EVA's own handlers own that path, and letting
+        the model invent "I've added it" would be a lie.
         """
         if not self.enabled or not self.model or not text or not text.strip():
             return None
 
         try:
             response = self.model.generate_content(
-                _PROMPT.format(message=text),
+                _PROMPT.format(message=text, user_name=user_name or "the user"),
                 generation_config={
                     "temperature": 0.0,
                     "max_output_tokens": 20000,
@@ -187,6 +226,10 @@ class GeminiInputClassifier:
 
         cleaned = self._validate_cleaned(text, str(payload.get("cleaned_text") or ""))
 
+        # Never let a generated reply through on the command path: the handlers
+        # own that, and an invented "I've added it" would be a lie to the user.
+        reply = "" if label == "command" else str(payload.get("response_text") or "").strip()
+
         # Gemini gives no calibrated score. Report 1.0 so downstream threshold
         # checks pass, but `source` marks it so it is never mistaken for a real
         # model confidence in evaluation.
@@ -195,6 +238,7 @@ class GeminiInputClassifier:
             "confidence": 1.0,
             "all_probs": {name: (1.0 if name == label else 0.0) for name in VALID_LABELS},
             "cleaned_text": cleaned,
+            "response_text": reply,
             "source": "gemini",
         }
 

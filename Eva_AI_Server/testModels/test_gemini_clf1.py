@@ -85,11 +85,12 @@ def main() -> None:
         clf_label, clf_conf = clf["label"], clf["confidence"]
 
         start = time.perf_counter()
-        gem = gemini_input_classifier.predict(message)
+        gem = gemini_input_classifier.predict(message, user_name="Hamid")
         latencies.append((time.perf_counter() - start) * 1000)
 
         gem_label = gem["label"] if gem else "FALLBACK"
         cleaned = gem.get("cleaned_text", message) if gem else message
+        reply = gem.get("response_text", "") if gem else ""
 
         clf_hit = clf_label == expected
         gem_hit = gem_label == expected
@@ -104,6 +105,10 @@ def main() -> None:
         print(f"   Gemini   : {gem_label:16s}        {'OK' if gem_hit else 'X'}")
         if cleaned.strip().lower() != message.strip().lower():
             print(f"   cleaned  : {cleaned!r}")
+        if reply:
+            print(f"   reply    : {reply[:160]}")
+        elif gem and gem_label != "command":
+            print("   reply    : (MISSING - would need a 2nd Gemini call)")
 
     total = len(CASES)
     print("\n" + "=" * 62)
