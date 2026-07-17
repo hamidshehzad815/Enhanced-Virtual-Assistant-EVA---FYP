@@ -17,7 +17,7 @@ import sys, os, json, random
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'Templates'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'SlotArrays'))
 
-from generator_engine import generate
+from generator_engine import generate, template_disjoint_split
 from scheduling_templates import (
     ADD_TEMPLATES, DELETE_TEMPLATES, UPDATE_TEMPLATES,
     SHOW_TEMPLATES, BEHAVIORAL_TEMPLATES,
@@ -76,13 +76,9 @@ def run():
         print(f"  clean={len(clean)}  flagged={len(flagged)}")
         all_examples.extend(clean)
 
-    # Shuffle combined set
-    rng.shuffle(all_examples)
-
-    # 90/10 train/test split
-    split = int(len(all_examples) * 0.9)
-    train = all_examples[:split]
-    test  = all_examples[split:]
+    # Template-disjoint 90/10 split: no template in both train and test, so the
+    # test set only contains phrasings the model has never seen.
+    train, test = template_disjoint_split(all_examples, test_ratio=0.10, seed=SEED)
 
     out_dir = os.path.join(os.path.dirname(__file__), '..', 'Datasets')
     os.makedirs(out_dir, exist_ok=True)
