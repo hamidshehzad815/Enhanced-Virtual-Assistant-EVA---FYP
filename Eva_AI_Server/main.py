@@ -57,6 +57,7 @@ from context.context_manager import (
 from context.redis_client import redis_client
 from pipeline.classifier1 import classifier1
 from pipeline.classifier2 import classifier2
+from pipeline.gemini_classifier import gemini_input_classifier
 from pipeline.date_resolver import resolve_all
 from pipeline.entity_scoper import scope_entities
 from pipeline.ner import get_ner_extractor_for_intent, learning_ner_extractor, ner_extractor
@@ -299,6 +300,29 @@ def _repair_weekday_fragment_date(raw_entities: dict, source_text: str) -> dict:
     if match:
         entities["date"] = str(match.group(1)).lower()
     return entities
+
+
+def _classify_input_type(nlu_message: str, nlu_processed: str):
+    """
+    Classify input type, returning (classification, nlu_message, nlu_processed).
+
+    EXPERIMENT (branch experiment/gemini-clf1): when USE_GEMINI_CLF1 is set,
+    Gemini classifies the input type AND returns a spelling-cleaned message,
+    which is then what CLF2 and NER see. The idea is to map off-distribution
+    user text onto the clean, well-formed text the models were trained on.
+
+    CLF1 stays the fallback for every failure path (disabled, timeout, bad
+    label, rejected rewrite). Gemini sits in front of the whole pipeline here,
+    so it must never be able to take EVA down — same lesson as the Duckling
+    hard-dependency bug.
+    """
+    if gemini_input_classifier.enabled:
+        result = gemini_input_classifier.predict(nlu_message)
+        if result:
+            cleaned = result.get("cleaned_text") or nlu_message
+            return result, cleaned, preprocess(cleaned)["processed"]
+
+    return classifier1.predict(nlu_processed), nlu_message, nlu_processed
 
 
 def _normalize_priority_update(value) -> str:
@@ -2121,7 +2145,9 @@ async def process_message(payload: ProcessRequest):
                 "settings": settings_data,
             }
 
-        classification = classifier1.predict(nlu_processed)
+        classification, nlu_message, nlu_processed = _classify_input_type(
+            nlu_message, nlu_processed
+        )
         label = classification["label"]
 
         if label == "command":

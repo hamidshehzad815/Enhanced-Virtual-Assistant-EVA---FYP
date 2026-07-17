@@ -90,6 +90,11 @@ class Settings:
     # Gemini API
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GEMINI_ENABLED: bool = _as_bool(os.getenv("GEMINI_ENABLED"), True)
+    # EXPERIMENT (branch experiment/gemini-clf1): use Gemini instead of CLF1 to
+    # classify input type and clean the text. Default OFF — CLF1 stays the
+    # primary path and remains the fallback whenever Gemini fails.
+    USE_GEMINI_CLF1: bool = _as_bool(os.getenv("USE_GEMINI_CLF1"), False)
+    GEMINI_CLF1_MODEL: str = os.getenv("GEMINI_CLF1_MODEL", "gemini-2.5-flash")
     GEMINI_TIMEOUT_SECONDS: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "4"))
     GEMINI_DISABLE_AFTER_FAILURE: bool = _as_bool(
         os.getenv("GEMINI_DISABLE_AFTER_FAILURE"),
