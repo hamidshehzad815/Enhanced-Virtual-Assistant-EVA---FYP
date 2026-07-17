@@ -85,7 +85,16 @@ class TestGeminiService(unittest.TestCase):
         )
         self.assertIn("Hamid", reply)
 
-    def test_model_failure_disables_gemini_and_uses_fallback(self):
+    def test_model_failure_falls_back_and_breaker_recovers(self):
+        """
+        A failure must fall back for that reply only, and any pause must expire.
+
+        This previously asserted that ONE failure set enabled=False and
+        model=None permanently: nothing ever re-enabled them, so a single blip
+        (or a 404 from a retired model name) silently degraded every later reply
+        to a canned string until the process restarted. That behaviour was the
+        bug, so the test asserts the circuit breaker instead.
+        """
         class BrokenModel:
             def generate_content(self, *_args, **_kwargs):
                 raise RuntimeError("forced model failure")
@@ -94,16 +103,23 @@ class TestGeminiService(unittest.TestCase):
         service.enabled = True
         service.model = BrokenModel()
         service.disable_after_failure = True
+        service.failure_threshold = 2
+        service.cooldown_seconds = 0.05
 
-        reply = service.generate_reply(
-            action_context={"action": "task_added", "task_name": "Physics quiz"},
-            user_name="Hamid",
-            conversation_history=[],
-        )
+        context = {"action": "task_added", "task_name": "Physics quiz"}
 
+        # One failure: caller still gets a reply, and Gemini stays available.
+        reply = service.generate_reply(context, "Hamid", [])
         self.assertTrue(reply)
-        self.assertFalse(service.enabled)
-        self.assertIsNone(service.model)
+        self.assertTrue(service._is_available())
+
+        # Repeated failures open the breaker so we stop hammering a broken API.
+        service.generate_reply(context, "Hamid", [])
+        self.assertFalse(service._is_available())
+
+        # ...but only until the cooldown expires. The old code never got here.
+        time.sleep(0.06)
+        self.assertTrue(service._is_available())
 
     def test_learning_missing_start_date_fallback_mentions_topic_not_generic(self):
         service = GeminiService()
@@ -157,6 +173,8 @@ class TestGeminiService(unittest.TestCase):
         self.assertIn("12", reply)
         self.assertIn("Mon at 6 PM", reply)
 
+    def test_timeout_falls_back_without_disabling_gemini(self):
+        """A single slow call must not take Gemini out for the whole process."""
         class SlowModel:
             def generate_content(self, *_args, **_kwargs):
                 time.sleep(0.5)
@@ -166,6 +184,7 @@ class TestGeminiService(unittest.TestCase):
         service.enabled = True
         service.model = SlowModel()
         service.disable_after_failure = True
+        service.failure_threshold = 3
         service.timeout_seconds = 0.05
 
         reply = service.generate_reply(
@@ -174,9 +193,9 @@ class TestGeminiService(unittest.TestCase):
             conversation_history=[],
         )
 
+        # Caller gets a usable fallback, and one timeout leaves Gemini usable.
         self.assertTrue(reply)
-        self.assertFalse(service.enabled)
-        self.assertIsNone(service.model)
+        self.assertTrue(service._is_available())
 
 
 if __name__ == "__main__":

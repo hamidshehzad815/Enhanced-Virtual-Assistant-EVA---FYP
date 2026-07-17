@@ -103,10 +103,17 @@ class Settings:
     # classifier, where latency is the whole cost question.
     GEMINI_CLF1_MODEL: str = os.getenv("GEMINI_CLF1_MODEL", "gemini-3.1-flash-lite")
     GEMINI_TIMEOUT_SECONDS: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "4"))
+    # Circuit breaker: pause Gemini after repeated failures instead of hammering
+    # a clearly-broken API. This used to disable Gemini PERMANENTLY on the first
+    # failure, so a single blip (or a 404 from a retired model name) silently
+    # degraded every later reply to a canned string until the process restarted.
+    # It now pauses for GEMINI_COOLDOWN_SECONDS and then retries.
     GEMINI_DISABLE_AFTER_FAILURE: bool = _as_bool(
         os.getenv("GEMINI_DISABLE_AFTER_FAILURE"),
         True,
     )
+    GEMINI_FAILURE_THRESHOLD: int = int(os.getenv("GEMINI_FAILURE_THRESHOLD", "3"))
+    GEMINI_COOLDOWN_SECONDS: float = float(os.getenv("GEMINI_COOLDOWN_SECONDS", "60"))
 
     # Google Calendar OAuth (token refresh for calendar sync)
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")
