@@ -1092,9 +1092,38 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
                                       bottomRight: Radius.circular(18),
                                     ),
                             ),
-                            child: Text(
-                              msg.content,
-                              style: TextStyle(color: textColor, fontSize: 14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Text(
+                                  msg.content,
+                                  style: TextStyle(color: textColor, fontSize: 14),
+                                ),
+                                if (!isUser &&
+                                    msg.action != null &&
+                                    msg.action!.type == 'see_roadmap' &&
+                                    msg.action!.id.isNotEmpty) ...[
+                                  const SizedBox(height: 10),
+                                  TextButton(
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: AppColors.primary,
+                                      padding: EdgeInsets.zero,
+                                      minimumSize: Size.zero,
+                                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    onPressed: () {
+                                      context.pushNamed(
+                                        'roadmap-detail',
+                                        pathParameters: {
+                                          'goalId': msg.action!.id,
+                                        },
+                                      );
+                                    },
+                                    child: Text(msg.action!.label),
+                                  ),
+                                ],
+                              ],
                             ),
                           ),
                         ),
