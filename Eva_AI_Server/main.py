@@ -57,6 +57,7 @@ from context.context_manager import (
 from context.redis_client import redis_client
 from pipeline.classifier1 import classifier1
 from pipeline.classifier2 import classifier2
+from pipeline.gemini_classifier import gemini_input_classifier
 from pipeline.date_resolver import resolve_all
 from pipeline.entity_scoper import scope_entities
 from pipeline.ner import get_ner_extractor_for_intent, learning_ner_extractor, ner_extractor
@@ -299,6 +300,37 @@ def _repair_weekday_fragment_date(raw_entities: dict, source_text: str) -> dict:
     if match:
         entities["date"] = str(match.group(1)).lower()
     return entities
+
+
+def _classify_input_type(
+    nlu_message: str,
+    nlu_processed: str,
+    user_name: Optional[str] = None,
+):
+    """
+    Classify input type, returning (classification, nlu_message, nlu_processed).
+
+    EXPERIMENT (branch experiment/gemini-clf1): when USE_GEMINI_CLF1 is set,
+    Gemini classifies the input type, returns a spelling-cleaned message (which
+    is what CLF2 and NER then see), and — for non-command inputs — the reply
+    itself, so a chat turn costs one Gemini call instead of two.
+
+    Measured on real collected failures, the cleaning fixes "create python
+    basics road map from moday" -> "create python basics roadmap from monday",
+    i.e. both the compound-word and the typo problem in a single pass.
+
+    CLF1 stays the fallback for every failure path (disabled, timeout, bad
+    label, rejected rewrite). Gemini sits in front of the whole pipeline here,
+    so it must never be able to take EVA down — same lesson as the Duckling
+    hard-dependency bug.
+    """
+    if gemini_input_classifier.enabled:
+        result = gemini_input_classifier.predict(nlu_message, user_name=user_name)
+        if result:
+            cleaned = result.get("cleaned_text") or nlu_message
+            return result, cleaned, preprocess(cleaned)["processed"]
+
+    return classifier1.predict(nlu_processed), nlu_message, nlu_processed
 
 
 def _normalize_priority_update(value) -> str:
@@ -2121,7 +2153,9 @@ async def process_message(payload: ProcessRequest):
                 "settings": settings_data,
             }
 
-        classification = classifier1.predict(nlu_processed)
+        classification, nlu_message, nlu_processed = _classify_input_type(
+            nlu_message, nlu_processed, user_name=user_name
+        )
         label = classification["label"]
 
         if label == "command":
@@ -2197,13 +2231,25 @@ async def process_message(payload: ProcessRequest):
             "confirmation": lambda: handle_confirmation_unexpected(fetched.user, history, message),
             "multiple_command": lambda: handle_multiple_command(fetched.user, history, message),
         }
-        general_result = general_handlers.get(
-            label,
-            lambda: {
-                "route": "unknown_input_type",
-                "response_text": _safe_reply("unknown_input_type", user_name, history),
-            },
-        )()
+        # When Gemini classified this turn it already wrote the reply in the same
+        # call, so use it rather than paying a second Gemini round-trip through
+        # the handlers. Falls through to the normal handlers whenever Gemini is
+        # off, failed, or returned nothing usable.
+        gemini_reply = (
+            classification.get("response_text")
+            if classification.get("source") == "gemini"
+            else None
+        )
+        if gemini_reply:
+            general_result = {"route": label, "response_text": gemini_reply}
+        else:
+            general_result = general_handlers.get(
+                label,
+                lambda: {
+                    "route": "unknown_input_type",
+                    "response_text": _safe_reply("unknown_input_type", user_name, history),
+                },
+            )()
 
         return {
             "status": "ok",
