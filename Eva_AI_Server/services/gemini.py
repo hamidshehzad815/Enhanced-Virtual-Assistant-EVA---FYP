@@ -4,6 +4,7 @@ Phase 8: integrates action-aware prompting with graceful fallback responses.
 """
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 import json
+import time
 from typing import Any, Dict, List, Optional
 
 from config.settings import settings
@@ -550,20 +551,71 @@ class GeminiService:
         self.api_key = settings.GEMINI_API_KEY
         self.timeout_seconds = max(0.5, float(settings.GEMINI_TIMEOUT_SECONDS))
         self.disable_after_failure = bool(settings.GEMINI_DISABLE_AFTER_FAILURE)
+        self.failure_threshold = max(1, int(settings.GEMINI_FAILURE_THRESHOLD))
+        self.cooldown_seconds = max(1.0, float(settings.GEMINI_COOLDOWN_SECONDS))
         self.enabled = bool(settings.GEMINI_ENABLED and self.api_key and genai)
         self.model = None
         self._executor = ThreadPoolExecutor(max_workers=1)
         self._action_counts: Dict[str, int] = {}
         self._last_response_by_action: Dict[str, str] = {}
+        # Circuit breaker state. This used to be a permanent kill switch: a
+        # single failure set enabled=False for the life of the process, and
+        # nothing ever set it back, so every later reply silently degraded to a
+        # canned string until someone restarted the server. One network blip, or
+        # one 404 from a retired model name, poisoned the whole run.
+        self._consecutive_failures = 0
+        self._paused_until = 0.0
+
+        self.model_name = settings.GEMINI_MODEL
 
         if self.enabled:
             try:
                 genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel("gemini-2.5-flash")
+                # Was hard-coded to "gemini-2.5-flash", which is blocked for new
+                # API keys and shuts down 2026-10-16. A dead model name here is
+                # silent: every reply degrades to a canned fallback string and
+                # nothing surfaces the 404. Keep it configurable.
+                self.model = genai.GenerativeModel(self.model_name)
+                print(f"[Gemini] Enabled ({self.model_name})")
             except Exception as e:
                 print(f"[Gemini] Initialization failed, fallback mode enabled: {e}")
                 self.enabled = False
                 self.model = None
+
+    def _is_available(self) -> bool:
+        """True when Gemini should be attempted (breaker closed)."""
+        if not self.enabled or self.model is None:
+            return False
+        if self._paused_until and time.monotonic() < self._paused_until:
+            return False
+        return True
+
+    def _record_success(self) -> None:
+        """Close the breaker again after a good call."""
+        if self._consecutive_failures or self._paused_until:
+            print("[Gemini] Recovered, resuming normal operation.")
+        self._consecutive_failures = 0
+        self._paused_until = 0.0
+
+    def _record_failure(self) -> None:
+        """
+        Pause Gemini after repeated failures — temporarily, not forever.
+
+        Keeps the point of GEMINI_DISABLE_AFTER_FAILURE (stop hammering an API
+        that is clearly broken) without the original behaviour of never trying
+        again until restart. After the cooldown the next call retries; one
+        success resets the counter.
+        """
+        self._consecutive_failures += 1
+        if (
+            self.disable_after_failure
+            and self._consecutive_failures >= self.failure_threshold
+        ):
+            self._paused_until = time.monotonic() + self.cooldown_seconds
+            print(
+                f"[Gemini] {self._consecutive_failures} consecutive failures — "
+                f"pausing for {self.cooldown_seconds:.0f}s, then retrying."
+            )
 
     @staticmethod
     def _compact_history(conversation_history: Optional[List[Dict[str, Any]]]) -> List[Dict[str, str]]:
@@ -770,7 +822,8 @@ class GeminiService:
         """
         action = str(action_context.get("action", "general_greeting"))
 
-        if self.enabled and self.model is not None:
+        if self._is_available():
+            started = time.monotonic()
             try:
                 prompt = self._build_prompt(action_context, user_name, conversation_history)
                 future = self._executor.submit(
@@ -780,25 +833,43 @@ class GeminiService:
                 )
                 response = future.result(timeout=self.timeout_seconds + 0.25)
                 text = (getattr(response, "text", "") or "").strip()
+                elapsed_ms = (time.monotonic() - started) * 1000
 
                 # Enforce variation even if model repeats exactly.
                 if text:
+                    self._record_success()
+                    print(
+                        f"[Gemini] CALL  {action}  via {self.model_name}  "
+                        f"{elapsed_ms:.0f}ms  OK"
+                    )
                     if self._last_response_by_action.get(action) == text:
                         text = self._pick_fallback(action_context, user_name)
+                        print(f"[Gemini] repeated reply for {action}, using fallback for variety")
                     self._last_response_by_action[action] = text
                     return text
+                # Empty text is not an error worth tripping the breaker on.
+                self._record_success()
+                print(
+                    f"[Gemini] CALL  {action}  via {self.model_name}  "
+                    f"{elapsed_ms:.0f}ms  EMPTY -> fallback"
+                )
             except FuturesTimeoutError:
                 print(
-                    "[Gemini] generate_reply timed out, using fallback."
+                    f"[Gemini] CALL  {action}  via {self.model_name}  "
+                    f"TIMEOUT after {self.timeout_seconds}s -> fallback"
                 )
-                if self.disable_after_failure:
-                    self.enabled = False
-                    self.model = None
+                self._record_failure()
             except Exception as e:
-                print(f"[Gemini] generate_reply failed, using fallback: {e}")
-                if self.disable_after_failure:
-                    self.enabled = False
-                    self.model = None
+                print(
+                    f"[Gemini] CALL  {action}  via {self.model_name}  "
+                    f"FAILED -> fallback: {e}"
+                )
+                self._record_failure()
+        elif self.enabled:
+            # Breaker is open — say so, otherwise this looks identical to Gemini
+            # working and quietly returning bland text.
+            remaining = max(0.0, self._paused_until - time.monotonic())
+            print(f"[Gemini] SKIP  {action}  breaker open, {remaining:.0f}s left -> fallback")
 
         fallback = self._pick_fallback(action_context, user_name)
         self._last_response_by_action[action] = fallback

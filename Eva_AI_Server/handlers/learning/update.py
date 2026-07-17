@@ -318,7 +318,10 @@ def _next_learning_date(start: date, days: Set[int]) -> date:
 def _schedule_slot_for_day(schedule: List[Dict[str, Any]], weekday: int) -> Tuple[time, int]:
     """
     Return (time, duration_minutes) for a given weekday from preferred_learning_schedule.
+
+    When multiple slots exist on the same day, use the earliest by time.
     """
+    matches: List[Tuple[time, int]] = []
     for slot in schedule or []:
         if not isinstance(slot, dict):
             continue
@@ -331,8 +334,11 @@ def _schedule_slot_for_day(schedule: List[Dict[str, Any]], weekday: int) -> Tupl
         hh, mm = t_raw.split(":") if ":" in t_raw else (t_raw, "00")
         t_val = time(hour=int(hh), minute=int(mm))
         dur = int(slot.get("duration_minutes") or 90)
-        return t_val, max(15, min(240, dur))
-    return time(hour=18, minute=0), 90
+        matches.append((t_val, max(15, min(240, dur))))
+    if not matches:
+        return time(hour=18, minute=0), 90
+    matches.sort(key=lambda item: (item[0].hour, item[0].minute))
+    return matches[0]
 
 
 async def _collect_learning_topic_task_ids(

@@ -71,6 +71,14 @@ class _HomeScreenState extends State<HomeScreen>
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    if (vm.error == 'SESSION_EXPIRED') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        context.go('/auth', extra: {'initialIndex': 0});
+      });
+      return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    }
+
     // This Consumer will rebuild the entire Scaffold whenever profile changes
     return Consumer<ProfileViewModel>(
       builder: (context, profileVM, _) {

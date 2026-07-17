@@ -52,9 +52,24 @@ _NO_KEYWORDS = {
     "nah",
     "reject",
     "don't",
+    "dont",
+    "do not",
+    "don't do it",
+    "dont do it",
+    "do not do it",
+    "not now",
     "leave it",
     "keep it",
 }
+
+_NEGATION_PATTERNS = (
+    "don't",
+    "dont",
+    "do not",
+    "won't",
+    "wont",
+    "never",
+)
 
 _COMMAND_START_HINTS = {
     "add",
@@ -155,17 +170,47 @@ async def handle_free_text_reply(user_id: str, context: Dict[str, Any], reply: s
     return merged_entities
 
 
+def _contains_keyword(normalized: str, keywords) -> bool:
+    """Match whole keywords / phrases, not arbitrary substrings."""
+    if normalized in keywords:
+        return True
+    tokens = set(normalized.split())
+    for keyword in keywords:
+        parts = keyword.split()
+        if len(parts) == 1:
+            if parts[0] in tokens:
+                return True
+            continue
+        # Phrase match with word boundaries.
+        if f" {keyword} " in f" {normalized} ":
+            return True
+    return False
+
+
+def _has_negation(normalized: str) -> bool:
+    padded = f" {normalized} "
+    for pattern in _NEGATION_PATTERNS:
+        if f" {pattern} " in padded or normalized.startswith(f"{pattern} "):
+            return True
+    return False
+
+
 def handle_yes_no_reply(text: str) -> str:
-    """Classify reply as yes/no/invalid."""
+    """Classify reply as yes/no/invalid.
+
+    Negation / NO is evaluated before YES so phrases like "don't do it"
+    refuse instead of matching the YES substring "do it".
+    """
     normalized = _normalize_text(text)
     if not normalized:
         return "invalid"
 
-    if normalized in _YES_KEYWORDS or any(keyword in normalized for keyword in _YES_KEYWORDS):
-        return "yes"
-
-    if normalized in _NO_KEYWORDS or any(keyword in normalized for keyword in _NO_KEYWORDS):
+    # Explicit negation wins for destructive confirmations (fail-safe).
+    if _has_negation(normalized) or _contains_keyword(normalized, _NO_KEYWORDS):
         return "no"
+
+    if _contains_keyword(normalized, _YES_KEYWORDS):
+        return "yes"
 
     return "invalid"
 
@@ -667,7 +712,10 @@ async def process_learning_create_free_text_reply(
                 "outcome": "retry",
                 "message": "Something went wrong (missing start date). Start your learning request again.",
             }
-        # Feasibility / counter-offer is handled by learning_create on re-entry.
+        # Feasibility / counter-offer is handled by learning_create on re-entry,
+        # using the full slot-aware schedule (so multi-session-per-day counts
+        # correctly) instead of duplicating the check here against a reduced
+        # weekday set.
         merged = {**entities, "duration_days": int(days), "duration": f"{int(days)} days"}
         return {"outcome": "merged", "merged_entities": merged}
 
