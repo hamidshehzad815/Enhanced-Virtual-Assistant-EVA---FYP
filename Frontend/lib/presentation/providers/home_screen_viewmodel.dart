@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import '../../data/services/storage_service.dart';
+import '../../data/services/api_client.dart';
 import '../../data/models/user_profile.dart';
 import '../../data/models/up_next_data.dart';
 import '../../data/models/focus_data.dart';
@@ -64,6 +65,9 @@ class HomeScreenViewModel extends ChangeNotifier {
           .toList();
 
       notifyListeners();
+    } on SessionExpiredException {
+      await StorageService.clearTokens();
+      _setError('SESSION_EXPIRED');
     } catch (e) {
       _setError('Failed to load dashboard: $e');
     } finally {

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_colours.dart';
 import '../../data/services/storage_service.dart';
+import '../../data/services/api_client.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../../data/services/push_notification_service.dart';
 
@@ -26,12 +27,16 @@ class _SplashScreenState extends State<SplashScreen> {
     final onboardingDone = prefs.getBool('onboarding_completed') ?? false;
 
     final token = await StorageService.getAccessToken();
+    var hasValidSession = token != null;
 
-    if (token != null) {
-      try {
-        await PushNotificationService.init();
-      } catch (_) {
-        // Best effort; don't block splash navigation.
+    if (hasValidSession) {
+      hasValidSession = await ApiClient.ensureValidSession();
+      if (hasValidSession) {
+        try {
+          await PushNotificationService.init();
+        } catch (_) {
+          // Best effort; don't block splash navigation.
+        }
       }
     }
 
@@ -39,7 +44,7 @@ class _SplashScreenState extends State<SplashScreen> {
 
     if (!onboardingDone) {
       context.go('/welcome');
-    } else if (token == null) {
+    } else if (!hasValidSession) {
       context.go('/auth', extra: {'initialIndex': 0});
     } else {
       context.go('/');
