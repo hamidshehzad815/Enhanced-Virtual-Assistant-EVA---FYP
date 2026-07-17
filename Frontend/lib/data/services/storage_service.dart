@@ -33,6 +33,11 @@ class StorageService {
     return await _storage.read(key: 'access_token');
   }
 
+  static Future<String?> getRefreshToken() async {
+    if (_memoryRefreshToken != null) return _memoryRefreshToken;
+    return await _storage.read(key: 'refresh_token');
+  }
+
   static Future<void> clearTokens() async {
     _memoryAccessToken = null;
     _memoryRefreshToken = null;

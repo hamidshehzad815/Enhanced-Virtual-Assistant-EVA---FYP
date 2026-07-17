@@ -3,12 +3,12 @@ import 'package:http/http.dart' as http;
 import 'package:cross_file/cross_file.dart';
 import 'package:http_parser/http_parser.dart';
 import '../../core/constants/api_constants.dart';
+import 'api_client.dart';
 
 class ProfileService {
   Future<Map<String, dynamic>> getProfile(String token) async {
-    final response = await http.get(
+    final response = await ApiClient.get(
       Uri.parse('${AppConstants.baseUrl}/profile'),
-      headers: {'Authorization': 'Bearer $token'},
     );
     if (response.statusCode == 200) return jsonDecode(response.body);
     throw Exception('Failed to load profile');
