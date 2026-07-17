@@ -16,6 +16,7 @@ from handlers.learning.topic_done_chat import maybe_handle_learning_topic_done_c
 from handlers.general_handler import (
     handle_confirmation_unexpected,
     handle_general,
+    handle_help,
     handle_multiple_command,
     handle_out_of_scope,
 )
@@ -2191,6 +2192,7 @@ async def process_message(payload: ProcessRequest):
 
         general_handlers = {
             "general": lambda: handle_general(fetched.user, history, message),
+            "help": lambda: handle_help(fetched.user, history, message),
             "out_of_scope": lambda: handle_out_of_scope(fetched.user, history, message),
             "confirmation": lambda: handle_confirmation_unexpected(fetched.user, history, message),
             "multiple_command": lambda: handle_multiple_command(fetched.user, history, message),
