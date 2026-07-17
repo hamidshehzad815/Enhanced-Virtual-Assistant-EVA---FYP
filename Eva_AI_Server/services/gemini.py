@@ -546,10 +546,17 @@ class GeminiService:
         self._action_counts: Dict[str, int] = {}
         self._last_response_by_action: Dict[str, str] = {}
 
+        self.model_name = settings.GEMINI_MODEL
+
         if self.enabled:
             try:
                 genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel("gemini-2.5-flash")
+                # Was hard-coded to "gemini-2.5-flash", which is blocked for new
+                # API keys and shuts down 2026-10-16. A dead model name here is
+                # silent: every reply degrades to a canned fallback string and
+                # nothing surfaces the 404. Keep it configurable.
+                self.model = genai.GenerativeModel(self.model_name)
+                print(f"[Gemini] Enabled ({self.model_name})")
             except Exception as e:
                 print(f"[Gemini] Initialization failed, fallback mode enabled: {e}")
                 self.enabled = False
