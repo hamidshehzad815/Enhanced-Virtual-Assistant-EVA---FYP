@@ -967,6 +967,14 @@ def calculate_min_days_needed(
     """
     Smallest duration (days from start_date) that yields at least
     ``sessions_required`` learning sessions for the given schedule.
+
+    ``learning_schedule`` accepts anything ``calculate_available_sessions``
+    does (slot list, legacy weekday set, or per-day session-count dict), so a
+    schedule with multiple sessions on the same day reaches the target sooner
+    than a 1-session-per-day count would.
+
+    Returns None when the schedule has no sessions at all, or the window
+    cannot fit within ``max_days``.
     """
     if sessions_required <= 0:
         return 1
