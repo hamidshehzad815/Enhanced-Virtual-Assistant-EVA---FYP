@@ -49,6 +49,7 @@ from utils.learning_utils import (
     SUPPORTED_TOPICS,
     build_schedule,
     calculate_available_sessions,
+    calculate_min_days_needed,
     duration_entity_to_days,
     normalize_subtopic_entity,
     normalize_topic,
@@ -86,15 +87,57 @@ def _learning_days(schedule: Any) -> Set[int]:
     return days
 
 
-def _pending_payload(entities: Dict[str, Any], stage: str) -> Dict[str, Any]:
-    return {
+def _pending_payload(
+    entities: Dict[str, Any],
+    stage: str,
+    *,
+    expected_response: str = "free_text",
+    **extra: Any,
+) -> Dict[str, Any]:
+    payload: Dict[str, Any] = {
         "pending_action": {
             "intent": "learning_create",
             "stage": stage,
             "entities": dict(entities),
         },
-        "expected_response": "free_text",
+        "expected_response": expected_response,
     }
+    payload.update(extra)
+    return payload
+
+
+def _duration_counteroffer_message(
+    *,
+    user_name: Optional[str],
+    topic: str,
+    requested_days: Optional[int],
+    required_days: int,
+    history: List[Dict[str, Any]],
+) -> str:
+    msg = gemini_service.generate_reply(
+        {
+            "action": "learning_duration_counteroffer",
+            "topic": topic,
+            "requested_days": requested_days,
+            "required_days": required_days,
+        },
+        user_name,
+        history,
+    )
+    if msg and str(msg).strip():
+        return str(msg).strip()
+
+    name_bit = f", {user_name}" if user_name else ""
+    if requested_days is not None:
+        return (
+            f"That's not possible in {requested_days} day(s){name_bit} — "
+            f"this {topic} plan needs about {required_days} days. "
+            "Should I schedule it for that? Reply yes or no."
+        )
+    return (
+        f"This {topic} plan needs about {required_days} days{name_bit}. "
+        "Should I schedule it for that? Reply yes or no."
+    )
 
 
 async def _save_turn(
@@ -217,6 +260,27 @@ async def handle_learning_create(
     if not user_id:
         msg = "I need a signed-in user to create a learning plan."
         return await finish(msg, status="error")
+
+    pending_context = context.get("pending_context") or {}
+    pending_action = pending_context.get("pending_action") or {}
+    pending_reply_type = str(context.get("pending_reply_type") or "").strip().lower()
+    pending_reply_value = context.get("pending_reply_value")
+    if (
+        pending_action.get("intent") == "learning_create"
+        and str(pending_action.get("stage") or "") == "duration_counteroffer"
+        and pending_reply_type == "yes_no"
+        and pending_reply_value in {"yes", "no"}
+    ):
+        if pending_reply_value == "no":
+            await redis_client.delete_context(user_id)
+            msg = (
+                f"Okay{', ' + user_name if user_name else ''}, "
+                "I cancelled creating that learning plan."
+            )
+            return await finish(msg, status="cancelled")
+        # yes — continue with pending entities (required duration already set)
+        entities = {**dict(pending_action.get("entities") or {}), **entities}
+        await redis_client.delete_context(user_id)
 
     if not labeled_schedules:
         msg = (
@@ -368,39 +432,77 @@ async def handle_learning_create(
     chosen_schedule_id = str(chosen_schedule.get("id") or "")
     entities["learning_schedule_id"] = chosen_schedule_id
 
-    dur_days = _duration_days_value(entities)
-    if dur_days is None:
-        await redis_client.set_context(
-            user_id,
-            _pending_payload(entities, "duration"),
-        )
-        msg = gemini_service.generate_reply(
-            {"action": "learning_missing_duration", "topic": canonical_topic},
-            user_name,
-            history,
-        )
-        if not msg or not str(msg).strip():
-            msg = "How long do you want this plan to run? (e.g. “2 weeks” or “1 month”, at least 7 days.)"
-        return await finish(msg, status="pending")
-
-    if dur_days < 7:
-        msg = "Learning plans need at least 7 days. Try at least one week or longer."
-        return await finish(msg, status="error")
-
     learning_days = _learning_days(schedule_slots)
     if not learning_days:
         msg = "Add at least one learning day in Settings, then try again."
         return await finish(msg, status="pending")
 
     sessions_needed = await get_sessions_required(canonical_topic, roadmap_key)
-    available = calculate_available_sessions(start_d, int(dur_days), schedule_slots)
-    if sessions_needed > 0 and available < sessions_needed:
-        msg = (
-            f"In {dur_days} days you only have {available} learning session(s) on your schedule, "
-            f"but this roadmap needs {sessions_needed}. "
-            "Try a longer period or add more learning days in Settings."
+    requested_days = _duration_days_value(entities)
+    dur_days = requested_days
+
+    async def _counteroffer(required_days: int, asked_days: Optional[int]):
+        entities["duration_days"] = int(required_days)
+        await redis_client.set_context(
+            user_id,
+            _pending_payload(
+                entities,
+                "duration_counteroffer",
+                expected_response="yes_no",
+                required_days=int(required_days),
+                requested_days=asked_days,
+            ),
         )
-        return await finish(msg, status="pending")
+        msg = _duration_counteroffer_message(
+            user_name=user_name,
+            topic=canonical_topic,
+            requested_days=asked_days,
+            required_days=int(required_days),
+            history=history,
+        )
+        return await finish(
+            msg,
+            status="pending",
+            expected_response="yes_no",
+            stage="duration_counteroffer",
+            required_days=int(required_days),
+            requested_days=asked_days,
+        )
+
+    # NOTE: schedule_slots (the full slot list), not learning_days (a bare
+    # Set[int] of weekdays with no session-count info), goes into both
+    # feasibility functions below. learning_days is only used for the earlier
+    # "is there any learning day at all" check. Passing learning_days here
+    # would silently undercount a schedule with multiple sessions on the same
+    # day, defeating the point of multi-session-per-day support.
+    if dur_days is None:
+        # Duration omitted → auto-compute minimum feasible window and create.
+        required = calculate_min_days_needed(start_d, sessions_needed, schedule_slots)
+        if required is None:
+            msg = (
+                "I couldn't figure out a duration with your current learning days. "
+                "Add more weekly slots in Settings, then try again."
+            )
+            return await finish(msg, status="error")
+        dur_days = int(required)
+        entities["duration_days"] = dur_days
+        logger.info(
+            "learning_create auto-computed duration_days=%s topic=%s sessions=%s",
+            dur_days,
+            canonical_topic,
+            sessions_needed,
+        )
+    else:
+        available = calculate_available_sessions(start_d, int(dur_days), schedule_slots)
+        if sessions_needed > 0 and available < sessions_needed:
+            required = calculate_min_days_needed(start_d, sessions_needed, schedule_slots)
+            if required is None:
+                msg = (
+                    "That duration is too short for this roadmap with your current learning days. "
+                    "Add more weekly slots in Settings, then try again."
+                )
+                return await finish(msg, status="error")
+            return await _counteroffer(int(required), int(dur_days))
 
     collab_source = entities.get("person") or entities.get("collaborator")
     collab_names = _split_collaborators(collab_source)
@@ -492,9 +594,13 @@ async def handle_learning_create(
                 return await finish(msg, status="error")
 
     if len(scheduled_rows) != len(topics_db):
+        fit_needed = max(int(sessions_needed or 0), len(topics_db))
+        required = calculate_min_days_needed(start_d, fit_needed, schedule_slots)
+        if required is not None and int(required) > int(dur_days):
+            return await _counteroffer(int(required), int(dur_days))
         msg = (
             "I couldn't fit every lesson into that window with your current learning days. "
-            "Extend the duration or add more weekly slots in Settings."
+            "Add more weekly slots in Settings, then try again."
         )
         return await finish(msg, status="pending")
 
