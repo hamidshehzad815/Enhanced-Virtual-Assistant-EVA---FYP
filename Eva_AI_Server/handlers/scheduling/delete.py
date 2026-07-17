@@ -718,18 +718,13 @@ async def handle_scheduling_delete(
         resolved_filters["date"] = resolved_date
         query_filters["date_range"] = date_range
 
-    if time_raw and resolved_filters.get("date"):
+    if time_raw:
         resolved_time = time_raw
         if not re.match(r"^\d{2}:\d{2}:\d{2}$", resolved_time):
             duckling_time = await duckling_client.resolve_time(resolved_time, timezone=timezone)
             resolved_time = _to_time_text(duckling_time) or resolved_time
 
-        due_utc = local_datetime_to_utc_naive(
-            resolved_filters["date"],
-            resolved_time,
-            timezone,
-        )
-        if due_utc is None:
+        if not re.match(r"^\d{2}:\d{2}:\d{2}$", resolved_time):
             pending_entities = dict(extracted_filters)
             pending_entities.pop("time", None)
             await redis_client.set_context(
@@ -769,10 +764,57 @@ async def handle_scheduling_delete(
             }
 
         resolved_filters["time"] = resolved_time
-        query_filters["date_range"] = {
-            "start": due_utc - timedelta(minutes=15),
-            "end": due_utc + timedelta(minutes=15),
-        }
+        if resolved_filters.get("date"):
+            due_utc = local_datetime_to_utc_naive(
+                resolved_filters["date"],
+                resolved_time,
+                timezone,
+            )
+            if due_utc is None:
+                pending_entities = dict(extracted_filters)
+                pending_entities.pop("time", None)
+                await redis_client.set_context(
+                    user_id,
+                    _pending_payload(
+                        "delete",
+                        pending_entities,
+                        expected_response="free_text",
+                        missing_entity="time",
+                    ),
+                )
+                response_text = gemini_service.generate_reply(
+                    {
+                        "action": "delete_invalid_time",
+                        "time": time_raw,
+                    },
+                    user_name,
+                    history,
+                )
+                await _save_turn(
+                    session_id,
+                    user_message,
+                    response_text,
+                    input_type,
+                    "scheduling_delete",
+                    entities,
+                )
+                return {
+                    "status": "pending",
+                    "intent": "scheduling_delete",
+                    "response_text": response_text,
+                    "notifications": [],
+                    "pending": {
+                        "expected_response": "free_text",
+                        "missing_entity": "time",
+                    },
+                }
+            query_filters["date_range"] = {
+                "start": due_utc - timedelta(minutes=15),
+                "end": due_utc + timedelta(minutes=15),
+            }
+        else:
+            # Time-only: match time-of-day across dates (no invented date).
+            query_filters["time_of_day"] = resolved_time
 
     if task_name:
         query_filters["task_name"] = task_name

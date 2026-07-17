@@ -164,7 +164,7 @@ const processChat = async (req, res, next) => {
       );
     }
 
-    const { responseText, routeIntent, aiStatus, aiNotifications } =
+    const { responseText, routeIntent, aiStatus, aiNotifications, action } =
       extractProcessFields(aiResponse);
 
     let notificationSummary = DEFAULT_NOTIFICATION_SUMMARY;
@@ -187,6 +187,7 @@ const processChat = async (req, res, next) => {
         responseText,
         inputType: normalizedInputType,
         intent: routeIntent,
+        action,
       });
     } catch (error) {
       throw new InternalError(
@@ -203,6 +204,7 @@ const processChat = async (req, res, next) => {
       intent: routeIntent,
       ai_status: aiStatus,
       notifications: notificationSummary,
+      action: action || null,
     });
   } catch (error) {
     next(error);

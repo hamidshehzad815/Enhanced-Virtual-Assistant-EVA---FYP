@@ -79,11 +79,38 @@ const extractProcessFields = (aiResponse = {}) => {
       ? aiResponse.route.notifications
       : [];
 
+  const learningGoalId =
+    aiResponse.route?.learning_goal_id ||
+    aiResponse.learning_goal_id ||
+    null;
+
+  let action = null;
+  if (learningGoalId) {
+    action = {
+      type: "see_roadmap",
+      id: String(learningGoalId),
+      label: "See roadmap",
+    };
+  } else if (
+    aiResponse.action &&
+    typeof aiResponse.action === "object" &&
+    !Array.isArray(aiResponse.action) &&
+    aiResponse.action.type &&
+    aiResponse.action.id
+  ) {
+    action = {
+      type: String(aiResponse.action.type),
+      id: String(aiResponse.action.id),
+      label: String(aiResponse.action.label || "Open"),
+    };
+  }
+
   return {
     responseText,
     routeIntent,
     aiStatus,
     aiNotifications,
+    action,
   };
 };
 
@@ -141,6 +168,7 @@ const toMessageDto = (message) => ({
   intent: message.intent || null,
   status: message.status || "processed",
   created_at: message.created_at || null,
+  action: message.action || null,
 });
 
 const softDeleteSession = async (session) => {
@@ -190,11 +218,28 @@ const fetchSessionMessages = async (sessionId, limit = 100) => {
 
 const saveConversationTurn = async (
   sessionId,
-  { userMessage, responseText, inputType = "text", intent = null },
+  { userMessage, responseText, inputType = "text", intent = null, action = null },
 ) => {
   const sessionKey = String(sessionId);
   const now = new Date();
   const evaTime = new Date(now.getTime() + 1);
+
+  const evaDoc = {
+    session_id: sessionKey,
+    role: "eva",
+    content: responseText,
+    input_type: "text",
+    intent,
+    status: "processed",
+    created_at: evaTime,
+  };
+  if (action && typeof action === "object") {
+    evaDoc.action = {
+      type: String(action.type || ""),
+      id: String(action.id || ""),
+      label: String(action.label || "Open"),
+    };
+  }
 
   await getConversationCollection().insertMany([
     {
@@ -206,15 +251,7 @@ const saveConversationTurn = async (
       status: "processed",
       created_at: now,
     },
-    {
-      session_id: sessionKey,
-      role: "eva",
-      content: responseText,
-      input_type: "text",
-      intent,
-      status: "processed",
-      created_at: evaTime,
-    },
+    evaDoc,
   ]);
 };
 

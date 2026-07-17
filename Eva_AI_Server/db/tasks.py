@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple, Union
 from bson import ObjectId
 
 from config.database import get_db
-from utils.timezone_utils import local_day_bounds_to_utc_naive
+from utils.timezone_utils import local_day_bounds_to_utc_naive, utc_naive_to_local
 
 
 def _to_object_id(value: Any) -> Any:
@@ -384,6 +384,45 @@ def _build_show_query(
     return query
 
 
+
+def _parse_time_of_day_minutes(time_value: Any) -> Optional[int]:
+    raw = str(time_value or "").strip()
+    if not raw:
+        return None
+    for fmt in ("%H:%M:%S", "%H:%M"):
+        try:
+            parsed = datetime.strptime(raw, fmt)
+            return parsed.hour * 60 + parsed.minute
+        except ValueError:
+            continue
+    return None
+
+
+def _filter_rows_by_time_of_day(
+    rows: List[Dict[str, Any]],
+    time_value: Any,
+    timezone_name: str,
+    window_minutes: int = 15,
+) -> List[Dict[str, Any]]:
+    target = _parse_time_of_day_minutes(time_value)
+    if target is None:
+        return rows
+
+    matched: List[Dict[str, Any]] = []
+    for row in rows:
+        due = row.get("due_datetime")
+        local_dt = utc_naive_to_local(due, timezone_name) if due is not None else None
+        if local_dt is None:
+            continue
+        minutes = local_dt.hour * 60 + local_dt.minute
+        delta = abs(minutes - target)
+        # Handle wrap-around near midnight (e.g. 23:55 vs 00:05).
+        delta = min(delta, 1440 - delta)
+        if delta <= window_minutes:
+            matched.append(row)
+    return matched
+
+
 async def find_tasks_for_delete(
     user_id: str,
     filters: Optional[Dict[str, Any]] = None,
@@ -391,7 +430,7 @@ async def find_tasks_for_delete(
 ) -> List[Dict[str, Any]]:
     """
     Return matching non-deleted tasks for delete flow.
-    Filters supported: task_name, date/date_range, priority, status.
+    Filters supported: task_name, date/date_range, time_of_day, priority, status.
     """
     db = get_db()
     owner_object_id = _to_object_id(user_id)
@@ -399,12 +438,26 @@ async def find_tasks_for_delete(
     if owner_object_id != user_id:
         owner_variants.append(user_id)
 
+    filters = filters or {}
+    time_of_day = filters.get("time_of_day")
+    # Time-only matching needs a wider candidate set before local-time filtering.
+    fetch_limit = 200 if time_of_day and not filters.get("date_range") and not filters.get("date") else 10
+
     for owner_value in owner_variants:
         query = _build_delete_query(owner_value, filters, timezone_name=timezone_name)
-        cursor = db.tasks.find(query).sort("due_datetime", 1).limit(10)
-        rows = await cursor.to_list(length=10)
-        if rows:
-            return [_normalize_doc(row) for row in rows]
+        cursor = db.tasks.find(query).sort("due_datetime", 1).limit(fetch_limit)
+        rows = await cursor.to_list(length=fetch_limit)
+        if not rows:
+            continue
+        normalized = [_normalize_doc(row) for row in rows]
+        if time_of_day:
+            normalized = _filter_rows_by_time_of_day(
+                normalized,
+                time_of_day,
+                timezone_name,
+            )
+        if normalized:
+            return normalized[:10]
 
     return []
 

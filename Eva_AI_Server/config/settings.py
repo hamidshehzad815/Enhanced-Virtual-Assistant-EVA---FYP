@@ -90,11 +90,30 @@ class Settings:
     # Gemini API
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GEMINI_ENABLED: bool = _as_bool(os.getenv("GEMINI_ENABLED"), True)
+    # Model names are env-configurable because Google retires them on a rolling
+    # basis: gemini-2.5-flash is already blocked for new API keys and shuts down
+    # 2026-10-16. Run testModels/list_gemini_models.py to see what a given key
+    # can actually use, rather than hard-coding a name.
+    GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
+    # EXPERIMENT (branch experiment/gemini-clf1): use Gemini instead of CLF1 to
+    # classify input type and clean the text. Default OFF — CLF1 stays the
+    # primary path and remains the fallback whenever Gemini fails.
+    USE_GEMINI_CLF1: bool = _as_bool(os.getenv("USE_GEMINI_CLF1"), False)
+    # Flash-Lite is the cheap/low-latency tier — the right shape for a
+    # classifier, where latency is the whole cost question.
+    GEMINI_CLF1_MODEL: str = os.getenv("GEMINI_CLF1_MODEL", "gemini-3.1-flash-lite")
     GEMINI_TIMEOUT_SECONDS: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "4"))
+    # Circuit breaker: pause Gemini after repeated failures instead of hammering
+    # a clearly-broken API. This used to disable Gemini PERMANENTLY on the first
+    # failure, so a single blip (or a 404 from a retired model name) silently
+    # degraded every later reply to a canned string until the process restarted.
+    # It now pauses for GEMINI_COOLDOWN_SECONDS and then retries.
     GEMINI_DISABLE_AFTER_FAILURE: bool = _as_bool(
         os.getenv("GEMINI_DISABLE_AFTER_FAILURE"),
         True,
     )
+    GEMINI_FAILURE_THRESHOLD: int = int(os.getenv("GEMINI_FAILURE_THRESHOLD", "3"))
+    GEMINI_COOLDOWN_SECONDS: float = float(os.getenv("GEMINI_COOLDOWN_SECONDS", "60"))
 
     # Google Calendar OAuth (token refresh for calendar sync)
     GOOGLE_CLIENT_ID: str = os.getenv("GOOGLE_CLIENT_ID", "")

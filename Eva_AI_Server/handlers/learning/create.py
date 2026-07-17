@@ -469,9 +469,15 @@ async def handle_learning_create(
             requested_days=asked_days,
         )
 
+    # NOTE: schedule_slots (the full slot list), not learning_days (a bare
+    # Set[int] of weekdays with no session-count info), goes into both
+    # feasibility functions below. learning_days is only used for the earlier
+    # "is there any learning day at all" check. Passing learning_days here
+    # would silently undercount a schedule with multiple sessions on the same
+    # day, defeating the point of multi-session-per-day support.
     if dur_days is None:
         # Duration omitted → auto-compute minimum feasible window and create.
-        required = calculate_min_days_needed(start_d, sessions_needed, learning_days)
+        required = calculate_min_days_needed(start_d, sessions_needed, schedule_slots)
         if required is None:
             msg = (
                 "I couldn't figure out a duration with your current learning days. "
@@ -487,9 +493,9 @@ async def handle_learning_create(
             sessions_needed,
         )
     else:
-        available = calculate_available_sessions(start_d, int(dur_days), learning_days)
+        available = calculate_available_sessions(start_d, int(dur_days), schedule_slots)
         if sessions_needed > 0 and available < sessions_needed:
-            required = calculate_min_days_needed(start_d, sessions_needed, learning_days)
+            required = calculate_min_days_needed(start_d, sessions_needed, schedule_slots)
             if required is None:
                 msg = (
                     "That duration is too short for this roadmap with your current learning days. "
@@ -589,7 +595,7 @@ async def handle_learning_create(
 
     if len(scheduled_rows) != len(topics_db):
         fit_needed = max(int(sessions_needed or 0), len(topics_db))
-        required = calculate_min_days_needed(start_d, fit_needed, learning_days)
+        required = calculate_min_days_needed(start_d, fit_needed, schedule_slots)
         if required is not None and int(required) > int(dur_days):
             return await _counteroffer(int(required), int(dur_days))
         msg = (
