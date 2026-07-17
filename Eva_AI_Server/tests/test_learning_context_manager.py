@@ -134,7 +134,8 @@ class LearningCreatePendingTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(out["outcome"], "retry")
 
-    async def test_duration_too_short_retries(self):
+    async def test_duration_short_merges_for_handler_counteroffer(self):
+        # Duration stage only parses; feasibility / counter-offer is in learning_create.
         ctx = _ctx(
             "duration",
             {"topic": "Python", "start_date": "2026-06-01"},
@@ -145,9 +146,10 @@ class LearningCreatePendingTests(unittest.IsolatedAsyncioTestCase):
             user_timezone="UTC",
             preferred_learning_schedule=[{"day": 0, "time": "09:00"}],
         )
-        self.assertEqual(out["outcome"], "retry")
+        self.assertEqual(out["outcome"], "merged")
+        self.assertEqual(out["merged_entities"]["duration_days"], 3)
 
-    async def test_duration_no_schedule_retries(self):
+    async def test_duration_merges_without_schedule_check(self):
         ctx = _ctx(
             "duration",
             {"topic": "Python", "start_date": "2026-06-01"},
@@ -158,43 +160,20 @@ class LearningCreatePendingTests(unittest.IsolatedAsyncioTestCase):
             user_timezone="UTC",
             preferred_learning_schedule=[],
         )
-        self.assertEqual(out["outcome"], "retry")
-
-    async def test_duration_not_feasible_retries(self):
-        ctx = _ctx(
-            "duration",
-            {"topic": "Python", "start_date": "2026-06-01"},
-        )
-        with patch.object(
-            cm,
-            "get_sessions_required",
-            new=AsyncMock(return_value=50),
-        ):
-            out = await cm.process_learning_create_free_text_reply(
-                ctx,
-                "2 weeks",
-                user_timezone="UTC",
-                preferred_learning_schedule=[{"day": 0, "time": "09:00"}],
-            )
-        self.assertEqual(out["outcome"], "retry")
-        self.assertTrue(out.get("feasibility_failed"))
+        self.assertEqual(out["outcome"], "merged")
+        self.assertEqual(out["merged_entities"]["duration_days"], 14)
 
     async def test_duration_feasible_merges(self):
         ctx = _ctx(
             "duration",
             {"topic": "Python", "start_date": "2026-06-01"},
         )
-        with patch.object(
-            cm,
-            "get_sessions_required",
-            new=AsyncMock(return_value=2),
-        ):
-            out = await cm.process_learning_create_free_text_reply(
-                ctx,
-                "2 weeks",
-                user_timezone="UTC",
-                preferred_learning_schedule=[{"day": 0, "time": "09:00"}],
-            )
+        out = await cm.process_learning_create_free_text_reply(
+            ctx,
+            "2 weeks",
+            user_timezone="UTC",
+            preferred_learning_schedule=[{"day": 0, "time": "09:00"}],
+        )
         self.assertEqual(out["outcome"], "merged")
         self.assertEqual(out["merged_entities"]["duration_days"], 14)
 

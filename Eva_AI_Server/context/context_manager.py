@@ -6,13 +6,11 @@ from datetime import date, datetime
 from typing import Any, Dict, List, Optional, Set
 
 from context.redis_client import redis_client
-from db.roadmap_resources import get_sessions_required
 from pipeline.entity_scoper import scope_entities
 from pipeline.ner import learning_ner_extractor
 from services.duckling import duckling_client
 from utils.learning_utils import (
     SUPPORTED_TOPICS,
-    calculate_available_sessions,
     duration_entity_to_days,
     level_keys_for_language,
     map_subtopic,
@@ -670,57 +668,20 @@ async def process_learning_create_free_text_reply(
                 "outcome": "retry",
                 "message": "Please give a duration like “2 weeks”, “1 month”, or “14 days”.",
             }
-        if days < 7:
-            return {
-                "outcome": "retry",
-                "message": "Learning plans need at least 7 days. Try a longer window.",
-            }
         topic = entities.get("topic")
         if not topic:
             return {
                 "outcome": "retry",
                 "message": "Something went wrong (missing topic). Start your learning request again.",
             }
-        roadmap_key = map_subtopic(entities.get("subtopic"), str(topic))
         start_iso = entities.get("start_date")
         if not start_iso:
             return {
                 "outcome": "retry",
                 "message": "Something went wrong (missing start date). Start your learning request again.",
             }
-        try:
-            start_d = date.fromisoformat(str(start_iso)[:10])
-        except ValueError:
-            return {
-                "outcome": "retry",
-                "message": "Something went wrong with the saved date. Try picking the start date again.",
-            }
-
-        learning_days = _learning_weekday_set(preferred_learning_schedule)
-        if not learning_days:
-            return {
-                "outcome": "retry",
-                "message": "Set at least one weekly learning slot in Settings first, then try again.",
-            }
-
-        sessions_needed = await get_sessions_required(str(topic), roadmap_key)
-        available = calculate_available_sessions(start_d, int(days), learning_days)
-        if sessions_needed > 0 and available < sessions_needed:
-            return {
-                "outcome": "retry",
-                "message": (
-                    f"That period only has {available} learning session(s) on your schedule, "
-                    f"but this roadmap needs {sessions_needed}. "
-                    "Try a longer duration or add more learning days in Settings."
-                ),
-                "feasibility_failed": True,
-            }
-
-        merged = {
-            **entities,
-            "duration_days": int(days),
-            "duration": cleaned,
-        }
+        # Feasibility / counter-offer is handled by learning_create on re-entry.
+        merged = {**entities, "duration_days": int(days), "duration": f"{int(days)} days"}
         return {"outcome": "merged", "merged_entities": merged}
 
     return {

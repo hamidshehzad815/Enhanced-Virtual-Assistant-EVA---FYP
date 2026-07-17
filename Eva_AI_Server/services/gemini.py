@@ -116,6 +116,11 @@ _ACTION_GUIDANCE: Dict[str, str] = {
     "learning_missing_topic": "Ask which programming language or database they want to learn (supported roadmaps only).",
     "learning_missing_start_date": "Ask when they want to start learning {topic}, with concrete date examples.",
     "learning_missing_duration": "Ask how long they want the plan to run (at least one week), for {topic}.",
+    "learning_duration_counteroffer": (
+        "The requested duration is too short for this roadmap. Tell them the plan needs about "
+        "{required_days} days (they asked for {requested_days}). Ask a clear yes/no whether to "
+        "schedule it for that longer window. Keep it warm and concise."
+    ),
     "learning_plan_created": "Celebrate the new learning plan: mention topic, session count, first dates preview, collaborators or calendar if relevant.",
     "learning_delete_missing_topic": "Ask which learning goal to delete; suggest a topic name like Python or MySQL.",
     "learning_delete_not_found": "Explain no matching learning goals were found for the topic or level; suggest checking the name.",
@@ -171,6 +176,11 @@ _FALLBACK_RESPONSES: Dict[str, List[str]] = {
         "How long should this {topic} run, {name}? For example “2 weeks” or “1 month” (at least 7 days).",
         "Got it, {name}. Over how many days do you want to spread {topic}? Try “3 weeks” or “30 days”.",
         "Almost there, {name}. Pick a duration for {topic} — at least one week.",
+    ],
+    "learning_duration_counteroffer": [
+        "That's not possible in {requested_days} day(s), {name} — this {topic} plan needs about {required_days} days. Should I schedule it for that? Reply yes or no.",
+        "I can't fit {topic} into {requested_days} days, {name}. It needs about {required_days} days. Want me to use that instead?",
+        "{name}, {requested_days} days is too short for this {topic} roadmap. About {required_days} days would work — should I go ahead?",
     ],
     "learning_plan_created": [
         "You are set, {name}: {session_count} sessions for {topic}{roadmap_display}. First up: {preview_sessions}.",
@@ -686,6 +696,14 @@ class GeminiService:
             goals_updated = 0
         requested_level = str(action_context.get("requested_level") or "that level").strip()
         existing_level = str(action_context.get("existing_level") or "your plan").strip()
+        try:
+            requested_days = int(action_context.get("requested_days") or 0)
+        except (TypeError, ValueError):
+            requested_days = 0
+        try:
+            required_days = int(action_context.get("required_days") or 0)
+        except (TypeError, ValueError):
+            required_days = 0
 
         date_time_suffix = ""
         if date and time:
@@ -736,6 +754,8 @@ class GeminiService:
             goals_updated=goals_updated,
             requested_level=requested_level,
             existing_level=existing_level,
+            requested_days=requested_days,
+            required_days=required_days,
         ).strip()
 
     def generate_reply(
