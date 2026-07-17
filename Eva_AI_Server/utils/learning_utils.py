@@ -878,6 +878,31 @@ def calculate_available_sessions(
     return total
 
 
+def calculate_min_days_needed(
+    start_date: date,
+    sessions_required: int,
+    learning_days: Set[int],
+    *,
+    max_days: int = 730,
+) -> Optional[int]:
+    """
+    Smallest duration (in days from start_date) that yields at least
+    ``sessions_required`` learning sessions on ``learning_days``.
+
+    Returns None when there are no learning days or the window cannot fit
+    within ``max_days``.
+    """
+    if sessions_required <= 0:
+        return 1
+    if not learning_days:
+        return None
+    needed = int(sessions_required)
+    for days in range(1, int(max_days) + 1):
+        if calculate_available_sessions(start_date, days, learning_days) >= needed:
+            return days
+    return None
+
+
 def calculate_min_weeks_needed(sessions_required: int, sessions_per_week: int) -> int:
     if sessions_required <= 0:
         return 0

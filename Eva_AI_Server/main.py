@@ -1328,6 +1328,11 @@ async def process_message(payload: ProcessRequest):
                             yes_no_prompt = f"Just a yes or no will do, {user_name}."
                         else:
                             yes_no_prompt = "Just a yes or no will do."
+                    elif pending_intent == "learning_create":
+                        if user_name:
+                            yes_no_prompt = f"Just a yes or no will do, {user_name}."
+                        else:
+                            yes_no_prompt = "Just a yes or no will do."
                     return {
                         "status": "ok",
                         "too_short": False,
@@ -1346,12 +1351,15 @@ async def process_message(payload: ProcessRequest):
                         "scheduling_add",
                         "delete",
                         "scheduling_delete",
+                        "learning_create",
                         "learning_delete",
                         "learning_update",
                     }
                     and yes_no_value in {"yes", "no"}
                 ):
-                    if pending_intent == "learning_delete":
+                    if pending_intent == "learning_create":
+                        routed_intent = "learning_create"
+                    elif pending_intent == "learning_delete":
                         routed_intent = "learning_delete"
                     elif pending_intent == "learning_update":
                         routed_intent = "learning_update"

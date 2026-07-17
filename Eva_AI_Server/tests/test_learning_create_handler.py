@@ -37,7 +37,7 @@ def _ctx(**kwargs):
 
 class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
     # Keep dates safely in the future relative to real execution time.
-    _FUTURE_START = "2026-06-10"
+    _FUTURE_START = "2027-06-14"
 
     async def test_topic_missing_sets_redis_and_pending(self):
         mock_redis = AsyncMock(return_value=True)
@@ -80,7 +80,7 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(out["status"], "pending")
         self.assertEqual(mock_redis.call_args[0][1]["pending_action"]["stage"], "start_date")
 
-    async def test_duration_missing_sets_redis(self):
+    async def test_duration_missing_auto_computes(self):
         mock_redis = AsyncMock(return_value=True)
         with (
             patch(
@@ -92,12 +92,20 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                 new=AsyncMock(return_value=None),
             ),
             patch(
+                "handlers.learning.create.get_sessions_required",
+                new=AsyncMock(return_value=2),
+            ),
+            patch(
+                "handlers.learning.create.get_roadmap",
+                new=AsyncMock(return_value=[]),
+            ),
+            patch(
                 "handlers.learning.create.redis_client.set_context",
                 mock_redis,
             ),
             patch(
                 "handlers.learning.create.gemini_service.generate_reply",
-                return_value="How long?",
+                return_value="",
             ),
         ):
             out = await handle_learning_create(
@@ -108,10 +116,16 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                 },
                 _ctx(),
             )
-        self.assertEqual(out["status"], "pending")
-        self.assertEqual(mock_redis.call_args[0][1]["pending_action"]["stage"], "duration")
+        # No duration prompt — proceeds past duration and fails on empty roadmap.
+        self.assertEqual(out["status"], "error")
+        self.assertIn("lesson list", out["response_text"].lower())
+        for call in mock_redis.call_args_list:
+            stage = call[0][1]["pending_action"]["stage"]
+            self.assertNotEqual(stage, "duration")
+            self.assertNotEqual(stage, "duration_counteroffer")
 
     async def test_not_feasible_sessions_returns_pending_message(self):
+        mock_redis = AsyncMock(return_value=True)
         with (
             patch(
                 "handlers.learning.create.used_learning_schedule_ids",
@@ -130,6 +144,14 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                 return_value=2,
             ),
             patch(
+                "handlers.learning.create.calculate_min_days_needed",
+                return_value=70,
+            ),
+            patch(
+                "handlers.learning.create.redis_client.set_context",
+                mock_redis,
+            ),
+            patch(
                 "handlers.learning.create.gemini_service.generate_reply",
                 return_value="",
             ),
@@ -144,8 +166,14 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                 _ctx(),
             )
         self.assertEqual(out["status"], "pending")
-        self.assertIn("20", out["response_text"])
-        self.assertIn("2", out["response_text"])
+        self.assertEqual(out.get("expected_response"), "yes_no")
+        self.assertEqual(out.get("stage"), "duration_counteroffer")
+        self.assertIn("70", out["response_text"])
+        self.assertEqual(
+            mock_redis.call_args[0][1]["pending_action"]["stage"],
+            "duration_counteroffer",
+        )
+        self.assertEqual(mock_redis.call_args[0][1]["expected_response"], "yes_no")
 
     async def test_collaborator_validation_error_stops(self):
         with (
@@ -286,7 +314,8 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(out["status"], "error")
 
-    async def test_duration_too_short(self):
+    async def test_duration_too_short_counteroffers(self):
+        mock_redis = AsyncMock(return_value=True)
         with (
             patch(
                 "handlers.learning.create.used_learning_schedule_ids",
@@ -295,6 +324,22 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
             patch(
                 "handlers.learning.create.find_conflicting_goal",
                 new=AsyncMock(return_value=None),
+            ),
+            patch(
+                "handlers.learning.create.get_sessions_required",
+                new=AsyncMock(return_value=10),
+            ),
+            patch(
+                "handlers.learning.create.calculate_min_days_needed",
+                return_value=50,
+            ),
+            patch(
+                "handlers.learning.create.redis_client.set_context",
+                mock_redis,
+            ),
+            patch(
+                "handlers.learning.create.gemini_service.generate_reply",
+                return_value="",
             ),
         ):
             out = await handle_learning_create(
@@ -306,8 +351,39 @@ class LearningCreateHandlerTests(unittest.IsolatedAsyncioTestCase):
                 },
                 _ctx(),
             )
-        self.assertEqual(out["status"], "error")
-        self.assertIn("7 days", out["response_text"])
+        self.assertEqual(out["status"], "pending")
+        self.assertEqual(out.get("expected_response"), "yes_no")
+        self.assertIn("50", out["response_text"])
+        self.assertNotIn("7 days", out["response_text"])
+
+    async def test_duration_counteroffer_no_cancels(self):
+        mock_del = AsyncMock(return_value=True)
+        with patch(
+            "handlers.learning.create.redis_client.delete_context",
+            mock_del,
+        ):
+            out = await handle_learning_create(
+                {"topic": "Python", "start_date": self._FUTURE_START, "duration_days": 50},
+                _ctx(
+                    pending_context={
+                        "pending_action": {
+                            "intent": "learning_create",
+                            "stage": "duration_counteroffer",
+                            "entities": {
+                                "topic": "Python",
+                                "start_date": self._FUTURE_START,
+                                "duration_days": 50,
+                            },
+                        },
+                        "expected_response": "yes_no",
+                    },
+                    pending_reply_type="yes_no",
+                    pending_reply_value="no",
+                ),
+            )
+        self.assertEqual(out["status"], "cancelled")
+        mock_del.assert_awaited_once()
+        self.assertIn("cancel", out["response_text"].lower())
 
     async def test_duplicate_goal(self):
         with patch(
