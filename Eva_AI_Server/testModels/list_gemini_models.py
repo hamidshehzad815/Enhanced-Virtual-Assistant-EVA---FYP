@@ -41,16 +41,13 @@ def main() -> None:
 
     print(f"\n{len(usable)} usable model(s).")
     print(f"\nCurrently configured:")
-    print(f"  GEMINI_CLF1_MODEL = {settings.GEMINI_CLF1_MODEL}")
-    print(f"  GEMINI_MODEL      = {settings.GEMINI_MODEL}")
+    # One model for every call site (replies, CLF1 classifier, pending-reply
+    # fallback) — see config/settings.py.
+    print(f"  GEMINI_MODEL = {settings.GEMINI_MODEL}")
 
-    for label, configured in (
-        ("GEMINI_CLF1_MODEL", settings.GEMINI_CLF1_MODEL),
-        ("GEMINI_MODEL", settings.GEMINI_MODEL),
-    ):
-        if configured not in usable:
-            print(f"\n  WARNING: {label}={configured!r} is NOT in the usable list above.")
-            print(f"           Set {label} in .env to one of them.")
+    if settings.GEMINI_MODEL not in usable:
+        print(f"\n  WARNING: GEMINI_MODEL={settings.GEMINI_MODEL!r} is NOT in the usable list above.")
+        print(f"           Set GEMINI_MODEL in .env to one of them.")
 
 
 if __name__ == "__main__":

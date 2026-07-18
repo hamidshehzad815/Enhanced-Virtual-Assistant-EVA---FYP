@@ -143,7 +143,8 @@ class GeminiInputClassifier:
 
     def __init__(self) -> None:
         self.api_key = settings.GEMINI_API_KEY
-        self.model_name = getattr(settings, "GEMINI_CLF1_MODEL", "gemini-2.5-flash")
+        # Shares GEMINI_MODEL with every other Gemini call site — one env var.
+        self.model_name = settings.GEMINI_MODEL
         self.enabled = bool(
             getattr(settings, "USE_GEMINI_CLF1", False) and self.api_key and genai
         )
