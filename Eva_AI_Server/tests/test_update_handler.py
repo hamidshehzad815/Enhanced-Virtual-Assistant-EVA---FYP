@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, patch
 from bson import ObjectId
 
 from db.tasks import update_task
+from config import settings as settings_module
 from handlers.scheduling.update import handle_scheduling_update
 
 
@@ -122,6 +123,13 @@ class _FakeDB:
 
 
 class TestUpdateHandlerPhase28(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._flag = settings_module.settings.USE_GEMINI_PENDING_REPLY
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = False
+
+    def tearDown(self) -> None:
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = self._flag
+
     async def test_no_identifier_asks_then_reentered_free_text_routes_again(self):
         with patch(
             "handlers.scheduling.update.redis_client.set_context",

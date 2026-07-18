@@ -9,6 +9,7 @@ import types
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from config import settings as settings_module
 from context.context_manager import handle_free_text_reply
 from handlers.scheduling.delete import handle_scheduling_delete
 
@@ -97,6 +98,17 @@ def _gemini_stub(action_context, _user_name, _history):
 
 
 class TestDeleteHandlerPhase18(unittest.IsolatedAsyncioTestCase):
+    # These tests exercise deterministic-parse behavior, not the Gemini
+    # fallback (dedicated tests in test_pending_reply_fallback.py and
+    # test_scheduling_delete_date_time_fallback.py) — keep hermetic
+    # regardless of a real .env's USE_GEMINI_PENDING_REPLY value.
+    def setUp(self) -> None:
+        self._flag = settings_module.settings.USE_GEMINI_PENDING_REPLY
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = False
+
+    def tearDown(self) -> None:
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = self._flag
+
     async def test_no_entity_then_free_text_reply_reenters_and_finds_one_match(self):
         context = _base_handler_context("delete something")
 

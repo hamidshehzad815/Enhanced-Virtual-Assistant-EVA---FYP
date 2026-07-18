@@ -26,6 +26,7 @@ if "pipeline.ner" not in sys.modules:
     _ner_mod.get_ner_extractor_for_intent = lambda _intent: _stub
     sys.modules["pipeline.ner"] = _ner_mod
 
+from config import settings as settings_module
 from context import context_manager as cm
 
 
@@ -41,6 +42,17 @@ def _ctx(stage: str, entities=None):
 
 
 class LearningCreatePendingTests(unittest.IsolatedAsyncioTestCase):
+    # These tests exercise the deterministic-parse retry path, not the Gemini
+    # fallback (that has its own dedicated tests in
+    # test_pending_reply_fallback.py). Force the flag off so a real .env with
+    # USE_GEMINI_PENDING_REPLY=true can't make these hit the live network.
+    def setUp(self) -> None:
+        self._flag = settings_module.settings.USE_GEMINI_PENDING_REPLY
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = False
+
+    def tearDown(self) -> None:
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = self._flag
+
     async def test_topic_valid_merges(self):
         ctx = _ctx("topic", {})
         with patch.object(
@@ -125,6 +137,48 @@ class LearningCreatePendingTests(unittest.IsolatedAsyncioTestCase):
             cm.duckling_client,
             "resolve_date",
             new=AsyncMock(return_value=None),
+        ):
+            out = await cm.process_learning_create_free_text_reply(
+                ctx,
+                "blah",
+                user_timezone="UTC",
+                preferred_learning_schedule=[],
+            )
+        self.assertEqual(out["outcome"], "retry")
+
+    async def test_start_date_gemini_rescues_when_duckling_down(self):
+        # Reproduces the reported bug: Duckling unreachable/fails to parse
+        # "from monday" -> Gemini fallback resolves it against today's date.
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = True
+        ctx = _ctx("start_date", {"topic": "Python"})
+        with patch.object(
+            cm.duckling_client,
+            "resolve_date",
+            new=AsyncMock(return_value=None),
+        ), patch.object(cm, "_today_in_user_tz", return_value=__import__("datetime").date(2026, 7, 15)), \
+        patch(
+            "pipeline.pending_reply_fallback.gemini_service.generate_constrained_text",
+            return_value='{"date":"2026-07-20","confidence":0.95}',
+        ):
+            out = await cm.process_learning_create_free_text_reply(
+                ctx,
+                "from monday",
+                user_timezone="UTC",
+                preferred_learning_schedule=[],
+            )
+        self.assertEqual(out["outcome"], "merged")
+        self.assertEqual(out["merged_entities"]["start_date"], "2026-07-20")
+
+    async def test_start_date_still_retries_when_gemini_also_unsure(self):
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = True
+        ctx = _ctx("start_date", {"topic": "Python"})
+        with patch.object(
+            cm.duckling_client,
+            "resolve_date",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "pipeline.pending_reply_fallback.gemini_service.generate_constrained_text",
+            return_value='{"date":"none","confidence":0.2}',
         ):
             out = await cm.process_learning_create_free_text_reply(
                 ctx,

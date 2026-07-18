@@ -6,6 +6,7 @@ Mocks GeminiService — no real API calls.
 from __future__ import annotations
 
 import unittest
+from datetime import date
 from unittest.mock import patch
 
 from config import settings as settings_module
@@ -259,6 +260,257 @@ class TestDeterministicStillFirst(unittest.TestCase):
         self.assertEqual(handle_number_delete("2", context), "b")
         self.assertEqual(handle_number_delete("all", context), "all")
         self.assertEqual(handle_number_delete("the python one", context), "invalid")
+
+
+class TestDateFallback(unittest.TestCase):
+    def setUp(self) -> None:
+        self._flag = settings_module.settings.USE_GEMINI_PENDING_REPLY
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = True
+
+    def tearDown(self) -> None:
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = self._flag
+
+    def test_from_monday_resolves_relative_to_reference_date(self):
+        # Wed 2026-07-15 -> "from monday" means the upcoming Monday, 2026-07-20.
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"date":"2026-07-20","confidence":0.95}',
+        ):
+            result = fallback.resolve_date_fallback(
+                "from monday",
+                eva_prompt="When would you like to start?",
+                reference_date=date(2026, 7, 15),
+            )
+            self.assertEqual(result, "2026-07-20")
+
+    def test_none_reasks(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"date":"none","confidence":0.2}',
+        ):
+            self.assertIsNone(fallback.resolve_date_fallback("whenever"))
+
+    def test_past_date_rejected_unless_allowed(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"date":"2020-01-01","confidence":0.9}',
+        ):
+            self.assertIsNone(
+                fallback.resolve_date_fallback(
+                    "January 1 2020", reference_date=date(2026, 7, 15),
+                )
+            )
+
+    def test_past_date_allowed_when_flagged(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"date":"2020-01-01","confidence":0.9}',
+        ):
+            self.assertEqual(
+                fallback.resolve_date_fallback(
+                    "January 1 2020",
+                    reference_date=date(2026, 7, 15),
+                    allow_past=True,
+                ),
+                "2020-01-01",
+            )
+
+    def test_unparseable_date_rejected(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"date":"not-a-date","confidence":0.9}',
+        ):
+            self.assertIsNone(fallback.resolve_date_fallback("blah"))
+
+    def test_low_confidence_rejected(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"date":"2026-07-20","confidence":0.3}',
+        ):
+            self.assertIsNone(
+                fallback.resolve_date_fallback(
+                    "from monday", reference_date=date(2026, 7, 15),
+                )
+            )
+
+    def test_flag_off_skips_gemini(self):
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = False
+        with patch.object(
+            fallback.gemini_service, "generate_constrained_text",
+        ) as mock_call:
+            self.assertIsNone(fallback.resolve_date_fallback("from monday"))
+            mock_call.assert_not_called()
+
+
+class TestTimeFallback(unittest.TestCase):
+    def setUp(self) -> None:
+        self._flag = settings_module.settings.USE_GEMINI_PENDING_REPLY
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = True
+
+    def tearDown(self) -> None:
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = self._flag
+
+    def test_five_pm_resolves(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"time":"17:00","confidence":0.95}',
+        ):
+            self.assertEqual(fallback.resolve_time_fallback("5pm"), "17:00:00")
+
+    def test_none_reasks(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"time":"none","confidence":0.2}',
+        ):
+            self.assertIsNone(fallback.resolve_time_fallback("later"))
+
+    def test_malformed_time_rejected(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"time":"25:99","confidence":0.9}',
+        ):
+            self.assertIsNone(fallback.resolve_time_fallback("blah"))
+
+
+class TestDurationFallback(unittest.TestCase):
+    def setUp(self) -> None:
+        self._flag = settings_module.settings.USE_GEMINI_PENDING_REPLY
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = True
+
+    def tearDown(self) -> None:
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = self._flag
+
+    def test_two_weeks_in_days(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"amount":14,"confidence":0.95}',
+        ):
+            self.assertEqual(
+                fallback.resolve_duration_fallback("2 weeks", unit="days"),
+                14,
+            )
+
+    def test_hour_and_half_in_minutes(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"amount":90,"confidence":0.95}',
+        ):
+            self.assertEqual(
+                fallback.resolve_duration_fallback(
+                    "an hour and a half", unit="minutes", min_value=5, max_value=1440,
+                ),
+                90,
+            )
+
+    def test_out_of_range_rejected(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"amount":5000,"confidence":0.95}',
+        ):
+            self.assertIsNone(
+                fallback.resolve_duration_fallback(
+                    "way too long", unit="minutes", min_value=5, max_value=1440,
+                )
+            )
+
+    def test_none_reasks(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"amount":"none","confidence":0.2}',
+        ):
+            self.assertIsNone(
+                fallback.resolve_duration_fallback("dunno", unit="days")
+            )
+
+
+class TestEnumFallback(unittest.TestCase):
+    def setUp(self) -> None:
+        self._flag = settings_module.settings.USE_GEMINI_PENDING_REPLY
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = True
+
+    def tearDown(self) -> None:
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = self._flag
+
+    def test_topic_resolves_from_free_text(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"value":"Python","confidence":0.97}',
+        ):
+            self.assertEqual(
+                fallback.resolve_enum_fallback(
+                    "py please", ["Python", "JavaScript", "SQL"], kind="topic",
+                ),
+                "Python",
+            )
+
+    def test_value_not_in_set_rejected(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"value":"Haskell","confidence":0.97}',
+        ):
+            self.assertIsNone(
+                fallback.resolve_enum_fallback(
+                    "haskell", ["Python", "JavaScript", "SQL"], kind="topic",
+                )
+            )
+
+    def test_case_mismatch_tolerated(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"value":"python","confidence":0.97}',
+        ):
+            self.assertEqual(
+                fallback.resolve_enum_fallback(
+                    "py", ["Python", "JavaScript", "SQL"], kind="topic",
+                ),
+                "Python",
+            )
+
+    def test_priority_enum(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"value":"high","confidence":0.9}',
+        ):
+            self.assertEqual(
+                fallback.resolve_enum_fallback(
+                    "urgent please", ["low", "medium", "high"], kind="priority",
+                ),
+                "high",
+            )
+
+    def test_none_reasks(self):
+        with patch.object(
+            fallback.gemini_service,
+            "generate_constrained_text",
+            return_value='{"value":"none","confidence":0.2}',
+        ):
+            self.assertIsNone(
+                fallback.resolve_enum_fallback(
+                    "whatever", ["low", "medium", "high"], kind="priority",
+                )
+            )
+
+    def test_empty_allowed_values_returns_none(self):
+        self.assertIsNone(
+            fallback.resolve_enum_fallback("anything", [], kind="topic")
+        )
 
 
 if __name__ == "__main__":
