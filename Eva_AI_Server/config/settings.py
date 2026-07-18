@@ -111,7 +111,7 @@ class Settings:
     )
     GEMINI_PENDING_REPLY_MODEL: str = os.getenv(
         "GEMINI_PENDING_REPLY_MODEL",
-        "gemini-2.5-flash-lite",
+        "gemini-3.1-flash-lite",
     )
     GEMINI_PENDING_REPLY_MIN_CONFIDENCE: float = float(
         os.getenv("GEMINI_PENDING_REPLY_MIN_CONFIDENCE", "0.7"),

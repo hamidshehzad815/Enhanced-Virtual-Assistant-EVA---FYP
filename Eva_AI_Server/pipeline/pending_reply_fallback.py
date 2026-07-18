@@ -98,8 +98,8 @@ def _min_confidence(*, destructive: bool) -> float:
 
 def _model_name() -> str:
     return str(
-        getattr(settings, "GEMINI_PENDING_REPLY_MODEL", "gemini-2.5-flash-lite")
-        or "gemini-2.5-flash-lite"
+        getattr(settings, "GEMINI_PENDING_REPLY_MODEL", "gemini-3.1-flash-lite")
+        or "gemini-3.1-flash-lite"
     )
 
 
