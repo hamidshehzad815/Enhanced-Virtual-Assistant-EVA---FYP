@@ -875,6 +875,79 @@ class GeminiService:
         self._last_response_by_action[action] = fallback
         return fallback
 
+    def generate_constrained_text(
+        self,
+        prompt: str,
+        *,
+        model_name: Optional[str] = None,
+        log_tag: str = "constrained",
+    ) -> Optional[str]:
+        """
+        Run a one-shot constrained prompt (JSON / short token).
+
+        Returns raw model text on success, or None when Gemini is unavailable,
+        the breaker is open, or the call fails/times out. Does not use canned
+        NL fallbacks — callers must treat None as "could not resolve".
+        """
+        if not self._is_available():
+            if self.enabled:
+                remaining = max(0.0, self._paused_until - time.monotonic())
+                print(
+                    f"[Gemini] SKIP  {log_tag}  breaker open, "
+                    f"{remaining:.0f}s left"
+                )
+            return None
+
+        use_model = self.model
+        override = (model_name or "").strip()
+        if override and override != self.model_name and genai is not None:
+            try:
+                use_model = genai.GenerativeModel(override)
+            except Exception as error:
+                print(f"[Gemini] {log_tag} model override failed: {error}")
+                return None
+
+        if use_model is None:
+            return None
+
+        started = time.monotonic()
+        display_model = override or self.model_name
+        try:
+            future = self._executor.submit(
+                use_model.generate_content,
+                prompt,
+                request_options={"timeout": self.timeout_seconds},
+            )
+            response = future.result(timeout=self.timeout_seconds + 0.25)
+            text = (getattr(response, "text", "") or "").strip()
+            elapsed_ms = (time.monotonic() - started) * 1000
+            self._record_success()
+            if not text:
+                print(
+                    f"[Gemini] CALL  {log_tag}  via {display_model}  "
+                    f"{elapsed_ms:.0f}ms  EMPTY"
+                )
+                return None
+            print(
+                f"[Gemini] CALL  {log_tag}  via {display_model}  "
+                f"{elapsed_ms:.0f}ms  OK"
+            )
+            return text
+        except FuturesTimeoutError:
+            print(
+                f"[Gemini] CALL  {log_tag}  via {display_model}  "
+                f"TIMEOUT after {self.timeout_seconds}s"
+            )
+            self._record_failure()
+            return None
+        except Exception as error:
+            print(
+                f"[Gemini] CALL  {log_tag}  via {display_model}  "
+                f"FAILED: {error}"
+            )
+            self._record_failure()
+            return None
+
 
 # Singleton instance
 gemini_service = GeminiService()
