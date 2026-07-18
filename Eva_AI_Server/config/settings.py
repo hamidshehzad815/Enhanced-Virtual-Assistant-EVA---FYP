@@ -102,6 +102,23 @@ class Settings:
     # Flash-Lite is the cheap/low-latency tier — the right shape for a
     # classifier, where latency is the whole cost question.
     GEMINI_CLF1_MODEL: str = os.getenv("GEMINI_CLF1_MODEL", "gemini-3.1-flash-lite")
+    # Issue #73: Gemini fallback for natural replies to pending yes/no + list
+    # prompts. Deterministic keyword/digit parsing always runs first; Gemini is
+    # only consulted on a miss, and only when this flag is on.
+    USE_GEMINI_PENDING_REPLY: bool = _as_bool(
+        os.getenv("USE_GEMINI_PENDING_REPLY"),
+        False,
+    )
+    GEMINI_PENDING_REPLY_MODEL: str = os.getenv(
+        "GEMINI_PENDING_REPLY_MODEL",
+        "gemini-2.5-flash-lite",
+    )
+    GEMINI_PENDING_REPLY_MIN_CONFIDENCE: float = float(
+        os.getenv("GEMINI_PENDING_REPLY_MIN_CONFIDENCE", "0.7"),
+    )
+    GEMINI_PENDING_REPLY_MIN_CONFIDENCE_DESTRUCTIVE: float = float(
+        os.getenv("GEMINI_PENDING_REPLY_MIN_CONFIDENCE_DESTRUCTIVE", "0.85"),
+    )
     GEMINI_TIMEOUT_SECONDS: float = float(os.getenv("GEMINI_TIMEOUT_SECONDS", "4"))
     # Circuit breaker: pause Gemini after repeated failures instead of hammering
     # a clearly-broken API. This used to disable Gemini PERMANENTLY on the first

@@ -49,6 +49,7 @@ from context.context_manager import (
     learning_delete_single_confirm_message,
     learning_update_cancel_message,
     learning_update_confirm_message,
+    looks_like_full_command,
     process_learning_create_free_text_reply,
     process_learning_delete_free_text_reply,
     process_learning_update_free_text_reply,
@@ -58,6 +59,14 @@ from context.redis_client import redis_client
 from pipeline.classifier1 import classifier1
 from pipeline.classifier2 import classifier2
 from pipeline.gemini_classifier import gemini_input_classifier
+from pipeline.pending_reply_fallback import (
+    build_options_from_goals,
+    build_options_from_schedule_options,
+    build_options_from_tasks,
+    is_destructive_yes_no_intent,
+    resolve_list_choice_fallback,
+    resolve_yes_no_fallback,
+)
 from pipeline.date_resolver import resolve_all
 from pipeline.entity_scoper import scope_entities
 from pipeline.ner import get_ner_extractor_for_intent, learning_ner_extractor, ner_extractor
@@ -912,6 +921,14 @@ async def process_message(payload: ProcessRequest):
 
                 options = list(pending_action.get("schedule_options") or [])
                 chosen_id = parse_schedule_choice_number(message, options)
+                if not chosen_id and not looks_like_full_command(processed["processed"]):
+                    chosen_id = resolve_list_choice_fallback(
+                        processed["processed"],
+                        build_options_from_schedule_options(options),
+                        allow_all=False,
+                        eva_prompt="Which learning schedule should I use?",
+                        deterministic_miss="invalid",
+                    )
                 if not chosen_id:
                     await redis_client.set_context(payload.user_id, pending_context)
                     total = len(options)
@@ -1394,30 +1411,27 @@ async def process_message(payload: ProcessRequest):
                 }
 
             if expected_response == "yes_no":
-                if label != "confirmation":
-                    yes_no_prompt = _safe_reply("pending_yes_no_prompt", user_name, history)
-                    if pending_intent == "learning_delete":
-                        if user_name:
-                            yes_no_prompt = f"Just a yes or no will do, {user_name}."
-                        else:
-                            yes_no_prompt = "Just a yes or no will do."
-                    elif pending_intent == "learning_create":
-                        if user_name:
-                            yes_no_prompt = f"Just a yes or no will do, {user_name}."
-                        else:
-                            yes_no_prompt = "Just a yes or no will do."
-                    return {
-                        "status": "ok",
-                        "too_short": False,
-                        "preprocessed": processed,
-                        "context_handled": True,
-                        "classification": classification,
-                        "response_text": yes_no_prompt,
-                        "user_name": user_name,
-                        "settings": settings_data,
-                    }
-
+                # Natural confirmations ("go for it", "sounds good") are often
+                # labelled general/help rather than confirmation. Still try
+                # deterministic + Gemini fallback; brand-new commands are already
+                # blocked above via should_block_new_command.
                 yes_no_value = handle_yes_no_reply(processed["processed"])
+                if yes_no_value == "invalid" and not looks_like_full_command(
+                    processed["processed"]
+                ):
+                    fallback = resolve_yes_no_fallback(
+                        processed["processed"],
+                        eva_prompt=str(
+                            pending_context.get("last_prompt")
+                            or pending_action.get("prompt")
+                            or "Please confirm with yes or no."
+                        ),
+                        destructive=is_destructive_yes_no_intent(pending_intent),
+                        deterministic_miss="invalid",
+                    )
+                    if fallback in {"yes", "no"}:
+                        yes_no_value = fallback
+
                 if (
                     pending_intent in {
                         "add",
@@ -1562,6 +1576,26 @@ async def process_message(payload: ProcessRequest):
                         "settings": settings_data,
                     }
 
+                if yes_no_value == "invalid":
+                    yes_no_prompt = _safe_reply("pending_yes_no_prompt", user_name, history)
+                    if pending_intent in {"learning_create", "learning_update", "add", "scheduling_add"}:
+                        if user_name:
+                            yes_no_prompt = f"Just a yes or no will do, {user_name}."
+                        else:
+                            yes_no_prompt = "Just a yes or no will do."
+                    return {
+                        "status": "ok",
+                        "too_short": False,
+                        "preprocessed": processed,
+                        "context_handled": True,
+                        "classification": classification,
+                        "expected_response": "yes_no",
+                        "parsed_value": yes_no_value,
+                        "response_text": yes_no_prompt,
+                        "user_name": user_name,
+                        "settings": settings_data,
+                    }
+
                 if yes_no_value in {"yes", "no"}:
                     await redis_client.delete_context(payload.user_id)
 
@@ -1579,36 +1613,29 @@ async def process_message(payload: ProcessRequest):
                 }
 
             if expected_response == "number":
-                if label != "confirmation":
-                    response_text = _safe_reply("pending_number_prompt", user_name, history)
-                    if pending_intent in {"delete", "scheduling_delete", "learning_delete"}:
-                        if user_name:
-                            response_text = (
-                                f"Pick a number from the list, or say 'all', {user_name}."
-                            )
-                        else:
-                            response_text = "Pick a number from the list, or say 'all'."
-                    if pending_intent in {"update", "scheduling_update"}:
-                        if user_name:
-                            response_text = f"Please pick a number from the list, {user_name}."
-                        else:
-                            response_text = "Please pick a number from the list."
-                    return {
-                        "status": "ok",
-                        "too_short": False,
-                        "preprocessed": processed,
-                        "context_handled": True,
-                        "classification": classification,
-                        "response_text": response_text,
-                        "user_name": user_name,
-                        "settings": settings_data,
-                    }
-
+                # Natural list replies ("the python one") are often not labelled
+                # confirmation. Still try deterministic + Gemini fallback;
+                # brand-new commands are blocked above.
                 if pending_intent == "learning_delete":
                     delete_choice = handle_number_learning_delete(
                         processed["processed"],
                         pending_context,
                     )
+                    if delete_choice in {"invalid", "invalid_range"} and not looks_like_full_command(
+                        processed["processed"]
+                    ):
+                        fallback_id = resolve_list_choice_fallback(
+                            processed["processed"],
+                            build_options_from_goals(
+                                pending_action.get("goal_ids") or [],
+                                pending_action.get("goals") or [],
+                            ),
+                            allow_all=True,
+                            eva_prompt="Pick a learning plan from the list, or say all.",
+                            deterministic_miss=str(delete_choice),
+                        )
+                        if fallback_id is not None:
+                            delete_choice = fallback_id
                     pending_goal_ids = list(pending_action.get("goal_ids") or [])
                     pending_goals = list(pending_action.get("goals") or [])
                     pending_entities = dict(pending_action.get("entities") or {})
@@ -1735,6 +1762,21 @@ async def process_message(payload: ProcessRequest):
                         processed["processed"],
                         pending_context,
                     )
+                    if update_choice in {"invalid", "invalid_range"} and not looks_like_full_command(
+                        processed["processed"]
+                    ):
+                        fallback_id = resolve_list_choice_fallback(
+                            processed["processed"],
+                            build_options_from_goals(
+                                pending_action.get("goal_ids") or [],
+                                pending_action.get("goals") or [],
+                            ),
+                            allow_all=False,
+                            eva_prompt="Pick a learning plan from the list.",
+                            deterministic_miss=str(update_choice),
+                        )
+                        if fallback_id is not None:
+                            update_choice = fallback_id
                     pending_goal_ids = list(pending_action.get("goal_ids") or [])
                     pending_goals = list(pending_action.get("goals") or [])
                     sub_intent = str(pending_action.get("sub_intent") or "").strip().lower()
@@ -1857,6 +1899,21 @@ async def process_message(payload: ProcessRequest):
 
                 if pending_intent in {"delete", "scheduling_delete"}:
                     delete_choice = handle_number_delete(processed["processed"], pending_context)
+                    if delete_choice in {"invalid", "invalid_range"} and not looks_like_full_command(
+                        processed["processed"]
+                    ):
+                        fallback_id = resolve_list_choice_fallback(
+                            processed["processed"],
+                            build_options_from_tasks(
+                                pending_action.get("task_ids") or [],
+                                pending_action.get("tasks") or [],
+                            ),
+                            allow_all=True,
+                            eva_prompt="Pick a task from the list, or say all.",
+                            deterministic_miss=str(delete_choice),
+                        )
+                        if fallback_id is not None:
+                            delete_choice = fallback_id
                     pending_task_ids = list(pending_action.get("task_ids") or [])
                     pending_tasks = list(pending_action.get("tasks") or [])
 
@@ -1993,6 +2050,21 @@ async def process_message(payload: ProcessRequest):
 
                 if pending_intent in {"update", "scheduling_update"}:
                     update_choice = handle_number_update(processed["processed"], pending_context)
+                    if update_choice in {"invalid", "invalid_range"} and not looks_like_full_command(
+                        processed["processed"]
+                    ):
+                        fallback_id = resolve_list_choice_fallback(
+                            processed["processed"],
+                            build_options_from_tasks(
+                                pending_action.get("task_ids") or [],
+                                pending_action.get("tasks") or [],
+                            ),
+                            allow_all=False,
+                            eva_prompt="Pick a task from the list.",
+                            deterministic_miss=str(update_choice),
+                        )
+                        if fallback_id is not None:
+                            update_choice = fallback_id
                     pending_task_ids = list(pending_action.get("task_ids") or [])
                     pending_tasks = list(pending_action.get("tasks") or [])
 
