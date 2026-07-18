@@ -92,10 +92,14 @@ class Collaborator {
   final CollaboratorStatus status;
   final CollaboratorProgress? progress;
 
+  /// True when this participant is the plan/task owner (shown to collaborators).
+  final bool isOwner;
+
   const Collaborator({
     required this.user,
     required this.status,
     this.progress,
+    this.isOwner = false,
   });
 
   bool get isAccepted => status == CollaboratorStatus.accepted;
@@ -108,6 +112,7 @@ class Collaborator {
         (json['user'] as Map?)?.cast<String, dynamic>() ?? const {},
       ),
       status: _statusFromApi(json['status']),
+      isOwner: json['is_owner'] == true,
       progress: json['progress'] != null
           ? CollaboratorProgress.fromJson(
               (json['progress'] as Map).cast<String, dynamic>(),

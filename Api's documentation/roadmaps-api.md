@@ -67,19 +67,21 @@ Use `status` + `session_state` to decide what the session detail screen may offe
 ## Collaborators (`roadmap.collaborators[]`)
 
 When someone accepts a plan invite, the plan is **cloned** into their account and
-they progress independently. The owner's roadmap responses surface each
-collaborator and — for accepted ones — how far they've reached on the shared plan.
-`GET /api/roadmaps/plans` includes `collaborators[]` **without** per-session data;
-`GET /api/roadmaps/:goalId` adds `progress` here and `collaborator_progress` on
-each session. Only public profile fields are exposed.
+they progress independently. Responses list the **other** participants so both
+sides see the same group: the owner sees their collaborators, and a collaborator
+viewing their cloned plan sees the **owner** (`is_owner: true`) plus any siblings —
+each with their own progress. `GET /api/roadmaps/plans` includes `collaborators[]`
+**without** per-session data; `GET /api/roadmaps/:goalId` adds `progress` here and
+`collaborator_progress` on each session. Only public profile fields are exposed.
 
 | Field | Type | Notes |
 |-------|------|-------|
-| `user._id` | `string` | Collaborator user id (match against `sessions[].collaborator_progress[].user_id`) |
+| `user._id` | `string` | Participant user id (match against `sessions[].collaborator_progress[].user_id`) |
 | `user.name` | `string \| null` | Display name |
 | `user.username` | `string \| null` | Handle |
 | `user.profile_picture` | `string \| null` | Avatar URL; fall back to initials when `null` |
 | `status` | `"pending" \| "accepted" \| "rejected"` | Invite status |
+| `is_owner` | `boolean` | `true` for the plan owner (shown to collaborators). Render an "Owner" badge |
 | `progress` | `object \| null` | `null` until accepted (or for `plans` list) |
 | `progress.completed_topics` | `number` | Sessions the collaborator has completed |
 | `progress.total_topics` | `number` | Sessions in their copy of the plan |

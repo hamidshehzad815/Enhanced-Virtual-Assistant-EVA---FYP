@@ -14,17 +14,43 @@ const {
   ConflictError,
 } = require("../middleware/errorHandler");
 const { serializeTaskForApi, isLearningTask, LEARNING_TASK_EDIT_BLOCKED_MESSAGE } = require("../utils/taskDisplayStatus");
-const {
-  collectCollaboratorUserIds,
-  loadCollaboratorProfiles,
-  serializeCollaborators,
-} = require("../utils/collaboratorDetails");
+const { loadCollaboratorProfiles } = require("../utils/collaboratorDetails");
 
 const TASK_LIST_PROJECTION =
-  "title description due_datetime duration priority status learning_plan_id learning_topic_id completed_at collaborators";
+  "owner_id title description due_datetime duration priority status learning_plan_id learning_topic_id completed_at collaborators source_task_id";
+
+/**
+ * Build a task's participant list (owner + collaborators). For a cloned task
+ * (an accepted collaborator's copy) the group is resolved from the owner's
+ * root task so the collaborator sees the owner + siblings too.
+ */
+const taskParticipants = (task, rootById) => {
+  const selfId = String(task.owner_id || "");
+  if (task.source_task_id) {
+    const root = rootById.get(String(task.source_task_id));
+    if (!root) return { selfId, parts: [] };
+    return {
+      selfId,
+      parts: [
+        { user_id: root.owner_id, status: "accepted", is_owner: true },
+        ...(Array.isArray(root.collaborators) ? root.collaborators : []).map(
+          (c) => ({ user_id: c.user_id, status: c.status, is_owner: false }),
+        ),
+      ],
+    };
+  }
+  return {
+    selfId,
+    parts: (Array.isArray(task.collaborators) ? task.collaborators : []).map(
+      (c) => ({ user_id: c.user_id, status: c.status, is_owner: false }),
+    ),
+  };
+};
 
 /**
  * Serialize many tasks, batch-populating collaborator profiles in one query.
+ * Each task exposes the *other* participants (owner sees collaborators, a
+ * collaborator sees the owner + siblings).
  */
 const serializeTasksWithCollaborators = async (
   tasks,
@@ -33,15 +59,45 @@ const serializeTasksWithCollaborators = async (
   options = {},
 ) => {
   const list = Array.isArray(tasks) ? tasks : [];
-  const profileMap = await loadCollaboratorProfiles(
-    collectCollaboratorUserIds(list),
-  );
-  return list.map((task) =>
-    serializeTaskForApi(task, now, timezone, {
-      ...options,
-      collaborators: serializeCollaborators(task.collaborators, profileMap),
-    }),
-  );
+
+  const rootTaskIds = [
+    ...new Set(
+      list.filter((t) => t.source_task_id).map((t) => String(t.source_task_id)),
+    ),
+  ];
+  const rootTasks = rootTaskIds.length
+    ? await Task.find({ _id: { $in: rootTaskIds } })
+        .select("owner_id collaborators")
+        .lean()
+    : [];
+  const rootById = new Map(rootTasks.map((r) => [String(r._id), r]));
+
+  const partsByTask = list.map((task) => taskParticipants(task, rootById));
+
+  const ids = new Set();
+  for (const { parts } of partsByTask) {
+    for (const p of parts) {
+      if (p.user_id) ids.add(String(p.user_id));
+    }
+  }
+  const profileMap = await loadCollaboratorProfiles([...ids]);
+
+  return list.map((task, i) => {
+    const { selfId, parts } = partsByTask[i];
+    const collaborators = [];
+    for (const p of parts) {
+      if (String(p.user_id) === selfId) continue;
+      if (String(p.status || "").toLowerCase() === "rejected") continue;
+      const user = profileMap.get(String(p.user_id));
+      if (!user) continue;
+      collaborators.push({
+        user,
+        status: String(p.status || "pending").toLowerCase(),
+        is_owner: Boolean(p.is_owner),
+      });
+    }
+    return serializeTaskForApi(task, now, timezone, { ...options, collaborators });
+  });
 };
 
 /**
