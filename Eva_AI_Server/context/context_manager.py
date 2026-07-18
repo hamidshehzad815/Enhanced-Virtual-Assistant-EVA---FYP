@@ -121,6 +121,11 @@ def _looks_like_full_command(text: str) -> bool:
     return tokens[0] in _COMMAND_START_HINTS
 
 
+def looks_like_full_command(text: str) -> bool:
+    """Public alias: true when reply looks like a brand-new EVA command."""
+    return _looks_like_full_command(text)
+
+
 def _should_assign_directly(missing_entity: str, reply: str) -> bool:
     """
     For date/time prompts, avoid storing a full command sentence as the value.
