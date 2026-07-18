@@ -2,6 +2,10 @@ jest.mock("../services/collaborationNotifications", () => ({
   notifyOwnerOfCollaborationResponse: jest.fn().mockResolvedValue({ dispatched: true }),
 }));
 
+jest.mock("../services/googleCalendarBackfill.service", () => ({
+  scheduleGoogleCalendarBackfill: jest.fn(),
+}));
+
 jest.mock("../utils/userCalendarConflicts", () => ({
   findUserCalendarConflicts: jest.fn(),
   formatCollaboratorConflictMessage: jest.fn(),
@@ -34,6 +38,7 @@ jest.mock("../models", () => ({
 const mongoose = require("mongoose");
 const { LearningGoal, Notification, User } = require("../models");
 const { notifyOwnerOfCollaborationResponse } = require("../services/collaborationNotifications");
+const { scheduleGoogleCalendarBackfill } = require("../services/googleCalendarBackfill.service");
 const { findUserCalendarConflicts } = require("../utils/userCalendarConflicts");
 const { applyLearningCollaborationAction } = require("../services/learningCollaboration.service");
 
@@ -86,6 +91,7 @@ describe("learningCollaboration service", () => {
 
     expect(result.already_responded).toBe(false);
     expect(Notification.findOneAndUpdate).toHaveBeenCalled();
+    expect(scheduleGoogleCalendarBackfill).toHaveBeenCalledWith(String(COLLAB_ID));
     expect(notifyOwnerOfCollaborationResponse).toHaveBeenCalledWith(
       expect.objectContaining({
         ownerId: OWNER_ID,
