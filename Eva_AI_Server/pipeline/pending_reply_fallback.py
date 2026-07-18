@@ -97,10 +97,8 @@ def _min_confidence(*, destructive: bool) -> float:
 
 
 def _model_name() -> str:
-    return str(
-        getattr(settings, "GEMINI_PENDING_REPLY_MODEL", "gemini-3.1-flash-lite")
-        or "gemini-3.1-flash-lite"
-    )
+    """Shares GEMINI_MODEL with every other Gemini call site — one env var."""
+    return str(settings.GEMINI_MODEL or "gemini-3.1-flash-lite")
 
 
 def _log_attempt(
