@@ -1052,36 +1052,41 @@ class _SettingsScreenState extends State<SettingsScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            return Container(
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.cardDark : Colors.white,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
-              ),
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(ctx).size.height * 0.85,
-              ),
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: EdgeInsets.only(
-                    left: 20,
-                    right: 20,
-                    top: 20,
-                    bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+        // Nested messenger so SnackBars paint above this modal sheet.
+        return ScaffoldMessenger(
+          child: StatefulBuilder(
+            builder: (ctx, setSheetState) {
+              return Scaffold(
+                backgroundColor: Colors.transparent,
+                resizeToAvoidBottomInset: true,
+                body: Container(
+                  decoration: BoxDecoration(
+                    color: isDark ? AppColors.cardDark : Colors.white,
+                    borderRadius: const BorderRadius.vertical(
+                      top: Radius.circular(24),
+                    ),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSheetHandle(isDark),
-                      const SizedBox(height: 16),
-                      Text(
-                        'New Learning Schedule',
-                        style: AppTextStyles.logo.copyWith(fontSize: 18),
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+                  ),
+                  child: SingleChildScrollView(
+                    child: Padding(
+                      padding: EdgeInsets.only(
+                        left: 20,
+                        right: 20,
+                        top: 20,
+                        bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
                       ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSheetHandle(isDark),
+                          const SizedBox(height: 16),
+                          Text(
+                            'New Learning Schedule',
+                            style: AppTextStyles.logo.copyWith(fontSize: 18),
+                          ),
                       const SizedBox(height: 16),
                       TextField(
                         controller: labelController,
@@ -1335,8 +1340,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ),
+            ),
             );
-          },
+            },
+          ),
         );
       },
     );
@@ -1535,8 +1542,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
+        // Nested messenger so SnackBars paint above this modal sheet.
+        return ScaffoldMessenger(
+          child: StatefulBuilder(
+            builder: (ctx, setSheetState) {
             bool hasChanges() {
               if (label.trim() != originalLabel.trim()) return true;
               if (slots.length != originalSlots.length) return true;
@@ -1557,28 +1566,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
             final textColor = Theme.of(ctx).textTheme.bodyMedium?.color;
 
-            return Container(
-              decoration: BoxDecoration(
-                color: isDark ? AppColors.cardDark : Colors.white,
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
-              ),
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(ctx).size.height * 0.85,
-              ),
-              child: SingleChildScrollView(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
+            return Scaffold(
+              backgroundColor: Colors.transparent,
+              resizeToAvoidBottomInset: true,
+              body: Container(
+                decoration: BoxDecoration(
+                  color: isDark ? AppColors.cardDark : Colors.white,
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(24),
                   ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      _buildSheetHandle(isDark),
-                      const SizedBox(height: 10),
+                ),
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(ctx).size.height * 0.85,
+                ),
+                child: SingleChildScrollView(
+                  child: Padding(
+                    padding: EdgeInsets.only(
+                      left: 16,
+                      right: 16,
+                      top: 12,
+                      bottom: MediaQuery.of(ctx).viewInsets.bottom + 12,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        _buildSheetHandle(isDark),
+                        const SizedBox(height: 10),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
@@ -1830,7 +1844,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     );
                                     if (ctx.mounted) {
                                       Navigator.pop(ctx);
-                                      ScaffoldMessenger.of(ctx).showSnackBar(
+                                    }
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
                                         const SnackBar(
                                           content: Text('Schedule updated'),
                                           backgroundColor: Colors.green,
@@ -1869,8 +1885,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   ),
                 ),
               ),
+            ),
             );
-          },
+            },
+          ),
         );
       },
     );
