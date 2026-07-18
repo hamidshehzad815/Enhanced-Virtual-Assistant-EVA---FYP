@@ -120,6 +120,71 @@ describe("buildCollaboratorProgressForGoals", () => {
     ]);
   });
 
+  test("collaborator viewing their clone sees the owner + progress", async () => {
+    const ownerId = new mongoose.Types.ObjectId();
+    const collabId = new mongoose.Types.ObjectId();
+    const rootGoalId = new mongoose.Types.ObjectId();
+    const cloneGoalId = new mongoose.Types.ObjectId();
+
+    // The viewer is the collaborator, looking at their cloned plan.
+    const cloneGoal = {
+      _id: cloneGoalId,
+      user_id: collabId,
+      source_goal_id: rootGoalId,
+      roadmap_key: "python:basics",
+      title: "Python",
+      collaborators: [],
+    };
+
+    // Root fetch, then clone fetch (two LearningGoal.find calls).
+    LearningGoal.find
+      .mockReturnValueOnce(
+        selectLean([
+          {
+            _id: rootGoalId,
+            user_id: ownerId,
+            roadmap_key: "python:basics",
+            title: "Python",
+            status: "active",
+            collaborators: [{ user_id: collabId, status: "accepted" }],
+          },
+        ]),
+      )
+      .mockReturnValueOnce(
+        selectLean([
+          { _id: cloneGoalId, user_id: collabId, status: "active", source_goal_id: rootGoalId },
+        ]),
+      );
+
+    User.find.mockReturnValue(
+      selectLean([
+        { _id: ownerId, name: "Hamid", username: "hamid", profile_picture: null },
+        { _id: collabId, name: "Bilal", username: "bilal", profile_picture: null },
+      ]),
+    );
+
+    // Owner (root goal) topics — owner is ahead.
+    RoadmapTopic.find.mockReturnValue(
+      selectLean([
+        { goal_id: rootGoalId, order: 1, status: "completed" },
+        { goal_id: rootGoalId, order: 2, status: "completed" },
+      ]),
+    );
+
+    const map = await buildCollaboratorProgressForGoals([cloneGoal]);
+    const entry = map.get(String(cloneGoalId));
+
+    expect(entry.collaborators).toHaveLength(1);
+    const owner = entry.collaborators[0];
+    expect(owner.is_owner).toBe(true);
+    expect(owner.user.username).toBe("hamid");
+    expect(owner.progress.progress_percent).toBe(100);
+    expect(owner.progress.current_order).toBeNull();
+    expect(entry.perSession.get(1)).toEqual([
+      { user_id: String(ownerId), status: "completed" },
+    ]);
+  });
+
   test("pending collaborator is shown with null progress", async () => {
     const goalId = new mongoose.Types.ObjectId();
     const collabId = new mongoose.Types.ObjectId();

@@ -28,6 +28,13 @@ String collaboratorStatusLabel(CollaboratorStatus status) {
   }
 }
 
+/// Badge colour/label for a participant — the owner gets a distinct treatment.
+Color collaboratorBadgeColor(Collaborator c) =>
+    c.isOwner ? AppColors.primary : collaboratorStatusColor(c.status);
+
+String collaboratorBadgeLabel(Collaborator c) =>
+    c.isOwner ? 'Owner' : collaboratorStatusLabel(c.status);
+
 /// A single circular avatar with network image + initials fallback.
 /// Pending collaborators render dimmed with a status ring; accepted show a
 /// small check badge.
@@ -250,7 +257,7 @@ class CollaboratorProgressTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final progress = collaborator.progress;
-    final statusColor = collaboratorStatusColor(collaborator.status);
+    final statusColor = collaboratorBadgeColor(collaborator);
     final name = collaborator.user.name.isNotEmpty
         ? collaborator.user.name
         : '@${collaborator.user.username}';
@@ -260,7 +267,7 @@ class CollaboratorProgressTile extends StatelessWidget {
     if (collaborator.isPending) {
       subtitle = 'Invited — hasn\'t joined yet';
     } else if (progress == null) {
-      subtitle = 'Accepted';
+      subtitle = collaborator.isOwner ? 'Owns this roadmap' : 'Accepted';
     } else if (progress.isFinished) {
       subtitle = 'Finished the roadmap 🎉';
       fraction = 1.0;
@@ -308,7 +315,7 @@ class CollaboratorProgressTile extends StatelessWidget {
                         borderRadius: BorderRadius.circular(6),
                       ),
                       child: Text(
-                        collaboratorStatusLabel(collaborator.status),
+                        collaboratorBadgeLabel(collaborator),
                         style: TextStyle(
                           fontSize: 9.5,
                           fontWeight: FontWeight.w700,

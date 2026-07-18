@@ -232,11 +232,14 @@ whose user account no longer exists are omitted.
 | `user.username` | `string \| null` | Handle |
 | `user.profile_picture` | `string \| null` | Avatar URL; fall back to initials when `null` |
 | `status` | `"pending" \| "accepted" \| "rejected"` | Invite status. Show pending as greyed/"invited" |
+| `is_owner` | `boolean` | `true` for the task owner (shown to collaborators). Render an "Owner" badge instead of a status |
 
-> The current user is always the task **owner** (tasks are fetched by `owner_id`),
-> so treat the signed-in user as "You" and render `collaborators[]` alongside.
-> Standalone tasks carry their invite collaborators here; learning-session tasks
-> keep collaboration on the **roadmap** (see roadmaps-api.md) and report `[]`.
+> `collaborators[]` lists the **other** participants, so both sides see the group:
+> the owner sees their invitees, and a collaborator (who gets their own copy on
+> accept — see [respond endpoints](#) below) sees the owner with `is_owner: true`
+> plus any siblings. The signed-in user is always the fetched task's `owner_id`,
+> i.e. "You". Learning-session tasks keep collaboration on the **roadmap** (see
+> roadmaps-api.md) and report `[]` here.
 
 ---
 

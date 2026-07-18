@@ -23,7 +23,7 @@ const {
 const GOAL_STATUSES = new Set(["active", "paused", "completed", "cancelled"]);
 
 const GOAL_LIST_PROJECTION =
-  "title subject roadmap_key status start_date end_date total_topics completed_topics created_at updated_at learning_schedule_id collaborators";
+  "user_id title subject roadmap_key status start_date end_date total_topics completed_topics created_at updated_at learning_schedule_id collaborators source_goal_id";
 
 const TOPIC_LIST_PROJECTION =
   "goal_id order title status scheduled_date estimated_duration completed_at updated_at resources";

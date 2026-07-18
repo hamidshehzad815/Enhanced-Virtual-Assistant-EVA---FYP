@@ -1,19 +1,20 @@
 /**
  * Collaborator progress on shared learning roadmaps.
  *
- * When a collaborator accepts a learning-plan invite, the plan is *cloned* into
- * their own account (own LearningGoal + RoadmapTopics + Tasks). The clone keeps
- * a `source_goal_id` pointing back to the owner's goal. These helpers use that
- * link (with a best-effort fallback for older clones created before the link
- * existed) to answer, from the owner's side:
+ * A shared plan lives as several independent documents: the owner's original
+ * LearningGoal (whose `collaborators[]` holds the invitees) plus one *clone*
+ * per accepted collaborator (their own goal + topics + tasks, linked back with
+ * `source_goal_id`). "Group membership" is only recorded on the owner's doc.
  *
- *   - Where has each collaborator reached?  (current session / percent)
- *   - Have they finished a given session?    (per-session status)
+ * To give *every* member the same view — owner sees collaborators, and each
+ * collaborator sees the owner + siblings — we resolve the **root** goal for the
+ * goal being viewed, expand the whole participant group from it, and drop the
+ * viewer themselves.
  *
- * Output per owner goal:
+ * Output per viewed goal:
  *   {
  *     collaborators: [
- *       { user, status, progress: {
+ *       { user, status, is_owner, progress: {
  *           completed_topics, total_topics, progress_percent,
  *           current_order, plan_status
  *         } | null }
@@ -23,30 +24,9 @@
  */
 
 const { LearningGoal, RoadmapTopic } = require("../models");
-const {
-  loadCollaboratorProfiles,
-  serializeCollaborators,
-} = require("../utils/collaboratorDetails");
+const { loadCollaboratorProfiles } = require("../utils/collaboratorDetails");
 
-const sameId = (a, b) => String(a) === String(b);
-
-const isAccepted = (status) =>
-  String(status || "").trim().toLowerCase() === "accepted";
-
-const cloneMatchesGoal = (clone, goal) => {
-  if (clone.source_goal_id && sameId(clone.source_goal_id, goal._id)) {
-    return true;
-  }
-  // Fallback for clones created before source_goal_id existed: a collaborator
-  // is very unlikely to hold two plans with the same track + title.
-  return (
-    !clone.source_goal_id
-    && String(clone.roadmap_key || "") === String(goal.roadmap_key || "")
-    && String(clone.title || "") === String(goal.title || "")
-  );
-};
-
-/** completed / total / percent / where-they-reached, from a clone's topics. */
+/** completed / total / percent / where-they-reached, from a goal's topics. */
 const summarizeTopics = (topics) => {
   const list = Array.isArray(topics) ? topics : [];
   const total = list.length;
@@ -61,7 +41,6 @@ const summarizeTopics = (topics) => {
     if (status === "completed") {
       completed += 1;
     }
-    // First not-yet-finished session is where the collaborator currently is.
     if (currentOrder === null && status !== "completed" && status !== "skipped") {
       currentOrder = Number(topic.order || 0);
     }
@@ -75,127 +54,185 @@ const summarizeTopics = (topics) => {
 };
 
 /**
- * Compute collaborator details + progress for one or more owner goals.
- * @param {Array<{_id, roadmap_key, title, collaborators}>} goals
+ * Compute the participant group (excluding the viewer) + progress for one or
+ * more goals the viewer owns (each may be an original plan or an accepted
+ * clone).
+ * @param {Array<{_id, user_id, source_goal_id, roadmap_key, title, status, collaborators}>} goals
  * @returns {Promise<Map<string, {collaborators: Array, perSession: Map}>>}
  */
 const buildCollaboratorProgressForGoals = async (goals) => {
   const result = new Map();
-  const goalList = (Array.isArray(goals) ? goals : []).filter(
-    (g) => Array.isArray(g?.collaborators) && g.collaborators.length > 0,
-  );
+  const goalList = Array.isArray(goals) ? goals : [];
 
-  // Seed every requested goal (even collaborator-less ones) with an empty shape
-  // so callers get a stable structure.
-  for (const goal of Array.isArray(goals) ? goals : []) {
+  // Seed a stable empty shape for every requested goal.
+  for (const goal of goalList) {
     result.set(String(goal._id), { collaborators: [], perSession: new Map() });
   }
-
   if (!goalList.length) {
     return result;
   }
 
-  // 1. Batch-load collaborator public profiles once.
-  const allCollaboratorIds = [];
+  // 1. Resolve the root (owner's) goal for each viewed goal.
+  //    Originals are their own root; clones point back via source_goal_id.
+  const rootIdsToFetch = new Set();
   for (const goal of goalList) {
-    for (const row of goal.collaborators) {
-      if (row?.user_id) {
-        allCollaboratorIds.push(String(row.user_id));
+    if (goal.source_goal_id) {
+      rootIdsToFetch.add(String(goal.source_goal_id));
+    }
+  }
+  const fetchedRoots = rootIdsToFetch.size
+    ? await LearningGoal.find({ _id: { $in: [...rootIdsToFetch] } })
+        .select("user_id roadmap_key title status collaborators")
+        .lean()
+    : [];
+  const rootById = new Map(fetchedRoots.map((r) => [String(r._id), r]));
+  for (const goal of goalList) {
+    if (!goal.source_goal_id) {
+      rootById.set(String(goal._id), goal);
+    }
+  }
+
+  const rootForViewedGoal = new Map();
+  for (const goal of goalList) {
+    const root = rootById.get(String(goal.source_goal_id || goal._id));
+    if (root) {
+      rootForViewedGoal.set(String(goal._id), root);
+    }
+  }
+
+  // Only goals whose group actually has collaborators matter.
+  const activeGoals = goalList.filter((goal) => {
+    const root = rootForViewedGoal.get(String(goal._id));
+    return root
+      && Array.isArray(root.collaborators)
+      && root.collaborators.length > 0;
+  });
+  if (!activeGoals.length) {
+    return result;
+  }
+
+  // 2. Load public profiles for every participant (owner + collaborators).
+  const participantIds = new Set();
+  for (const goal of activeGoals) {
+    const root = rootForViewedGoal.get(String(goal._id));
+    participantIds.add(String(root.user_id));
+    for (const row of root.collaborators) {
+      if (row.user_id) {
+        participantIds.add(String(row.user_id));
       }
     }
   }
-  const profileMap = await loadCollaboratorProfiles(allCollaboratorIds);
+  const profileMap = await loadCollaboratorProfiles([...participantIds]);
 
-  // 2. Find the mirrored (clone) plans for accepted collaborators.
-  const acceptedCollaboratorIds = [
+  // 3. Find every accepted collaborator's clone of the involved roots.
+  const rootIds = [
     ...new Set(
-      goalList.flatMap((goal) =>
-        goal.collaborators
-          .filter((row) => isAccepted(row.status) && row.user_id)
-          .map((row) => String(row.user_id)),
+      activeGoals.map((goal) =>
+        String(rootForViewedGoal.get(String(goal._id))._id),
       ),
     ),
   ];
-
-  const goalIds = goalList.map((goal) => goal._id);
-
-  const cloneGoals = acceptedCollaboratorIds.length
-    ? await LearningGoal.find({
-        is_deleted: false,
-        $or: [
-          { source_goal_id: { $in: goalIds } },
-          { user_id: { $in: acceptedCollaboratorIds } },
-        ],
-      })
-        .select("user_id roadmap_key title status source_goal_id")
-        .lean()
-    : [];
-
-  // 3. Load the clones' topics in one query, grouped by clone goal id.
-  const cloneIds = cloneGoals.map((g) => g._id);
-  const topicsByClone = new Map();
-  if (cloneIds.length) {
-    const topics = await RoadmapTopic.find({
-      goal_id: { $in: cloneIds },
-      is_deleted: false,
-    })
-      .select("goal_id order status")
-      .lean();
-    for (const topic of topics) {
-      const key = String(topic.goal_id);
-      if (!topicsByClone.has(key)) {
-        topicsByClone.set(key, []);
-      }
-      topicsByClone.get(key).push(topic);
-    }
+  const cloneGoals = await LearningGoal.find({
+    is_deleted: false,
+    source_goal_id: { $in: rootIds },
+  })
+    .select("user_id status source_goal_id")
+    .lean();
+  const cloneByRootAndUser = new Map();
+  for (const clone of cloneGoals) {
+    cloneByRootAndUser.set(
+      `${String(clone.source_goal_id)}|${String(clone.user_id)}`,
+      clone,
+    );
   }
 
-  // 4. Assemble per owner goal.
-  for (const goal of goalList) {
+  // 4. Load topics for every "progress goal" (root goals + clones).
+  const progressGoalIds = new Set(rootIds);
+  for (const clone of cloneGoals) {
+    progressGoalIds.add(String(clone._id));
+  }
+  const topicsByGoal = new Map();
+  const topics = await RoadmapTopic.find({
+    goal_id: { $in: [...progressGoalIds] },
+    is_deleted: false,
+  })
+    .select("goal_id order status")
+    .lean();
+  for (const topic of topics) {
+    const key = String(topic.goal_id);
+    if (!topicsByGoal.has(key)) {
+      topicsByGoal.set(key, []);
+    }
+    topicsByGoal.get(key).push(topic);
+  }
+
+  // 5. Assemble the group (minus the viewer) for each viewed goal.
+  for (const goal of activeGoals) {
+    const root = rootForViewedGoal.get(String(goal._id));
+    const rootId = String(root._id);
+    const viewerUserId = String(goal.user_id);
     const perSession = new Map();
 
-    const collaborators = serializeCollaborators(
-      goal.collaborators,
-      profileMap,
-      (row) => {
-        if (!isAccepted(row.status)) {
-          return { progress: null };
-        }
+    const participants = [
+      { user_id: String(root.user_id), is_owner: true, status: "accepted" },
+      ...root.collaborators.map((row) => ({
+        user_id: String(row.user_id),
+        is_owner: false,
+        status: String(row.status || "pending").toLowerCase(),
+      })),
+    ];
 
-        const clone = cloneGoals.find(
-          (c) => sameId(c.user_id, row.user_id) && cloneMatchesGoal(c, goal),
-        );
-        if (!clone) {
-          return { progress: null };
-        }
+    const collaborators = [];
+    for (const participant of participants) {
+      if (participant.user_id === viewerUserId) {
+        continue; // never show the viewer to themselves
+      }
+      if (participant.status === "rejected") {
+        continue;
+      }
+      const user = profileMap.get(participant.user_id);
+      if (!user) {
+        continue;
+      }
 
-        const topics = topicsByClone.get(String(clone._id)) || [];
-        const summary = summarizeTopics(topics);
+      // Which goal reflects this participant's progress?
+      let progressGoal = null;
+      if (participant.is_owner) {
+        progressGoal = root;
+      } else if (participant.status === "accepted") {
+        progressGoal = cloneByRootAndUser.get(`${rootId}|${participant.user_id}`) || null;
+      }
 
-        // Record this collaborator's status on each session (by order) so the
-        // roadmap can show who has finished which session.
-        for (const topic of topics) {
+      let progress = null;
+      if (progressGoal) {
+        const goalTopics = topicsByGoal.get(String(progressGoal._id)) || [];
+        const summary = summarizeTopics(goalTopics);
+        progress = {
+          completed_topics: summary.completed,
+          total_topics: summary.total,
+          progress_percent: summary.progressPercent,
+          current_order: summary.currentOrder,
+          plan_status: String(progressGoal.status || "active"),
+        };
+        for (const topic of goalTopics) {
           const order = Number(topic.order || 0);
           if (!perSession.has(order)) {
             perSession.set(order, []);
           }
           perSession.get(order).push({
-            user_id: String(row.user_id),
+            user_id: participant.user_id,
             status: String(topic.status || "pending").toLowerCase(),
           });
         }
+      }
 
-        return {
-          progress: {
-            completed_topics: summary.completed,
-            total_topics: summary.total,
-            progress_percent: summary.progressPercent,
-            current_order: summary.currentOrder,
-            plan_status: String(clone.status || "active"),
-          },
-        };
-      },
-    );
+      collaborators.push({
+        user,
+        status: participant.status,
+        is_owner: participant.is_owner,
+        progress,
+      });
+    }
 
     result.set(String(goal._id), { collaborators, perSession });
   }
