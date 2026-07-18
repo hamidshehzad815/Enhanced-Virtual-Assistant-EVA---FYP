@@ -23,7 +23,7 @@ int _notificationId(RemoteMessage message) {
 Future<void> _ensureLocalNotificationsReady() async {
   if (_localNotificationsReady) return;
 
-  const androidInit = AndroidInitializationSettings('@mipmap/ic_launcher');
+  const androidInit = AndroidInitializationSettings('@mipmap/launcher_icon');
   const initSettings = InitializationSettings(android: androidInit);
   await _localNotifications.initialize(settings: initSettings);
 
@@ -75,7 +75,7 @@ Future<void> _showLocalNotification(RemoteMessage message) async {
           channelDescription: _androidChannelDescription,
           importance: Importance.max,
           priority: Priority.high,
-          icon: '@mipmap/ic_launcher',
+          icon: '@mipmap/launcher_icon',
           playSound: true,
           enableVibration: true,
           visibility: NotificationVisibility.public,
