@@ -7,6 +7,9 @@ jest.mock("../services/notification.service", () => ({
 jest.mock("../services/googleCalendar.service", () => ({
   deleteEvent: jest.fn().mockResolvedValue({}),
 }));
+jest.mock("../services/googleCalendarBackfill.service", () => ({
+  scheduleGoogleCalendarBackfill: jest.fn(),
+}));
 jest.mock("../utils/googleCalendarSync", () => ({
   resolveGoogleCalendarSync: jest.fn().mockResolvedValue(null),
 }));
@@ -100,15 +103,21 @@ describe("task collaboration accept clones the task for the collaborator", () =>
     expect(Task.create).not.toHaveBeenCalled();
   });
 
-  test("already-responded invite does not clone again", async () => {
-    Task.findOne.mockReturnValueOnce(
-      lean({
-        _id: TASK_ID,
-        owner_id: OWNER_ID,
-        title: "Group study",
-        collaborators: [{ user_id: COLLAB_ID, status: "accepted" }],
-      }),
-    );
+  test("already-responded accept self-heals missing clone", async () => {
+    const acceptedTask = {
+      _id: TASK_ID,
+      owner_id: OWNER_ID,
+      title: "Group study",
+      due_datetime: new Date("2026-07-20T10:00:00.000Z"),
+      duration: 60,
+      priority: "medium",
+      collaborators: [{ user_id: COLLAB_ID, status: "accepted" }],
+    };
+
+    Task.findOne
+      .mockReturnValueOnce(lean(acceptedTask)) // load invite task
+      .mockReturnValueOnce(lean(null)); // no existing clone
+    Task.create.mockResolvedValue({ _id: NEW_TASK_ID });
 
     const result = await applyCollaborationAction({
       taskId: String(TASK_ID),
@@ -117,7 +126,32 @@ describe("task collaboration accept clones the task for the collaborator", () =>
     });
 
     expect(result.already_responded).toBe(true);
+    expect(result.collaborator_task_id).toEqual(NEW_TASK_ID);
     expect(Task.findOneAndUpdate).not.toHaveBeenCalled();
+    expect(Task.create).toHaveBeenCalledTimes(1);
+  });
+
+  test("already-responded accept reuses existing clone", async () => {
+    const acceptedTask = {
+      _id: TASK_ID,
+      owner_id: OWNER_ID,
+      title: "Group study",
+      collaborators: [{ user_id: COLLAB_ID, status: "accepted" }],
+    };
+    const existing = { _id: NEW_TASK_ID, owner_id: COLLAB_ID };
+
+    Task.findOne
+      .mockReturnValueOnce(lean(acceptedTask))
+      .mockReturnValueOnce(lean(existing));
+
+    const result = await applyCollaborationAction({
+      taskId: String(TASK_ID),
+      collaboratorUserId: String(COLLAB_ID),
+      action: "accept",
+    });
+
+    expect(result.already_responded).toBe(true);
+    expect(result.collaborator_task_id).toEqual(NEW_TASK_ID);
     expect(Task.create).not.toHaveBeenCalled();
   });
 
