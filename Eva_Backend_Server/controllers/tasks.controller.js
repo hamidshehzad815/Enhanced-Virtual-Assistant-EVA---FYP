@@ -228,6 +228,43 @@ const verifyCollaborationToken = (token) => {
 
 const sameObjectId = (a, b) => String(a) === String(b);
 
+/**
+ * Give an accepting collaborator their own copy of a shared task, so it shows
+ * on their calendar/tasks (which are filtered by owner_id). Mirrors the
+ * learning-plan clone flow. Idempotent: skips if a copy already exists.
+ */
+const cloneTaskForCollaborator = async (ownerTask, collaboratorUserId) => {
+  const collabOid = new mongoose.Types.ObjectId(collaboratorUserId);
+
+  const existing = await Task.findOne({
+    source_task_id: ownerTask._id,
+    owner_id: collabOid,
+    is_deleted: { $ne: true },
+  }).lean();
+  if (existing) {
+    return existing;
+  }
+
+  const now = new Date();
+  return Task.create({
+    owner_id: collabOid,
+    title: ownerTask.title,
+    description: ownerTask.description,
+    due_datetime: ownerTask.due_datetime,
+    duration: ownerTask.duration,
+    priority: ownerTask.priority,
+    status: "pending",
+    source: ownerTask.source || "eva",
+    scheduled_by: ownerTask.scheduled_by || "manual",
+    collaborators: [],
+    source_task_id: ownerTask._id,
+    reminder_minutes_before: ownerTask.reminder_minutes_before,
+    is_deleted: false,
+    created_at: now,
+    updated_at: now,
+  });
+};
+
 const markCollaborationNotificationHandled = async ({
   userId,
   taskId,
@@ -339,6 +376,16 @@ const applyCollaborationAction = async ({
     throw new ConflictError("This collaboration invite was already handled");
   }
 
+  // On accept, give the collaborator their own copy so it shows on their side.
+  let collaboratorTaskId = null;
+  if (action === "accept") {
+    const collabTask = await cloneTaskForCollaborator(
+      updatedTask,
+      collaboratorUserId,
+    );
+    collaboratorTaskId = collabTask ? collabTask._id : null;
+  }
+
   await markCollaborationNotificationHandled({
     userId: collaboratorObjectId,
     taskId: taskObjectId,
@@ -357,6 +404,7 @@ const applyCollaborationAction = async ({
 
   return {
     task: updatedTask,
+    collaborator_task_id: collaboratorTaskId,
     already_responded: false,
     current_status: newStatus,
   };
@@ -1045,4 +1093,7 @@ module.exports = {
   deleteTask,
   respondToCollaborationInvite,
   respondToCollaborationInviteViaLink,
+  // Exported for tests.
+  applyCollaborationAction,
+  cloneTaskForCollaborator,
 };

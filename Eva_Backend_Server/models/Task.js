@@ -84,6 +84,17 @@ const taskSchema = new mongoose.Schema(
       type: [collaboratorSchema],
       default: [],
     },
+    /**
+     * When this task is a collaborator's accepted copy of someone else's task,
+     * points back to the owner's originating task. Null for original tasks.
+     * Mirrors LearningGoal.source_goal_id.
+     */
+    source_task_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Task",
+      default: null,
+      index: true,
+    },
     learning_plan_id: {
       type: mongoose.Schema.Types.ObjectId,
       default: null,

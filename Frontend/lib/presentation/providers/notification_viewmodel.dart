@@ -130,12 +130,17 @@ class NotificationViewModel extends ChangeNotifier with WidgetsBindingObserver {
   /// Accept/reject a collaboration invite.
   /// Returns 'accepted' | 'rejected' | 'already'.
   Future<String> respondToInvite(AppNotification n, String action) async {
-    final taskId = n.referenceId;
-    if (taskId == null || taskId.isEmpty) {
-      throw Exception('This invite has no task reference');
+    final referenceId = n.referenceId;
+    if (referenceId == null || referenceId.isEmpty) {
+      throw Exception('This invite has no reference');
     }
 
-    final already = await _repository.respondCollaboration(taskId, action);
+    // Learning-plan invites and task invites use different endpoints.
+    final isLearning = n.type == 'learning_collaboration_invite' ||
+        n.referenceType == 'learning_goal';
+    final already = isLearning
+        ? await _repository.respondLearningCollaboration(referenceId, action)
+        : await _repository.respondCollaboration(referenceId, action);
 
     final idx = _notifications.indexWhere((x) => x.id == n.id);
     if (idx != -1) {

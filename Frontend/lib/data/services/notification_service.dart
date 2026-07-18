@@ -76,15 +76,37 @@ class NotificationService {
     }
   }
 
-  /// Accept/reject a collaboration invite (Tasks endpoint).
+  /// Accept/reject a task collaboration invite (Tasks endpoint).
   /// Returns whether the invite had already been responded to.
   Future<bool> respondCollaboration(
     String token,
     String taskId,
     String action, // 'accept' | 'reject'
   ) async {
+    return _respondInvite(
+      token,
+      '${AppConstants.baseUrl}/tasks/$taskId/collaborators/respond',
+      action,
+    );
+  }
+
+  /// Accept/reject a learning-plan collaboration invite (Learning endpoint).
+  /// Returns whether the invite had already been responded to.
+  Future<bool> respondLearningCollaboration(
+    String token,
+    String goalId,
+    String action, // 'accept' | 'reject'
+  ) async {
+    return _respondInvite(
+      token,
+      '${AppConstants.baseUrl}/learning/$goalId/collaborators/respond',
+      action,
+    );
+  }
+
+  Future<bool> _respondInvite(String token, String url, String action) async {
     final response = await http.post(
-      Uri.parse('${AppConstants.baseUrl}/tasks/$taskId/collaborators/respond'),
+      Uri.parse(url),
       headers: {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',

@@ -359,7 +359,10 @@ class _RoadmapSessionScreenContentState
   void _showCollaboratorsSheet(RoadmapDetail roadmap, bool isDark) {
     showModalBottomSheet(
       context: context,
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      // Dark theme's scaffoldBackgroundColor is transparent (gradient is drawn
+      // separately), so use an explicit opaque surface for the sheet.
+      backgroundColor: isDark ? const Color(0xFF1C1C1E) : Colors.white,
+      barrierColor: Colors.black54,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
