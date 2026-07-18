@@ -14,9 +14,53 @@ const {
   ConflictError,
 } = require("../middleware/errorHandler");
 const { serializeTaskForApi, isLearningTask, LEARNING_TASK_EDIT_BLOCKED_MESSAGE } = require("../utils/taskDisplayStatus");
+const {
+  collectCollaboratorUserIds,
+  loadCollaboratorProfiles,
+  serializeCollaborators,
+} = require("../utils/collaboratorDetails");
 
 const TASK_LIST_PROJECTION =
-  "title description due_datetime duration priority status learning_plan_id learning_topic_id completed_at";
+  "title description due_datetime duration priority status learning_plan_id learning_topic_id completed_at collaborators";
+
+/**
+ * Serialize many tasks, batch-populating collaborator profiles in one query.
+ */
+const serializeTasksWithCollaborators = async (
+  tasks,
+  now,
+  timezone,
+  options = {},
+) => {
+  const list = Array.isArray(tasks) ? tasks : [];
+  const profileMap = await loadCollaboratorProfiles(
+    collectCollaboratorUserIds(list),
+  );
+  return list.map((task) =>
+    serializeTaskForApi(task, now, timezone, {
+      ...options,
+      collaborators: serializeCollaborators(task.collaborators, profileMap),
+    }),
+  );
+};
+
+/**
+ * Serialize a single task with its collaborators populated.
+ */
+const serializeTaskWithCollaborators = async (
+  task,
+  now,
+  timezone,
+  options = {},
+) => {
+  const [serialized] = await serializeTasksWithCollaborators(
+    [task],
+    now,
+    timezone,
+    options,
+  );
+  return serialized;
+};
 const { withApiTimezone } = require("../utils/apiDateTime");
 const {
   notifyOwnerOfCollaborationResponse,
@@ -432,11 +476,16 @@ const getTasks = async (req, res, next) => {
 
     const now = new Date();
     const timezone = resolveUserTimezone(req);
+    const serializedTasks = await serializeTasksWithCollaborators(
+      tasks,
+      now,
+      timezone,
+    );
     res.json({
       status: "success",
       data: withApiTimezone(
         {
-        tasks: tasks.map((task) => serializeTaskForApi(task, now, timezone)),
+        tasks: serializedTasks,
         pagination: {
           page,
           limit,
@@ -479,12 +528,17 @@ const getCalendarTasks = async (req, res, next) => {
       .lean();
 
     const now = new Date();
+    const serializedTasks = await serializeTasksWithCollaborators(
+      tasks,
+      now,
+      timezone,
+    );
     res.json({
       status: "success",
       data: withApiTimezone(
         {
-          tasks: tasks.map((task) => serializeTaskForApi(task, now, timezone)),
-          total: tasks.length,
+          tasks: serializedTasks,
+          total: serializedTasks.length,
         },
         timezone,
       ),
@@ -522,7 +576,7 @@ const getTaskById = async (req, res, next) => {
       status: "success",
       data: withApiTimezone(
         {
-          task: serializeTaskForApi(task, new Date(), timezone, {
+          task: await serializeTaskWithCollaborators(task, new Date(), timezone, {
             includeDescription: true,
           }),
         },
@@ -683,7 +737,7 @@ const updateTask = async (req, res, next) => {
       message: "Task updated",
       data: withApiTimezone(
         {
-          task: serializeTaskForApi(task, new Date(), timezone, {
+          task: await serializeTaskWithCollaborators(task, new Date(), timezone, {
             includeDescription: true,
           }),
         },
@@ -772,7 +826,7 @@ const updateTaskStatus = async (req, res, next) => {
       message: "Task status updated",
       data: withApiTimezone(
         {
-          task: serializeTaskForApi(task, new Date(), timezone, {
+          task: await serializeTaskWithCollaborators(task, new Date(), timezone, {
             includeDescription: true,
           }),
         },

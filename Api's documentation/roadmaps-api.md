@@ -57,9 +57,35 @@ See [README.md](./README.md) for auth and error envelopes.
 | `is_current`         | `boolean`       | `true` for the current pending session                                               |
 | `unlock_at`          | `string | null` | When locked current session becomes actionable                                       |
 | `completed_at`       | `string | null` | Only when `status` is `completed` or `skipped`                                       |
+| `collaborator_progress` | `array`      | Per-collaborator status on **this** session: `{ user_id, status }` (status = that collaborator's session `status`). `[]` for solo plans or the `plans`/mutation payloads. |
 
 
 Use `status` + `session_state` to decide what the session detail screen may offer. The frontend shows update options; the server enforces rules.
+
+---
+
+## Collaborators (`roadmap.collaborators[]`)
+
+When someone accepts a plan invite, the plan is **cloned** into their account and
+they progress independently. The owner's roadmap responses surface each
+collaborator and — for accepted ones — how far they've reached on the shared plan.
+`GET /api/roadmaps/plans` includes `collaborators[]` **without** per-session data;
+`GET /api/roadmaps/:goalId` adds `progress` here and `collaborator_progress` on
+each session. Only public profile fields are exposed.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `user._id` | `string` | Collaborator user id (match against `sessions[].collaborator_progress[].user_id`) |
+| `user.name` | `string \| null` | Display name |
+| `user.username` | `string \| null` | Handle |
+| `user.profile_picture` | `string \| null` | Avatar URL; fall back to initials when `null` |
+| `status` | `"pending" \| "accepted" \| "rejected"` | Invite status |
+| `progress` | `object \| null` | `null` until accepted (or for `plans` list) |
+| `progress.completed_topics` | `number` | Sessions the collaborator has completed |
+| `progress.total_topics` | `number` | Sessions in their copy of the plan |
+| `progress.progress_percent` | `number` | `0–100` |
+| `progress.current_order` | `number \| null` | Session `order` they're currently on; `null` when finished |
+| `progress.plan_status` | `string` | Their plan status: `active`, `completed`, `paused`, `cancelled` |
 
 | `session_state`   | Reschedule | Skip | Complete |
 | ----------------- | ---------- | ---- | -------- |
@@ -126,7 +152,19 @@ Authorization: Bearer <access_token>
           "skipped": 0,
           "pending": 6,
           "ongoing": 0
-        }
+        },
+        "collaborators": [
+          {
+            "user": {
+              "_id": "507f1f77bcf86cd799439099",
+              "name": "Aisha Khan",
+              "username": "aisha",
+              "profile_picture": null
+            },
+            "status": "accepted",
+            "progress": null
+          }
+        ]
       }
     ]
   }
@@ -267,6 +305,24 @@ Authorization: Bearer <access_token>
         "pending": 7,
         "ongoing": 0
       },
+      "collaborators": [
+        {
+          "user": {
+            "_id": "507f1f77bcf86cd799439099",
+            "name": "Aisha Khan",
+            "username": "aisha",
+            "profile_picture": null
+          },
+          "status": "accepted",
+          "progress": {
+            "completed_topics": 1,
+            "total_topics": 8,
+            "progress_percent": 13,
+            "current_order": 2,
+            "plan_status": "active"
+          }
+        }
+      ],
       "sessions": [
         {
           "id": "674a1b2c3d4e5f6789012302",
@@ -286,7 +342,10 @@ Authorization: Bearer <access_token>
           "session_state": "completed",
           "is_current": false,
           "unlock_at": null,
-          "completed_at": "2026-06-03T19:30:00+05:00"
+          "completed_at": "2026-06-03T19:30:00+05:00",
+          "collaborator_progress": [
+            { "user_id": "507f1f77bcf86cd799439099", "status": "completed" }
+          ]
         },
         {
           "id": "674a1b2c3d4e5f6789012303",

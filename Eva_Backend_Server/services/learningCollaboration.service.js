@@ -121,6 +121,8 @@ const cloneLearningPlanForCollaborator = async (ownerGoal, collaboratorUserId) =
     completed_topics: 0,
     status: "active",
     collaborators: [],
+    // Back-reference so the owner can see this collaborator's progress.
+    source_goal_id: ownerGoal._id,
     generated_by: ownerGoal.generated_by || "eva",
     started_at: null,
     completed_at: null,
