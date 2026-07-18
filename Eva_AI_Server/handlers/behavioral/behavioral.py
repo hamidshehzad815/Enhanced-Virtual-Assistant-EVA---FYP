@@ -17,6 +17,7 @@ from db.activity_logs import (
 from db.chat_sessions import update_last_message
 from db.conversation_history import insert_message
 from db.tasks import get_tasks_for_day
+from pipeline.pending_reply_fallback import resolve_enum_fallback
 from services.gemini import gemini_service
 from services.productivity_scorer import (
     get_best_time_for_day,
@@ -105,7 +106,21 @@ def _extract_day(entities: Dict[str, Any], message: str) -> Optional[int]:
         if from_sentence is not None:
             return from_sentence
 
-    return _extract_weekday_from_text(message)
+    from_message = _extract_weekday_from_text(message)
+    if from_message is not None:
+        return from_message
+
+    fallback_name = resolve_enum_fallback(
+        message,
+        list(_WEEKDAY_NAMES.values()),
+        eva_prompt="Which day would you like?",
+        kind="day_of_week",
+        deterministic_miss="regex_miss",
+    )
+    if fallback_name:
+        return weekday_name_to_number(fallback_name)
+
+    return None
 
 
 def _detect_sub_intent(message: str) -> str:

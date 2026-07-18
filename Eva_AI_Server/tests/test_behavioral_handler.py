@@ -5,7 +5,8 @@ from datetime import datetime
 import unittest
 from unittest.mock import AsyncMock, patch
 
-from handlers.behavioral.behavioral import _detect_sub_intent, handle_behavioral
+from config import settings as settings_module
+from handlers.behavioral.behavioral import _detect_sub_intent, _extract_day, handle_behavioral
 
 
 USER_ID = "507f1f77bcf86cd799439011"
@@ -34,6 +35,13 @@ def _gemini_stub(action_context, _user_name, _history):
 
 
 class TestBehavioralHandlerPhase8(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._flag = settings_module.settings.USE_GEMINI_PENDING_REPLY
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = False
+
+    def tearDown(self) -> None:
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = self._flag
+
     async def test_analytics_disabled_returns_prompt_to_enable(self):
         context = _base_context("when am i most productive")
         context["settings"] = {"behavioral_analytics_enabled": False}
@@ -211,6 +219,28 @@ class TestBehavioralHandlerPhase8(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(_detect_sub_intent("show my productivity report"), "productivity_report")
         self.assertEqual(_detect_sub_intent("which days am i most focused"), "productive_days")
         self.assertEqual(_detect_sub_intent("when am i most productive"), "productive_hours")
+
+    def test_extract_day_regex_match_short_circuits_gemini(self):
+        with patch(
+            "pipeline.pending_reply_fallback.gemini_service.generate_constrained_text",
+        ) as mock_gemini:
+            self.assertEqual(_extract_day({}, "how about tuesday"), 1)
+        mock_gemini.assert_not_called()
+
+    def test_extract_day_gemini_rescues_colloquial_phrasing(self):
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = True
+        with patch(
+            "pipeline.pending_reply_fallback.gemini_service.generate_constrained_text",
+            return_value='{"value":"Friday","confidence":0.9}',
+        ):
+            self.assertEqual(_extract_day({}, "the day before the weekend"), 4)
+
+    def test_extract_day_flag_off_returns_none(self):
+        with patch(
+            "pipeline.pending_reply_fallback.gemini_service.generate_constrained_text",
+        ) as mock_gemini:
+            self.assertIsNone(_extract_day({}, "the day before the weekend"))
+        mock_gemini.assert_not_called()
 
 
 if __name__ == "__main__":

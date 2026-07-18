@@ -26,6 +26,7 @@ from db.tasks import (
     insert_task,
     update_task,
 )
+from pipeline.pending_reply_fallback import resolve_date_fallback, resolve_time_fallback
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
@@ -42,6 +43,7 @@ from utils.learning_schedule_conflicts import (
 from utils.quiet_hours import find_quiet_hour_matches, format_quiet_hour_labels
 from utils.task_value_normalizer import canonicalize_priority, clean_task_name
 from utils.timezone_utils import (
+    get_zoneinfo,
     local_datetime_to_utc_naive,
     resolve_timezone_name,
     utc_naive_to_local,
@@ -328,11 +330,25 @@ async def _resolve_date_time(
 
     if date_text and not re.match(r"^\d{4}-\d{2}-\d{2}$", date_text):
         resolved = await duckling_client.resolve_date(date_text, timezone=timezone)
+        if not resolved:
+            today = datetime.now(get_zoneinfo(resolve_timezone_name(timezone))).date()
+            resolved = resolve_date_fallback(
+                date_text,
+                eva_prompt="What date is this task for?",
+                reference_date=today,
+                deterministic_miss="duckling_miss",
+            )
         if resolved:
             date_text = resolved
 
     if time_text and not re.match(r"^\d{2}:\d{2}:\d{2}$", time_text):
         resolved = await duckling_client.resolve_time(time_text, timezone=timezone)
+        if not resolved:
+            resolved = resolve_time_fallback(
+                time_text,
+                eva_prompt="What time is this task at?",
+                deterministic_miss="duckling_miss",
+            )
         if resolved:
             time_text = resolved
 
