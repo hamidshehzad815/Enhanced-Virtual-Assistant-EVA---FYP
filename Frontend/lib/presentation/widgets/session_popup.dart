@@ -6,6 +6,7 @@ import '../../core/theme/app_text_style.dart';
 import '../../core/theme/app_colours.dart';
 import '../../data/models/roadmap_model.dart';
 import '../../data/models/schedule_date_model.dart';
+import 'collaborator_avatars.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 class SessionPopup extends StatefulWidget {
@@ -18,6 +19,10 @@ class SessionPopup extends StatefulWidget {
   final Function(String) onSkip;
   final Future<ScheduleDatesResponse> Function() fetchScheduleDates;
 
+  /// Roadmap-level collaborators, used to resolve names/avatars for this
+  /// session's per-collaborator progress.
+  final List<Collaborator> collaborators;
+
   const SessionPopup({
     super.key,
     required this.session,
@@ -28,6 +33,7 @@ class SessionPopup extends StatefulWidget {
     required this.onReschedule,
     required this.onComplete,
     required this.onSkip,
+    this.collaborators = const [],
   });
 
   @override
@@ -182,6 +188,9 @@ class _SessionPopupState extends State<SessionPopup> {
             ),
             const SizedBox(height: 14),
 
+            // ─── COLLABORATORS ────────────────────────────────────────────
+            ..._buildCollaboratorsSection(isDark),
+
             // ─── TIMER ──────────────────────────────────────────────────────
             if (_session.sessionState == 'locked' &&
                 _session.unlockAt != null) ...[
@@ -299,6 +308,110 @@ class _SessionPopupState extends State<SessionPopup> {
           ),
         ),
       ],
+    );
+  }
+
+  // ─── Collaborators on this session ────────────────────────────────────
+  List<Widget> _buildCollaboratorsSection(bool isDark) {
+    final accepted =
+        widget.collaborators.where((c) => c.isAccepted).toList();
+    if (accepted.isEmpty) return const [];
+
+    // user_id -> this collaborator's status on THIS session.
+    final statusByUser = {
+      for (final row in widget.session.collaboratorProgress) row.userId: row.status,
+    };
+
+    return [
+      _buildSectionTitle('Collaborators', isDark),
+      const SizedBox(height: 6),
+      Container(
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: isDark ? Colors.white10 : Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isDark ? Colors.white12 : Colors.grey.shade200,
+          ),
+        ),
+        child: Column(
+          children: [
+            for (final c in accepted)
+              _buildCollaboratorSessionRow(
+                c,
+                statusByUser[c.user.id] ?? 'pending',
+                isDark,
+              ),
+          ],
+        ),
+      ),
+      const SizedBox(height: 14),
+    ];
+  }
+
+  Widget _buildCollaboratorSessionRow(
+    Collaborator collaborator,
+    String sessionStatus,
+    bool isDark,
+  ) {
+    IconData icon;
+    Color color;
+    String label;
+    switch (sessionStatus) {
+      case 'completed':
+        icon = Icons.check_circle_rounded;
+        color = const Color(0xFF16A34A);
+        label = 'Finished';
+        break;
+      case 'skipped':
+        icon = Icons.skip_next_rounded;
+        color = Colors.orange;
+        label = 'Skipped';
+        break;
+      case 'ongoing':
+        icon = Icons.play_circle_fill_rounded;
+        color = Colors.blue;
+        label = 'In progress';
+        break;
+      default:
+        icon = Icons.schedule_rounded;
+        color = isDark ? Colors.white38 : Colors.black38;
+        label = 'Not yet';
+    }
+
+    final name = collaborator.user.name.isNotEmpty
+        ? collaborator.user.name
+        : '@${collaborator.user.username}';
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          CollaboratorAvatar(collaborator: collaborator, radius: 13),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              name,
+              style: AppTextStyles.body.copyWith(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: isDark ? Colors.white : Colors.black87,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          Icon(icon, size: 15, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              fontSize: 11.5,
+              fontWeight: FontWeight.w600,
+              color: color,
+            ),
+          ),
+        ],
+      ),
     );
   }
 

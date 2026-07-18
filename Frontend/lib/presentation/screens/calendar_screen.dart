@@ -9,6 +9,7 @@ import '../providers/calendar_viewmodel.dart';
 import '../providers/task_refresh_notifier.dart';
 import 'package:lottie/lottie.dart';
 import '../widgets/task_edit_sheet.dart';
+import '../widgets/collaborator_avatars.dart';
 
 class CalendarScreen extends StatefulWidget {
   final DateTime? initialDate;
@@ -758,6 +759,13 @@ class _CalendarScreenState extends State<CalendarScreen>
                                       ),
                                     ],
                                   ),
+                                  // ── Collaborators (shared tasks only) ──
+                                  if (task.collaborators.isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    CollaboratorSummaryRow(
+                                      collaborators: task.collaborators,
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),

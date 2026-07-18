@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/roadmap_session_viewmodel.dart';
 import '../widgets/winding_trail.dart';
 import '../widgets/session_popup.dart';
+import '../widgets/collaborator_avatars.dart';
 import '../../core/theme/app_colours.dart';
 import '../../core/theme/app_text_style.dart';
 import '../../data/repositories/roadmap_repository.dart';
@@ -73,6 +74,8 @@ class _RoadmapSessionScreenContentState
         child: Column(
           children: [
             _buildCustomHeader(vm, roadmap, isDark),
+            if (roadmap != null && roadmap.collaborators.isNotEmpty)
+              _buildCollaboratorsBar(roadmap, isDark),
             Expanded(
               child: vm.isLoading
                   ? const Center(child: CircularProgressIndicator())
@@ -279,6 +282,134 @@ class _RoadmapSessionScreenContentState
     );
   }
 
+  // ─── Collaborators bar (tap to view progress) ────────────────────────
+  Widget _buildCollaboratorsBar(RoadmapDetail roadmap, bool isDark) {
+    final collaborators = roadmap.collaborators;
+    final cardBg = isDark ? const Color(0xFF1C1C1E) : Colors.white;
+    final borderClr = isDark ? const Color(0xFF2C2C2E) : Colors.grey.shade200;
+    final textClr = isDark ? Colors.white : const Color(0xFF1C1C1E);
+
+    // One-line summary: for a single accepted collaborator show where they are;
+    // otherwise a simple count.
+    String summary;
+    final accepted = collaborators.where((c) => c.isAccepted).toList();
+    if (collaborators.length == 1) {
+      final c = collaborators.first;
+      final name = c.user.name.isNotEmpty ? c.user.name : '@${c.user.username}';
+      if (c.isPending) {
+        summary = '$name · invited';
+      } else if (c.progress?.isFinished == true) {
+        summary = '$name finished the roadmap 🎉';
+      } else if (c.progress?.currentOrder != null) {
+        summary =
+            '$name · on session ${c.progress!.currentOrder} of ${roadmap.sessionCount}';
+      } else {
+        summary = '$name is collaborating';
+      }
+    } else {
+      final invited = collaborators.length - accepted.length;
+      summary = invited > 0
+          ? '${collaborators.length} collaborators · $invited invited'
+          : '${collaborators.length} learning with you';
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      child: Material(
+        color: cardBg,
+        borderRadius: BorderRadius.circular(16),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(16),
+          onTap: () => _showCollaboratorsSheet(roadmap, isDark),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: borderClr),
+            ),
+            child: Row(
+              children: [
+                CollaboratorAvatarStack(collaborators: collaborators, radius: 14),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    summary,
+                    style: TextStyle(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: textClr,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                Icon(
+                  Icons.chevron_right_rounded,
+                  size: 20,
+                  color: Theme.of(context).hintColor,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showCollaboratorsSheet(RoadmapDetail roadmap, bool isDark) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade400,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Icon(Icons.groups_rounded, color: AppColors.primary, size: 20),
+                const SizedBox(width: 8),
+                Text(
+                  'Collaborators',
+                  style: AppTextStyles.headline.copyWith(fontSize: 17),
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Text(
+              'How everyone is progressing on this roadmap',
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).hintColor,
+              ),
+            ),
+            const SizedBox(height: 8),
+            for (final c in roadmap.collaborators)
+              CollaboratorProgressTile(
+                collaborator: c,
+                totalSessions: roadmap.sessionCount,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildPausedOverlay(RoadmapDetail roadmap, bool isDark) {
     return Center(
       child: Column(
@@ -324,6 +455,7 @@ class _RoadmapSessionScreenContentState
         return SessionPopup(
           session: session,
           isDark: isDark,
+          collaborators: vm.roadmap?.collaborators ?? const [],
           fetchLatestSession: (sessionId) async {
             return await vm.getSessionDetail(sessionId);
           },
