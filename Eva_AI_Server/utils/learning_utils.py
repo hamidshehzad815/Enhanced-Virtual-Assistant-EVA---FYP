@@ -1047,6 +1047,7 @@ def build_schedule(
     *,
     default_duration_minutes: int = 90,
     timezone_name: Optional[str] = "UTC",
+    not_before: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
     """
     Assign each roadmap topic to the next calendar learning slot.
@@ -1057,6 +1058,10 @@ def build_schedule(
 
     Slot times are interpreted in ``timezone_name`` (user profile), then stored as UTC-naive
     datetimes — same convention as ``scheduling_add`` task ``due_datetime``.
+
+    When ``not_before`` is set (typically ``now`` as UTC-naive), slots whose
+    scheduled start is already in the past are skipped — e.g. start today after
+    today's learning time has passed.
 
     Each output row: { order, title, resources, scheduled_date, duration_minutes }.
     """
@@ -1069,6 +1074,14 @@ def build_schedule(
     )
     if not by_day:
         return []
+
+    cutoff = None
+    if isinstance(not_before, datetime):
+        cutoff = (
+            not_before.replace(tzinfo=None)
+            if not_before.tzinfo is not None
+            else not_before
+        )
 
     out: List[Dict[str, Any]] = []
     current = start_date
@@ -1097,6 +1110,8 @@ def build_schedule(
             )
             if session_dt is None:
                 session_dt = datetime.combine(current, parsed_time)
+            if cutoff is not None and session_dt < cutoff:
+                continue
             out.append(
                 {
                     "order": order,

@@ -539,6 +539,8 @@ async def handle_learning_create(
         schedule_slots,
         default_duration_minutes=DEFAULT_DURATION_MINUTES,
         timezone_name=tz,
+        # Don't book today's slot if that clock time has already passed.
+        not_before=datetime.now(dt_timezone.utc).replace(tzinfo=None),
     )
     for row in scheduled_rows:
         session_dt = row.get("scheduled_date")
