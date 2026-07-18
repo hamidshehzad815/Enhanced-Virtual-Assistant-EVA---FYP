@@ -17,6 +17,9 @@ const {
   formatCollaboratorConflictMessage,
   resolveUserTimezone,
 } = require("../utils/userCalendarConflicts");
+const {
+  scheduleGoogleCalendarBackfill,
+} = require("./googleCalendarBackfill.service");
 
 const sameObjectId = (a, b) => String(a) === String(b);
 
@@ -183,6 +186,10 @@ const cloneLearningPlanForCollaborator = async (ownerGoal, collaboratorUserId) =
       { $set: { task_id: newTask._id, updated_at: now } },
     );
   }
+
+  // Push cloned learning sessions onto the collaborator's Google Calendar
+  // (owner already got events at create-time; clone previously skipped this).
+  scheduleGoogleCalendarBackfill(collaboratorUserId);
 
   return collabGoal;
 };
