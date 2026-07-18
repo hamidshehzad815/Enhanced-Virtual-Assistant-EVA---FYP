@@ -262,64 +262,71 @@ class _FeaturesScreenState extends State<FeaturesScreen> {
         duration: Duration(milliseconds: isActive ? 650 : 220),
         curve: isActive ? Curves.easeOutCubic : Curves.easeIn,
         builder: (context, t, _) {
-          return Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _staggerItem(
-                t: t,
-                isActive: isActive,
-                start: 0.0,
-                end: 0.35,
-                child: Text(
-                  feature["number"],
-                  style: AppTextStyles.info.copyWith(
-                    fontSize: 13,
-                    color: numberColor,
+          // Scrolls internally instead of a hard overflow (diagonal error
+          // stripes) on short screens or with a larger system font/text-scale
+          // setting, where the card's fixed-size content can exceed the
+          // height the PageView gives this card.
+          return SingleChildScrollView(
+            physics: const ClampingScrollPhysics(),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _staggerItem(
+                  t: t,
+                  isActive: isActive,
+                  start: 0.0,
+                  end: 0.35,
+                  child: Text(
+                    feature["number"],
+                    style: AppTextStyles.info.copyWith(
+                      fontSize: 13,
+                      color: numberColor,
+                    ),
                   ),
                 ),
-              ),
-              const SizedBox(height: 10),
-              _staggerItem(
-                t: t,
-                isActive: isActive,
-                start: 0.12,
-                end: 0.5,
-                child: Text(
-                  feature["emoji"],
-                  style: const TextStyle(fontSize: 40),
-                ),
-              ),
-              const SizedBox(height: 12),
-              _staggerItem(
-                t: t,
-                isActive: isActive,
-                start: 0.28,
-                end: 0.68,
-                child: Text(
-                  feature["title"],
-                  style: AppTextStyles.logo.copyWith(
-                    fontSize: 20,
-                    color: titleColor,
+                const SizedBox(height: 10),
+                _staggerItem(
+                  t: t,
+                  isActive: isActive,
+                  start: 0.12,
+                  end: 0.5,
+                  child: Text(
+                    feature["emoji"],
+                    style: const TextStyle(fontSize: 40),
                   ),
                 ),
-              ),
-              const SizedBox(height: 8),
-              _staggerItem(
-                t: t,
-                isActive: isActive,
-                start: 0.42,
-                end: 0.85,
-                child: Text(
-                  feature["description"],
-                  style: AppTextStyles.body.copyWith(
-                    fontSize: 13.5,
-                    color: descColor,
-                    height: 1.4,
+                const SizedBox(height: 12),
+                _staggerItem(
+                  t: t,
+                  isActive: isActive,
+                  start: 0.28,
+                  end: 0.68,
+                  child: Text(
+                    feature["title"],
+                    style: AppTextStyles.logo.copyWith(
+                      fontSize: 20,
+                      color: titleColor,
+                    ),
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 8),
+                _staggerItem(
+                  t: t,
+                  isActive: isActive,
+                  start: 0.42,
+                  end: 0.85,
+                  child: Text(
+                    feature["description"],
+                    style: AppTextStyles.body.copyWith(
+                      fontSize: 13.5,
+                      color: descColor,
+                      height: 1.4,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           );
         },
       ),
