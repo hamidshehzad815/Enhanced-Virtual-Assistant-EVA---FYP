@@ -87,7 +87,7 @@ each with their own progress. `GET /api/roadmaps/plans` includes `collaborators[
 | `progress.total_topics` | `number` | Sessions in their copy of the plan |
 | `progress.progress_percent` | `number` | `0–100` |
 | `progress.current_order` | `number \| null` | Session `order` they're currently on; `null` when finished |
-| `progress.plan_status` | `string` | Their plan status: `active`, `completed`, `paused`, `cancelled` |
+| `progress.plan_status` | `string` | Their plan status: `active`, `completed`, `paused`, `cancelled`, `deleted` (they removed their copy) — surfaced so the other members see when someone pauses/leaves |
 
 | `session_state`   | Reschedule | Skip | Complete |
 | ----------------- | ---------- | ---- | -------- |

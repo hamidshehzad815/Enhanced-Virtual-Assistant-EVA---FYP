@@ -185,6 +185,87 @@ describe("buildCollaboratorProgressForGoals", () => {
     ]);
   });
 
+  test("reports a deleted collaborator plan as plan_status 'deleted'", async () => {
+    const goalId = new mongoose.Types.ObjectId();
+    const collabId = new mongoose.Types.ObjectId();
+    const cloneId = new mongoose.Types.ObjectId();
+
+    const goal = {
+      _id: goalId,
+      roadmap_key: "python:basics",
+      title: "Python",
+      collaborators: [{ user_id: collabId, status: "accepted" }],
+    };
+
+    User.find.mockReturnValue(
+      selectLean([
+        { _id: collabId, name: "Bilal", username: "bilal", profile_picture: null },
+      ]),
+    );
+    // The collaborator deleted their copy: is_deleted true, topics gone.
+    LearningGoal.find.mockReturnValue(
+      selectLean([
+        {
+          _id: cloneId,
+          user_id: collabId,
+          source_goal_id: goalId,
+          status: "cancelled",
+          is_deleted: true,
+          total_topics: 8,
+          completed_topics: 3,
+        },
+      ]),
+    );
+    RoadmapTopic.find.mockReturnValue(selectLean([]));
+
+    const map = await buildCollaboratorProgressForGoals([goal]);
+    const entry = map.get(String(goalId));
+
+    expect(entry.collaborators[0].status).toBe("accepted");
+    expect(entry.collaborators[0].progress.plan_status).toBe("deleted");
+    // Falls back to the goal's stored counts when topics are gone.
+    expect(entry.collaborators[0].progress.completed_topics).toBe(3);
+    expect(entry.collaborators[0].progress.total_topics).toBe(8);
+  });
+
+  test("reports a paused collaborator plan as plan_status 'paused'", async () => {
+    const goalId = new mongoose.Types.ObjectId();
+    const collabId = new mongoose.Types.ObjectId();
+    const cloneId = new mongoose.Types.ObjectId();
+
+    const goal = {
+      _id: goalId,
+      roadmap_key: "python:basics",
+      title: "Python",
+      collaborators: [{ user_id: collabId, status: "accepted" }],
+    };
+
+    User.find.mockReturnValue(
+      selectLean([
+        { _id: collabId, name: "Bilal", username: "bilal", profile_picture: null },
+      ]),
+    );
+    LearningGoal.find.mockReturnValue(
+      selectLean([
+        {
+          _id: cloneId,
+          user_id: collabId,
+          source_goal_id: goalId,
+          status: "paused",
+          is_deleted: false,
+        },
+      ]),
+    );
+    RoadmapTopic.find.mockReturnValue(
+      selectLean([{ goal_id: cloneId, order: 1, status: "completed" }]),
+    );
+
+    const map = await buildCollaboratorProgressForGoals([goal]);
+    const entry = map.get(String(goalId));
+
+    expect(entry.collaborators[0].progress.plan_status).toBe("paused");
+  });
+
   test("pending collaborator is shown with null progress", async () => {
     const goalId = new mongoose.Types.ObjectId();
     const collabId = new mongoose.Types.ObjectId();

@@ -54,6 +54,36 @@ const summarizeTopics = (topics) => {
 };
 
 /**
+ * Build a participant's progress object. `plan_status` reflects pause / cancel /
+ * delete so the *other* members can see it. When a plan is deleted its topics
+ * are gone too, so fall back to the goal's stored counts for a last-known value.
+ */
+const buildProgress = (progressGoal, goalTopics) => {
+  const summary = summarizeTopics(goalTopics);
+  const hasTopics = summary.total > 0;
+  const total = hasTopics
+    ? summary.total
+    : Number(progressGoal.total_topics || 0);
+  const completed = hasTopics
+    ? summary.completed
+    : Number(progressGoal.completed_topics || 0);
+  const progressPercent = total > 0
+    ? Math.min(100, Math.round((completed / total) * 100))
+    : 0;
+  const planStatus = progressGoal.is_deleted
+    ? "deleted"
+    : String(progressGoal.status || "active");
+
+  return {
+    completed_topics: completed,
+    total_topics: total,
+    progress_percent: progressPercent,
+    current_order: summary.currentOrder,
+    plan_status: planStatus,
+  };
+};
+
+/**
  * Compute the participant group (excluding the viewer) + progress for one or
  * more goals the viewer owns (each may be an original plan or an accepted
  * clone).
@@ -82,7 +112,7 @@ const buildCollaboratorProgressForGoals = async (goals) => {
   }
   const fetchedRoots = rootIdsToFetch.size
     ? await LearningGoal.find({ _id: { $in: [...rootIdsToFetch] } })
-        .select("user_id roadmap_key title status collaborators")
+        .select("user_id roadmap_key title status collaborators is_deleted total_topics completed_topics")
         .lean()
     : [];
   const rootById = new Map(fetchedRoots.map((r) => [String(r._id), r]));
@@ -132,18 +162,21 @@ const buildCollaboratorProgressForGoals = async (goals) => {
       ),
     ),
   ];
+  // Include deleted clones so a collaborator who removed their copy is reported
+  // as having "left", rather than silently disappearing.
   const cloneGoals = await LearningGoal.find({
-    is_deleted: false,
     source_goal_id: { $in: rootIds },
   })
-    .select("user_id status source_goal_id")
+    .select("user_id status source_goal_id is_deleted total_topics completed_topics")
     .lean();
   const cloneByRootAndUser = new Map();
   for (const clone of cloneGoals) {
-    cloneByRootAndUser.set(
-      `${String(clone.source_goal_id)}|${String(clone.user_id)}`,
-      clone,
-    );
+    const key = `${String(clone.source_goal_id)}|${String(clone.user_id)}`;
+    const existing = cloneByRootAndUser.get(key);
+    // Prefer an active clone over a deleted one if both somehow exist.
+    if (!existing || (existing.is_deleted && !clone.is_deleted)) {
+      cloneByRootAndUser.set(key, clone);
+    }
   }
 
   // 4. Load topics for every "progress goal" (root goals + clones).
@@ -206,14 +239,7 @@ const buildCollaboratorProgressForGoals = async (goals) => {
       let progress = null;
       if (progressGoal) {
         const goalTopics = topicsByGoal.get(String(progressGoal._id)) || [];
-        const summary = summarizeTopics(goalTopics);
-        progress = {
-          completed_topics: summary.completed,
-          total_topics: summary.total,
-          progress_percent: summary.progressPercent,
-          current_order: summary.currentOrder,
-          plan_status: String(progressGoal.status || "active"),
-        };
+        progress = buildProgress(progressGoal, goalTopics);
         for (const topic of goalTopics) {
           const order = Number(topic.order || 0);
           if (!perSession.has(order)) {

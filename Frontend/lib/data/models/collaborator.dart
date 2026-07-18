@@ -76,6 +76,13 @@ class CollaboratorProgress {
       planStatus == 'completed' ||
       (totalTopics > 0 && completedTopics >= totalTopics);
 
+  bool get isPaused => planStatus == 'paused';
+  bool get isCancelled => planStatus == 'cancelled';
+  bool get isDeleted => planStatus == 'deleted';
+
+  /// True when the participant is no longer actively working the plan.
+  bool get isInactive => isPaused || isCancelled || isDeleted;
+
   factory CollaboratorProgress.fromJson(Map<String, dynamic> json) {
     return CollaboratorProgress(
       completedTopics: json['completed_topics'] ?? 0,

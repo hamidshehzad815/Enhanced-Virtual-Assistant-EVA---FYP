@@ -298,6 +298,12 @@ class _RoadmapSessionScreenContentState
       final name = c.user.name.isNotEmpty ? c.user.name : '@${c.user.username}';
       if (c.isPending) {
         summary = '$name · invited';
+      } else if (c.progress?.isPaused == true) {
+        summary = '$name paused their plan';
+      } else if (c.progress?.isDeleted == true) {
+        summary = '$name left the plan';
+      } else if (c.progress?.isCancelled == true) {
+        summary = '$name cancelled their plan';
       } else if (c.progress?.isFinished == true) {
         summary = '$name finished the roadmap 🎉';
       } else if (c.progress?.currentOrder != null) {
