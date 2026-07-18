@@ -90,28 +90,25 @@ class Settings:
     # Gemini API
     GEMINI_API_KEY: str = os.getenv("GEMINI_API_KEY", "")
     GEMINI_ENABLED: bool = _as_bool(os.getenv("GEMINI_ENABLED"), True)
-    # Model names are env-configurable because Google retires them on a rolling
-    # basis: gemini-2.5-flash is already blocked for new API keys and shuts down
+    # Single model for every Gemini call site (replies, CLF1 classifier,
+    # pending-reply fallback) — one env var, one source of truth. Model names
+    # are env-configurable because Google retires them on a rolling basis:
+    # gemini-2.5-flash is already blocked for new API keys and shuts down
     # 2026-10-16. Run testModels/list_gemini_models.py to see what a given key
     # can actually use, rather than hard-coding a name.
     GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
     # EXPERIMENT (branch experiment/gemini-clf1): use Gemini instead of CLF1 to
     # classify input type and clean the text. Default OFF — CLF1 stays the
-    # primary path and remains the fallback whenever Gemini fails.
+    # primary path and remains the fallback whenever Gemini fails. Uses
+    # GEMINI_MODEL (see above) — no separate model setting.
     USE_GEMINI_CLF1: bool = _as_bool(os.getenv("USE_GEMINI_CLF1"), False)
-    # Flash-Lite is the cheap/low-latency tier — the right shape for a
-    # classifier, where latency is the whole cost question.
-    GEMINI_CLF1_MODEL: str = os.getenv("GEMINI_CLF1_MODEL", "gemini-3.1-flash-lite")
     # Issue #73: Gemini fallback for natural replies to pending yes/no + list
     # prompts. Deterministic keyword/digit parsing always runs first; Gemini is
-    # only consulted on a miss, and only when this flag is on.
+    # only consulted on a miss, and only when this flag is on. Uses
+    # GEMINI_MODEL (see above) — no separate model setting.
     USE_GEMINI_PENDING_REPLY: bool = _as_bool(
         os.getenv("USE_GEMINI_PENDING_REPLY"),
         False,
-    )
-    GEMINI_PENDING_REPLY_MODEL: str = os.getenv(
-        "GEMINI_PENDING_REPLY_MODEL",
-        "gemini-3.1-flash-lite",
     )
     GEMINI_PENDING_REPLY_MIN_CONFIDENCE: float = float(
         os.getenv("GEMINI_PENDING_REPLY_MIN_CONFIDENCE", "0.7"),
