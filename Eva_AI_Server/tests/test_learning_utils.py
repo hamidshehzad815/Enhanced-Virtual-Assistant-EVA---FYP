@@ -247,6 +247,30 @@ class BuildScheduleTests(unittest.TestCase):
         self.assertEqual(out[0]["title"], "Morning")
         self.assertEqual(out[1]["title"], "Evening")
 
+    def test_skips_past_slot_when_not_before_set(self):
+        # Saturday = weekday 5. Start today Sat; 16:00 already past → first session Sunday.
+        start = date(2026, 7, 18)  # Saturday
+        schedule_slots = [
+            {"day": 5, "time": "16:00", "duration_minutes": 60},  # Sat
+            {"day": 6, "time": "10:00", "duration_minutes": 60},  # Sun
+            {"day": 0, "time": "10:00", "duration_minutes": 60},  # Mon
+        ]
+        topics = [
+            {"order": 1, "title": "First", "resources": []},
+            {"order": 2, "title": "Second", "resources": []},
+        ]
+        out = lu.build_schedule(
+            start,
+            topics,
+            schedule_slots,
+            timezone_name="UTC",
+            not_before=datetime(2026, 7, 18, 17, 0, 0),  # after Sat 4pm
+        )
+        self.assertEqual(len(out), 2)
+        self.assertEqual(out[0]["title"], "First")
+        self.assertEqual(out[0]["scheduled_date"], datetime(2026, 7, 19, 10, 0))  # Sunday
+        self.assertEqual(out[1]["scheduled_date"], datetime(2026, 7, 20, 10, 0))  # Monday
+
     def test_converts_user_local_slot_to_utc_naive(self):
         """09:40 Asia/Karachi on Friday → 04:40 UTC stored."""
         start = date(2026, 6, 5)  # Friday
