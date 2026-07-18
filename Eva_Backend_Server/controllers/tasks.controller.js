@@ -125,6 +125,9 @@ const { insert_and_dispatch } = require("../services/notification.service");
 const { buildTaskRescheduledNotification } = require("../utils/taskRescheduleNotification");
 const { resolveGoogleCalendarSync } = require("../utils/googleCalendarSync");
 const { deleteEvent } = require("../services/googleCalendar.service");
+const {
+  scheduleGoogleCalendarBackfill,
+} = require("../services/googleCalendarBackfill.service");
 
 const STATUS_VALUES = new Set(["pending", "complete"]);
 const STORED_STATUS_FILTER = {
@@ -302,7 +305,7 @@ const cloneTaskForCollaborator = async (ownerTask, collaboratorUserId) => {
   }
 
   const now = new Date();
-  return Task.create({
+  const created = await Task.create({
     owner_id: collabOid,
     title: ownerTask.title,
     description: ownerTask.description,
@@ -319,6 +322,11 @@ const cloneTaskForCollaborator = async (ownerTask, collaboratorUserId) => {
     created_at: now,
     updated_at: now,
   });
+
+  // Same as learning accept: push the collaborator's copy to their calendar.
+  scheduleGoogleCalendarBackfill(collaboratorUserId);
+
+  return created;
 };
 
 const markCollaborationNotificationHandled = async ({
@@ -395,6 +403,16 @@ const applyCollaborationAction = async ({
   }
 
   if (String(collaboratorRow.status || "").toLowerCase() !== "pending") {
+    let collaboratorTaskId = null;
+    // Self-heal: status stuck as accepted but clone never created.
+    if (
+      action === "accept"
+      && String(collaboratorRow.status || "").toLowerCase() === "accepted"
+    ) {
+      const collabTask = await cloneTaskForCollaborator(task, collaboratorUserId);
+      collaboratorTaskId = collabTask ? collabTask._id : null;
+    }
+
     await markCollaborationNotificationHandled({
       userId: collaboratorObjectId,
       taskId: taskObjectId,
@@ -403,6 +421,7 @@ const applyCollaborationAction = async ({
     });
     return {
       task,
+      collaborator_task_id: collaboratorTaskId,
       already_responded: true,
       current_status: collaboratorRow.status,
     };
