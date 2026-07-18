@@ -45,7 +45,19 @@ Returns **all non-deleted tasks owned by the user**, sorted by `due_datetime`. U
         "is_learning_task": false,
         "learning_goal_id": null,
         "learning_session_id": null,
-        "editable": true
+        "editable": true,
+        "collaborator_count": 1,
+        "collaborators": [
+          {
+            "user": {
+              "_id": "507f1f77bcf86cd799439099",
+              "name": "Aisha Khan",
+              "username": "aisha",
+              "profile_picture": "https://.../aisha.png"
+            },
+            "status": "accepted"
+          }
+        ]
       }
     ]
   }
@@ -89,7 +101,9 @@ Fetch a single task owned by the user.
       "is_learning_task": false,
       "learning_goal_id": null,
       "learning_session_id": null,
-      "editable": true
+      "editable": true,
+      "collaborator_count": 0,
+      "collaborators": []
     }
   }
 }
@@ -203,6 +217,29 @@ Soft-deletes the task (`is_deleted: true`).
 | `learning_goal_id` | `string \| null` | Roadmap plan id when `is_learning_task` |
 | `learning_session_id` | `string \| null` | Roadmap session id (`roadmap_topics._id`) when `is_learning_task` |
 | `editable` | `boolean` | `false` for learning sessions; calendar/tasks UI must not PATCH/DELETE |
+| `collaborator_count` | `number` | Number of collaborators on the task (`0` = solo) |
+| `collaborators` | `Collaborator[]` | Populated collaborators (see below); `[]` for solo tasks |
+
+### Collaborator object
+
+Only **public** profile fields are exposed — never email or tokens. Collaborators
+whose user account no longer exists are omitted.
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `user._id` | `string` | Collaborator user id |
+| `user.name` | `string \| null` | Display name |
+| `user.username` | `string \| null` | Handle |
+| `user.profile_picture` | `string \| null` | Avatar URL; fall back to initials when `null` |
+| `status` | `"pending" \| "accepted" \| "rejected"` | Invite status. Show pending as greyed/"invited" |
+| `is_owner` | `boolean` | `true` for the task owner (shown to collaborators). Render an "Owner" badge instead of a status |
+
+> `collaborators[]` lists the **other** participants, so both sides see the group:
+> the owner sees their invitees, and a collaborator (who gets their own copy on
+> accept — see [respond endpoints](#) below) sees the owner with `is_owner: true`
+> plus any siblings. The signed-in user is always the fetched task's `owner_id`,
+> i.e. "You". Learning-session tasks keep collaboration on the **roadmap** (see
+> roadmaps-api.md) and report `[]` here.
 
 ---
 

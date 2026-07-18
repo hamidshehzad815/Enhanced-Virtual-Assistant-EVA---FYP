@@ -30,20 +30,30 @@ class CalendarViewModel extends ChangeNotifier {
     Future.microtask(() => loadTasks());
   }
 
-  Future<void> loadTasks() async {
-    _isLoading = true;
-    _error = null;
-    notifyListeners();
+  Future<void>? _inFlightLoad;
 
-    try {
-      _allTasks = await _repository.fetchCalendarTasks();
-    } catch (e) {
-      _error = e.toString();
-      _allTasks = [];
-    } finally {
-      _isLoading = false;
+  Future<void> loadTasks() async {
+    // Coalesce concurrent reloads (e.g. refresh signal + screen enter).
+    if (_inFlightLoad != null) return _inFlightLoad!;
+
+    _inFlightLoad = () async {
+      _isLoading = true;
+      _error = null;
       notifyListeners();
-    }
+
+      try {
+        _allTasks = await _repository.fetchCalendarTasks();
+      } catch (e) {
+        _error = e.toString();
+        _allTasks = [];
+      } finally {
+        _isLoading = false;
+        _inFlightLoad = null;
+        notifyListeners();
+      }
+    }();
+
+    return _inFlightLoad!;
   }
 
   List<CalendarTask> get filteredTasks {

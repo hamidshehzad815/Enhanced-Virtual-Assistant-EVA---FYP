@@ -17,6 +17,9 @@ const {
   formatCollaboratorConflictMessage,
   resolveUserTimezone,
 } = require("../utils/userCalendarConflicts");
+const {
+  scheduleGoogleCalendarBackfill,
+} = require("./googleCalendarBackfill.service");
 
 const sameObjectId = (a, b) => String(a) === String(b);
 
@@ -121,6 +124,8 @@ const cloneLearningPlanForCollaborator = async (ownerGoal, collaboratorUserId) =
     completed_topics: 0,
     status: "active",
     collaborators: [],
+    // Back-reference so the owner can see this collaborator's progress.
+    source_goal_id: ownerGoal._id,
     generated_by: ownerGoal.generated_by || "eva",
     started_at: null,
     completed_at: null,
@@ -182,6 +187,10 @@ const cloneLearningPlanForCollaborator = async (ownerGoal, collaboratorUserId) =
     );
   }
 
+  // Push cloned learning sessions onto the collaborator's Google Calendar
+  // (owner already got events at create-time; clone previously skipped this).
+  scheduleGoogleCalendarBackfill(collaboratorUserId);
+
   return collabGoal;
 };
 
@@ -228,7 +237,49 @@ const applyLearningCollaborationAction = async ({
     throw new NotFoundError("Collaborator record not found");
   }
 
-  if (String(collaboratorRow.status || "").toLowerCase() !== "pending") {
+  const currentStatus = String(collaboratorRow.status || "").toLowerCase();
+
+  if (currentStatus !== "pending") {
+    // Self-heal: an earlier accept may have flipped the status to "accepted" but
+    // failed before the plan was cloned (e.g. a transient error), leaving the
+    // collaborator "accepted" with no plan/sessions. If the clone is missing,
+    // (re)build it now instead of reporting the invite as already handled.
+    if (action === "accept" && currentStatus === "accepted") {
+      const existingClone = await LearningGoal.findOne({
+        source_goal_id: goalObjectId,
+        user_id: collaboratorObjectId,
+        is_deleted: false,
+      }).lean();
+
+      await markLearningCollaborationNotificationHandled({
+        userId: collaboratorObjectId,
+        goalId: goalObjectId,
+        action,
+        notificationId,
+      });
+
+      if (existingClone) {
+        return {
+          goal,
+          collaborator_goal_id: existingClone._id,
+          already_responded: true,
+          current_status: collaboratorRow.status,
+        };
+      }
+
+      await validateCollaboratorCanAcceptPlan(goal, collaboratorUserId);
+      const recoveredGoal = await cloneLearningPlanForCollaborator(
+        goal,
+        collaboratorUserId,
+      );
+      return {
+        goal,
+        collaborator_goal_id: recoveredGoal._id,
+        already_responded: false,
+        current_status: "accepted",
+      };
+    }
+
     await markLearningCollaborationNotificationHandled({
       userId: collaboratorObjectId,
       goalId: goalObjectId,
@@ -269,12 +320,28 @@ const applyLearningCollaborationAction = async ({
 
   let collaboratorGoalId = null;
   if (action === "accept") {
-    await validateCollaboratorCanAcceptPlan(updatedGoal, collaboratorUserId);
-    const collabGoal = await cloneLearningPlanForCollaborator(
-      updatedGoal,
-      collaboratorUserId,
-    );
-    collaboratorGoalId = collabGoal._id;
+    try {
+      await validateCollaboratorCanAcceptPlan(updatedGoal, collaboratorUserId);
+      const collabGoal = await cloneLearningPlanForCollaborator(
+        updatedGoal,
+        collaboratorUserId,
+      );
+      collaboratorGoalId = collabGoal._id;
+    } catch (error) {
+      // Cloning failed (e.g. a calendar conflict) — revert the status to
+      // pending so the invite stays actionable and doesn't get stuck as
+      // "accepted" with no plan. The notification is left unhandled too.
+      await LearningGoal.updateOne(
+        { _id: goalObjectId, "collaborators.user_id": collaboratorObjectId },
+        {
+          $set: {
+            "collaborators.$.status": "pending",
+            updated_at: new Date(),
+          },
+        },
+      );
+      throw error;
+    }
   }
 
   await markLearningCollaborationNotificationHandled({

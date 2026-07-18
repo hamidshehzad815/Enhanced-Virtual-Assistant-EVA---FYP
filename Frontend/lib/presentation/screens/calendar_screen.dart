@@ -9,6 +9,7 @@ import '../providers/calendar_viewmodel.dart';
 import '../providers/task_refresh_notifier.dart';
 import 'package:lottie/lottie.dart';
 import '../widgets/task_edit_sheet.dart';
+import '../widgets/collaborator_avatars.dart';
 
 class CalendarScreen extends StatefulWidget {
   final DateTime? initialDate;
@@ -29,6 +30,8 @@ class _CalendarScreenState extends State<CalendarScreen>
   VoidCallback? _viewModelListener;
   DateTime _lastLoadTime = DateTime.now();
   CalendarViewModel? _vm;
+  bool _refreshListening = false;
+  bool _depsInitialized = false;
 
   @override
   void initState() {
@@ -48,16 +51,23 @@ class _CalendarScreenState extends State<CalendarScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     final refreshNotifier = context.read<TaskRefreshNotifier>();
-    refreshNotifier.addListener(_onRefreshSignal);
+    // Register once — didChangeDependencies can run many times.
+    if (!_refreshListening) {
+      refreshNotifier.addListener(_onRefreshSignal);
+      _refreshListening = true;
+    }
     final vm = context.read<CalendarViewModel>();
     _vm = vm;
     if (_viewModelListener == null) {
       _viewModelListener = _tryOpenDialog;
       vm.addListener(_viewModelListener!);
     }
-    if (refreshNotifier.needsRefresh ||
-        vm.tasks.isEmpty ||
-        DateTime.now().difference(_lastLoadTime).inSeconds > 30) {
+    // Load on first entry, or when another screen signaled a task change.
+    // Do NOT reload just because tasks are empty (that races in-flight loads).
+    final shouldLoad = !_depsInitialized
+        || refreshNotifier.needsRefresh;
+    _depsInitialized = true;
+    if (shouldLoad) {
       refreshNotifier.consume();
       _lastLoadTime = DateTime.now();
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -70,8 +80,10 @@ class _CalendarScreenState extends State<CalendarScreen>
 
   @override
   void dispose() {
-    final refreshNotifier = context.read<TaskRefreshNotifier>();
-    refreshNotifier.removeListener(_onRefreshSignal); // <-- add this
+    if (_refreshListening) {
+      context.read<TaskRefreshNotifier>().removeListener(_onRefreshSignal);
+      _refreshListening = false;
+    }
     if (_viewModelListener != null) {
       _vm?.removeListener(_viewModelListener!);
     }
@@ -758,6 +770,13 @@ class _CalendarScreenState extends State<CalendarScreen>
                                       ),
                                     ],
                                   ),
+                                  // ── Collaborators (shared tasks only) ──
+                                  if (task.collaborators.isNotEmpty) ...[
+                                    const SizedBox(height: 6),
+                                    CollaboratorSummaryRow(
+                                      collaborators: task.collaborators,
+                                    ),
+                                  ],
                                 ],
                               ),
                             ),

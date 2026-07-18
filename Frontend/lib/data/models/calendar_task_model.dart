@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'collaborator.dart';
+
+export 'collaborator.dart';
 
 enum TaskPriority { low, medium, high }
 enum TaskStatus { pending, ongoing, overdue, completed }
@@ -15,10 +18,12 @@ class CalendarTask {
   final bool isLearningTask;
   final String? learningGoalId;
   final DateTime? completedAt;
+  final List<Collaborator> collaborators;
 
   // convenience
   TimeOfDay get startTime => TimeOfDay.fromDateTime(dueDateTime);
   bool get isCompleted => status == TaskStatus.completed;
+  bool get hasCollaborators => collaborators.isNotEmpty;
 
   CalendarTask withCompleted(bool completed) {
     if (completed) {
@@ -55,6 +60,7 @@ class CalendarTask {
     this.isLearningTask = false,
     this.learningGoalId,
     this.completedAt,
+    this.collaborators = const [],
   });
 
   CalendarTask copyWith({
@@ -69,6 +75,7 @@ class CalendarTask {
     bool? isLearningTask,
     String? learningGoalId,
     DateTime? completedAt,
+    List<Collaborator>? collaborators,
   }) {
     return CalendarTask(
       id: id ?? this.id,
@@ -82,6 +89,7 @@ class CalendarTask {
       isLearningTask: isLearningTask ?? this.isLearningTask,
       learningGoalId: learningGoalId ?? this.learningGoalId,
       completedAt: completedAt ?? this.completedAt,
+      collaborators: collaborators ?? this.collaborators,
     );
   }
 
@@ -120,6 +128,7 @@ factory CalendarTask.fromJson(Map<String, dynamic> json) {
     completedAt: json['completed_at'] != null
         ? DateTime.parse(json['completed_at'])
         : null,
+    collaborators: Collaborator.listFromJson(json['collaborators']),
   );
 }
 

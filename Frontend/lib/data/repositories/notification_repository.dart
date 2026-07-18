@@ -45,4 +45,9 @@ class NotificationRepository {
     final token = await _getToken();
     return _service.respondCollaboration(token, taskId, action);
   }
+
+  Future<bool> respondLearningCollaboration(String goalId, String action) async {
+    final token = await _getToken();
+    return _service.respondLearningCollaboration(token, goalId, action);
+  }
 }

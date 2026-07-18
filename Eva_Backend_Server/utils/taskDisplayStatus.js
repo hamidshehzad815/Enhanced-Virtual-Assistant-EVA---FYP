@@ -74,7 +74,7 @@ const serializeTaskForApi = (
   task,
   now = new Date(),
   timezone = "UTC",
-  { includeDescription = false } = {},
+  { includeDescription = false, collaborators = undefined } = {},
 ) => {
   if (!task || typeof task !== "object") {
     return task;
@@ -110,6 +110,18 @@ const serializeTaskForApi = (
 
   if (includeDescription) {
     payload.description = task.description || null;
+  }
+
+  // Populated collaborators are supplied by the controller (batched user
+  // lookup). When omitted, fall back to the count so a solo task stays clean
+  // and callers can still detect shared tasks.
+  if (collaborators !== undefined) {
+    payload.collaborators = collaborators;
+    payload.collaborator_count = collaborators.length;
+  } else {
+    const raw = Array.isArray(task.collaborators) ? task.collaborators : [];
+    payload.collaborators = [];
+    payload.collaborator_count = raw.length;
   }
 
   return localizeApiPayload(payload, timezone);
