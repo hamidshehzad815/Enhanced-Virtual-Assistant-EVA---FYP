@@ -730,6 +730,14 @@ class _CalendarScreenState extends State<CalendarScreen>
                                   ),
                                   const SizedBox(height: 6),
                                   // ── Time and status ──
+                                  // The time range ("10:00 AM – 12:00 PM") and
+                                  // status badge share this row with no
+                                  // Expanded/ellipsis protection on the time
+                                  // text — on a narrow tile (small screen,
+                                  // long time range) that can overflow past
+                                  // the tile edge. Let the time text shrink
+                                  // with an ellipsis instead so the badge
+                                  // always stays visible.
                                   Row(
                                     children: [
                                       Icon(
@@ -738,12 +746,16 @@ class _CalendarScreenState extends State<CalendarScreen>
                                         color: secondary,
                                       ),
                                       const SizedBox(width: 3),
-                                      Text(
-                                        vm.formatTimeRange(task, context),
-                                        style: AppTextStyles.body.copyWith(
-                                          fontSize: 11,
-                                          color: secondary,
-                                          fontWeight: FontWeight.w500,
+                                      Flexible(
+                                        child: Text(
+                                          vm.formatTimeRange(task, context),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: AppTextStyles.body.copyWith(
+                                            fontSize: 11,
+                                            color: secondary,
+                                            fontWeight: FontWeight.w500,
+                                          ),
                                         ),
                                       ),
                                       const SizedBox(width: 8),
