@@ -28,12 +28,27 @@ String collaboratorStatusLabel(CollaboratorStatus status) {
   }
 }
 
-/// Badge colour/label for a participant — the owner gets a distinct treatment.
-Color collaboratorBadgeColor(Collaborator c) =>
-    c.isOwner ? AppColors.primary : collaboratorStatusColor(c.status);
+/// Badge colour/label for a participant. Pause / cancel / delete of a plan
+/// takes precedence so the *other* members can see it; the owner otherwise gets
+/// a distinct treatment.
+Color collaboratorBadgeColor(Collaborator c) {
+  final p = c.progress;
+  if (p != null) {
+    if (p.isPaused) return Colors.orange;
+    if (p.isCancelled || p.isDeleted) return Colors.grey;
+  }
+  return c.isOwner ? AppColors.primary : collaboratorStatusColor(c.status);
+}
 
-String collaboratorBadgeLabel(Collaborator c) =>
-    c.isOwner ? 'Owner' : collaboratorStatusLabel(c.status);
+String collaboratorBadgeLabel(Collaborator c) {
+  final p = c.progress;
+  if (p != null) {
+    if (p.isPaused) return 'Paused';
+    if (p.isCancelled) return 'Cancelled';
+    if (p.isDeleted) return 'Left';
+  }
+  return c.isOwner ? 'Owner' : collaboratorStatusLabel(c.status);
+}
 
 /// A single circular avatar with network image + initials fallback.
 /// Pending collaborators render dimmed with a status ring; accepted show a
@@ -266,6 +281,15 @@ class CollaboratorProgressTile extends StatelessWidget {
     double? fraction;
     if (collaborator.isPending) {
       subtitle = 'Invited — hasn\'t joined yet';
+    } else if (progress != null && progress.isInactive) {
+      // Paused / cancelled / deleted — no progress bar, just the state.
+      if (progress.isPaused) {
+        subtitle = 'Paused their plan';
+      } else if (progress.isDeleted) {
+        subtitle = 'Left the plan';
+      } else {
+        subtitle = 'Cancelled their plan';
+      }
     } else if (progress == null) {
       subtitle = collaborator.isOwner ? 'Owns this roadmap' : 'Accepted';
     } else if (progress.isFinished) {
