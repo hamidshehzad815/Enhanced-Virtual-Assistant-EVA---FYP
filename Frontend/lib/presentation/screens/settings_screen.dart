@@ -1045,6 +1045,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final labelController = TextEditingController();
     String label = '';
     List<_NewSlotData> slots = [];
+    String? sheetError;
 
     showModalBottomSheet(
       context: sheetCtx,
@@ -1100,7 +1101,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
                             ),
                           ),
                         ),
-                        onChanged: (v) => setSheetState(() => label = v),
+                        onChanged: (v) => setSheetState(() {
+                          label = v;
+                          sheetError = null;
+                        }),
                       ),
                       const SizedBox(height: 16),
                       Text(
@@ -1178,6 +1182,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ],
                       const SizedBox(height: 20),
+                      if (sheetError != null) ...[
+                        Text(
+                          sheetError!,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
                       Row(
                         children: [
                           Expanded(
@@ -1208,54 +1222,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               onPressed: () async {
                                 // 1. Validate title
                                 if (label.trim().isEmpty) {
-                                  ScaffoldMessenger.of(ctx).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Please enter a title'),
-                                      backgroundColor: Colors.red,
-                                    ),
+                                  setSheetState(
+                                    () => sheetError = 'Please enter a title',
                                   );
                                   return;
                                 }
-
-                                // 2. Validate at least one day selected
                                 if (slots.isEmpty) {
-                                  ScaffoldMessenger.of(ctx).showSnackBar(
-                                    const SnackBar(
-                                      content: Text('Select at least one day'),
-                                      backgroundColor: Colors.red,
-                                    ),
+                                  setSheetState(
+                                    () => sheetError = 'Select at least one day',
                                   );
                                   return;
                                 }
-                                final internalOverlap = _findInternalNewSlotOverlap(slots);
+                                final internalOverlap =
+                                    _findInternalNewSlotOverlap(slots);
                                 if (internalOverlap != null) {
-                                  ScaffoldMessenger.of(ctx).showSnackBar(
-                                    SnackBar(
-                                      content: Text(internalOverlap),
-                                      backgroundColor: Colors.red,
-                                    ),
+                                  setSheetState(
+                                    () => sheetError = internalOverlap,
                                   );
                                   return;
                                 }
-
-                                // 3. Validate time & duration are set for every slot
                                 if (slots.any(
                                   (s) =>
                                       s.time == null ||
                                       s.durationMinutes == null,
                                 )) {
-                                  ScaffoldMessenger.of(ctx).showSnackBar(
-                                    const SnackBar(
-                                      content: Text(
+                                  setSheetState(
+                                    () => sheetError =
                                         'Please set time and duration for all selected days',
-                                      ),
-                                      backgroundColor: Colors.red,
-                                    ),
                                   );
                                   return;
                                 }
-
-                                // 4. Check for conflicts (convert to _SlotData for compatibility)
                                 final conflictSlots = slots
                                     .map(
                                       (s) => _SlotData(
@@ -1271,16 +1267,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   excludeId: null,
                                 );
                                 if (conflict != null) {
-                                  ScaffoldMessenger.of(ctx).showSnackBar(
-                                    SnackBar(
-                                      content: Text('Conflicts with $conflict'),
-                                      backgroundColor: Colors.red,
-                                    ),
+                                  setSheetState(
+                                    () => sheetError =
+                                        'Conflicts with $conflict',
                                   );
                                   return;
                                 }
-
-                                // 5. Create the schedule
+                                setSheetState(() => sheetError = null);
                                 try {
                                   await vm.createLearningSchedule(
                                     label.trim(),
@@ -1305,13 +1298,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                   }
                                 } catch (e) {
                                   if (ctx.mounted) {
-                                    ScaffoldMessenger.of(ctx).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
+                                    setSheetState(
+                                      () => sheetError =
                                           'Failed to create: ${_friendlyErrorMessage(e)}',
-                                        ),
-                                        backgroundColor: Colors.red,
-                                      ),
                                     );
                                   }
                                 }
@@ -1528,6 +1517,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
         .toList();
 
     final labelController = TextEditingController(text: label);
+    String? sheetError;
 
     showModalBottomSheet(
       context: sheetCtx,
@@ -1721,6 +1711,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ),
                       ],
                       const SizedBox(height: 20),
+                      if (isEditing && sheetError != null) ...[
+                        Text(
+                          sheetError!,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 13,
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                      ],
                       if (isEditing)
                         Row(
                           children: [
@@ -1729,6 +1729,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                 onPressed: () {
                                   setSheetState(() {
                                     isEditing = false;
+                                    sheetError = null;
                                     label = originalLabel;
                                     labelController.text = originalLabel;
                                     slots = originalSlots
@@ -1764,32 +1765,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                               child: ElevatedButton(
                                 onPressed: () async {
                                   if (label.trim().isEmpty) {
-                                    ScaffoldMessenger.of(ctx).showSnackBar(
-                                      const SnackBar(
-                                        content: Text('Please enter a title'),
-                                        backgroundColor: Colors.red,
-                                      ),
+                                    setSheetState(
+                                      () => sheetError = 'Please enter a title',
                                     );
                                     return;
                                   }
                                   if (slots.isEmpty) {
-                                    ScaffoldMessenger.of(ctx).showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
+                                    setSheetState(
+                                      () => sheetError =
                                           'Select at least one day',
-                                        ),
-                                        backgroundColor: Colors.red,
-                                      ),
                                     );
                                     return;
                                   }
-                                  final internalOverlap = _findInternalSlotOverlap(slots);
+                                  final internalOverlap =
+                                      _findInternalSlotOverlap(slots);
                                   if (internalOverlap != null) {
-                                    ScaffoldMessenger.of(ctx).showSnackBar(
-                                      SnackBar(
-                                        content: Text(internalOverlap),
-                                        backgroundColor: Colors.red,
-                                      ),
+                                    setSheetState(
+                                      () => sheetError = internalOverlap,
                                     );
                                     return;
                                   }
@@ -1803,16 +1795,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     excludeId: schedule.id,
                                   );
                                   if (conflict != null) {
-                                    ScaffoldMessenger.of(ctx).showSnackBar(
-                                      SnackBar(
-                                        content: Text(
+                                    setSheetState(
+                                      () => sheetError =
                                           'Conflicts with $conflict',
-                                        ),
-                                        backgroundColor: Colors.red,
-                                      ),
                                     );
                                     return;
                                   }
+                                  setSheetState(() => sheetError = null);
                                   try {
                                     await vm.updateLearningSchedule(
                                       schedule.id,
@@ -1830,7 +1819,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     );
                                     if (ctx.mounted) {
                                       Navigator.pop(ctx);
-                                      ScaffoldMessenger.of(ctx).showSnackBar(
+                                    }
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
                                         const SnackBar(
                                           content: Text('Schedule updated'),
                                           backgroundColor: Colors.green,
@@ -1839,13 +1830,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                                     }
                                   } catch (e) {
                                     if (ctx.mounted) {
-                                      ScaffoldMessenger.of(ctx).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
+                                      setSheetState(
+                                        () => sheetError =
                                             'Failed to save: ${_friendlyErrorMessage(e)}',
-                                          ),
-                                          backgroundColor: Colors.red,
-                                        ),
                                       );
                                     }
                                   }

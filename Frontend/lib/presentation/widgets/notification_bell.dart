@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colours.dart';
 import '../../data/models/app_notification.dart';
 import '../providers/notification_viewmodel.dart';
+import '../providers/task_refresh_notifier.dart';
 
 /// Dashboard bell icon with an unread badge. Tapping opens the notifications
 /// panel (list + Accept/Reject for collaboration invites).
@@ -225,6 +226,10 @@ class _NotificationTileState extends State<_NotificationTile> {
     setState(() => _busy = true);
     try {
       final result = await vm.respondToInvite(widget.notification, action);
+      if (action == 'accept' && (result == 'accepted' || result == 'already')) {
+        // Cloned task / learning sessions must appear on collaborator calendar.
+        context.read<TaskRefreshNotifier>().refresh();
+      }
       final msg = result == 'already'
           ? 'Invite already handled.'
           : result == 'accepted'

@@ -16,11 +16,14 @@ const {
   withApiTimezone,
 } = require("../utils/apiDateTime");
 const { buildPlanScheduleDates, MAX_HORIZON_WEEKS } = require("../utils/planScheduleDates");
+const {
+  buildCollaboratorProgressForGoals,
+} = require("./collaboratorProgress.service");
 
 const GOAL_STATUSES = new Set(["active", "paused", "completed", "cancelled"]);
 
 const GOAL_LIST_PROJECTION =
-  "title subject roadmap_key status start_date end_date total_topics completed_topics created_at updated_at learning_schedule_id";
+  "user_id title subject roadmap_key status start_date end_date total_topics completed_topics created_at updated_at learning_schedule_id collaborators source_goal_id";
 
 const TOPIC_LIST_PROJECTION =
   "goal_id order title status scheduled_date estimated_duration completed_at updated_at resources";
@@ -49,6 +52,11 @@ const serializeSession = (topic, timezone = "UTC", meta = {}) => {
     session_state: meta.session_state,
     is_current: Boolean(meta.is_current),
     unlock_at: meta.unlock_at ?? null,
+    // Which collaborators have reached / finished this session (by order).
+    // Populated by the roadmap-detail path; empty for solo plans.
+    collaborator_progress: Array.isArray(meta.collaborator_progress)
+      ? meta.collaborator_progress
+      : [],
   };
 
   if (status === "completed" || status === "skipped") {
@@ -67,7 +75,7 @@ const buildSessionsSummary = (sessionList) => ({
   ongoing: sessionList.filter((s) => s.status === "ongoing").length,
 });
 
-const serializeRoadmap = (goal, sessions = [], timezone = "UTC") => {
+const serializeRoadmap = (goal, sessions = [], timezone = "UTC", collaborators = []) => {
   const subject = String(goal.subject || "").trim().toLowerCase();
   const sessionList = Array.isArray(sessions) ? sessions : [];
 
@@ -89,19 +97,20 @@ const serializeRoadmap = (goal, sessions = [], timezone = "UTC") => {
     progress_percent: toProgressPercent(goal),
     session_count: sessionList.length,
     sessions_summary: buildSessionsSummary(sessionList),
+    collaborators: Array.isArray(collaborators) ? collaborators : [],
     sessions: sessionList,
   };
 };
 
 /** Roadmap header for session detail — no sessions[] list */
-const serializeRoadmapSummary = (goal, sessions = [], timezone = "UTC") => {
-  const full = serializeRoadmap(goal, sessions, timezone);
+const serializeRoadmapSummary = (goal, sessions = [], timezone = "UTC", collaborators = []) => {
+  const full = serializeRoadmap(goal, sessions, timezone, collaborators);
   const { sessions: _sessions, ...summary } = full;
   return summary;
 };
 
 /** Plan card / list item — roadmap metadata only (no sessions[]). */
-const serializeRoadmapPlan = (goal, sessionsSummary = null, timezone = "UTC") => {
+const serializeRoadmapPlan = (goal, sessionsSummary = null, timezone = "UTC", collaborators = []) => {
   const subject = String(goal.subject || "").trim().toLowerCase();
   const total = Number(goal.total_topics || 0);
   const completed = Number(goal.completed_topics || 0);
@@ -130,6 +139,7 @@ const serializeRoadmapPlan = (goal, sessionsSummary = null, timezone = "UTC") =>
     progress_percent: toProgressPercent(goal),
     session_count: total,
     sessions_summary: summary,
+    collaborators: Array.isArray(collaborators) ? collaborators : [],
   };
 };
 
@@ -287,13 +297,23 @@ const getUserRoadmapForGoalId = async (userId, goalIdInput, timezone = "UTC") =>
   const sessionsByGoal = await loadSessionsByGoalId([goal._id], timezone);
   const sessions = sessionsByGoal.get(String(goal._id)) || [];
 
+  // Collaborator profiles + per-session progress on the shared roadmap.
+  const progressByGoal = await buildCollaboratorProgressForGoals([goal]);
+  const { collaborators, perSession } =
+    progressByGoal.get(String(goal._id)) || { collaborators: [], perSession: new Map() };
+
+  const sessionsWithCollaborators = sessions.map((session) => ({
+    ...session,
+    collaborator_progress: perSession.get(Number(session.order)) || [],
+  }));
+
   return withApiTimezone(
     {
       language: {
         key: subject,
         label: subjectToDisplay(subject),
       },
-      roadmap: serializeRoadmap(goal, sessions, timezone),
+      roadmap: serializeRoadmap(goal, sessionsWithCollaborators, timezone, collaborators),
     },
     timezone,
   );
@@ -314,12 +334,14 @@ const listUserRoadmapPlans = async (userId, timezone = "UTC", filters = {}) => {
 
   const goalIds = goals.map((goal) => goal._id);
   const summariesByGoal = await loadSessionsSummaryByGoalId(goalIds);
+  const progressByGoal = await buildCollaboratorProgressForGoals(goals);
 
   const roadmaps = goals.map((goal) =>
     serializeRoadmapPlan(
       goal,
       summariesByGoal.get(String(goal._id)),
       timezone,
+      (progressByGoal.get(String(goal._id)) || {}).collaborators || [],
     ),
   );
 

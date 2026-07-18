@@ -4,6 +4,7 @@ import '../../data/models/roadmap_model.dart';
 import '../../core/theme/app_colours.dart';
 import 'package:intl/intl.dart';
 import '../../presentation/screens/roadmap_data.dart';
+import 'collaborator_avatars.dart';
 
 class PlanCard extends StatelessWidget {
   final PlanSummary plan;
@@ -221,6 +222,30 @@ class PlanCard extends StatelessWidget {
                   ],
                 ),
               ),
+
+              // ─── Collaborators footer (shared plans only) ────────────────
+              if (plan.collaborators.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                Row(
+                  children: [
+                    CollaboratorAvatarStack(
+                      collaborators: plan.collaborators,
+                      radius: 12,
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      plan.collaborators.length == 1
+                          ? 'Shared with 1 collaborator'
+                          : 'Shared with ${plan.collaborators.length} collaborators',
+                      style: AppTextStyles.body.copyWith(
+                        fontSize: 11.5,
+                        color: subClr,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
             ],
           ),
         ),

@@ -1,4 +1,6 @@
+import 'collaborator.dart';
 
+export 'collaborator.dart';
 
 // ── Language option for dropdown (still used in PlansScreen?) ──
 class LanguageOption {
@@ -58,6 +60,7 @@ class PlanSummary {
   final double progressPercent;
   final int sessionCount;
   final SessionsSummary summary;
+  final List<Collaborator> collaborators;
 
   PlanSummary({
     required this.id,
@@ -73,6 +76,7 @@ class PlanSummary {
     required this.progressPercent,
     required this.sessionCount,
     required this.summary,
+    this.collaborators = const [],
   });
 
   factory PlanSummary.fromJson(Map<String, dynamic> json) {
@@ -90,6 +94,7 @@ class PlanSummary {
       progressPercent: (json['progress_percent'] ?? 0).toDouble(),
       sessionCount: json['session_count'] ?? 0,
       summary: SessionsSummary.fromJson(json['sessions_summary'] ?? {}),
+      collaborators: Collaborator.listFromJson(json['collaborators']),
     );
   }
 }
@@ -110,6 +115,7 @@ class RoadmapDetail {
   final int sessionCount;
   final SessionsSummary summary;
   final List<Session> sessions;
+  final List<Collaborator> collaborators;
 
   RoadmapDetail({
     required this.id,
@@ -126,6 +132,7 @@ class RoadmapDetail {
     required this.sessionCount,
     required this.summary,
     required this.sessions,
+    this.collaborators = const [],
   });
 
   factory RoadmapDetail.fromJson(Map<String, dynamic> json) {
@@ -147,6 +154,7 @@ class RoadmapDetail {
               ?.map((s) => Session.fromJson(s))
               .toList() ??
           [],
+      collaborators: Collaborator.listFromJson(json['collaborators']),
     );
   }
 }
@@ -165,6 +173,9 @@ class Session {
   final DateTime? unlockAt;
   final DateTime? completedAt;
 
+  /// Per-collaborator status on this session (who has reached / finished it).
+  final List<SessionCollaboratorStatus> collaboratorProgress;
+
   Session({
     required this.id,
     required this.order,
@@ -177,6 +188,7 @@ class Session {
     this.isCurrent = false,
     this.unlockAt,
     this.completedAt,
+    this.collaboratorProgress = const [],
   });
 
   factory Session.fromJson(Map<String, dynamic> json) {
@@ -201,6 +213,8 @@ class Session {
       completedAt: json['completed_at'] != null
           ? DateTime.parse(json['completed_at'])
           : null,
+      collaboratorProgress:
+          SessionCollaboratorStatus.listFromJson(json['collaborator_progress']),
     );
   }
 }

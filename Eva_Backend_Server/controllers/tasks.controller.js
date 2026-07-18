@@ -14,9 +14,109 @@ const {
   ConflictError,
 } = require("../middleware/errorHandler");
 const { serializeTaskForApi, isLearningTask, LEARNING_TASK_EDIT_BLOCKED_MESSAGE } = require("../utils/taskDisplayStatus");
+const { loadCollaboratorProfiles } = require("../utils/collaboratorDetails");
 
 const TASK_LIST_PROJECTION =
-  "title description due_datetime duration priority status learning_plan_id learning_topic_id completed_at";
+  "owner_id title description due_datetime duration priority status learning_plan_id learning_topic_id completed_at collaborators source_task_id";
+
+/**
+ * Build a task's participant list (owner + collaborators). For a cloned task
+ * (an accepted collaborator's copy) the group is resolved from the owner's
+ * root task so the collaborator sees the owner + siblings too.
+ */
+const taskParticipants = (task, rootById) => {
+  const selfId = String(task.owner_id || "");
+  if (task.source_task_id) {
+    const root = rootById.get(String(task.source_task_id));
+    if (!root) return { selfId, parts: [] };
+    return {
+      selfId,
+      parts: [
+        { user_id: root.owner_id, status: "accepted", is_owner: true },
+        ...(Array.isArray(root.collaborators) ? root.collaborators : []).map(
+          (c) => ({ user_id: c.user_id, status: c.status, is_owner: false }),
+        ),
+      ],
+    };
+  }
+  return {
+    selfId,
+    parts: (Array.isArray(task.collaborators) ? task.collaborators : []).map(
+      (c) => ({ user_id: c.user_id, status: c.status, is_owner: false }),
+    ),
+  };
+};
+
+/**
+ * Serialize many tasks, batch-populating collaborator profiles in one query.
+ * Each task exposes the *other* participants (owner sees collaborators, a
+ * collaborator sees the owner + siblings).
+ */
+const serializeTasksWithCollaborators = async (
+  tasks,
+  now,
+  timezone,
+  options = {},
+) => {
+  const list = Array.isArray(tasks) ? tasks : [];
+
+  const rootTaskIds = [
+    ...new Set(
+      list.filter((t) => t.source_task_id).map((t) => String(t.source_task_id)),
+    ),
+  ];
+  const rootTasks = rootTaskIds.length
+    ? await Task.find({ _id: { $in: rootTaskIds } })
+        .select("owner_id collaborators")
+        .lean()
+    : [];
+  const rootById = new Map(rootTasks.map((r) => [String(r._id), r]));
+
+  const partsByTask = list.map((task) => taskParticipants(task, rootById));
+
+  const ids = new Set();
+  for (const { parts } of partsByTask) {
+    for (const p of parts) {
+      if (p.user_id) ids.add(String(p.user_id));
+    }
+  }
+  const profileMap = await loadCollaboratorProfiles([...ids]);
+
+  return list.map((task, i) => {
+    const { selfId, parts } = partsByTask[i];
+    const collaborators = [];
+    for (const p of parts) {
+      if (String(p.user_id) === selfId) continue;
+      if (String(p.status || "").toLowerCase() === "rejected") continue;
+      const user = profileMap.get(String(p.user_id));
+      if (!user) continue;
+      collaborators.push({
+        user,
+        status: String(p.status || "pending").toLowerCase(),
+        is_owner: Boolean(p.is_owner),
+      });
+    }
+    return serializeTaskForApi(task, now, timezone, { ...options, collaborators });
+  });
+};
+
+/**
+ * Serialize a single task with its collaborators populated.
+ */
+const serializeTaskWithCollaborators = async (
+  task,
+  now,
+  timezone,
+  options = {},
+) => {
+  const [serialized] = await serializeTasksWithCollaborators(
+    [task],
+    now,
+    timezone,
+    options,
+  );
+  return serialized;
+};
 const { withApiTimezone } = require("../utils/apiDateTime");
 const {
   notifyOwnerOfCollaborationResponse,
@@ -25,6 +125,9 @@ const { insert_and_dispatch } = require("../services/notification.service");
 const { buildTaskRescheduledNotification } = require("../utils/taskRescheduleNotification");
 const { resolveGoogleCalendarSync } = require("../utils/googleCalendarSync");
 const { deleteEvent } = require("../services/googleCalendar.service");
+const {
+  scheduleGoogleCalendarBackfill,
+} = require("../services/googleCalendarBackfill.service");
 
 const STATUS_VALUES = new Set(["pending", "complete"]);
 const STORED_STATUS_FILTER = {
@@ -184,6 +287,48 @@ const verifyCollaborationToken = (token) => {
 
 const sameObjectId = (a, b) => String(a) === String(b);
 
+/**
+ * Give an accepting collaborator their own copy of a shared task, so it shows
+ * on their calendar/tasks (which are filtered by owner_id). Mirrors the
+ * learning-plan clone flow. Idempotent: skips if a copy already exists.
+ */
+const cloneTaskForCollaborator = async (ownerTask, collaboratorUserId) => {
+  const collabOid = new mongoose.Types.ObjectId(collaboratorUserId);
+
+  const existing = await Task.findOne({
+    source_task_id: ownerTask._id,
+    owner_id: collabOid,
+    is_deleted: { $ne: true },
+  }).lean();
+  if (existing) {
+    return existing;
+  }
+
+  const now = new Date();
+  const created = await Task.create({
+    owner_id: collabOid,
+    title: ownerTask.title,
+    description: ownerTask.description,
+    due_datetime: ownerTask.due_datetime,
+    duration: ownerTask.duration,
+    priority: ownerTask.priority,
+    status: "pending",
+    source: ownerTask.source || "eva",
+    scheduled_by: ownerTask.scheduled_by || "manual",
+    collaborators: [],
+    source_task_id: ownerTask._id,
+    reminder_minutes_before: ownerTask.reminder_minutes_before,
+    is_deleted: false,
+    created_at: now,
+    updated_at: now,
+  });
+
+  // Same as learning accept: push the collaborator's copy to their calendar.
+  scheduleGoogleCalendarBackfill(collaboratorUserId);
+
+  return created;
+};
+
 const markCollaborationNotificationHandled = async ({
   userId,
   taskId,
@@ -258,6 +403,16 @@ const applyCollaborationAction = async ({
   }
 
   if (String(collaboratorRow.status || "").toLowerCase() !== "pending") {
+    let collaboratorTaskId = null;
+    // Self-heal: status stuck as accepted but clone never created.
+    if (
+      action === "accept"
+      && String(collaboratorRow.status || "").toLowerCase() === "accepted"
+    ) {
+      const collabTask = await cloneTaskForCollaborator(task, collaboratorUserId);
+      collaboratorTaskId = collabTask ? collabTask._id : null;
+    }
+
     await markCollaborationNotificationHandled({
       userId: collaboratorObjectId,
       taskId: taskObjectId,
@@ -266,6 +421,7 @@ const applyCollaborationAction = async ({
     });
     return {
       task,
+      collaborator_task_id: collaboratorTaskId,
       already_responded: true,
       current_status: collaboratorRow.status,
     };
@@ -295,6 +451,16 @@ const applyCollaborationAction = async ({
     throw new ConflictError("This collaboration invite was already handled");
   }
 
+  // On accept, give the collaborator their own copy so it shows on their side.
+  let collaboratorTaskId = null;
+  if (action === "accept") {
+    const collabTask = await cloneTaskForCollaborator(
+      updatedTask,
+      collaboratorUserId,
+    );
+    collaboratorTaskId = collabTask ? collabTask._id : null;
+  }
+
   await markCollaborationNotificationHandled({
     userId: collaboratorObjectId,
     taskId: taskObjectId,
@@ -313,6 +479,7 @@ const applyCollaborationAction = async ({
 
   return {
     task: updatedTask,
+    collaborator_task_id: collaboratorTaskId,
     already_responded: false,
     current_status: newStatus,
   };
@@ -432,11 +599,16 @@ const getTasks = async (req, res, next) => {
 
     const now = new Date();
     const timezone = resolveUserTimezone(req);
+    const serializedTasks = await serializeTasksWithCollaborators(
+      tasks,
+      now,
+      timezone,
+    );
     res.json({
       status: "success",
       data: withApiTimezone(
         {
-        tasks: tasks.map((task) => serializeTaskForApi(task, now, timezone)),
+        tasks: serializedTasks,
         pagination: {
           page,
           limit,
@@ -479,12 +651,17 @@ const getCalendarTasks = async (req, res, next) => {
       .lean();
 
     const now = new Date();
+    const serializedTasks = await serializeTasksWithCollaborators(
+      tasks,
+      now,
+      timezone,
+    );
     res.json({
       status: "success",
       data: withApiTimezone(
         {
-          tasks: tasks.map((task) => serializeTaskForApi(task, now, timezone)),
-          total: tasks.length,
+          tasks: serializedTasks,
+          total: serializedTasks.length,
         },
         timezone,
       ),
@@ -522,7 +699,7 @@ const getTaskById = async (req, res, next) => {
       status: "success",
       data: withApiTimezone(
         {
-          task: serializeTaskForApi(task, new Date(), timezone, {
+          task: await serializeTaskWithCollaborators(task, new Date(), timezone, {
             includeDescription: true,
           }),
         },
@@ -683,7 +860,7 @@ const updateTask = async (req, res, next) => {
       message: "Task updated",
       data: withApiTimezone(
         {
-          task: serializeTaskForApi(task, new Date(), timezone, {
+          task: await serializeTaskWithCollaborators(task, new Date(), timezone, {
             includeDescription: true,
           }),
         },
@@ -772,7 +949,7 @@ const updateTaskStatus = async (req, res, next) => {
       message: "Task status updated",
       data: withApiTimezone(
         {
-          task: serializeTaskForApi(task, new Date(), timezone, {
+          task: await serializeTaskWithCollaborators(task, new Date(), timezone, {
             includeDescription: true,
           }),
         },
@@ -991,4 +1168,7 @@ module.exports = {
   deleteTask,
   respondToCollaborationInvite,
   respondToCollaborationInviteViaLink,
+  // Exported for tests.
+  applyCollaborationAction,
+  cloneTaskForCollaborator,
 };

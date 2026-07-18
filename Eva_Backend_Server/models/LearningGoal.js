@@ -105,6 +105,17 @@ const learningGoalSchema = new mongoose.Schema(
         message: "At most 2 collaborators allowed",
       },
     },
+    /**
+     * When this plan is a collaborator's accepted copy of someone else's plan,
+     * points back to the owner's originating goal. Lets the owner surface each
+     * collaborator's progress on the shared roadmap. Null for original plans.
+     */
+    source_goal_id: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "LearningGoal",
+      default: null,
+      index: true,
+    },
     generated_by: {
       type: String,
       enum: ["eva", "manual"],
