@@ -37,7 +37,7 @@
             android:value="eva_high_importance" />
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
-            android:value="@mipmap/ic_launcher" />
+            android:value="@mipmap/launcher_icon" />
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
