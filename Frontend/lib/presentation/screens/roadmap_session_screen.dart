@@ -159,6 +159,8 @@ class _RoadmapSessionScreenContentState
           Expanded(
             child: Text(
               roadmap != null ? '${roadmap.title} Sessions' : 'Sessions',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
               style: AppTextStyles.headline.copyWith(
                 fontSize: 16,
                 fontWeight: FontWeight.w700,
