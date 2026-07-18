@@ -26,8 +26,12 @@ class WelcomeScreen extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  SizedBox(
-                    width: MediaQuery.of(context).size.width * 0.5,
+                  // Expanded (not a fixed % width) so this column and the
+                  // animation below always share the row's actual width —
+                  // on narrow phones the old fixed 50% + fixed 148px combo
+                  // could add up to more than the screen, overflowing.
+                  Expanded(
+                    flex: 3,
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -52,14 +56,16 @@ class WelcomeScreen extends StatelessWidget {
                     ),
                   ),
 
-                  const Spacer(),
+                  const SizedBox(width: 12),
 
-                  SizedBox(
-                    height: 149,
-                    width: 148,
-                    child: Lottie.asset(
-                      'assets/lottie/message.json',
-                      fit: BoxFit.contain,
+                  Expanded(
+                    flex: 2,
+                    child: AspectRatio(
+                      aspectRatio: 148 / 149,
+                      child: Lottie.asset(
+                        'assets/lottie/message.json',
+                        fit: BoxFit.contain,
+                      ),
                     ),
                   ),
                 ],
@@ -77,56 +83,64 @@ class WelcomeScreen extends StatelessWidget {
               const SizedBox(height: 30),
 
               Center(
-                child: Column(
-                  children: [
-                    SizedBox(
-                      width: 260,
-                      child: ElevatedButton(
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Theme.of(
-                            context,
-                          ).colorScheme.primary,
-                          foregroundColor: Colors.white,
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
+                child: ConstrainedBox(
+                  // Caps at 260 on normal/large screens but shrinks to fit on
+                  // very narrow ones instead of overflowing past the edge.
+                  constraints: const BoxConstraints(maxWidth: 260),
+                  child: Column(
+                    children: [
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Theme.of(
+                              context,
+                            ).colorScheme.primary,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
                           ),
-                        ),
-                        onPressed: () {
-                          context.go('/get-started');
-                        },
-                        child: Text('Get Started', style: AppTextStyles.button),
-                      ),
-                    ),
-
-                    const SizedBox(height: 12),
-
-                    SizedBox(
-                      width: 260,
-                      child: OutlinedButton(
-                        style: OutlinedButton.styleFrom(
-                          padding: const EdgeInsets.symmetric(vertical: 16),
-                          side: BorderSide(
-                            color: Theme.of(context).colorScheme.primary,
-                          ),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(30),
-                          ),
-                        ),
-                        onPressed: () {
-                          context.go('/features');
-                        },
-                        child: Text(
-                          'See Features',
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 16,
+                          onPressed: () {
+                            context.go('/get-started');
+                          },
+                          child: Text(
+                            'Get Started',
+                            style: AppTextStyles.button,
                           ),
                         ),
                       ),
-                    ),
-                  ],
+
+                      const SizedBox(height: 12),
+
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            side: BorderSide(
+                              color: Theme.of(context).colorScheme.primary,
+                            ),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(30),
+                            ),
+                          ),
+                          onPressed: () {
+                            context.go('/features');
+                          },
+                          child: Text(
+                            'See Features',
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                              fontSize: 16,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
 
