@@ -242,6 +242,66 @@ class TestBehavioralHandlerPhase8(unittest.IsolatedAsyncioTestCase):
             self.assertIsNone(_extract_day({}, "the day before the weekend"))
         mock_gemini.assert_not_called()
 
+    async def test_gemini_subintent_resolves_ambiguous_phrasing(self):
+        # "how's my week been" matches none of the keyword lists, so the
+        # keyword matcher would silently default to productive_hours. With
+        # the flag on, Gemini's classification must be used instead.
+        settings_module.settings.USE_GEMINI_BEHAVIORAL_SUBINTENT = True
+        try:
+            with patch(
+                "handlers.behavioral.behavioral.get_total_completed",
+                new=AsyncMock(return_value=30),
+            ), patch(
+                "handlers.behavioral.behavioral.get_completed_logs_for_scoring",
+                new=AsyncMock(return_value=[]),
+            ), patch(
+                "handlers.behavioral.behavioral.get_log_count_per_day",
+                new=AsyncMock(return_value={0: 8, 1: 6, 2: 2, 3: 1, 4: 0, 5: 0, 6: 0}),
+            ), patch(
+                "handlers.behavioral.behavioral.get_completion_rate",
+                new=AsyncMock(
+                    return_value={
+                        "total_completed": 30,
+                        "on_time": 25,
+                        "late": 5,
+                        "on_time_rate": 0.83,
+                        "weekly_trend": [],
+                    }
+                ),
+            ), patch(
+                "pipeline.behavioral_subintent.gemini_service.generate_constrained_text",
+                return_value='{"sub_intent":"completion_rate","confidence":0.9}',
+            ), patch(
+                "handlers.behavioral.behavioral.gemini_service.generate_reply",
+                side_effect=_gemini_stub,
+            ), patch(
+                "handlers.behavioral.behavioral._save_turn",
+                new=AsyncMock(return_value=None),
+            ):
+                result = await handle_behavioral({}, _base_context("how's my week been"))
+        finally:
+            settings_module.settings.USE_GEMINI_BEHAVIORAL_SUBINTENT = False
+
+        self.assertEqual(result["sub_intent"], "completion_rate")
+
+    async def test_gemini_subintent_flag_off_uses_keyword_matcher(self):
+        with patch(
+            "pipeline.behavioral_subintent.gemini_service.generate_constrained_text",
+        ) as mock_gemini, patch(
+            "handlers.behavioral.behavioral.get_total_completed",
+            new=AsyncMock(return_value=9),
+        ), patch(
+            "handlers.behavioral.behavioral.gemini_service.generate_reply",
+            side_effect=_gemini_stub,
+        ), patch(
+            "handlers.behavioral.behavioral._save_turn",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await handle_behavioral({}, _base_context("show my productivity report"))
+
+        mock_gemini.assert_not_called()
+        self.assertEqual(result["sub_intent"], "productivity_report")
+
 
 if __name__ == "__main__":
     unittest.main()

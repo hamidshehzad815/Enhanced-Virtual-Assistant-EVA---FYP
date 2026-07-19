@@ -110,6 +110,18 @@ class Settings:
         os.getenv("USE_GEMINI_PENDING_REPLY"),
         False,
     )
+    # Gemini-backed classifier for WHICH behavioral-analytics report a command
+    # wants (productive_hours / productive_days / best_time_for_day /
+    # completion_rate / productivity_report). The keyword matcher in
+    # handlers/behavioral/behavioral.py has no "unsure" signal — it always
+    # returns a default — so unusual phrasing silently lands on the wrong
+    # report. Default OFF — the keyword matcher stays the fallback whenever
+    # Gemini is disabled/fails. Uses GEMINI_MODEL (see above) — no separate
+    # model setting.
+    USE_GEMINI_BEHAVIORAL_SUBINTENT: bool = _as_bool(
+        os.getenv("USE_GEMINI_BEHAVIORAL_SUBINTENT"),
+        False,
+    )
     GEMINI_PENDING_REPLY_MIN_CONFIDENCE: float = float(
         os.getenv("GEMINI_PENDING_REPLY_MIN_CONFIDENCE", "0.7"),
     )

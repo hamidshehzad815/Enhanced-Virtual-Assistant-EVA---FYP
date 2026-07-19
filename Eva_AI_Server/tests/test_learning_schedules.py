@@ -54,6 +54,47 @@ class ResolveScheduleTests(unittest.TestCase):
         self.assertIsNotNone(pending)
         self.assertEqual(len(pending["pending_action"]["schedule_options"]), 2)
 
+    def test_single_available_option_label_is_self_describing(self):
+        # A bare name ("Only") gives a Gemini pending-reply fallback nothing
+        # to match a reply like "use the schedule" against — the label must
+        # carry the "use this schedule" cue and the actual day/time detail.
+        schedules = [
+            {
+                "id": "s1",
+                "label": "python",
+                "slots": [
+                    {"day": 0, "time": "09:00", "duration_minutes": 60},
+                    {"day": 1, "time": "09:00", "duration_minutes": 60},
+                ],
+            },
+        ]
+        _, _, pending = ls.resolve_schedule_for_learning(
+            entities={}, schedules=schedules, used_ids=set(),
+        )
+        options = pending["pending_action"]["schedule_options"]
+        self.assertEqual(len(options), 2)
+        self.assertIn("use this schedule", options[0]["label"].lower())
+        self.assertIn("python", options[0]["label"])
+        self.assertIn("Monday", options[0]["label"])
+        self.assertIn("Tuesday", options[0]["label"])
+        # The settings-redirect option must stay clearly distinct.
+        self.assertEqual(options[1]["id"], ls.CHOICE_NEW_SCHEDULE_IN_SETTINGS)
+        self.assertNotIn("use this schedule", options[1]["label"].lower())
+
+    def test_pending_action_carries_the_real_prompt_text(self):
+        # The Gemini pending-reply fallback must see the exact question EVA
+        # asked (with "Reply 1 to use this schedule" wording), not a
+        # regenerated paraphrase that shares no wording with a reply like
+        # "use the schedule".
+        schedules = [
+            {"id": "s1", "label": "python", "slots": [{"day": 0, "time": "09:00", "duration_minutes": 60}]},
+        ]
+        _, message, pending = ls.resolve_schedule_for_learning(
+            entities={}, schedules=schedules, used_ids=set(),
+        )
+        self.assertEqual(pending["pending_action"]["prompt_text"], message)
+        self.assertIn("use this schedule", pending["pending_action"]["prompt_text"].lower())
+
     def test_multiple_available_prompts_choice_with_details(self):
         schedules = [
             {"id": "s1", "label": "Morning", "slots": [{"day": 0, "time": "08:00", "duration_minutes": 60}]},
