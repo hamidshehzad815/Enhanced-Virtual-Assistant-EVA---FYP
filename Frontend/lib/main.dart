@@ -32,6 +32,7 @@ import 'data/services/notification_service.dart';
 import '../../data/repositories/notification_repository.dart';
 import 'presentation/providers/notification_viewmodel.dart';
 import 'presentation/providers/task_refresh_notifier.dart';
+import '../../core/constants/app_keys.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -132,6 +133,7 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: context.watch<ThemeProvider>().themeMode,
+      scaffoldMessengerKey: AppKeys.scaffoldMessengerKey,
       routerConfig: appRouter,
       builder: (context, child) {
         return GradientBackground(child: child ?? const SizedBox());

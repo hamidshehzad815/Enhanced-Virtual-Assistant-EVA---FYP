@@ -754,7 +754,7 @@ class _ChatScreenState extends State<ChatScreen> with TickerProviderStateMixin {
     final userAvatar = _getUserAvatar(profileVm);
 
     return Scaffold(
-      backgroundColor: isDark ? Colors.grey[900] : Colors.white,
+      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
       drawer: _buildDrawer(vm, isDark),
       appBar: _buildAppBar(vm, isDark),
       body: Column(

@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/theme/app_colours.dart';
 import '../../core/theme/app_text_style.dart';
 import '../providers/settings_viewmodel.dart';
+import '../../core/constants/app_keys.dart';
 
 class AppShell extends StatefulWidget {
   final Widget child;
@@ -17,7 +18,6 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell>
     with SingleTickerProviderStateMixin {
-  final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
   late final AnimationController _navController;
   late final Animation<double> _navAnimation;
 
@@ -193,7 +193,7 @@ class _AppShellState extends State<AppShell>
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      key: _scaffoldKey,
+      key: AppKeys.scaffoldKey,
       backgroundColor: Colors.transparent,
       body: widget.child,
       bottomNavigationBar: SizeTransition(
