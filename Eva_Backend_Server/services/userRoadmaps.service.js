@@ -471,6 +471,47 @@ const buildSessionDetailPayload = async (
   );
 };
 
+/**
+ * Overdue current sessions across all the user's active learning goals.
+ * At most one overdue session per goal — only the lowest-order pending
+ * topic is ever "current", so this never needs to surface more than one
+ * per goal.
+ */
+const listOverdueSessionsForUser = async (userId, timezone = "UTC") => {
+  const goals = await LearningGoal.find({
+    user_id: userId,
+    status: "active",
+    is_deleted: false,
+  })
+    .select(GOAL_LIST_PROJECTION)
+    .lean();
+
+  if (!goals.length) {
+    return withApiTimezone({ overdue_sessions: [] }, timezone);
+  }
+
+  const goalIds = goals.map((goal) => goal._id);
+  const sessionsByGoal = await loadSessionsByGoalId(goalIds, timezone);
+
+  const overdueSessions = [];
+  goals.forEach((goal) => {
+    const sessions = sessionsByGoal.get(String(goal._id)) || [];
+    const current = sessions.find((session) => session.is_current);
+    if (current && current.session_state === "overdue") {
+      const subject = String(goal.subject || "").trim().toLowerCase();
+      overdueSessions.push({
+        goal_id: String(goal._id),
+        goal_title: goal.title,
+        language: subjectToDisplay(subject),
+        track_label: formatTrackLabel(goal.roadmap_key),
+        session: current,
+      });
+    }
+  });
+
+  return withApiTimezone({ overdue_sessions: overdueSessions }, timezone);
+};
+
 module.exports = {
   GOAL_STATUSES,
   listUserRoadmapPlans,
@@ -478,6 +519,7 @@ module.exports = {
   getPlanScheduleDatesForGoal,
   buildRoadmapMutationPayload,
   buildSessionDetailPayload,
+  listOverdueSessionsForUser,
   serializeRoadmap,
   serializeRoadmapSummary,
   serializeRoadmapPlan,

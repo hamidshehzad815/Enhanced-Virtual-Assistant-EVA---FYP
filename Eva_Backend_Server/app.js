@@ -16,10 +16,6 @@ const rateLimit = require("express-rate-limit");
 const logger = require("./config/logger");
 const { connectDB } = require("./config/db");
 const { startReminderJob, stopReminderJob } = require("./jobs/reminder.job");
-const {
-  startLearningAutoCompleteJob,
-  stopLearningAutoCompleteJob,
-} = require("./jobs/learning_auto_complete.job");
 
 // Import middleware
 const { notFoundHandler, errorHandler } = require("./middleware/errorHandler");
@@ -112,7 +108,6 @@ app.use(errorHandler);
 
 const PORT = getBackendPort();
 let reminderJobHandle = null;
-let learningAutoCompleteJobHandle = null;
 
 const DIVIDER = "─".repeat(52);
 
@@ -133,10 +128,6 @@ const startServer = async () => {
   // Start phase 12 reminder scheduler.
   reminderJobHandle = startReminderJob();
   logger.info("  ⏰ Reminder scheduler        started");
-
-  // Start phase 6 learning auto-complete scheduler.
-  learningAutoCompleteJobHandle = startLearningAutoCompleteJob();
-  logger.info("  📚 Learning auto-complete    started");
 
   // Start HTTP server
   app.listen(PORT, () => {
@@ -173,9 +164,6 @@ process.on("SIGTERM", () => {
   logger.info("SIGTERM received. Shutting down gracefully...");
   if (reminderJobHandle) {
     stopReminderJob();
-  }
-  if (learningAutoCompleteJobHandle) {
-    stopLearningAutoCompleteJob();
   }
   process.exit(0);
 });

@@ -9,7 +9,10 @@ import '../../data/models/focus_data.dart';
 import '../../data/models/schedule_item.dart';
 import '../providers/home_screen_viewmodel.dart';
 import '../providers/profile_viewmodel.dart';
+import '../providers/calendar_viewmodel.dart';
 import '../widgets/notification_bell.dart';
+import '../widgets/missed_items_sheet.dart';
+import '../../data/repositories/roadmap_repository.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -53,7 +56,34 @@ class _HomeScreenState extends State<HomeScreen>
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<HomeScreenViewModel>().loadHomeScreenData();
       context.read<ProfileViewModel>().loadProfile();
+      _checkMissedItems();
     });
+  }
+
+  Future<void> _checkMissedItems() async {
+    try {
+      final overdueSessions =
+          await context.read<RoadmapRepository>().getOverdueSessions();
+      if (!mounted) return;
+
+      final calendarVm = context.read<CalendarViewModel>();
+      if (calendarVm.tasks.isEmpty) {
+        await calendarVm.loadTasks();
+      }
+      if (!mounted) return;
+      final overdueTasks = calendarVm.overdueTasks;
+
+      if (overdueSessions.isEmpty && overdueTasks.isEmpty) return;
+      if (!mounted) return;
+
+      showMissedItemsSheet(
+        context,
+        overdueSessions: overdueSessions,
+        overdueTasks: overdueTasks,
+      );
+    } catch (_) {
+      // Best-effort — a failed overdue check should never block the home screen.
+    }
   }
 
   @override

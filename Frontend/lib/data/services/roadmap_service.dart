@@ -100,6 +100,21 @@ class RoadmapService {
     }
   }
 
+  // ── GET /api/roadmaps/overdue-sessions ──
+  Future<List<Map<String, dynamic>>> getOverdueSessions(String token) async {
+    final response = await http.get(
+      Uri.parse('${AppConstants.baseUrl}/roadmaps/overdue-sessions'),
+      headers: {'Authorization': 'Bearer $token'},
+    );
+    if (response.statusCode == 200) {
+      final json = jsonDecode(response.body);
+      return (json['data']['overdue_sessions'] as List)
+          .cast<Map<String, dynamic>>();
+    } else {
+      throw Exception('Failed to load overdue sessions');
+    }
+  }
+
   Future<Map<String, dynamic>> getScheduleDates(String token, String goalId, {int horizonWeeks = 12}) async {
   final response = await http.get(
     Uri.parse('${AppConstants.baseUrl}/roadmaps/$goalId/schedule-dates?horizon_weeks=$horizonWeeks'),

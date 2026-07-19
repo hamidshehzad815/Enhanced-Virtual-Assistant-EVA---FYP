@@ -10,9 +10,11 @@ const {
   getUserRoadmapPlans,
   getUserRoadmapByGoalId,
   getPlanScheduleDates,
+  getOverdueSessions,
 } = require("../controllers/roadmaps.controller");
 
 router.get("/plans", protect, getUserRoadmapPlans);
+router.get("/overdue-sessions", protect, getOverdueSessions);
 router.get("/:goalId/schedule-dates", protect, getPlanScheduleDates);
 router.get("/:goalId", protect, getUserRoadmapByGoalId);
 

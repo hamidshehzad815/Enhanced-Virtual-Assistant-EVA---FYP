@@ -62,6 +62,13 @@ class RoadmapRepository {
     );
   }
 
+  // ── Get overdue current sessions across all active goals ──
+  Future<List<OverdueSessionItem>> getOverdueSessions() async {
+    final token = await _getToken();
+    final data = await _service.getOverdueSessions(token);
+    return data.map((e) => OverdueSessionItem.fromJson(e)).toList();
+  }
+
   Future<ScheduleDatesResponse> getScheduleDates(
     String goalId, {
     int horizonWeeks = 12,

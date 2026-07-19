@@ -23,6 +23,12 @@ class CalendarViewModel extends ChangeNotifier {
   DateTime get selectedDay => _selectedDay;
   CalendarFormat get calendarFormat => _calendarFormat;
   List<CalendarTask> get tasks => _allTasks;
+
+  // Overdue, non-learning tasks — learning-linked tasks are surfaced via
+  // their roadmap session instead, to avoid double-prompting the user.
+  List<CalendarTask> get overdueTasks => _allTasks
+      .where((t) => t.displayStatus == 'overdue' && !t.isLearningTask)
+      .toList();
   bool get isLoading => _isLoading;
   String? get error => _error;
 

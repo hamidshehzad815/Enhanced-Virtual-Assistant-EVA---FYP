@@ -219,6 +219,33 @@ class Session {
   }
 }
 
+// ── Overdue session (current session of an active goal, past its window) ──
+class OverdueSessionItem {
+  final String goalId;
+  final String goalTitle;
+  final String language;
+  final String trackLabel;
+  final Session session;
+
+  OverdueSessionItem({
+    required this.goalId,
+    required this.goalTitle,
+    required this.language,
+    required this.trackLabel,
+    required this.session,
+  });
+
+  factory OverdueSessionItem.fromJson(Map<String, dynamic> json) {
+    return OverdueSessionItem(
+      goalId: json['goal_id'],
+      goalTitle: json['goal_title'] ?? '',
+      language: json['language'] ?? '',
+      trackLabel: json['track_label'] ?? '',
+      session: Session.fromJson(json['session']),
+    );
+  }
+}
+
 // ── Resource ──
 class Resource {
   final String title;

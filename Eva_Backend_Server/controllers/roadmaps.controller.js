@@ -7,6 +7,7 @@ const {
   listUserRoadmapPlans,
   getUserRoadmapForGoalId,
   getPlanScheduleDatesForGoal,
+  listOverdueSessionsForUser,
   GOAL_STATUSES,
 } = require("../services/userRoadmaps.service");
 
@@ -94,8 +95,29 @@ const getPlanScheduleDates = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/roadmaps/overdue-sessions
+ * Current session for each active goal, only where it's overdue.
+ */
+const getOverdueSessions = async (req, res, next) => {
+  try {
+    const data = await listOverdueSessionsForUser(
+      req.userId,
+      req.user?.timezone || "UTC",
+    );
+
+    res.json({
+      status: "success",
+      data,
+    });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   getUserRoadmapPlans,
   getUserRoadmapByGoalId,
   getPlanScheduleDates,
+  getOverdueSessions,
 };
