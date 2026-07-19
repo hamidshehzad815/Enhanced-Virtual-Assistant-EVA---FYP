@@ -922,11 +922,18 @@ async def process_message(payload: ProcessRequest):
                 options = list(pending_action.get("schedule_options") or [])
                 chosen_id = parse_schedule_choice_number(message, options)
                 if not chosen_id and not looks_like_full_command(processed["processed"]):
+                    # Use the exact question EVA showed the user (not a
+                    # generic paraphrase) so a reply that echoes EVA's own
+                    # wording ("use the schedule" ~ "Reply 1 to use this
+                    # schedule") gives Gemini something concrete to match.
+                    real_prompt = str(
+                        pending_action.get("prompt_text") or ""
+                    ).strip() or "Which learning schedule should I use?"
                     chosen_id = resolve_list_choice_fallback(
                         processed["processed"],
                         build_options_from_schedule_options(options),
                         allow_all=False,
-                        eva_prompt="Which learning schedule should I use?",
+                        eva_prompt=real_prompt,
                         deterministic_miss="invalid",
                     )
                 if not chosen_id:

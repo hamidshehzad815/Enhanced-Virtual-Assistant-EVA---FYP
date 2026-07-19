@@ -17,6 +17,7 @@ from db.activity_logs import (
 from db.chat_sessions import update_last_message
 from db.conversation_history import insert_message
 from db.tasks import get_tasks_for_day
+from pipeline.behavioral_subintent import resolve_behavioral_sub_intent
 from pipeline.pending_reply_fallback import resolve_enum_fallback
 from services.gemini import gemini_service
 from services.productivity_scorer import (
@@ -216,7 +217,12 @@ async def handle_behavioral(
     input_type = _coerce_text(context.get("input_type")) or "text"
     user_name = user.get("name")
 
-    sub_intent = str(context.get("sub_intent") or "") or _detect_sub_intent(message)
+    sub_intent = str(context.get("sub_intent") or "")
+    if not sub_intent:
+        # Gemini reads any phrasing directly into one of the five report
+        # types; the keyword matcher is only a safety net when Gemini is
+        # disabled, unavailable, or unsure (returns None).
+        sub_intent = resolve_behavioral_sub_intent(message) or _detect_sub_intent(message)
     if sub_intent not in {
         "productive_hours",
         "productive_days",

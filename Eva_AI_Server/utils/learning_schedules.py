@@ -164,6 +164,26 @@ def _format_schedule_block(index: int, entry: Dict[str, Any]) -> str:
     return f"{index}. {label}\n{body}"
 
 
+def _schedule_option_label(entry: Dict[str, Any]) -> str:
+    """
+    Self-describing option label — includes day/time detail (not just the
+    schedule's name) so a Gemini pending-reply fallback can resolve a reply
+    like "use the schedule" from the label alone, without needing the
+    original prompt text.
+    """
+    name = str(entry.get("label") or "Schedule").strip()
+    slots = sorted(
+        list(entry.get("slots") or []),
+        key=lambda s: int(s.get("day", 0)),
+    )
+    times = ", ".join(
+        f"{_WEEKDAY_NAMES[int(s.get('day', 0))]} {_format_time_12h(str(s.get('time') or ''))}"
+        for s in slots
+        if isinstance(s, dict) and 0 <= int(s.get("day", 0)) <= 6
+    )
+    return f"Use this schedule: {name} ({times})" if times else f"Use this schedule: {name}"
+
+
 def _build_schedule_choice_message(free: List[Dict[str, Any]]) -> Tuple[str, List[Dict[str, Any]]]:
     """
     Build prompt text and options for pending schedule_choice.
@@ -174,7 +194,7 @@ def _build_schedule_choice_message(free: List[Dict[str, Any]]) -> Tuple[str, Lis
     options: List[Dict[str, Any]] = [
         {
             "id": str(s.get("id") or ""),
-            "label": str(s.get("label") or "Schedule"),
+            "label": _schedule_option_label(s),
         }
         for s in free
     ]
@@ -191,7 +211,7 @@ def _build_schedule_choice_message(free: List[Dict[str, Any]]) -> Tuple[str, Lis
         options.append(
             {
                 "id": CHOICE_NEW_SCHEDULE_IN_SETTINGS,
-                "label": "I want different learning times (set up in Settings)",
+                "label": "Set up a different schedule in Settings instead of using this one",
             },
         )
         intro += "\n\nReply 2 if you will set up a different schedule in Settings first."
@@ -266,6 +286,12 @@ def resolve_schedule_for_learning(
             "stage": "schedule_choice",
             "entities": dict(entities),
             "schedule_options": options,
+            # The exact question shown to the user — used verbatim as the
+            # Gemini pending-reply fallback's context, so a reply that echoes
+            # EVA's own wording ("use the schedule" vs "Reply 1 to use this
+            # schedule") maps to the right option instead of a generic
+            # re-derived prompt that shares no wording with the reply.
+            "prompt_text": message,
         },
         "expected_response": "number",
     }
