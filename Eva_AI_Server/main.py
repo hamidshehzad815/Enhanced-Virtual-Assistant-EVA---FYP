@@ -922,11 +922,18 @@ async def process_message(payload: ProcessRequest):
                 options = list(pending_action.get("schedule_options") or [])
                 chosen_id = parse_schedule_choice_number(message, options)
                 if not chosen_id and not looks_like_full_command(processed["processed"]):
+                    # Use the exact question EVA showed the user (not a
+                    # generic paraphrase) so a reply that echoes EVA's own
+                    # wording ("use the schedule" ~ "Reply 1 to use this
+                    # schedule") gives Gemini something concrete to match.
+                    real_prompt = str(
+                        pending_action.get("prompt_text") or ""
+                    ).strip() or "Which learning schedule should I use?"
                     chosen_id = resolve_list_choice_fallback(
                         processed["processed"],
                         build_options_from_schedule_options(options),
                         allow_all=False,
-                        eva_prompt="Which learning schedule should I use?",
+                        eva_prompt=real_prompt,
                         deterministic_miss="invalid",
                     )
                 if not chosen_id:
@@ -2189,6 +2196,25 @@ async def process_message(payload: ProcessRequest):
                     }
 
                 number_value = handle_number_reply(processed["processed"])
+                if (
+                    number_value is None
+                    and pending_intent in {"add", "scheduling_add"}
+                    and str(pending_action.get("pending_reason") or "") == "time_suggestion"
+                    and not looks_like_full_command(processed["processed"])
+                ):
+                    suggested_range = str(pending_action.get("suggested_range") or "the suggested time")
+                    fallback_choice = resolve_list_choice_fallback(
+                        processed["processed"],
+                        [
+                            {"id": "1", "index": 1, "label": f"Use the suggested time ({suggested_range})"},
+                            {"id": "2", "index": 2, "label": "Enter a time manually"},
+                        ],
+                        eva_prompt="Use the suggested time, or enter one manually?",
+                        deterministic_miss="invalid",
+                    )
+                    if fallback_choice in {"1", "2"}:
+                        number_value = int(fallback_choice)
+
                 if pending_intent in {"add", "scheduling_add"} and number_value in {1, 2}:
                     routed_result = await route_intent(
                         "scheduling_add",

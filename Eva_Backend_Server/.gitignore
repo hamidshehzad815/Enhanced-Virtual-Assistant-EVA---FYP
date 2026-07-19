@@ -39,3 +39,6 @@ firebase-service-account.json
 evafirebase-*-firebase-adminsdk-*.json
 *firebase*adminsdk*.json
 # scripts/*.js
+
+# DB backups (raw user data dumps — never commit)
+backups/

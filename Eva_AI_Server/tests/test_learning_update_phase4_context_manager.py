@@ -27,6 +27,7 @@ if "pipeline.ner" not in sys.modules:
     sys.modules["pipeline.ner"] = _ner_mod
 
 
+from config import settings as settings_module
 from context import context_manager as cm
 
 
@@ -47,6 +48,16 @@ def _update_ctx(stage: str, sub_intent: str, **pending_kwargs):
 
 
 class LearningUpdateContextManagerTests(unittest.IsolatedAsyncioTestCase):
+    # Deterministic-parse retry path, not the Gemini fallback (dedicated tests
+    # in test_pending_reply_fallback.py) — keep hermetic regardless of a real
+    # .env's USE_GEMINI_PENDING_REPLY value.
+    def setUp(self) -> None:
+        self._flag = settings_module.settings.USE_GEMINI_PENDING_REPLY
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = False
+
+    def tearDown(self) -> None:
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = self._flag
+
     async def test_state1_free_text_valid_topic_merges(self):
         ctx = _update_ctx("identify", "pause")
         with patch.object(
@@ -93,7 +104,7 @@ class LearningUpdateContextManagerTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             cm.duckling_client,
             "resolve_date",
-            new=AsyncMock(return_value="2026-06-15"),
+            new=AsyncMock(return_value="2030-06-17"),
         ):
             out = await cm.process_learning_update_free_text_reply(
                 ctx,
@@ -103,7 +114,7 @@ class LearningUpdateContextManagerTests(unittest.IsolatedAsyncioTestCase):
                 preferred_learning_schedule=[{"day": 0, "time": "18:00"}],
             )
         self.assertEqual(out["outcome"], "merged")
-        self.assertEqual(out["merged_entities"]["date"], "2026-06-15")
+        self.assertEqual(out["merged_entities"]["date"], "2030-06-17")
 
     async def test_state5_new_date_not_learning_day_retries(self):
         ctx = _update_ctx("new_date", "reschedule")
@@ -111,7 +122,7 @@ class LearningUpdateContextManagerTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(
             cm.duckling_client,
             "resolve_date",
-            new=AsyncMock(return_value="2026-06-16"),
+            new=AsyncMock(return_value="2030-06-18"),
         ):
             out = await cm.process_learning_update_free_text_reply(
                 ctx,
@@ -139,6 +150,27 @@ class LearningUpdateContextManagerTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(out["outcome"], "retry")
         self.assertIn("date", out["message"].lower())
+
+    async def test_state5_new_date_gemini_rescues_when_duckling_down(self):
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = True
+        ctx = _update_ctx("new_date", "reschedule", entities={"topic": "Python"})
+        with patch.object(
+            cm.duckling_client,
+            "resolve_date",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "pipeline.pending_reply_fallback.gemini_service.generate_constrained_text",
+            return_value='{"date":"2030-06-17","confidence":0.95}',
+        ):
+            out = await cm.process_learning_update_free_text_reply(
+                ctx,
+                "from monday",
+                user_name="Ali",
+                timezone_name="UTC",
+                preferred_learning_schedule=[{"day": 0, "time": "18:00"}],
+            )
+        self.assertEqual(out["outcome"], "merged")
+        self.assertEqual(out["merged_entities"]["date"], "2030-06-17")
 
     def test_confirm_messages(self):
         goal = {"title": "Python basics"}

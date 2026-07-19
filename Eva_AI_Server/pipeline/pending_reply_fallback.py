@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from datetime import date as _date
 from typing import Any, Dict, List, Optional, Sequence
 
 from config.settings import settings
@@ -57,6 +58,97 @@ Rules:
 - If two labels are too similar to tell apart, return "none".
 - Never invent an id that is not in the list.
 """
+
+_DATE_PROMPT = """You resolve a user's free-form reply into a calendar date for EVA.
+
+Today's date is {today} ({weekday}).
+
+EVA just asked:
+{eva_prompt}
+
+User reply:
+{user_reply}
+
+Return ONLY raw JSON (no markdown):
+{{"date": "YYYY-MM-DD"|"none", "confidence": 0.0-1.0}}
+
+Rules:
+- Resolve relative phrases ("monday", "from monday", "next friday", "in 3 days",
+  "tomorrow") against today's date above.
+- "date" must be a real calendar date in YYYY-MM-DD format.
+- "none" if the reply has no resolvable date, is off-topic, or you are not sure.
+- Never invent a date. Prefer "none" over guessing.
+"""
+
+_TIME_PROMPT = """You resolve a user's free-form reply into a time of day for EVA.
+
+EVA just asked:
+{eva_prompt}
+
+User reply:
+{user_reply}
+
+Return ONLY raw JSON (no markdown):
+{{"time": "HH:MM"|"none", "confidence": 0.0-1.0}}
+
+Rules:
+- "time" must be 24-hour HH:MM (e.g. "5pm" -> "17:00", "9:30 in the morning" -> "09:30").
+- "none" if the reply has no resolvable time, is off-topic, or you are not sure.
+- Never invent a time. Prefer "none" over guessing.
+"""
+
+_DURATION_PROMPT = """You resolve a user's free-form reply into a duration for EVA, in {unit}.
+
+EVA just asked:
+{eva_prompt}
+
+User reply:
+{user_reply}
+
+Return ONLY raw JSON (no markdown):
+{{"amount": <integer {unit}>|"none", "confidence": 0.0-1.0}}
+
+Rules:
+- Convert the reply to a whole number of {unit} (e.g. "2 weeks" -> 14 if unit is days;
+  "an hour and a half" -> 90 if unit is minutes).
+- "none" if the reply has no resolvable duration, is off-topic, or you are not sure.
+- Never invent a number. Prefer "none" over guessing.
+"""
+
+_ENUM_PROMPT = """You map a user's free-form reply to exactly one value from a fixed set for EVA.
+
+EVA just asked:
+{eva_prompt}
+
+Allowed values: {allowed_values}
+
+User reply:
+{user_reply}
+
+Return ONLY raw JSON (no markdown):
+{{"value": "<one of the allowed values>"|"none", "confidence": 0.0-1.0}}
+
+Rules:
+- "value" must be exactly one of the allowed values listed above (verbatim, no others).
+- "none" if the reply does not clearly map to one of them, is off-topic, or you are not sure.
+- Never invent a value outside the allowed set. Prefer "none" over guessing.
+"""
+
+
+def _call_gemini_json(
+    prompt: str,
+    *,
+    log_tag: str,
+) -> tuple[Optional[Dict[str, Any]], float]:
+    """Shared call+parse+latency boilerplate for the value-type resolvers below."""
+    started = time.monotonic()
+    raw = gemini_service.generate_constrained_text(
+        prompt,
+        model_name=_model_name(),
+        log_tag=log_tag,
+    )
+    latency_ms = (time.monotonic() - started) * 1000
+    return _parse_json_object(raw), latency_ms
 
 
 def _strip_fence(raw: str) -> str:
@@ -428,6 +520,304 @@ def resolve_list_choice_fallback(
         confidence=confidence,
         accepted=True,
         latency_ms=latency_ms,
+    )
+    return choice
+
+
+def resolve_date_fallback(
+    user_reply: str,
+    *,
+    eva_prompt: str = "",
+    reference_date: Optional[_date] = None,
+    allow_past: bool = False,
+    deterministic_miss: str = "invalid",
+) -> Optional[str]:
+    """
+    Map a free-form reply to an ISO date (YYYY-MM-DD), or None to re-ask.
+
+    ``reference_date`` (defaults to real today) is given to Gemini so relative
+    phrases ("monday", "from monday", "next friday") resolve correctly, and is
+    also used to reject a resolved date that falls in the past unless
+    ``allow_past`` is set (e.g. a "show tasks on ..." filter may allow it).
+    """
+    if not _feature_enabled():
+        return None
+
+    reply = (user_reply or "").strip()
+    if not reply:
+        return None
+
+    today = reference_date or _date.today()
+    prompt = _DATE_PROMPT.format(
+        today=today.isoformat(),
+        weekday=today.strftime("%A"),
+        eva_prompt=(eva_prompt or "Please give me a date.").strip(),
+        user_reply=reply,
+    )
+    data, latency_ms = _call_gemini_json(prompt, log_tag="pending_date")
+    if not data:
+        _log_attempt(
+            kind="date", deterministic_miss=deterministic_miss, choice=None,
+            confidence=None, accepted=False, latency_ms=latency_ms,
+            reason="parse_failed",
+        )
+        return None
+
+    raw_date = str(data.get("date") or "").strip()
+    try:
+        confidence = float(data.get("confidence"))
+    except (TypeError, ValueError):
+        confidence = 0.0
+
+    if not raw_date or raw_date.lower() == "none":
+        _log_attempt(
+            kind="date", deterministic_miss=deterministic_miss, choice=raw_date,
+            confidence=confidence, accepted=False, latency_ms=latency_ms,
+            reason="none",
+        )
+        return None
+
+    try:
+        parsed = _date.fromisoformat(raw_date[:10])
+    except ValueError:
+        _log_attempt(
+            kind="date", deterministic_miss=deterministic_miss, choice=raw_date,
+            confidence=confidence, accepted=False, latency_ms=latency_ms,
+            reason="unparseable_date",
+        )
+        return None
+
+    if not allow_past and parsed < today:
+        _log_attempt(
+            kind="date", deterministic_miss=deterministic_miss, choice=raw_date,
+            confidence=confidence, accepted=False, latency_ms=latency_ms,
+            reason="past_date",
+        )
+        return None
+
+    min_conf = _min_confidence(destructive=False)
+    if confidence < min_conf:
+        _log_attempt(
+            kind="date", deterministic_miss=deterministic_miss, choice=raw_date,
+            confidence=confidence, accepted=False, latency_ms=latency_ms,
+            reason=f"low_confidence<{min_conf}",
+        )
+        return None
+
+    _log_attempt(
+        kind="date", deterministic_miss=deterministic_miss, choice=raw_date,
+        confidence=confidence, accepted=True, latency_ms=latency_ms,
+    )
+    return parsed.isoformat()
+
+
+def resolve_time_fallback(
+    user_reply: str,
+    *,
+    eva_prompt: str = "",
+    deterministic_miss: str = "invalid",
+) -> Optional[str]:
+    """Map a free-form reply to an "HH:MM:SS" time, or None to re-ask."""
+    if not _feature_enabled():
+        return None
+
+    reply = (user_reply or "").strip()
+    if not reply:
+        return None
+
+    prompt = _TIME_PROMPT.format(
+        eva_prompt=(eva_prompt or "Please give me a time.").strip(),
+        user_reply=reply,
+    )
+    data, latency_ms = _call_gemini_json(prompt, log_tag="pending_time")
+    if not data:
+        _log_attempt(
+            kind="time", deterministic_miss=deterministic_miss, choice=None,
+            confidence=None, accepted=False, latency_ms=latency_ms,
+            reason="parse_failed",
+        )
+        return None
+
+    raw_time = str(data.get("time") or "").strip()
+    try:
+        confidence = float(data.get("confidence"))
+    except (TypeError, ValueError):
+        confidence = 0.0
+
+    match = re.fullmatch(r"([01]?\d|2[0-3]):([0-5]\d)", raw_time)
+    if not match:
+        _log_attempt(
+            kind="time", deterministic_miss=deterministic_miss, choice=raw_time,
+            confidence=confidence, accepted=False, latency_ms=latency_ms,
+            reason="none" if raw_time.lower() in {"", "none"} else "unparseable_time",
+        )
+        return None
+
+    min_conf = _min_confidence(destructive=False)
+    if confidence < min_conf:
+        _log_attempt(
+            kind="time", deterministic_miss=deterministic_miss, choice=raw_time,
+            confidence=confidence, accepted=False, latency_ms=latency_ms,
+            reason=f"low_confidence<{min_conf}",
+        )
+        return None
+
+    _log_attempt(
+        kind="time", deterministic_miss=deterministic_miss, choice=raw_time,
+        confidence=confidence, accepted=True, latency_ms=latency_ms,
+    )
+    return f"{int(match.group(1)):02d}:{match.group(2)}:00"
+
+
+def resolve_duration_fallback(
+    user_reply: str,
+    *,
+    unit: str,
+    eva_prompt: str = "",
+    min_value: int = 1,
+    max_value: Optional[int] = None,
+    deterministic_miss: str = "invalid",
+) -> Optional[int]:
+    """
+    Map a free-form reply to an integer duration in ``unit`` ("days" or
+    "minutes"), or None to re-ask. Bounds mirror the caller's own limits
+    (e.g. task duration is 5-1440 minutes; a learning plan is 1-365 days).
+    """
+    if not _feature_enabled():
+        return None
+
+    reply = (user_reply or "").strip()
+    if not reply:
+        return None
+
+    prompt = _DURATION_PROMPT.format(
+        unit=unit,
+        eva_prompt=(eva_prompt or f"Please give me a duration in {unit}.").strip(),
+        user_reply=reply,
+    )
+    data, latency_ms = _call_gemini_json(prompt, log_tag="pending_duration")
+    if not data:
+        _log_attempt(
+            kind="duration", deterministic_miss=deterministic_miss, choice=None,
+            confidence=None, accepted=False, latency_ms=latency_ms,
+            reason="parse_failed",
+        )
+        return None
+
+    raw_amount = data.get("amount")
+    try:
+        confidence = float(data.get("confidence"))
+    except (TypeError, ValueError):
+        confidence = 0.0
+
+    try:
+        amount = int(raw_amount)
+    except (TypeError, ValueError):
+        _log_attempt(
+            kind="duration", deterministic_miss=deterministic_miss, choice=raw_amount,
+            confidence=confidence, accepted=False, latency_ms=latency_ms,
+            reason="none" if str(raw_amount).lower() in {"none", ""} else "unparseable_amount",
+        )
+        return None
+
+    if amount < min_value or (max_value is not None and amount > max_value):
+        _log_attempt(
+            kind="duration", deterministic_miss=deterministic_miss, choice=amount,
+            confidence=confidence, accepted=False, latency_ms=latency_ms,
+            reason="out_of_range",
+        )
+        return None
+
+    min_conf = _min_confidence(destructive=False)
+    if confidence < min_conf:
+        _log_attempt(
+            kind="duration", deterministic_miss=deterministic_miss, choice=amount,
+            confidence=confidence, accepted=False, latency_ms=latency_ms,
+            reason=f"low_confidence<{min_conf}",
+        )
+        return None
+
+    _log_attempt(
+        kind="duration", deterministic_miss=deterministic_miss, choice=amount,
+        confidence=confidence, accepted=True, latency_ms=latency_ms,
+    )
+    return amount
+
+
+def resolve_enum_fallback(
+    user_reply: str,
+    allowed_values: Sequence[str],
+    *,
+    eva_prompt: str = "",
+    kind: str = "enum",
+    deterministic_miss: str = "invalid",
+) -> Optional[str]:
+    """
+    Map a free-form reply to exactly one value from a small fixed set (a
+    topic, subtopic key, priority, status, weekday name, ...), or None to
+    re-ask. The returned value is always validated against ``allowed_values``.
+    """
+    if not _feature_enabled():
+        return None
+
+    reply = (user_reply or "").strip()
+    values = [str(v) for v in allowed_values if str(v).strip()]
+    if not reply or not values:
+        return None
+
+    prompt = _ENUM_PROMPT.format(
+        eva_prompt=(eva_prompt or "Please choose one of the listed options.").strip(),
+        allowed_values=json.dumps(values, ensure_ascii=True),
+        user_reply=reply,
+    )
+    data, latency_ms = _call_gemini_json(prompt, log_tag=f"pending_{kind}")
+    if not data:
+        _log_attempt(
+            kind=kind, deterministic_miss=deterministic_miss, choice=None,
+            confidence=None, accepted=False, latency_ms=latency_ms,
+            reason="parse_failed",
+        )
+        return None
+
+    choice = str(data.get("value") or "").strip()
+    try:
+        confidence = float(data.get("confidence"))
+    except (TypeError, ValueError):
+        confidence = 0.0
+
+    if not choice or choice.lower() == "none":
+        _log_attempt(
+            kind=kind, deterministic_miss=deterministic_miss, choice=choice,
+            confidence=confidence, accepted=False, latency_ms=latency_ms,
+            reason="none",
+        )
+        return None
+
+    if choice not in values:
+        # Tolerate a case mismatch before rejecting outright.
+        lower_map = {v.lower(): v for v in values}
+        matched = lower_map.get(choice.lower())
+        if matched is None:
+            _log_attempt(
+                kind=kind, deterministic_miss=deterministic_miss, choice=choice,
+                confidence=confidence, accepted=False, latency_ms=latency_ms,
+                reason="value_not_in_set",
+            )
+            return None
+        choice = matched
+
+    min_conf = _min_confidence(destructive=False)
+    if confidence < min_conf:
+        _log_attempt(
+            kind=kind, deterministic_miss=deterministic_miss, choice=choice,
+            confidence=confidence, accepted=False, latency_ms=latency_ms,
+            reason=f"low_confidence<{min_conf}",
+        )
+        return None
+
+    _log_attempt(
+        kind=kind, deterministic_miss=deterministic_miss, choice=choice,
+        confidence=confidence, accepted=True, latency_ms=latency_ms,
     )
     return choice
 

@@ -8,6 +8,11 @@ from typing import Any, Dict, List, Optional, Set
 from context.redis_client import redis_client
 from pipeline.entity_scoper import scope_entities
 from pipeline.ner import learning_ner_extractor
+from pipeline.pending_reply_fallback import (
+    resolve_date_fallback,
+    resolve_duration_fallback,
+    resolve_enum_fallback,
+)
 from services.duckling import duckling_client
 from utils.learning_utils import (
     SUPPORTED_TOPICS,
@@ -415,7 +420,15 @@ async def process_learning_update_free_text_reply(
         return {"outcome": "retry", "message": msg}
 
     if stage == "new_date":
+        today = datetime.now(get_zoneinfo(timezone_name or "UTC")).date()
         iso_date = await duckling_client.resolve_date(cleaned, timezone=timezone_name or "UTC")
+        if not iso_date:
+            iso_date = resolve_date_fallback(
+                cleaned,
+                eva_prompt="What date would you like to reschedule to?",
+                reference_date=today,
+                deterministic_miss="duckling_miss",
+            )
         if not iso_date:
             msg = "I couldn't understand that date. Try something like 'next Monday'."
             if user_name:
@@ -423,11 +436,10 @@ async def process_learning_update_free_text_reply(
             return {"outcome": "retry", "message": msg}
 
         try:
-            parsed = datetime.strptime(iso_date, "%Y-%m-%d").date()
+            parsed = datetime.strptime(iso_date[:10], "%Y-%m-%d").date()
         except ValueError:
             return {"outcome": "retry", "message": "That date format looks invalid. Try again."}
 
-        today = datetime.now(get_zoneinfo(timezone_name or "UTC")).date()
         if parsed < today:
             msg = "That date is in the past. Pick a future learning day."
             if user_name:
@@ -454,6 +466,14 @@ async def process_learning_update_free_text_reply(
     scoped = scope_entities(raw or {}, "learning_update")
     topic_raw = scoped.get("topic")
     topic = normalize_topic(topic_raw) if topic_raw else None
+    if not topic:
+        topic = resolve_enum_fallback(
+            cleaned,
+            sorted(SUPPORTED_TOPICS),
+            eva_prompt="Which learning topic did you mean?",
+            kind="topic",
+            deterministic_miss="ner_miss",
+        )
     if not topic:
         msg = "I didn't catch the learning topic. Say something like Python or MySQL."
         if user_name:
@@ -630,6 +650,18 @@ async def process_learning_create_free_text_reply(
         scoped = scope_entities(raw, "learning_create")
         topic_raw = scoped.get("topic")
         if not topic_raw or not str(topic_raw).strip():
+            fallback_topic = resolve_enum_fallback(
+                cleaned,
+                sorted(SUPPORTED_TOPICS),
+                eva_prompt="What would you like to learn?",
+                kind="topic",
+                deterministic_miss="ner_miss",
+            )
+            if fallback_topic:
+                return {
+                    "outcome": "merged",
+                    "merged_entities": {**entities, "topic": fallback_topic},
+                }
             return {
                 "outcome": "retry",
                 "message": "I didn't catch which topic you want to learn. Try something like “Python” or “MySQL”.",
@@ -664,6 +696,19 @@ async def process_learning_create_free_text_reply(
             }
         resolution = resolve_subtopic_mapping(sub, str(topic))
         if not resolution.confident:
+            level_keys = level_keys_for_language(str(topic))
+            fallback_subtopic = resolve_enum_fallback(
+                cleaned,
+                level_keys,
+                eva_prompt=f"Which level or focus of {topic} do you want?",
+                kind="subtopic",
+                deterministic_miss="low_confidence",
+            )
+            if fallback_subtopic:
+                return {
+                    "outcome": "merged",
+                    "merged_entities": {**entities, "subtopic": fallback_subtopic},
+                }
             heard = str(sub).strip()
             return {
                 "outcome": "retry",
@@ -676,30 +721,47 @@ async def process_learning_create_free_text_reply(
         return {"outcome": "merged", "merged_entities": merged}
 
     if stage == "start_date":
+        today = _today_in_user_tz(tz_resolved)
         iso = await duckling_client.resolve_date(cleaned, timezone=tz_resolved)
-        if not iso:
+        resolved_date: Optional[str] = None
+        if iso:
+            try:
+                start = date.fromisoformat(str(iso)[:10])
+                if start >= today:
+                    resolved_date = str(iso)[:10]
+            except ValueError:
+                pass
+
+        if not resolved_date:
+            fallback_date = resolve_date_fallback(
+                cleaned,
+                eva_prompt="When would you like to start?",
+                reference_date=today,
+                deterministic_miss="duckling_miss",
+            )
+            if fallback_date:
+                resolved_date = fallback_date
+
+        if not resolved_date:
             return {
                 "outcome": "retry",
                 "message": "I couldn't parse that date. Try “next Monday”, “May 20”, or a clear day.",
             }
-        try:
-            start = date.fromisoformat(str(iso)[:10])
-        except ValueError:
-            return {
-                "outcome": "retry",
-                "message": "I couldn't parse that date. Try a specific day like “next Monday”.",
-            }
-        today = _today_in_user_tz(tz_resolved)
-        if start < today:
-            return {
-                "outcome": "retry",
-                "message": "That date is in the past. Pick today or a future day to start.",
-            }
-        merged = {**entities, "start_date": str(iso)[:10]}
+
+        merged = {**entities, "start_date": resolved_date}
         return {"outcome": "merged", "merged_entities": merged}
 
     if stage == "duration":
         days = duration_entity_to_days(cleaned)
+        if days is None:
+            days = resolve_duration_fallback(
+                cleaned,
+                unit="days",
+                eva_prompt="How long should this learning plan run?",
+                min_value=1,
+                max_value=365,
+                deterministic_miss="parse_miss",
+            )
         if days is None:
             return {
                 "outcome": "retry",
@@ -758,6 +820,18 @@ async def process_learning_delete_free_text_reply(
     scoped = scope_entities(raw, "learning_delete")
     topic_raw = scoped.get("topic")
     if not topic_raw or not str(topic_raw).strip():
+        fallback_topic = resolve_enum_fallback(
+            cleaned,
+            sorted(SUPPORTED_TOPICS),
+            eva_prompt="Which learning goal would you like to delete?",
+            kind="topic",
+            deterministic_miss="ner_miss",
+        )
+        if fallback_topic:
+            return {
+                "outcome": "merged",
+                "merged_entities": {**entities, "topic": fallback_topic},
+            }
         if user_name:
             return {
                 "outcome": "retry",

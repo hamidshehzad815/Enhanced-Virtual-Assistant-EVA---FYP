@@ -24,6 +24,12 @@ from db.tasks import (
     get_task_by_id,
     update_task,
 )
+from pipeline.pending_reply_fallback import (
+    resolve_date_fallback,
+    resolve_duration_fallback,
+    resolve_enum_fallback,
+    resolve_time_fallback,
+)
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
@@ -35,6 +41,7 @@ from utils.learning_schedule_conflicts import (
 from utils.quiet_hours import find_quiet_hour_matches, format_quiet_hour_labels
 from utils.task_value_normalizer import canonicalize_priority, canonicalize_status, clean_task_name
 from utils.timezone_utils import (
+    get_zoneinfo,
     local_datetime_to_utc_naive,
     local_day_bounds_to_utc_naive,
     resolve_timezone_name,
@@ -507,7 +514,19 @@ async def _resolve_identifier_date(
 
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", candidate):
         resolved = await duckling_client.resolve_date(candidate, timezone=timezone_name)
-        candidate = _to_date_text(resolved)
+        resolved_text = _to_date_text(resolved)
+        if re.match(r"^\d{4}-\d{2}-\d{2}$", resolved_text):
+            candidate = resolved_text
+        else:
+            today = datetime.now(get_zoneinfo(timezone_name or "UTC")).date()
+            fallback_date = resolve_date_fallback(
+                candidate,
+                eva_prompt="Which date's task would you like to update?",
+                reference_date=today,
+                allow_past=True,
+                deterministic_miss="duckling_miss",
+            )
+            candidate = fallback_date or candidate
 
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", candidate):
         return None, None
@@ -528,10 +547,20 @@ async def _resolve_update_date(
     if re.match(r"^\d{4}-\d{2}-\d{2}$", candidate):
         return candidate
     resolved = await duckling_client.resolve_date(candidate, timezone=timezone_name)
-    candidate = _to_date_text(resolved)
-    if re.match(r"^\d{4}-\d{2}-\d{2}$", candidate):
-        return candidate
-    return None
+    resolved_text = _to_date_text(resolved)
+    if re.match(r"^\d{4}-\d{2}-\d{2}$", resolved_text):
+        return resolved_text
+    # Past-date rejection happens downstream against the combined datetime,
+    # so allow_past here to match this function's existing behavior.
+    today = datetime.now(get_zoneinfo(timezone_name or "UTC")).date()
+    fallback_date = resolve_date_fallback(
+        candidate,
+        eva_prompt="What date would you like to reschedule to?",
+        reference_date=today,
+        allow_past=True,
+        deterministic_miss="duckling_miss",
+    )
+    return fallback_date
 
 
 async def _resolve_update_time(
@@ -544,10 +573,15 @@ async def _resolve_update_time(
     if re.match(r"^\d{2}:\d{2}:\d{2}$", candidate):
         return candidate
     resolved = await duckling_client.resolve_time(candidate, timezone=timezone_name)
-    candidate = _to_time_text(resolved)
-    if re.match(r"^\d{2}:\d{2}:\d{2}$", candidate):
-        return candidate
-    return None
+    resolved_text = _to_time_text(resolved)
+    if re.match(r"^\d{2}:\d{2}:\d{2}$", resolved_text):
+        return resolved_text
+    fallback_time = resolve_time_fallback(
+        candidate,
+        eva_prompt="What time would you like to reschedule to?",
+        deterministic_miss="duckling_miss",
+    )
+    return fallback_time
 
 
 async def _parse_duration_minutes(raw_value: Any) -> Optional[int]:
@@ -576,7 +610,14 @@ async def _parse_duration_minutes(raw_value: Any) -> Optional[int]:
     if duckling_minutes is not None:
         return max(5, int(duckling_minutes))
 
-    return None
+    return resolve_duration_fallback(
+        raw,
+        unit="minutes",
+        eva_prompt="How long should the task take?",
+        min_value=5,
+        max_value=1440,
+        deterministic_miss="duckling_miss",
+    )
 
 
 def _serialize_updates_for_context(update_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -1392,6 +1433,14 @@ async def handle_scheduling_update(
     if "new_priority" in update_fields:
         new_priority = _normalize_priority(update_fields.get("new_priority"))
         if not new_priority:
+            new_priority = resolve_enum_fallback(
+                _coerce_text(update_fields.get("new_priority")),
+                ["low", "medium", "high"],
+                eva_prompt="What priority would you like?",
+                kind="priority",
+                deterministic_miss="normalize_miss",
+            )
+        if not new_priority:
             await _set_what_to_update_context(
                 user_id=user_id,
                 entities=combined_entities,
@@ -1424,6 +1473,14 @@ async def handle_scheduling_update(
 
     if "new_status" in update_fields:
         new_status = _normalize_status(update_fields.get("new_status"))
+        if not new_status:
+            new_status = resolve_enum_fallback(
+                _coerce_text(update_fields.get("new_status")),
+                ["pending", "ongoing", "complete"],
+                eva_prompt="What status would you like?",
+                kind="status",
+                deterministic_miss="normalize_miss",
+            )
         if not new_status:
             await _set_what_to_update_context(
                 user_id=user_id,

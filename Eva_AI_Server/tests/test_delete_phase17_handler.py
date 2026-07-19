@@ -5,6 +5,7 @@ from datetime import datetime
 import unittest
 from unittest.mock import AsyncMock, patch
 
+from config import settings as settings_module
 from handlers.scheduling.delete import handle_scheduling_delete
 
 
@@ -28,6 +29,13 @@ def _gemini_stub(action_context, _user_name, _history):
 
 
 class TestDeletePhase17Handler(unittest.IsolatedAsyncioTestCase):
+    def setUp(self) -> None:
+        self._flag = settings_module.settings.USE_GEMINI_PENDING_REPLY
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = False
+
+    def tearDown(self) -> None:
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = self._flag
+
     async def test_yes_single_deletes_task_with_log_calendar_and_collab_notification(self):
         context = _base_context()
         context["integrations"] = [

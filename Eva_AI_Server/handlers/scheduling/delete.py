@@ -15,12 +15,14 @@ from db.activity_logs import insert_log
 from db.chat_sessions import update_last_message
 from db.conversation_history import insert_message
 from db.tasks import find_tasks_for_delete, get_task_by_id, soft_delete_task
+from pipeline.pending_reply_fallback import resolve_date_fallback, resolve_time_fallback
 from services.duckling import duckling_client
 from services.gemini import gemini_service
 from services.google_calendar import google_calendar_client
 from utils.google_calendar_sync import resolve_google_calendar_sync
 from utils.task_value_normalizer import canonicalize_priority, canonicalize_status, clean_task_name
 from utils.timezone_utils import (
+    get_zoneinfo,
     local_datetime_to_utc_naive,
     local_day_bounds_to_utc_naive,
     resolve_timezone_name,
@@ -435,6 +437,15 @@ async def _resolve_date_filter(
 
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", candidate):
         resolved = await duckling_client.resolve_date(candidate, timezone=timezone)
+        if not resolved:
+            today = datetime.now(get_zoneinfo(timezone)).date()
+            resolved = resolve_date_fallback(
+                candidate,
+                eva_prompt="Which date's tasks should I delete?",
+                reference_date=today,
+                allow_past=True,
+                deterministic_miss="duckling_miss",
+            )
         candidate = _to_date_text(resolved)
 
     if not re.match(r"^\d{4}-\d{2}-\d{2}$", candidate):
@@ -723,6 +734,15 @@ async def handle_scheduling_delete(
         if not re.match(r"^\d{2}:\d{2}:\d{2}$", resolved_time):
             duckling_time = await duckling_client.resolve_time(resolved_time, timezone=timezone)
             resolved_time = _to_time_text(duckling_time) or resolved_time
+
+        if not re.match(r"^\d{2}:\d{2}:\d{2}$", resolved_time):
+            fallback_time = resolve_time_fallback(
+                time_raw,
+                eva_prompt="What time were the tasks at?",
+                deterministic_miss="duckling_miss",
+            )
+            if fallback_time:
+                resolved_time = fallback_time
 
         if not re.match(r"^\d{2}:\d{2}:\d{2}$", resolved_time):
             pending_entities = dict(extracted_filters)

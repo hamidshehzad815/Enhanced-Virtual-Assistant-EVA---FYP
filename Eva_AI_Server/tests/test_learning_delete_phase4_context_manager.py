@@ -25,6 +25,7 @@ if "pipeline.ner" not in sys.modules:
     _ner_mod.get_ner_extractor_for_intent = lambda _intent: _stub
     sys.modules["pipeline.ner"] = _ner_mod
 
+from config import settings as settings_module
 from context import context_manager as cm
 
 
@@ -44,6 +45,16 @@ def _delete_ctx(expected: str, **pending_kwargs):
 
 
 class LearningDeleteContextManagerTests(unittest.IsolatedAsyncioTestCase):
+    # Deterministic-parse retry path, not the Gemini fallback (dedicated tests
+    # in test_pending_reply_fallback.py) — keep hermetic regardless of a real
+    # .env's USE_GEMINI_PENDING_REPLY value.
+    def setUp(self) -> None:
+        self._flag = settings_module.settings.USE_GEMINI_PENDING_REPLY
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = False
+
+    def tearDown(self) -> None:
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = self._flag
+
     async def test_free_text_valid_topic_merges(self):
         ctx = _delete_ctx("free_text")
         with patch.object(
@@ -79,6 +90,25 @@ class LearningDeleteContextManagerTests(unittest.IsolatedAsyncioTestCase):
             )
         self.assertEqual(out["outcome"], "retry")
         self.assertIn("didn't catch", out["message"])
+
+    async def test_free_text_gemini_rescues_ner_miss(self):
+        settings_module.settings.USE_GEMINI_PENDING_REPLY = True
+        ctx = _delete_ctx("free_text")
+        with patch.object(
+            cm.learning_ner_extractor,
+            "extract",
+            return_value={},
+        ), patch.object(cm.learning_ner_extractor, "loaded", True), patch(
+            "pipeline.pending_reply_fallback.gemini_service.generate_constrained_text",
+            return_value='{"value":"Python","confidence":0.95}',
+        ):
+            out = await cm.process_learning_delete_free_text_reply(
+                ctx,
+                "the python one",
+                user_name="Ali",
+            )
+        self.assertEqual(out["outcome"], "merged")
+        self.assertEqual(out["merged_entities"]["topic"], "Python")
 
     async def test_free_text_unsupported_topic(self):
         ctx = _delete_ctx("free_text")
