@@ -8,7 +8,7 @@ import './Home.css';
 export const Home = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { dashboardData, fetchDashboard } = useCalendar();
+  const { dashboardData, fetchDashboard, toggleTask } = useCalendar();
 
   useEffect(() => {
     fetchDashboard();
@@ -49,10 +49,13 @@ export const Home = () => {
     ? dashboardData.today_schedule
         .filter(Boolean)
         .map((item) => ({
+          id: item.id || item._id || item.task_id || item.taskId,
           time: item.time || null,
           day: item.day || null,
           title: item.title || 'Untitled session',
           tag: item.display_status || item.status || 'pending',
+          status: item.status || item.display_status || 'pending',
+          editable: item.editable !== false,
         }))
     : [];
 
@@ -165,14 +168,24 @@ export const Home = () => {
                       <div className="timeline-node">
                         <div className={`timeline-dot-core ${normalizedTag}`}></div>
                       </div>
-                      <div className="timeline-content-col">
-                        <div className="timeline-event-card">
-                          <span className="event-title">{item.title}</span>
-                          <span className={`schedule-tag font-body ${getTagColorClass(item.tag)}`}>
-                            {String(item.tag || 'pending').toUpperCase()}
-                          </span>
-                        </div>
-                      </div>
+                              <div className="timeline-content-col">
+                              <div className="timeline-event-card">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  <span className="event-title">{item.title}</span>
+                                  <span className={`schedule-tag font-body ${getTagColorClass(item.tag)}`}>
+                                    {String(item.tag || 'pending').toUpperCase()}
+                                  </span>
+                                </div>
+                                <button
+                                  className="timeline-complete-btn"
+                                  onClick={() => toggleTask(item.id, item.status)}
+                                  disabled={!item.editable}
+                                  aria-label={item.status === 'complete' || item.status === 'completed' ? 'Mark as pending' : 'Mark as complete'}
+                                >
+                                  <CheckCircle2 size={16} />
+                                </button>
+                              </div>
+                            </div>
                     </div>
                   );
                 })

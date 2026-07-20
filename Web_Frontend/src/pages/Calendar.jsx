@@ -240,10 +240,15 @@ export const Calendar = () => {
                 const isAvailable = !isCompleted && taskDate && taskDate.getTime() <= now.getTime() + 24 * 60 * 60 * 1000 && taskDate.getTime() >= now.getTime();
 
                 const taskId = getTaskId(task);
+                const isEditable = task.editable !== false;
 
                 return (
                   <div key={taskId || `${task.title}-${task.due_datetime || 'all-day'}`} className={`task-saas-card ${isCompleted ? 'completed' : ''} ${isOverdue ? 'overdue' : ''} ${isUpcoming ? 'upcoming' : ''}`}>
-                    <button className="task-saas-check" onClick={() => handleToggle(taskId, task.status)}>
+                    <button
+                      className="task-saas-check"
+                      onClick={() => isEditable && handleToggle(taskId, task.status)}
+                      disabled={!isEditable}
+                    >
                       {isCompleted ? (
                         <CheckCircle2 className="check-icon completed" size={18} />
                       ) : (
@@ -261,6 +266,7 @@ export const Calendar = () => {
                         {isOverdue && <span className="task-state-pill overdue">Overdue</span>}
                         {isUpcoming && <span className="task-state-pill upcoming">Upcoming</span>}
                         {isAvailable && <span className="task-state-pill available">Available</span>}
+                        {!isEditable && <span className="task-state-pill readonly">Read-only</span>}
                       </div>
                       {rescheduleTargetId === taskId ? (
                         <div className="task-reschedule-inline">
@@ -278,17 +284,25 @@ export const Calendar = () => {
                       ) : null}
                     </div>
 
-                    <div className="task-saas-actions">
-                      <span className={`priority-label ${task.priority}`}>
-                        {task.priority}
-                      </span>
-                      <button className="task-saas-reschedule" onClick={() => handleStartReschedule(task)}>
-                        Reschedule
-                      </button>
-                      <button className="task-saas-delete" onClick={() => handleDelete(taskId)}>
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
+                    {isEditable ? (
+                      <div className="task-saas-actions">
+                        <span className={`priority-label ${task.priority}`}>
+                          {task.priority}
+                        </span>
+                        <button className="task-saas-reschedule" onClick={() => handleStartReschedule(task)}>
+                          Reschedule
+                        </button>
+                        <button className="task-saas-delete" onClick={() => handleDelete(taskId)}>
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="task-saas-actions task-saas-actions--readonly">
+                        <span className={`priority-label ${task.priority}`}>
+                          {task.priority}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 );
               })}

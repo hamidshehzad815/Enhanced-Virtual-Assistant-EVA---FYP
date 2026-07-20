@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { ChevronDown, Info, Play, CheckCircle, HelpCircle, BookOpen, AlertCircle, Sparkles, X, ExternalLink, PlayCircle } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { ChevronDown, Info, Play, CheckCircle, HelpCircle, BookOpen, AlertCircle, Sparkles, X, ExternalLink, PlayCircle, Lock } from 'lucide-react';
 import apiRequest from '../services/api';
 import { useCalendar } from '../contexts/CalendarContext';
 import './Roadmap.css';
@@ -153,6 +154,7 @@ const MOCK_USER_ROADMAPS = [
 ];
 
 export const Roadmap = () => {
+  const navigate = useNavigate();
   const [userRoadmaps, setUserRoadmaps] = useState([]);
   const [selectedRoadmapId, setSelectedRoadmapId] = useState('');
   const [activeNode, setActiveNode] = useState(null);
@@ -406,6 +408,11 @@ export const Roadmap = () => {
   };
 
   const getSessionActionState = (node) => {
+    const normalizedStatus = (node?.status || '').toLowerCase();
+    const normalizedNodeState = (node?.session_state || '').toLowerCase();
+    const isCompleted = normalizedStatus === 'completed' || normalizedStatus === 'complete' || normalizedNodeState === 'completed';
+    if (isCompleted) return 'completed';
+
     const scheduledTimestamp = node?.scheduled_timestamp ||
       (node?.scheduled_date_raw ? new Date(node.scheduled_date_raw).getTime() : null) ||
       (node?.scheduled_date ? new Date(node.scheduled_date).getTime() : null);
@@ -414,7 +421,7 @@ export const Roadmap = () => {
     const diffMs = scheduledTimestamp - now.getTime();
     const oneDayMs = 24 * 60 * 60 * 1000;
 
-    if (diffMs > oneDayMs) return 'upcoming';
+    if (diffMs > oneDayMs) return 'locked';
     if (diffMs <= 0) return 'active';
     return 'near';
   };
@@ -535,11 +542,11 @@ export const Roadmap = () => {
               <div className="winding-nodes-list">
                 {currentRoadmap.sessions.map((node, index) => {
                   const isEven = index % 2 === 0;
-                  const isCompleted = node.session_state === 'completed' || node.status === 'completed' || node.status === 'complete';
-                  const isOngoing = node.session_state === 'ongoing' || node.session_state === 'active';
-                  const isAvailable = isOngoing || node.session_state === 'available';
                   const sessionActionState = getSessionActionState(node);
-                  const isUpcoming = !isCompleted && !isOngoing && sessionActionState === 'upcoming';
+                  const isCompleted = sessionActionState === 'completed';
+                  const isActive = sessionActionState === 'active';
+                  const isLocked = sessionActionState === 'locked';
+                  const isUpcoming = sessionActionState === 'near' || sessionActionState === 'upcoming';
                   const isFocused = activeNode?.id === node.id;
                   const color = currentRoadmap.color;
 
@@ -550,15 +557,17 @@ export const Roadmap = () => {
                     >
                       <button 
                         type="button"
-                        className={`trail-node-card ${isCompleted ? 'completed' : ''} ${isAvailable ? 'active' : ''} ${isUpcoming ? 'upcoming' : ''} ${isFocused ? 'focused' : ''}`}
+                        className={`trail-node-card ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''} ${isUpcoming ? 'upcoming' : ''} ${isFocused ? 'focused' : ''}`}
                         onClick={() => handleNodeClick(node)}
                         style={{ borderLeft: `4px solid ${color}` }}
                       >
                         <div className="node-avatar-indicator">
-                          <div className="indicator-pulse" style={{ backgroundColor: isOngoing ? color : 'transparent' }}></div>
-                          <div className="indicator-core" style={{ backgroundColor: isCompleted ? '#22c55e' : (isOngoing ? color : 'var(--color-border)') }}>
+                          <div className="indicator-pulse" style={{ backgroundColor: isActive ? color : (isLocked ? 'rgba(107, 114, 128, 0.2)' : 'transparent') }}></div>
+                          <div className="indicator-core" style={{ backgroundColor: isCompleted ? '#22c55e' : (isActive ? color : (isLocked ? 'var(--color-text-secondary)' : 'var(--color-border)')) }}>
                             {isCompleted ? (
                               <CheckCircle size={16} color="white" />
+                            ) : isLocked ? (
+                              <Lock size={12} color="white" />
                             ) : null}
                           </div>
                         </div>
@@ -566,17 +575,19 @@ export const Roadmap = () => {
                         <div className="node-card-body">
                           <div className="node-card-heading">
                             <h4 className="node-title">{node.title}</h4>
-                            {isUpcoming && <span className="upcoming-card-label">Upcoming</span>}
+                            <div className="node-state-badges">
+                              {isLocked && <span className="state-pill locked">Locked</span>}
+                              {isCompleted && <span className="state-pill completed">Completed</span>}
+                              {isActive && <span className="state-pill available">Active</span>}
+                              {!isLocked && !isCompleted && !isActive && <span className="upcoming-card-label">Upcoming</span>}
+                            </div>
                           </div>
                           <p className="node-desc-trimmed">{node.description || 'Topic Overview'}</p>
                           <div className="node-badges-row">
                             <span className="badge duration">{node.estimated_duration} min</span>
                             <span className="badge date">{node.scheduled_date}</span>
+                            {isLocked && <span className="badge locked">Unlocks soon</span>}
                           </div>
-                        </div>
-                        <div className="node-state-pill-row">
-                          {isCompleted && <span className="state-pill completed">Completed</span>}
-                          {isOngoing && <span className="state-pill available">Available</span>}
                         </div>
                       </button>
                     </div>
@@ -629,7 +640,15 @@ export const Roadmap = () => {
                   {(() => {
                     const sessionActionState = getSessionActionState(activeNode);
 
-                    if (sessionActionState === 'upcoming') {
+                    if (sessionActionState === 'locked') {
+                      return (
+                        <div className="action-buttons-row">
+                          <span className="upcoming-session-hint">This session is locked until it is within 24 hours of its scheduled time.</span>
+                        </div>
+                      );
+                    }
+
+                    if (sessionActionState === 'upcoming' || sessionActionState === 'near') {
                       return (
                         <div className="action-buttons-row">
                           <button 
@@ -646,26 +665,23 @@ export const Roadmap = () => {
                     return (
                       <div className="action-buttons-row">
                         <button 
+                          className="action-btn complete-btn"
+                          onClick={() => handleUpdateSessionStatus('completed')}
+                        >
+                          <CheckCircle size={14} /> Mark as Completed
+                        </button>
+                        <button 
                           className="action-btn reschedule-btn"
                           onClick={handleQuickReschedule}
                         >
                           <ChevronDown size={14} /> Reschedule
                         </button>
-                        {sessionActionState === 'near' ? (
-                          <button 
-                            className="action-btn skip-btn"
-                            onClick={() => handleUpdateSessionStatus('skipped')}
-                          >
-                            <Play size={14} /> Skip
-                          </button>
-                        ) : (
-                          <button 
-                            className="action-btn complete-btn"
-                            onClick={() => handleUpdateSessionStatus('completed')}
-                          >
-                            <CheckCircle size={14} /> Mark as Completed
-                          </button>
-                        )}
+                        <button 
+                          className="action-btn skip-btn"
+                          onClick={() => handleUpdateSessionStatus('skipped')}
+                        >
+                          <Play size={14} /> Skip
+                        </button>
                       </div>
                     );
                   })()}

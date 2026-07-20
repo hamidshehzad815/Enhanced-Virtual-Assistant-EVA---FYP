@@ -10,6 +10,7 @@ export const AppShell = ({ children }) => {
   const { logout, user } = useAuth();
   
   const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const avatarUrl = user?.avatar_url || user?.profile_picture || user?.avatar || '';
 
   // Tabs for mobile nav (includes "More" tab)
   const mobileTabs = [
@@ -55,7 +56,9 @@ export const AppShell = ({ children }) => {
         {user && (
           <div className="sidebar-profile">
             <div className="profile-avatar">
-              {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Profile avatar" />
+              ) : (user.name ? user.name.charAt(0).toUpperCase() : 'U')}
             </div>
             <div className="profile-details">
               <span className="profile-name">{user.name || 'User'}</span>

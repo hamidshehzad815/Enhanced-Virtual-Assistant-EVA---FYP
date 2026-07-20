@@ -42,8 +42,77 @@
   max-width: 75%;
   padding: 10px 14px;
   font-size: 13.5px;
-  line-height: 1.4;
+  line-height: 1.55;
   word-wrap: break-word;
+}
+
+.bubble-markdown {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.markdown-paragraph,
+.markdown-quote,
+.markdown-list,
+.markdown-code-block {
+  margin: 0;
+}
+
+.markdown-paragraph {
+  white-space: pre-wrap;
+}
+
+.markdown-heading {
+  margin: 0;
+  font-weight: 700;
+}
+
+.markdown-heading.h1,
+.markdown-heading.h2 {
+  font-size: 15px;
+}
+
+.markdown-heading.h3 {
+  font-size: 14px;
+}
+
+.markdown-list {
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.markdown-list li {
+  margin-left: 2px;
+}
+
+.markdown-quote {
+  padding: 8px 10px;
+  border-left: 3px solid var(--color-primary);
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 8px;
+}
+
+.markdown-code-block {
+  padding: 10px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.9);
+  color: #f8fafc;
+  overflow-x: auto;
+}
+
+.markdown-code-block code {
+  font-family: Consolas, monospace;
+  font-size: 12px;
+}
+
+.bubble-markdown code {
+  padding: 2px 5px;
+  border-radius: 5px;
+  background: rgba(15, 23, 42, 0.08);
+  font-family: Consolas, monospace;
 }
 
 .eva .bubble-content {

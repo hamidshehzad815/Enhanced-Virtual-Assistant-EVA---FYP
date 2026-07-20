@@ -127,8 +127,11 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       const field = err.field || err.data?.field;
       const message = err.message || 'Server not reachable';
+      const detail = err.data?.errors && typeof err.data.errors === 'object'
+        ? Object.values(err.data.errors)[0]
+        : null;
       if (field) setErrors({ [field]: message });
-      return { success: false, message };
+      return { success: false, message: detail || message };
     }
   };
 
@@ -166,6 +169,10 @@ export const AuthProvider = ({ children }) => {
       setErrors(field ? { [field]: message } : { general: message });
       return { success: false, message };
     }
+  };
+
+  const updateUserSnapshot = (updates) => {
+    setUser(prev => (prev ? { ...prev, ...updates } : prev));
   };
 
   const forgotPassword = async (email) => {
@@ -218,7 +225,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, errors, login, signup, logout, checkAuth, updateProfile, forgotPassword, resetPassword, verifyEmailApi }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, errors, login, signup, logout, checkAuth, updateProfile, updateUserSnapshot, forgotPassword, resetPassword, verifyEmailApi }}>
       {children}
     </AuthContext.Provider>
   );

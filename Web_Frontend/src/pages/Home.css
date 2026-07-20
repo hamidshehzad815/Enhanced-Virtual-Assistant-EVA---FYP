@@ -341,6 +341,30 @@
   border-color: var(--color-text-secondary);
 }
 
+.timeline-complete-btn {
+  background: transparent;
+  border: none;
+  width: 36px;
+  height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  transition: background-color 0.15s, color 0.15s;
+}
+
+.timeline-complete-btn:hover:not(:disabled) {
+  background-color: var(--bg-card-elevated);
+  color: var(--color-primary);
+}
+
+.timeline-complete-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .event-title {
   font-size: 14px;
   font-weight: 600;

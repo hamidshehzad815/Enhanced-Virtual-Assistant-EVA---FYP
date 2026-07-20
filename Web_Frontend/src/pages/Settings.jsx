@@ -10,7 +10,7 @@ import './Settings.css';
 
 export const Settings = () => {
   const navigate = useNavigate();
-  const { user, logout, updateProfile, checkAuth } = useAuth();
+  const { user, logout, updateProfile, checkAuth, updateUserSnapshot } = useAuth();
   const { 
     settings, 
     learningSchedules, 
@@ -27,10 +27,12 @@ export const Settings = () => {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileName, setProfileName] = useState(user?.name || '');
   const [profileEmail, setProfileEmail] = useState(user?.email || '');
+  const [avatarPreview, setAvatarPreview] = useState(user?.avatar_url || user?.profile_picture || '');
 
   useEffect(() => {
     setProfileName(user?.name || '');
     setProfileEmail(user?.email || '');
+    setAvatarPreview(user?.avatar_url || user?.profile_picture || '');
   }, [user]);
 
   // Forms
@@ -45,6 +47,35 @@ export const Settings = () => {
       alert('Profile updated successfully!');
     } else {
       alert(res.message || 'Failed to update profile');
+    }
+  };
+
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const token = localStorage.getItem('access_token');
+    const baseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+    const url = `${baseUrl}/api/profile/avatar`;
+    const form = new FormData();
+    form.append('avatar', file);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message || 'Upload failed');
+      const nextAvatarUrl = data?.data?.user?.avatar_url || data?.data?.user?.profile_picture || data?.user?.avatar_url || data?.user?.profile_picture || data?.avatar_url || data?.profile_picture || '';
+      if (nextAvatarUrl) {
+        setAvatarPreview(nextAvatarUrl);
+        if (updateUserSnapshot) updateUserSnapshot({ avatar_url: nextAvatarUrl, profile_picture: nextAvatarUrl });
+      }
+      if (checkAuth) await checkAuth();
+      alert('Avatar updated');
+    } catch (err) {
+      console.error('Avatar upload failed', err);
+      alert('Failed to upload avatar. Please try again.');
     }
   };
 
@@ -104,6 +135,39 @@ export const Settings = () => {
     }
   };
 
+  const handleMasterNotificationToggle = async (enabled) => {
+    const notificationFields = {
+      notifications_enabled: enabled,
+      push_notifications_enabled: enabled,
+      email_notifications_enabled: enabled,
+    };
+    await updateSettings(notificationFields);
+  };
+
+  const handleGoogleCalendarToggle = async (enabled) => {
+    const confirmation = window.confirm(
+      enabled
+        ? 'Enable Google Calendar Integration and synchronize your EVA schedules with Google Calendar?'
+        : 'Disable Google Calendar Integration? Future events will stop syncing and existing synced events may remain in Google Calendar.'
+    );
+
+    if (!confirmation) {
+      return;
+    }
+
+    const response = await updateSettings({ google_calendar_sync_enabled: enabled });
+
+    if (response.success) {
+      if (enabled) {
+        alert('Google Calendar integration enabled. Google sign-in and schedule synchronization will be handled when the connection is available.');
+      } else {
+        alert('Google Calendar integration disabled. Future syncing will stop. Existing events may remain in Google Calendar.');
+      }
+    } else {
+      alert('Unable to update Google Calendar sync setting. Please try again.');
+    }
+  };
+
   const getDayName = (dayNum) => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return days[dayNum] || 'Monday';
@@ -113,6 +177,7 @@ export const Settings = () => {
 
   return (
     <div className="settings-workspace animate-fade-in">
+      <input id="avatar-file-input" type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
       
       {/* 1. Left Sidebar: Settings Categories Nav */}
       <div className="settings-left-pane">
@@ -124,40 +189,9 @@ export const Settings = () => {
         {/* Profile Card Header */}
         <div className="settings-profile-summary">
           <div className="settings-avatar-circle" style={{ position: 'relative' }}>
-            {user?.avatar_url ? (
-              <img src={user.avatar_url} alt="avatar" style={{ width: '100%', height: '100%', borderRadius: '50%' }} />
+            {avatarPreview ? (
+              <img src={avatarPreview} alt="avatar" />
             ) : initials}
-            <button
-              className="avatar-edit-btn"
-              title="Edit avatar"
-              onClick={() => document.getElementById('avatar-file-input')?.click()}
-              style={{ position: 'absolute', right: -6, bottom: -6 }}
-            >
-              <Edit size={14} />
-            </button>
-            <input id="avatar-file-input" type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => {
-              const file = e.target.files && e.target.files[0];
-              if (!file) return;
-              const token = localStorage.getItem('access_token');
-              const baseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
-              const url = `${baseUrl}/api/profile/avatar`;
-              const form = new FormData();
-              form.append('avatar', file);
-              try {
-                const res = await fetch(url, {
-                  method: 'POST',
-                  headers: token ? { Authorization: `Bearer ${token}` } : {},
-                  body: form
-                });
-                if (!res.ok) throw new Error('Upload failed');
-                // Refresh profile
-                if (checkAuth) await checkAuth();
-                alert('Avatar updated');
-              } catch (err) {
-                console.error('Avatar upload failed', err);
-                alert('Failed to upload avatar. Please try again.');
-              }
-            }} />
           </div>
           <div className="settings-profile-details">
             <h4>{user?.name || 'Areej'}</h4>
@@ -228,6 +262,19 @@ export const Settings = () => {
             <div className="settings-card-saas">
               {isEditingProfile ? (
                 <form onSubmit={handleProfileSave} className="profile-edit-saas-form">
+                  <div className="profile-identity-display">
+                    <div className={`identity-avatar ${avatarPreview ? 'has-image' : ''}`}>
+                      {avatarPreview ? <img src={avatarPreview} alt="Profile avatar" /> : initials}
+                      <label className="avatar-edit-btn" title="Edit avatar" htmlFor="avatar-file-input" role="button" tabIndex={0} aria-label="Edit avatar" onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { const input = document.getElementById('avatar-file-input'); if (input) input.click(); } }}>
+                        <Edit size={18} color="#fff" />
+                      </label>
+                    </div>
+                    <div className="identity-info">
+                      <h4>{user?.name || 'Areej'}</h4>
+                      <p className="username">@{user?.username || 'areej_student'}</p>
+                      <p className="email">{user?.email || 'student@domain.com'}</p>
+                    </div>
+                  </div>
                   <div className="input-group">
                     <label className="input-label">Full Name</label>
                     <input
@@ -258,7 +305,9 @@ export const Settings = () => {
                 </form>
               ) : (
                 <div className="profile-identity-display">
-                  <div className="identity-avatar">{initials}</div>
+                  <div className={`identity-avatar ${avatarPreview ? 'has-image' : ''}`}>
+                    {avatarPreview ? <img src={avatarPreview} alt="Profile avatar" /> : initials}
+                  </div>
                   <div className="identity-info">
                     <h4>{user?.name || 'Areej'}</h4>
                     <p className="username">@{user?.username || 'areej_student'}</p>
@@ -315,13 +364,13 @@ export const Settings = () => {
               <div className="settings-saas-row border-top">
                 <div className="row-meta">
                   <span className="row-title">Google Calendar Integration</span>
-                  <p className="row-desc">Synchronize study schedules and timelines automatically with Google calendar.</p>
+                  <p className="row-desc">Synchronize study schedules and timelines automatically with Google Calendar.</p>
                 </div>
                 <label className="toggle-switch-saas">
                   <input
                     type="checkbox"
                     checked={settings.google_calendar_sync_enabled}
-                    onChange={(e) => updateSettings({ google_calendar_sync_enabled: e.target.checked })}
+                    onChange={(e) => handleGoogleCalendarToggle(e.target.checked)}
                   />
                   <span className="toggle-slider-saas" />
                 </label>
@@ -347,7 +396,7 @@ export const Settings = () => {
                   <input
                     type="checkbox"
                     checked={settings.notifications_enabled}
-                    onChange={(e) => updateSettings({ notifications_enabled: e.target.checked })}
+                    onChange={(e) => handleMasterNotificationToggle(e.target.checked)}
                   />
                   <span className="toggle-slider-saas" />
                 </label>
