@@ -1,0 +1,268 @@
+/* SuggestedTimeSlots.css */
+
+.suggested-time-slots-container {
+  padding: 12px 0;
+  border-radius: 8px;
+  background-color: #F0F9FF;
+  border: 1px solid #BAE6FD;
+  overflow: hidden;
+}
+
+.slots-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #BAE6FD;
+  background-color: #E0F2FE;
+}
+
+.slots-icon {
+  color: #0284C7;
+}
+
+.slots-header h4 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: #0C4A6E;
+}
+
+.slots-list {
+  padding: 12px 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+/* Time Slot Card */
+.time-slot-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  margin: 0 8px;
+  background-color: white;
+  border: 2px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.time-slot-card:hover {
+  background-color: #F0FAFB;
+  border-color: #BAE6FD;
+}
+
+.time-slot-card.selected {
+  background-color: #DBEAFE;
+  border-color: #0284C7;
+}
+
+.slot-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.slot-time {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #0C4A6E;
+}
+
+.time-display {
+  font-weight: 600;
+  color: #1E40AF;
+}
+
+.time-end {
+  color: #9CA3AF;
+}
+
+.slot-reason {
+  margin: 0;
+  font-size: 12px;
+  color: #9CA3AF;
+  font-style: italic;
+}
+
+.slot-chevron {
+  color: #BAE6FD;
+  flex-shrink: 0;
+  margin-left: 8px;
+  transition: all 0.2s ease;
+}
+
+.time-slot-card:hover .slot-chevron {
+  color: #0284C7;
+  transform: translateX(2px);
+}
+
+.time-slot-card.selected .slot-chevron {
+  color: #0284C7;
+  transform: translateX(2px);
+}
+
+/* Confirmation Panel */
+.slot-confirmation {
+  padding: 12px 16px;
+  background-color: #E0F2FE;
+  border-top: 1px solid #BAE6FD;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+
+.confirmation-text {
+  margin: 0;
+  font-size: 13px;
+  color: #0C4A6E;
+  line-height: 1.4;
+}
+
+.confirmation-buttons {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+}
+
+.btn-confirm-yes,
+.btn-confirm-cancel {
+  flex: 1;
+  padding: 8px 12px;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-confirm-yes {
+  background-color: #0284C7;
+  color: white;
+}
+
+.btn-confirm-yes:hover:not(:disabled) {
+  background-color: #0369A1;
+}
+
+.btn-confirm-yes:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-confirm-cancel {
+  background-color: white;
+  color: #0284C7;
+  border: 1px solid #BAE6FD;
+}
+
+.btn-confirm-cancel:hover:not(:disabled) {
+  background-color: #F0FAFB;
+}
+
+.btn-confirm-cancel:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Scrollbar styling */
+.slots-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.slots-list::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.slots-list::-webkit-scrollbar-thumb {
+  background: #BAE6FD;
+  border-radius: 3px;
+}
+
+.slots-list::-webkit-scrollbar-thumb:hover {
+  background: #7DD3FC;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .slots-header {
+    padding: 10px 12px;
+    gap: 6px;
+  }
+
+  .slots-header h4 {
+    font-size: 12px;
+  }
+
+  .slots-list {
+    max-height: 250px;
+  }
+
+  .time-slot-card {
+    padding: 10px 12px;
+    margin: 0 4px;
+  }
+
+  .slot-confirmation {
+    padding: 10px 12px;
+  }
+
+  .confirmation-buttons {
+    flex-direction: column;
+  }
+
+  .btn-confirm-yes,
+  .btn-confirm-cancel {
+    width: 100%;
+  }
+}
+
+@media (max-width: 480px) {
+  .slots-header {
+    padding: 8px 10px;
+  }
+
+  .slots-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .slots-header h4 {
+    font-size: 11px;
+  }
+
+  .time-slot-card {
+    padding: 8px 10px;
+    margin: 0 2px;
+    flex-wrap: wrap;
+  }
+
+  .slot-main {
+    width: 100%;
+  }
+
+  .slot-chevron {
+    display: none;
+  }
+
+  .slot-confirmation {
+    padding: 8px 10px;
+  }
+
+  .confirmation-text {
+    font-size: 12px;
+  }
+
+  .btn-confirm-yes,
+  .btn-confirm-cancel {
+    padding: 6px 10px;
+    font-size: 11px;
+  }
+}

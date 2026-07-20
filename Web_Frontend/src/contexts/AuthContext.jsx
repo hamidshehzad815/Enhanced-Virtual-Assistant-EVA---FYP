@@ -9,11 +9,16 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [errors, setErrors] = useState({});
 
+  const setAuthenticatedSession = (userData = null) => {
+    setUser(userData);
+    setIsAuthenticated(Boolean(userData || localStorage.getItem('access_token')));
+    setErrors({});
+  };
+
   const checkAuth = async () => {
     const token = localStorage.getItem('access_token');
     if (!token) {
-      setIsAuthenticated(false);
-      setUser(null);
+      setAuthenticatedSession(null);
       setIsLoading(false);
       return;
     }
@@ -22,15 +27,13 @@ export const AuthProvider = ({ children }) => {
       const response = await apiRequest('/api/auth/me');
       if (response.status === 'success' || response.data) {
         const userData = response.data?.user || response.data || response;
-        setUser(userData);
-        setIsAuthenticated(true);
+        setAuthenticatedSession(userData);
       }
     } catch (err) {
       console.error('Auth check failed:', err);
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
-      setIsAuthenticated(false);
-      setUser(null);
+      setAuthenticatedSession(null);
     } finally {
       setIsLoading(false);
     }
@@ -71,8 +74,7 @@ export const AuthProvider = ({ children }) => {
           return { success: true, isVerified: false, message: 'Email not verified' };
         }
 
-        setUser(userData);
-        setIsAuthenticated(true);
+        setAuthenticatedSession(userData);
         setIsLoading(false);
         return { success: true, isVerified: true };
       }
@@ -144,8 +146,7 @@ export const AuthProvider = ({ children }) => {
     } finally {
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
-      setUser(null);
-      setIsAuthenticated(false);
+      setAuthenticatedSession(null);
       setIsLoading(false);
     }
   };
@@ -225,7 +226,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, errors, login, signup, logout, checkAuth, updateProfile, updateUserSnapshot, forgotPassword, resetPassword, verifyEmailApi }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, errors, login, signup, logout, checkAuth, setAuthenticatedSession, updateProfile, updateUserSnapshot, forgotPassword, resetPassword, verifyEmailApi }}>
       {children}
     </AuthContext.Provider>
   );

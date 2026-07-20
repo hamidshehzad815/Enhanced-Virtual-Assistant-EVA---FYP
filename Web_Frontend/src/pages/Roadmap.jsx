@@ -67,91 +67,7 @@ const MOCK_ALL_ROADMAPS = [
   }
 ];
 
-const MOCK_USER_ROADMAPS = [
-  {
-    id: '1',
-    name: 'Python',
-    language: 'Python',
-    category: 'Programming Language',
-    color: '#F59E0B',
-    bg: 'rgba(245, 158, 11, 0.15)',
-    progress_percent: 33,
-    start_date: '2025-01-10',
-    end_date: '2025-06-20',
-    sessions: [
-      {
-        id: 'py1',
-        title: 'Basics',
-        description: 'Syntax, variables, conditions, loops, and functions.',
-        status: 'pending',
-        scheduled_date_raw: MOCK_FIRST_PYTHON_SESSION_DATE,
-        scheduled_timestamp: MOCK_FIRST_PYTHON_SESSION_TIMESTAMP,
-        scheduled_date: 'Today · 10:00 AM',
-        estimated_duration: 60,
-        resources: [{ title: 'Watch Intro', url: 'https://youtube.com' }],
-        session_state: 'available',
-        is_current: false,
-      },
-      {
-        id: 'py2',
-        title: 'Data Structures',
-        description: 'Work with lists, dictionaries, sets, and tuples.',
-        status: 'ongoing',
-        scheduled_date: 'Tue · 10:00 AM',
-        estimated_duration: 90,
-        resources: [{ title: 'Watch Guide', url: 'https://youtube.com' }],
-        session_state: 'current',
-        is_current: true,
-      },
-      {
-        id: 'py3',
-        title: 'Functions',
-        description: 'Define and use functions, understand scope and lambdas.',
-        status: 'pending',
-        scheduled_date: 'Wed · 11:00 AM',
-        estimated_duration: 75,
-        resources: [{ title: 'Watch Advanced', url: 'https://youtube.com' }],
-        session_state: 'locked',
-        is_current: false,
-      }
-    ]
-  },
-  {
-    id: '2',
-    name: 'JavaScript',
-    language: 'JavaScript',
-    category: 'Programming Language',
-    color: '#3B82F6',
-    bg: 'rgba(59, 130, 246, 0.15)',
-    progress_percent: 50,
-    start_date: '2025-02-05',
-    end_date: '2025-07-15',
-    sessions: [
-      {
-        id: 'js1',
-        title: 'Basics',
-        description: 'Learn syntax, variables, and control flow.',
-        status: 'completed',
-        scheduled_date: 'Mon · 11:00 AM',
-        estimated_duration: 60,
-        resources: [{ title: 'Intro to JS', url: 'https://youtube.com' }],
-        session_state: 'completed',
-        is_current: false,
-      },
-      {
-        id: 'js2',
-        title: 'DOM',
-        description: 'Manipulate elements and handle browser events.',
-        status: 'ongoing',
-        scheduled_date: 'Wed · 1:00 PM',
-        estimated_duration: 90,
-        resources: [{ title: 'DOM Manipulation', url: 'https://youtube.com' }],
-        session_state: 'current',
-        is_current: true,
-      }
-    ]
-  }
-];
+const MOCK_USER_ROADMAPS = [];
 
 export const Roadmap = () => {
   const navigate = useNavigate();
@@ -162,6 +78,7 @@ export const Roadmap = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [scheduleDates, setScheduleDates] = useState([]);
   const [now, setNow] = useState(new Date());
+  const [showRescheduleDropdown, setShowRescheduleDropdown] = useState(false);
 
   const { fetchDashboard, fetchTasks } = useCalendar() || {};
 
@@ -183,6 +100,7 @@ export const Roadmap = () => {
               status: r.status,
               start_date: r.start_date || r.startDate || null,
               end_date: r.end_date || r.endDate || null,
+              collaborators: r.collaborators || [],
               sessions: (r.sessions || []).map(s => ({
                 id: s.id || s._id,
                 title: s.title,
@@ -244,6 +162,7 @@ export const Roadmap = () => {
           status: r.status,
           start_date: r.start_date || r.startDate || null,
           end_date: r.end_date || r.endDate || null,
+          collaborators: r.collaborators || [],
           sessions: []
         }));
         setUserRoadmaps(mapped);
@@ -257,12 +176,12 @@ export const Roadmap = () => {
         }
       } else {
         setUserRoadmaps(MOCK_USER_ROADMAPS);
-        setSelectedRoadmapId(MOCK_USER_ROADMAPS[0].id);
+        setSelectedRoadmapId(MOCK_USER_ROADMAPS[0]?.id || '');
       }
     } catch (err) {
       console.warn('Could not load real roadmaps plans, loading fallback data.', err);
       setUserRoadmaps(MOCK_USER_ROADMAPS);
-      setSelectedRoadmapId(MOCK_USER_ROADMAPS[0].id);
+      setSelectedRoadmapId(MOCK_USER_ROADMAPS[0]?.id || '');
     } finally {
       setIsLoading(false);
     }
@@ -294,7 +213,11 @@ export const Roadmap = () => {
   }, [selectedRoadmapId]);
 
   useEffect(() => {
-    if (activeNode && activeNode.is_current && selectedRoadmapId && selectedRoadmapId !== '1' && selectedRoadmapId !== '2') {
+    const isAvailableToReschedule = activeNode && (
+      getSessionActionState(activeNode) === 'near' || 
+      getSessionActionState(activeNode) === 'active'
+    );
+    if (isAvailableToReschedule && selectedRoadmapId && selectedRoadmapId !== '1' && selectedRoadmapId !== '2') {
       fetchScheduleDates(selectedRoadmapId);
     } else {
       setScheduleDates([]);
@@ -413,6 +336,9 @@ export const Roadmap = () => {
     const isCompleted = normalizedStatus === 'completed' || normalizedStatus === 'complete' || normalizedNodeState === 'completed';
     if (isCompleted) return 'completed';
 
+    const isSkipped = normalizedStatus === 'skipped' || normalizedNodeState === 'skipped';
+    if (isSkipped) return 'skipped';
+
     const scheduledTimestamp = node?.scheduled_timestamp ||
       (node?.scheduled_date_raw ? new Date(node.scheduled_date_raw).getTime() : null) ||
       (node?.scheduled_date ? new Date(node.scheduled_date).getTime() : null);
@@ -428,6 +354,7 @@ export const Roadmap = () => {
 
   const handleNodeClick = (node) => {
     setActiveNode(node);
+    setShowRescheduleDropdown(false);
   };
 
   const handleQuickReschedule = () => {
@@ -484,6 +411,12 @@ export const Roadmap = () => {
 
                   <div className="active-track-session-meta">
                     <strong>{completedSessions}/{totalSessions} Sessions Completed</strong>
+                    {roadmap.collaborators && roadmap.collaborators.length > 0 && (
+                      <div className="active-track-collabs-badge font-body" style={{ marginTop: '6px', fontSize: '11px', color: 'var(--color-text-secondary)', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                        <span style={{ display: 'inline-block', width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#10B981' }}></span>
+                        Collaborating: {roadmap.collaborators.map(c => c.user?.name).join(', ')}
+                      </div>
+                    )}
                   </div>
 
                   <div className="active-track-dates">
@@ -527,12 +460,31 @@ export const Roadmap = () => {
       {/* 2. Center Panel: Interactive Alternating Trail */}
       <div className="roadmap-center-pane">
         <header className="roadmap-trail-header">
-          <h2 className="trail-main-title font-logo">
-            {currentRoadmap ? currentRoadmap.name : 'Learning'} Path
-          </h2>
-          <div className="trail-tagline">
-            <Sparkles size={14} className="sparkle" />
-            <span>Click any node to view learning guides & resources</span>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
+            <div>
+              <h2 className="trail-main-title font-logo">
+                {currentRoadmap ? currentRoadmap.name : 'Learning'} Path
+              </h2>
+              <div className="trail-tagline">
+                <Sparkles size={14} className="sparkle" />
+                <span>Click any node to view learning guides & resources</span>
+              </div>
+            </div>
+            {currentRoadmap?.collaborators && currentRoadmap.collaborators.length > 0 && (
+              <div className="trail-collabs-header font-body">
+                <span className="collab-header-title">Collaborating:</span>
+                <div className="collab-header-avatars">
+                  {currentRoadmap.collaborators.map((c, cIdx) => (
+                    <div key={cIdx} className="collab-header-avatar" title={`${c.user?.name || 'Collaborator'} (${c.status})`}>
+                      <span className="collab-avatar-letter">
+                        {c.user?.name ? c.user.name.charAt(0).toUpperCase() : '?'}
+                      </span>
+                      <span className={`collab-status-dot ${c.status}`}></span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </header>
 
@@ -578,8 +530,9 @@ export const Roadmap = () => {
                             <div className="node-state-badges">
                               {isLocked && <span className="state-pill locked">Locked</span>}
                               {isCompleted && <span className="state-pill completed">Completed</span>}
+                              {node.status?.toLowerCase() === 'skipped' && <span className="state-pill skipped" style={{ backgroundColor: 'rgba(148, 163, 184, 0.12)', color: 'var(--color-text-secondary)' }}>Skipped</span>}
                               {isActive && <span className="state-pill available">Active</span>}
-                              {!isLocked && !isCompleted && !isActive && <span className="upcoming-card-label">Upcoming</span>}
+                              {!isLocked && !isCompleted && node.status?.toLowerCase() !== 'skipped' && !isActive && <span className="upcoming-card-label">Upcoming</span>}
                             </div>
                           </div>
                           <p className="node-desc-trimmed">{node.description || 'Topic Overview'}</p>
@@ -640,7 +593,7 @@ export const Roadmap = () => {
                   {(() => {
                     const sessionActionState = getSessionActionState(activeNode);
 
-                    if (sessionActionState === 'locked') {
+                    if (sessionActionState === 'locked' || sessionActionState === 'upcoming') {
                       return (
                         <div className="action-buttons-row">
                           <span className="upcoming-session-hint">This session is locked until it is within 24 hours of its scheduled time.</span>
@@ -648,20 +601,30 @@ export const Roadmap = () => {
                       );
                     }
 
-                    if (sessionActionState === 'upcoming' || sessionActionState === 'near') {
+                    if (sessionActionState === 'completed') {
                       return (
                         <div className="action-buttons-row">
-                          <button 
-                            className="action-btn reschedule-btn"
-                            onClick={handleQuickReschedule}
-                          >
-                            <ChevronDown size={14} /> Reschedule
-                          </button>
-                          <span className="upcoming-session-hint">This session is still upcoming.</span>
+                          <span className="upcoming-session-hint" style={{ color: '#22c55e' }}>✓ This topic has been completed.</span>
                         </div>
                       );
                     }
 
+                    if (sessionActionState === 'skipped') {
+                      return (
+                        <div className="action-buttons-row">
+                          <span className="upcoming-session-hint" style={{ color: 'var(--color-text-secondary)' }}>This topic was skipped.</span>
+                          <button 
+                            className="action-btn reschedule-btn"
+                            onClick={() => handleUpdateSessionStatus('pending')}
+                            style={{ marginLeft: '12px' }}
+                          >
+                            Restore Topic
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    // Otherwise it is 'near' or 'active' (less than 24 hours left, or past schedule)
                     return (
                       <div className="action-buttons-row">
                         <button 
@@ -671,10 +634,10 @@ export const Roadmap = () => {
                           <CheckCircle size={14} /> Mark as Completed
                         </button>
                         <button 
-                          className="action-btn reschedule-btn"
-                          onClick={handleQuickReschedule}
+                          className={`action-btn reschedule-btn ${showRescheduleDropdown ? 'active' : ''}`}
+                          onClick={() => setShowRescheduleDropdown(!showRescheduleDropdown)}
                         >
-                          <ChevronDown size={14} /> Reschedule
+                          <ChevronDown size={14} style={{ transform: showRescheduleDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} /> Reschedule
                         </button>
                         <button 
                           className="action-btn skip-btn"
@@ -687,7 +650,7 @@ export const Roadmap = () => {
                   })()}
                   
                   {/* Reschedule Dropdown */}
-                  {scheduleDates.length > 0 && (
+                  {showRescheduleDropdown && scheduleDates.length > 0 && (getSessionActionState(activeNode) === 'near' || getSessionActionState(activeNode) === 'active') && (
                     <div className="reschedule-dropdown-container">
                       <label className="reschedule-lbl">Reschedule Topic</label>
                       <div className="custom-dropdown-container-saas">

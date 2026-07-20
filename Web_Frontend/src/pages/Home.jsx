@@ -1,17 +1,55 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, Calendar as CalendarIcon, Clock, CheckCircle2, Award, ChevronRight, Activity, ArrowUpRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useCalendar } from '../contexts/CalendarContext';
+import apiRequest from '../services/api';
 import './Home.css';
 
 export const Home = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
   const { dashboardData, fetchDashboard, toggleTask } = useCalendar();
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+
+  const fetchNotifications = async () => {
+    try {
+      const response = await apiRequest('/api/notifications?limit=5');
+      if (response.status === 'success' && response.data) {
+        setNotifications(response.data.notifications || []);
+        setUnreadCount(response.data.unread_count || 0);
+      }
+    } catch (err) {
+      console.error('Failed to fetch notifications:', err);
+    }
+  };
+
+  const handleMarkAsRead = async (notifId) => {
+    try {
+      await apiRequest(`/api/notifications/${notifId}/read`, { method: 'PATCH' });
+      fetchNotifications();
+    } catch (err) {
+      console.error('Failed to mark notification as read:', err);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await apiRequest('/api/notifications/read-all', { method: 'PATCH' });
+      fetchNotifications();
+    } catch (err) {
+      console.error('Failed to mark all notifications as read:', err);
+    }
+  };
 
   useEffect(() => {
     fetchDashboard();
+    fetchNotifications();
+
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const getGreeting = () => {
@@ -92,9 +130,50 @@ export const Home = () => {
           <p className="dashboard-subtext">Here is your academic status overview for today.</p>
         </div>
         <div className="header-actions">
-          <button className="notif-btn">
-            <Bell size={18} />
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button 
+              className="notif-btn"
+              onClick={() => setShowNotifDropdown(!showNotifDropdown)}
+            >
+              <Bell size={18} />
+              {unreadCount > 0 && <span className="notif-badge">{unreadCount}</span>}
+            </button>
+
+            {showNotifDropdown && (
+              <div className="notif-dropdown">
+                <div className="notif-dropdown-header">
+                  <h4>Notifications</h4>
+                  {unreadCount > 0 && (
+                    <button className="mark-all-read-btn" onClick={handleMarkAllRead}>
+                      Mark all as read
+                    </button>
+                  )}
+                </div>
+                <div className="notif-list">
+                  {notifications.length > 0 ? (
+                    notifications.map((notif) => (
+                      <div 
+                        key={notif._id} 
+                        className={`notif-item ${!notif.is_read ? 'unread' : ''}`}
+                        onClick={() => {
+                          handleMarkAsRead(notif._id);
+                          setShowNotifDropdown(false);
+                        }}
+                      >
+                        <span className="notif-item-title">{notif.title}</span>
+                        <span className="notif-item-msg">{notif.message}</span>
+                        <span className="notif-item-time">
+                          {new Date(notif.created_at || notif.sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="empty-notifs">No notifications</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
           <div className="user-profile-summary" onClick={() => navigate('/settings')}>
             <div className="summary-avatar">
               {userName.charAt(0).toUpperCase()}

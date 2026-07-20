@@ -74,7 +74,8 @@ export const Collaboration = () => {
         setBlockedUsers(response.data.blocked);
       }
     } catch (err) {
-      console.error('Failed to fetch blocked users:', err);
+      console.warn('Blocked users list is not supported by the current backend API version.');
+      setBlockedUsers([]);
     }
   };
 

@@ -1,0 +1,246 @@
+/* CollaborationMessage.css */
+
+.collaboration-message {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  background-color: #F9FAFB;
+  border-left: 4px solid #D1D5DB;
+  border-radius: 6px;
+  margin: 8px 0;
+}
+
+/* Message Header */
+.msg-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0;
+}
+
+.msg-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #111827;
+}
+
+.info-icon {
+  color: #3B82F6;
+  min-width: 18px;
+  flex-shrink: 0;
+}
+
+.success-icon {
+  color: #10B981;
+  min-width: 18px;
+  flex-shrink: 0;
+}
+
+/* Task Created */
+.collaboration-message.task-created {
+  border-left-color: #10B981;
+}
+
+.collaboration-message.task-created .msg-header {
+  color: #065F46;
+}
+
+/* Invite Sent */
+.collaboration-message.invite-sent {
+  border-left-color: #3B82F6;
+}
+
+.invites-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  background-color: #EFF6FF;
+  border: 1px solid #DBEAFE;
+  border-radius: 6px;
+}
+
+.invites-summary p {
+  margin: 0;
+  font-size: 12px;
+  color: #0C4A6E;
+  font-weight: 500;
+}
+
+/* Scheduling Conflict */
+.collaboration-message.scheduling-conflict {
+  border-left-color: #EF4444;
+}
+
+.msg-header.error {
+  color: #7F1D1D;
+}
+
+.error-icon {
+  color: #EF4444;
+  min-width: 18px;
+  flex-shrink: 0;
+}
+
+.conflict-detail {
+  margin: 0;
+  padding: 10px 12px;
+  background-color: #FEE2E2;
+  border: 1px solid #FECACA;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #7F1D1D;
+  line-height: 1.4;
+}
+
+/* Status Update */
+.collaboration-message.status-update {
+  border-left-color: #F59E0B;
+}
+
+.status-message {
+  margin: 0;
+  padding: 10px 12px;
+  background-color: #FFFBEB;
+  border: 1px solid #FEE3C3;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #92400E;
+  line-height: 1.4;
+}
+
+.status-updates {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.status-update-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background-color: #FFFFFF;
+  border: 1px solid #E5E7EB;
+  border-radius: 4px;
+}
+
+.update-name {
+  font-size: 12px;
+  color: #374151;
+  font-weight: 500;
+}
+
+/* Collaborators List Message */
+.collaboration-message.collaborators-list-msg {
+  border-left-color: #8B5CF6;
+}
+
+/* Collaboration Section */
+.collab-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+}
+
+.collab-section h5 {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .collaboration-message {
+    padding: 12px 14px;
+    gap: 10px;
+    border-left-width: 3px;
+  }
+
+  .msg-title {
+    font-size: 12px;
+  }
+
+  .info-icon,
+  .success-icon,
+  .error-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .conflict-detail,
+  .status-message,
+  .invites-summary p {
+    font-size: 11px;
+  }
+
+  .status-update-row {
+    padding: 5px 8px;
+    gap: 6px;
+  }
+
+  .update-name {
+    font-size: 11px;
+  }
+
+  .collab-section h5 {
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 480px) {
+  .collaboration-message {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .msg-header {
+    gap: 6px;
+  }
+
+  .msg-title {
+    font-size: 11px;
+  }
+
+  .info-icon,
+  .success-icon,
+  .error-icon {
+    width: 14px;
+    height: 14px;
+    min-width: 14px;
+  }
+
+  .conflict-detail,
+  .status-message {
+    padding: 8px 10px;
+    font-size: 10px;
+  }
+
+  .invites-summary {
+    gap: 6px;
+    padding: 8px 10px;
+  }
+
+  .invites-summary p {
+    font-size: 10px;
+  }
+
+  .status-update-row {
+    padding: 4px 8px;
+    gap: 6px;
+  }
+
+  .update-name {
+    font-size: 10px;
+  }
+
+  .collab-section h5 {
+    font-size: 10px;
+  }
+}

@@ -20,7 +20,7 @@ const SCREEN = {
 export const Auth = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, signup, errors: apiErrors, forgotPassword, resetPassword, verifyEmailApi } = useAuth();
+  const { login, signup, errors: apiErrors, forgotPassword, resetPassword, verifyEmailApi, setAuthenticatedSession } = useAuth();
 
   // ── Screen / navigation ──────────────────────
   const [screen, setScreen] = useState(SCREEN.LOGIN);
@@ -105,6 +105,14 @@ export const Auth = () => {
           localStorage.setItem('access_token', tokens.access_token);
           localStorage.setItem('refresh_token', tokens.refresh_token);
         }
+
+        const userData = response.data?.user || response.data || null;
+        if (userData) {
+          setAuthenticatedSession(userData);
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 150));
+        }
+
         navigate('/');
       } else {
         setAlertMsg({ type: 'error', text: response.message || 'Google sign-in failed.' });

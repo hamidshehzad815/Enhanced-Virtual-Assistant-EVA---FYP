@@ -1,4 +1,5 @@
 import React from 'react';
+import { CollaborationMessage } from './collaboration/CollaborationMessage';
 import './DemoChatBubble.css';
 
 const renderInlineContent = (text, boldPart) => {
@@ -110,7 +111,7 @@ const renderMarkdownContent = (text, boldPart) => {
   );
 };
 
-export const DemoChatBubble = ({ text, isEva, boldPart, userInitial = 'A' }) => {
+export const DemoChatBubble = ({ text, isEva, boldPart, userInitial = 'A', collaborationData = null, onSelectTimeSlot = null }) => {
   return (
     <div className={`chat-bubble-row ${isEva ? 'eva' : 'user'}`}>
       {isEva && (
@@ -121,6 +122,12 @@ export const DemoChatBubble = ({ text, isEva, boldPart, userInitial = 'A' }) => 
       
       <div className="bubble-content">
         {renderMarkdownContent(text, boldPart)}
+        {isEva && collaborationData && (
+          <CollaborationMessage 
+            data={collaborationData} 
+            onSelectTimeSlot={onSelectTimeSlot}
+          />
+        )}
       </div>
 
       {!isEva && (

@@ -69,6 +69,7 @@ export const ChatProvider = ({ children }) => {
     timestamp: item.timestamp || item.created_at || new Date().toISOString(),
     input_type: item.input_type || 'text',
     intent: item.intent || null,
+    collaborationData: item.action || item.entities || null,
   }));
 
   const loadChatSessions = async () => {
@@ -91,10 +92,10 @@ export const ChatProvider = ({ children }) => {
   };
 
   const loadSessionHistory = async (sessionId) => {
-    if (!sessionId) return null;
+    if (!sessionId || sessionId === 'new') return [];
 
     try {
-      const response = await apiRequest(`/api/chat/sessions/${sessionId}/history`);
+      const response = await apiRequest(`/api/chat/sessions/${sessionId}/messages`);
       const history = response?.data?.messages || response?.messages || [];
       const mapped = mapBackendMessages(history);
       if (mapped.length > 0) {
@@ -118,39 +119,15 @@ export const ChatProvider = ({ children }) => {
   };
 
   const createChatSession = async (title = 'New Conversation') => {
-    try {
-      const response = await apiRequest('/api/chat/session', {
-        method: 'POST',
-        body: JSON.stringify({ title }),
-      });
-      const payload = response?.data || response || {};
-      const newSessionId = payload.session_id || payload.session?._id || payload.session?.id || payload.id;
-
-      if (newSessionId) {
-        localStorage.setItem('chat_session_id', newSessionId);
-        setSessionId(newSessionId);
-        setSelectedSessionId(newSessionId);
-        setMessages([]);
-        saveSessionMessages(newSessionId, []);
-
-        const nextConversations = [
-          {
-            id: newSessionId,
-            title: payload.session?.title || title || 'New Conversation',
-            lastMessage: 'Start your chat with EVA',
-            updated_at: new Date().toISOString(),
-          },
-          ...getStoredConversations().filter((item) => item.id !== newSessionId),
-        ];
-
-        setConversations(nextConversations);
-        saveStoredConversations(nextConversations);
-        return newSessionId;
-      }
-    } catch (err) {
-      console.error('Failed to create chat session:', err);
-    }
-    return null;
+    // Client-side initialization for a new chat session.
+    // The backend will create the actual session when the first message is sent.
+    const tempSessionId = 'new';
+    localStorage.setItem('chat_session_id', tempSessionId);
+    setSessionId(tempSessionId);
+    setSelectedSessionId(tempSessionId);
+    setMessages([]);
+    saveSessionMessages(tempSessionId, []);
+    return tempSessionId;
   };
 
   const getOrCreateSession = async () => {
@@ -290,45 +267,30 @@ export const ChatProvider = ({ children }) => {
 
     try {
       let response;
-      try {
-        response = await apiRequest('/api/chat/process', {
-          method: 'POST',
-          body: JSON.stringify({
-            message: text.trim(),
-            session_id: activeSession,
-            input_type: type,
-          }),
-        });
-      } catch (err) {
-        const msg = String(err.message || '').toLowerCase();
-        if (err.status === 404 || msg.includes('chat session not found')) {
-          const createRes = await apiRequest('/api/chat/session', {
-            method: 'POST',
-            body: JSON.stringify({ title: 'Workspace Chat' }),
-          });
-          const payload = createRes?.data || createRes || {};
-          const newSessionId = payload.session_id || payload.session?._id || payload.session?.id || payload.id;
+      const requestBody = {
+        message: text.trim(),
+        input_type: type,
+      };
+      if (activeSession && activeSession !== 'new') {
+        requestBody.session_id = activeSession;
+      }
 
-          if (!newSessionId) {
-            throw err;
-          }
+      response = await apiRequest('/api/chat/process', {
+        method: 'POST',
+        body: JSON.stringify(requestBody),
+      });
 
-          localStorage.setItem('chat_session_id', newSessionId);
-          setSessionId(newSessionId);
-          setSelectedSessionId(newSessionId);
-          activeSession = newSessionId;
-
-          response = await apiRequest('/api/chat/process', {
-            method: 'POST',
-            body: JSON.stringify({
-              message: text.trim(),
-              session_id: activeSession,
-              input_type: type,
-            }),
-          });
-        } else {
-          throw err;
-        }
+      const returnedSessionId = response?.session_id || response?.data?.session_id;
+      if (returnedSessionId && activeSession === 'new') {
+        localStorage.setItem('chat_session_id', returnedSessionId);
+        setSessionId(returnedSessionId);
+        setSelectedSessionId(returnedSessionId);
+        activeSession = returnedSessionId;
+        
+        // Transfer messages cache from 'new' to the actual session ID
+        const currentMsgs = getSessionMessages('new') || [];
+        saveSessionMessages(returnedSessionId, currentMsgs);
+        localStorage.removeItem('eva_chat_messages_new');
       }
 
       const replyMsg = {
@@ -337,6 +299,7 @@ export const ChatProvider = ({ children }) => {
         role: 'eva',
         isEva: true,
         timestamp: new Date().toISOString(),
+        collaborationData: response?.action || response?.data || null,
       };
 
       setMessages((prevMessages) => {
@@ -357,6 +320,7 @@ export const ChatProvider = ({ children }) => {
         role: 'eva',
         isEva: true,
         timestamp: new Date().toISOString(),
+        collaborationData: err.data?.data || err.data || null,
       };
       setMessages((prevMessages) => {
         const nextMessages = [...prevMessages, errMsg];

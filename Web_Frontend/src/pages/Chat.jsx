@@ -108,6 +108,11 @@ export const Chat = () => {
     sendMessage(prompt, 'text');
   };
 
+  const handleSelectTimeSlot = async (slot) => {
+    const promptText = `I select slot: ${slot.label || `${slot.start_time} - ${slot.end_time}`}`;
+    await sendMessage(promptText, 'text');
+  };
+
   const userInitial = user?.name ? user.name.charAt(0).toUpperCase() : 'A';
 
   return (
@@ -236,6 +241,8 @@ export const Chat = () => {
                       text={msg.text}
                       isEva={msg.isEva}
                       userInitial={userInitial}
+                      collaborationData={msg.collaborationData}
+                      onSelectTimeSlot={handleSelectTimeSlot}
                     />
                   </div>
                 );

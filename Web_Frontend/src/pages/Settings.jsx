@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
+import apiRequest from '../services/api';
 import './Settings.css';
 
 export const Settings = () => {
@@ -17,7 +18,8 @@ export const Settings = () => {
     updateSettings, 
     addSchedule, 
     updateSchedule, 
-    deleteSchedule 
+    deleteSchedule,
+    fetchSettings
   } = useSettings();
 
   // Selected Category (for tabbed view on desktop)
@@ -28,6 +30,29 @@ export const Settings = () => {
   const [profileName, setProfileName] = useState(user?.name || '');
   const [profileEmail, setProfileEmail] = useState(user?.email || '');
   const [avatarPreview, setAvatarPreview] = useState(user?.avatar_url || user?.profile_picture || '');
+
+  const [googleCalendarConnected, setGoogleCalendarConnected] = useState(false);
+
+  const fetchIntegrationStatus = async () => {
+    try {
+      const res = await apiRequest('/api/integrations');
+      if (res.status === 'success' && Array.isArray(res.data)) {
+        const hasGoogle = res.data.some(
+          (item) => item.provider === 'google_calendar' && item.is_active === true
+        );
+        setGoogleCalendarConnected(hasGoogle);
+      } else {
+        setGoogleCalendarConnected(false);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch integrations list:', err);
+      setGoogleCalendarConnected(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchIntegrationStatus();
+  }, []);
 
   useEffect(() => {
     setProfileName(user?.name || '');
@@ -118,6 +143,54 @@ export const Settings = () => {
         duration_minutes: Number(s.duration_minutes ?? s.durationMinutes ?? 0)
       }))
     };
+
+    // Helper: Convert time string "HH:mm" to minutes from midnight
+    const parseTimeToMinutes = (timeStr) => {
+      const [h, m] = timeStr.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    // Helper: Check if two time intervals overlap (supporting midnight wrapping)
+    const timesOverlap = (start1, end1, start2, end2) => {
+      const splitInterval = (start, end) => {
+        if (end <= start) {
+          return [[start, 1440], [0, end]];
+        }
+        return [[start, end]];
+      };
+
+      const intervals1 = splitInterval(start1, end1);
+      const intervals2 = splitInterval(start2, end2);
+
+      for (const [s1, e1] of intervals1) {
+        for (const [s2, e2] of intervals2) {
+          if (Math.max(s1, s2) < Math.min(e1, e2)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    // Validate that the new study slot does not overlap with any active quiet hours
+    const quietHours = settings.quiet_hours || [];
+    const hasOverlap = payload.slots.some(slot => {
+      const studyStart = parseTimeToMinutes(slot.time);
+      const studyEndVal = (studyStart + slot.duration_minutes) % 1440;
+      
+      return quietHours.some(qh => {
+        if (qh.enabled === false) return false;
+        const qhStart = parseTimeToMinutes(qh.start);
+        const qhEnd = parseTimeToMinutes(qh.end);
+        return timesOverlap(studyStart, studyEndVal, qhStart, qhEnd);
+      });
+    });
+
+    if (hasOverlap) {
+      alert("Error: This study schedule slot conflicts with your defined Quiet Hours/Sleep Time. Please choose a different time.");
+      return;
+    }
+
     const res = await addSchedule(payload);
     if (res.success) {
       alert('Schedule created!');
@@ -144,27 +217,91 @@ export const Settings = () => {
     await updateSettings(notificationFields);
   };
 
-  const handleGoogleCalendarToggle = async (enabled) => {
-    const confirmation = window.confirm(
-      enabled
-        ? 'Enable Google Calendar Integration and synchronize your EVA schedules with Google Calendar?'
-        : 'Disable Google Calendar Integration? Future events will stop syncing and existing synced events may remain in Google Calendar.'
-    );
+  const [isConnectingCalendar, setIsConnectingCalendar] = useState(false);
 
-    if (!confirmation) {
+  useEffect(() => {
+    if (!window.google?.accounts?.oauth2) {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      document.body.appendChild(script);
+    }
+  }, []);
+
+  const handleGoogleCalendarConnect = () => {
+    if (!window.google?.accounts?.oauth2) {
+      alert('Google authentication service is still loading. Please try again in a moment.');
       return;
     }
 
-    const response = await updateSettings({ google_calendar_sync_enabled: enabled });
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '424904983644-1r590marhlk27lgab1pja3ufcirtfkqb.apps.googleusercontent.com';
+    
+    setIsConnectingCalendar(true);
 
-    if (response.success) {
-      if (enabled) {
-        alert('Google Calendar integration enabled. Google sign-in and schedule synchronization will be handled when the connection is available.');
+    try {
+      const client = window.google.accounts.oauth2.initCodeClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/calendar',
+        ux_mode: 'popup',
+        callback: async (response) => {
+          if (response.error) {
+            setIsConnectingCalendar(false);
+            alert(`Google Calendar integration failed: ${response.error}`);
+            return;
+          }
+          if (response.code) {
+            try {
+              const res = await apiRequest('/api/integrations/google/connect', {
+                method: 'POST',
+                body: JSON.stringify({ server_auth_code: response.code })
+              });
+              if (res.status === 'success' || res.message?.includes('connected')) {
+                alert('Google Calendar connected successfully!');
+                await fetchSettings();
+                await fetchIntegrationStatus();
+              } else {
+                alert(res.message || 'Failed to link Google Calendar. Please try again.');
+              }
+            } catch (err) {
+              alert(err.message || 'Failed to exchange authorization tokens.');
+            } finally {
+              setIsConnectingCalendar(false);
+            }
+          } else {
+            setIsConnectingCalendar(false);
+          }
+        }
+      });
+      client.requestCode();
+    } catch (err) {
+      setIsConnectingCalendar(false);
+      console.error(err);
+      alert('Failed to initialize Google OAuth connection popup.');
+    }
+  };
+
+  const handleGoogleCalendarDisconnect = async () => {
+    if (!window.confirm('Are you sure you want to disconnect Google Calendar? This will disable schedule synchronization.')) {
+      return;
+    }
+
+    setIsConnectingCalendar(true);
+    try {
+      const res = await apiRequest('/api/integrations/google', {
+        method: 'DELETE'
+      });
+      if (res.status === 'success' || res.message?.includes('disconnected')) {
+        alert('Google Calendar disconnected successfully.');
+        await fetchSettings();
+        await fetchIntegrationStatus();
       } else {
-        alert('Google Calendar integration disabled. Future syncing will stop. Existing events may remain in Google Calendar.');
+        alert(res.message || 'Failed to disconnect. Please try again.');
       }
-    } else {
-      alert('Unable to update Google Calendar sync setting. Please try again.');
+    } catch (err) {
+      alert(err.message || 'Failed to communicate with the server.');
+    } finally {
+      setIsConnectingCalendar(false);
     }
   };
 
@@ -366,14 +503,32 @@ export const Settings = () => {
                   <span className="row-title">Google Calendar Integration</span>
                   <p className="row-desc">Synchronize study schedules and timelines automatically with Google Calendar.</p>
                 </div>
-                <label className="toggle-switch-saas">
-                  <input
-                    type="checkbox"
-                    checked={settings.google_calendar_sync_enabled}
-                    onChange={(e) => handleGoogleCalendarToggle(e.target.checked)}
-                  />
-                  <span className="toggle-slider-saas" />
-                </label>
+                <div className="google-calendar-action-box">
+                  {settings.google_calendar_sync_enabled ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span className="collab-status-badge accepted" style={{ fontSize: '12px', padding: '4px 8px', borderRadius: '4px', backgroundColor: 'rgba(34, 197, 94, 0.12)', color: '#22c55e', fontWeight: 'bold' }}>✓ Connected</span>
+                      <button 
+                        type="button"
+                        className="btn btn-secondary disconnect-btn" 
+                        onClick={handleGoogleCalendarDisconnect}
+                        disabled={isConnectingCalendar}
+                        style={{ padding: '6px 12px', fontSize: '12px', borderRadius: '6px', cursor: 'pointer' }}
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+                  ) : (
+                    <button 
+                      type="button"
+                      className="btn btn-primary connect-btn" 
+                      onClick={handleGoogleCalendarConnect}
+                      disabled={isConnectingCalendar}
+                      style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', background: 'linear-gradient(135deg, #4285F4 0%, #357AE8 100%)', color: 'white', border: 'none', fontWeight: '600' }}
+                    >
+                      {isConnectingCalendar ? 'Connecting...' : 'Connect Calendar'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
