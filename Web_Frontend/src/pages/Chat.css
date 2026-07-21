@@ -118,6 +118,10 @@
   background-color: var(--bg-card);
 }
 
+.convo-row-btn.active {
+  background-color: rgba(59, 130, 246, 0.08);
+}
+
 .convo-icon {
   color: var(--color-text-secondary);
   flex-shrink: 0;

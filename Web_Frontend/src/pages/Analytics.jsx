@@ -4,85 +4,26 @@ import apiRequest from '../services/api';
 import './Analytics.css';
 
 export const Analytics = () => {
-  const [productivity, setProductivity] = useState(null);
-  const [hoursData, setHoursData] = useState([]);
-  const [daysData, setDaysData] = useState([]);
-  const [trendData, setTrendData] = useState([]);
+  const [analytics, setAnalytics] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-
-  // Mock fallbacks
-  const MOCK_PRODUCTIVITY = {
-    total_completed: 18,
-    on_time_percentage: 78,
-    completion_speed_mins: 42,
-    active_streak: 5,
-    study_efficiency: 'High',
-  };
-
-  const MOCK_HOURS = [
-    { hour: '08:00', count: 2 },
-    { hour: '10:00', count: 4 },
-    { hour: '12:00', count: 1 },
-    { hour: '14:00', count: 3 },
-    { hour: '16:00', count: 6 },
-    { hour: '18:00', count: 5 },
-    { hour: '20:00', count: 3 },
-    { hour: '22:00', count: 1 }
-  ];
-
-  const MOCK_DAYS = [
-    { day: 'Mon', count: 4 },
-    { day: 'Tue', count: 6 },
-    { day: 'Wed', count: 3 },
-    { day: 'Thu', count: 5 },
-    { day: 'Fri', count: 7 },
-    { day: 'Sat', count: 2 },
-    { day: 'Sun', count: 1 }
-  ];
-
-  const MOCK_TREND = [
-    { week: 1, count: 8, on_time: 6 },
-    { week: 2, count: 12, on_time: 9 },
-    { week: 3, count: 10, on_time: 8 },
-    { week: 4, count: 15, on_time: 12 }
-  ];
+  const [error, setError] = useState(null);
 
   const fetchAnalytics = async () => {
     setIsLoading(true);
+    setError(null);
+
     try {
-      const prodRes = await apiRequest('/api/analytics/productivity').catch(() => null);
-      if (prodRes && prodRes.status === 'success') {
-        setProductivity(prodRes.data);
+      const response = await apiRequest('/api/analytics/dashboard?days=30');
+      if (response?.status === 'success' && response.data) {
+        setAnalytics(response.data);
       } else {
-        setProductivity(MOCK_PRODUCTIVITY);
-      }
-
-      const hoursRes = await apiRequest('/api/analytics/hours').catch(() => null);
-      if (hoursRes && hoursRes.status === 'success' && Array.isArray(hoursRes.data)) {
-        setHoursData(hoursRes.data);
-      } else {
-        setHoursData(MOCK_HOURS);
-      }
-
-      const daysRes = await apiRequest('/api/analytics/days').catch(() => null);
-      if (daysRes && daysRes.status === 'success' && Array.isArray(daysRes.data)) {
-        setDaysData(daysRes.data);
-      } else {
-        setDaysData(MOCK_DAYS);
-      }
-
-      const trendRes = await apiRequest('/api/analytics/completion-trend?weeks=4').catch(() => null);
-      if (trendRes && trendRes.status === 'success' && trendRes.data?.trend) {
-        setTrendData(trendRes.data.trend);
-      } else {
-        setTrendData(MOCK_TREND);
+        setAnalytics(null);
+        setError('No analytics data available.');
       }
     } catch (err) {
-      console.warn('Could not read real analytics, displaying mock insights.', err);
-      setProductivity(MOCK_PRODUCTIVITY);
-      setHoursData(MOCK_HOURS);
-      setDaysData(MOCK_DAYS);
-      setTrendData(MOCK_TREND);
+      console.error('Failed to fetch analytics dashboard:', err);
+      setAnalytics(null);
+      setError('Unable to load analytics data at this time.');
     } finally {
       setIsLoading(false);
     }
@@ -92,13 +33,55 @@ export const Analytics = () => {
     fetchAnalytics();
   }, []);
 
-  const totalCompleted = productivity?.total_completed !== undefined ? productivity.total_completed : MOCK_PRODUCTIVITY.total_completed;
-  const onTimeRate = productivity?.on_time_percentage !== undefined ? productivity.on_time_percentage : MOCK_PRODUCTIVITY.on_time_percentage;
-  const completionSpeed = productivity?.completion_speed_mins !== undefined ? productivity.completion_speed_mins : MOCK_PRODUCTIVITY.completion_speed_mins;
-  const streak = productivity?.active_streak !== undefined ? productivity.active_streak : MOCK_PRODUCTIVITY.active_streak;
-  const efficiency = productivity?.study_efficiency || MOCK_PRODUCTIVITY.study_efficiency;
+  const snapshot = analytics?.snapshot || {};
+  const behavioral = analytics?.behavioral || {};
+  const heatmap = analytics?.heatmap || {};
+  const workPatterns = analytics?.work_patterns || {};
+  const activity = analytics?.activity || {};
 
-  // SVG Line Chart Helpers
+  const totalCompleted = snapshot.completed?.period ?? 0;
+  const onTimeRate = Number(snapshot.on_time_rate ?? 0);
+  const completionSpeed = behavioral.focus?.avg_minutes ?? 0;
+  const streak = snapshot.current_streak ?? 0;
+  const efficiency = snapshot.productivity_score?.rating || snapshot.productivity_score?.caption || 'Unknown';
+
+  const activitySeries = Array.isArray(activity.series) ? activity.series : [];
+
+  const trendData = activitySeries.length > 0
+    ? (() => {
+      const weeks = 4;
+      const bucketSize = Math.ceil(activitySeries.length / weeks);
+      return Array.from({ length: weeks }, (_, idx) => {
+        const slice = activitySeries.slice(idx * bucketSize, (idx + 1) * bucketSize);
+        const count = slice.reduce((sum, item) => sum + (item.count ?? 0), 0);
+        const onTimeSum = slice.reduce((sum, item) => sum + (item.on_time ?? 0), 0);
+        const onTimeRate = count > 0 ? Math.round((onTimeSum / count) * 100) : 0;
+        return {
+          week: idx + 1,
+          count,
+          on_time_rate: onTimeRate,
+        };
+      }).filter((item, index, array) => index < Math.max(array.length, 1));
+    })()
+    : [];
+
+  const daysData = Array.isArray(behavioral.top_days) && behavioral.top_days.length > 0
+    ? behavioral.top_days.map(d => ({ day: d.day || d.day_name || `Day ${d.day_num}`, count: d.log_count ?? 0 }))
+    : [];
+
+  const hoursData = Array.isArray(heatmap.cells) && heatmap.cells.length > 0
+    ? heatmap.cells.reduce((groups, cell) => {
+      const key = cell.hour_display || `${cell.hour}:00`;
+      const existing = groups.find((item) => item.hour === key);
+      if (existing) {
+        existing.count += cell.count ?? 0;
+      } else {
+        groups.push({ hour: key, count: cell.count ?? 0 });
+      }
+      return groups;
+    }, [])
+    : [];
+
   const trendMaxVal = Math.max(...trendData.map(d => d.count), 5);
   const chartHeight = 120;
   const chartWidth = 320;
@@ -112,14 +95,16 @@ export const Analytics = () => {
 
   const onTimePoints = trendData.map((d, index) => {
     const x = padding + (index * (chartWidth - 2 * padding)) / Math.max(trendData.length - 1, 1);
-    const y = chartHeight - padding - (d.on_time * (chartHeight - 2 * padding)) / trendMaxVal;
+    const y = chartHeight - padding - (d.on_time_rate * (chartHeight - 2 * padding)) / 100;
     return { x, y };
   });
 
   const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
   const onTimeLinePath = onTimePoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ');
 
-  const radius = 35;
+  const chartSize = 160;
+  const strokeWidth = 12;
+  const radius = (chartSize - strokeWidth) / 2;
   const circumference = 2 * Math.PI * radius;
   const strokeDashoffset = circumference - (onTimeRate / 100) * circumference;
 
@@ -178,22 +163,22 @@ export const Analytics = () => {
           
           <div className="radial-container-saas">
             <div className="gauge-viewport">
-              <svg className="radial-svg-saas" width="120" height="120">
+              <svg className="radial-svg-saas" width="160" height="160" viewBox="0 0 160 160">
                 <circle
                   className="radial-track-saas"
-                  strokeWidth="8"
+                  strokeWidth={strokeWidth}
                   fill="transparent"
                   r={radius}
-                  cx="60"
-                  cy="60"
+                  cx="80"
+                  cy="80"
                 />
                 <circle
                   className="radial-indicator-saas"
-                  strokeWidth="8"
+                  strokeWidth={strokeWidth}
                   fill="transparent"
                   r={radius}
-                  cx="60"
-                  cy="60"
+                  cx="80"
+                  cy="80"
                   strokeDasharray={circumference}
                   strokeDashoffset={strokeDashoffset}
                 />
@@ -272,22 +257,29 @@ export const Analytics = () => {
           </div>
 
           <div className="bar-chart-grid-saas">
-            {daysData.map((d, index) => {
-              const maxVal = Math.max(...daysData.map(x => x.count), 1);
-              const pct = (d.count / maxVal) * 100;
-              return (
-                <div key={index} className="bar-row-saas">
-                  <span className="bar-label-day">{d.day}</span>
-                  <div className="bar-track-saas">
-                    <div 
-                      className="bar-fill-saas" 
-                      style={{ width: `${pct}%`, backgroundColor: '#8B5CF6' }}
-                    />
+            {Array.isArray(daysData) && daysData.length > 0 ? (
+              daysData.map((d, index) => {
+                const maxVal = Math.max(...daysData.map(x => x.count), 1);
+                const pct = (d.count / maxVal) * 100;
+                return (
+                  <div key={index} className="bar-row-saas">
+                    <span className="bar-label-day">{d.day}</span>
+                    <div className="bar-track-saas">
+                      <div 
+                        className="bar-fill-saas" 
+                        style={{ width: `${pct}%`, backgroundColor: '#8B5CF6' }}
+                      />
+                    </div>
+                    <span className="bar-value-lbl">{d.count}</span>
                   </div>
-                  <span className="bar-value-lbl">{d.count}</span>
-                </div>
-              );
-            })}
+                );
+              })
+            ) : (
+              <div className="empty-state-panel">
+                <AlertCircle size={18} />
+                <span>No productivity day data available yet.</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -299,23 +291,29 @@ export const Analytics = () => {
           </div>
 
           <div className="heatmap-viewport-saas">
-            {(Array.isArray(hoursData) ? hoursData : MOCK_HOURS).map((h, index) => {
-              const safeHours = Array.isArray(hoursData) ? hoursData : MOCK_HOURS;
-              const maxVal = Math.max(...safeHours.map(x => x.count), 1);
-              const intensity = h.count / maxVal;
-              return (
-                <div key={index} className="heatmap-block-saas">
-                  <div 
-                    className="heatmap-cell-saas"
-                    style={{
-                      backgroundColor: `rgba(139, 92, 246, ${Math.max(intensity, 0.08)})`
-                    }}
-                    title={`${h.hour}: ${h.count} tasks completed`}
-                  />
-                  <span className="heatmap-label-saas">{h.hour}</span>
-                </div>
-              );
-            })}
+            {Array.isArray(hoursData) && hoursData.length > 0 ? (
+              hoursData.map((h, index) => {
+                const maxVal = Math.max(...hoursData.map(x => x.count), 1);
+                const intensity = h.count / maxVal;
+                return (
+                  <div key={index} className="heatmap-block-saas">
+                    <div 
+                      className="heatmap-cell-saas"
+                      style={{
+                        backgroundColor: `rgba(139, 92, 246, ${Math.max(intensity, 0.08)})`
+                      }}
+                      title={`${h.hour_display || h.hour}: ${h.count} tasks completed`}
+                    />
+                    <span className="heatmap-label-saas">{h.hour_display || h.hour}</span>
+                  </div>
+                );
+              })
+            ) : (
+              <div className="empty-state-panel">
+                <AlertCircle size={18} />
+                <span>No hourly activity data is available yet.</span>
+              </div>
+            )}
           </div>
         </div>
 

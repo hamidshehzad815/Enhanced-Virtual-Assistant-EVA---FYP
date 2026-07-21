@@ -20,7 +20,7 @@ const SCREEN = {
 export const Auth = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, signup, errors: apiErrors, forgotPassword, resetPassword, verifyEmailApi } = useAuth();
+  const { login, signup, errors: apiErrors, forgotPassword, resetPassword, verifyEmailApi, setAuthenticatedSession } = useAuth();
 
   // ── Screen / navigation ──────────────────────
   const [screen, setScreen] = useState(SCREEN.LOGIN);
@@ -54,6 +54,8 @@ export const Auth = () => {
   const [isLoading, setIsLoading]         = useState(false);
   const [fieldErrors, setFieldErrors]     = useState({});
   const [alertMsg, setAlertMsg]           = useState({ type: '', text: '' });
+  const googleLoginButtonRef = useRef(null);
+  const googleSignupButtonRef = useRef(null);
 
   // ── Helpers ──────────────────────────────────
   const clearAll = () => { setFieldErrors({}); setAlertMsg({ type: '', text: '' }); };
@@ -61,6 +63,7 @@ export const Auth = () => {
   const go = (s) => { clearAll(); setScreen(s); };
 
   const validateEmail = (e) => /\S+@\S+\.\S+/.test(e);
+  const validateUsername = (value) => /^[a-z]+$/.test(value) && value.length >= 3 && value.length <= 30;
 
   // Resend timer countdown
   const startResendTimer = () => {
@@ -75,6 +78,108 @@ export const Auth = () => {
   };
 
   useEffect(() => () => { if (timerRef.current) clearInterval(timerRef.current); }, []);
+
+  const handleGoogleSuccess = async (credentialResponse) => {
+    try {
+      setIsLoading(true);
+      clearAll();
+      const token = credentialResponse?.credential;
+      if (!token) {
+        setAlertMsg({ type: 'error', text: 'Google sign-in was cancelled.' });
+        setIsLoading(false);
+        return;
+      }
+
+      const response = await apiRequest('/api/auth/google', {
+        method: 'POST',
+        tokenRequired: false,
+        body: JSON.stringify({
+          id_token: token,
+          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Karachi',
+        }),
+      });
+
+      if (response.status === 'success' || response.success) {
+        const tokens = response.data?.tokens;
+        if (tokens) {
+          localStorage.setItem('access_token', tokens.access_token);
+          localStorage.setItem('refresh_token', tokens.refresh_token);
+        }
+
+        const userData = response.data?.user || response.data || null;
+        if (userData) {
+          setAuthenticatedSession(userData);
+        } else {
+          await new Promise(resolve => setTimeout(resolve, 150));
+        }
+
+        navigate('/');
+      } else {
+        setAlertMsg({ type: 'error', text: response.message || 'Google sign-in failed.' });
+      }
+    } catch (err) {
+      setAlertMsg({ type: 'error', text: err.message || 'Google sign-in failed.' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '654038676954-3up0qv4j6f8d2mtes31ktp0sp2q6h9cu.apps.googleusercontent.com';
+    const initializeGoogleButtons = () => {
+      if (!window.google?.accounts?.id) return;
+
+      window.google.accounts.id.initialize({
+        client_id: clientId,
+        callback: handleGoogleSuccess,
+        auto_select: false,
+        ux_mode: 'popup',
+        context: 'signin',
+      });
+
+      if (googleLoginButtonRef.current) {
+        googleLoginButtonRef.current.innerHTML = '';
+        window.google.accounts.id.renderButton(googleLoginButtonRef.current, {
+          theme: 'outline',
+          size: 'large',
+          width: '100%',
+          text: 'continue_with',
+          shape: 'rectangular',
+        });
+      }
+
+      if (googleSignupButtonRef.current) {
+        googleSignupButtonRef.current.innerHTML = '';
+        window.google.accounts.id.renderButton(googleSignupButtonRef.current, {
+          theme: 'outline',
+          size: 'large',
+          width: '100%',
+          text: 'continue_with',
+          shape: 'rectangular',
+        });
+      }
+    };
+
+    if (!window.google?.accounts?.id) {
+      const existingScript = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+      if (existingScript) {
+        existingScript.addEventListener('load', initializeGoogleButtons);
+        return () => existingScript.removeEventListener('load', initializeGoogleButtons);
+      }
+
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      script.onload = initializeGoogleButtons;
+      document.body.appendChild(script);
+      return () => {
+        document.body.removeChild(script);
+      };
+    }
+
+    initializeGoogleButtons();
+  }, [screen]);
 
   // ────────────────────────────────────────────────────
   // Handlers
@@ -114,29 +219,41 @@ export const Auth = () => {
     e.preventDefault();
     clearAll();
 
-    // Client-side validation
     const errs = {};
-    if (!signupName.trim())     errs.signupName     = 'Full name is required';
-    if (!signupUsername.trim()) errs.signupUsername  = 'Username is required';
-    else if (!/^[a-z0-9_]+$/.test(signupUsername))
-                                errs.signupUsername  = 'Only lowercase letters, numbers, underscores';
-    if (!signupEmail)           errs.signupEmail     = 'Email is required';
-    else if (!validateEmail(signupEmail))
-                                errs.signupEmail     = 'Enter a valid email';
-    if (!signupPassword)        errs.signupPassword  = 'Password is required';
-    else if (signupPassword.length < 8)
-                                errs.signupPassword  = 'Min 8 characters';
-    if (Object.keys(errs).length) { setFieldErrors(errs); return; }
+    if (!signupName.trim()) errs.signupName = 'Full name is required';
+    if (!signupUsername.trim()) {
+      errs.signupUsername = 'Username is required';
+    } else if (!validateUsername(signupUsername.trim())) {
+      errs.signupUsername = 'Username must be 3-30 lowercase letters only';
+    }
+    if (!signupEmail.trim()) {
+      errs.signupEmail = 'Email is required';
+    } else if (!validateEmail(signupEmail.trim())) {
+      errs.signupEmail = 'Enter a valid email';
+    }
+    if (!signupPassword) {
+      errs.signupPassword = 'Password is required';
+    } else if (signupPassword.length < 6) {
+      errs.signupPassword = 'Password must be at least 6 characters';
+    }
+    if (Object.keys(errs).length) {
+      setFieldErrors(errs);
+      setIsLoading(false);
+      return;
+    }
 
-    // Show local spinner while waiting
     setIsLoading(true);
 
     let result;
     try {
+      const normalizedUsername = String(signupUsername || '').trim().toLowerCase();
+      const normalizedEmail = String(signupEmail || '').trim().toLowerCase();
+      const normalizedName = String(signupName || '').trim();
+
       result = await signup({
-        name:     signupName.trim(),
-        username: signupUsername.trim(),
-        email:    signupEmail,
+        name: normalizedName,
+        username: normalizedUsername,
+        email: normalizedEmail,
         password: signupPassword,
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'Asia/Karachi',
       });
@@ -149,9 +266,8 @@ export const Auth = () => {
     setIsLoading(false);
 
     if (result && result.success) {
-      // Backend already sent the verification email — show the verify screen
       startResendTimer();
-      setScreen(SCREEN.VERIFY_EMAIL); // use setScreen directly (not go()) to preserve signupEmail
+      setScreen(SCREEN.VERIFY_EMAIL);
     } else {
       setAlertMsg({ type: 'error', text: result?.message || 'Signup failed. Please try again.' });
     }
@@ -335,22 +451,8 @@ export const Auth = () => {
                   <span className="divider-text">Or continue with</span>
                   <span className="divider-line" />
                 </div>
-                <div className="google-coming-soon-wrapper" title="Google login is coming soon">
-                  <button
-                    id="google-login-btn"
-                    className="social-btn google-btn google-btn--disabled"
-                    disabled
-                    aria-label="Google login coming soon"
-                  >
-                    <svg viewBox="0 0 24 24" width="20" height="20" className="google-icon">
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-                    </svg>
-                    Continue with Google
-                    <span className="google-soon-badge">Soon</span>
-                  </button>
+                <div className="google-coming-soon-wrapper">
+                  <div ref={googleLoginButtonRef} id="google-login-btn" />
                 </div>
               </div>
             </>
@@ -452,22 +554,8 @@ export const Auth = () => {
                   <span className="divider-text">Or continue with</span>
                   <span className="divider-line" />
                 </div>
-                <div className="google-coming-soon-wrapper" title="Google login is coming soon">
-                  <button
-                    id="google-signup-btn"
-                    className="social-btn google-btn google-btn--disabled"
-                    disabled
-                    aria-label="Google sign-up coming soon"
-                  >
-                    <svg viewBox="0 0 24 24" width="20" height="20" className="google-icon">
-                      <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4" />
-                      <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" />
-                      <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z" fill="#FBBC05" />
-                      <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" />
-                    </svg>
-                    Continue with Google
-                    <span className="google-soon-badge">Soon</span>
-                  </button>
+                <div className="google-coming-soon-wrapper">
+                  <div ref={googleSignupButtonRef} id="google-signup-btn" />
                 </div>
               </div>
             </>
@@ -491,38 +579,23 @@ export const Auth = () => {
               </div>
 
               <p className="auth-card-subtitle font-body" style={{ marginBottom: 20 }}>
-                Can't find the email? Check your <strong>spam / junk</strong> folder,
-                or paste the verification link / token below to verify manually.
+                We emailed a verification link to <strong>{signupEmail || 'your inbox'}</strong>.
+                Check your <strong>spam / junk</strong> folder if you do not see it.
               </p>
 
               <Alert type={alertMsg.type} text={alertMsg.text} />
 
-              <form className="auth-form" onSubmit={handleVerify} noValidate>
-                <div className="input-group">
-                  <label className="input-label">Paste Verification Link or Token <span style={{ fontWeight: 400, color: 'var(--color-text-secondary)' }}>(optional)</span></label>
-                  <input
-                    id="verify-token-input"
-                    type="text"
-                    className={`input-field ${fieldErrors.verifyToken ? 'error' : ''}`}
-                    placeholder="Paste link or token from email here"
-                    value={verifyToken}
-                    onChange={e => setVerifyToken(e.target.value)}
-                    autoComplete="off"
-                  />
-                  {fieldErrors.verifyToken && <span className="error-text">{fieldErrors.verifyToken}</span>}
-                </div>
-
-                <button
-                  id="verify-submit-btn"
-                  type="submit"
-                  className="btn btn-primary auth-submit-btn"
-                  disabled={isLoading || !verifyToken.trim()}
-                >
-                  {isLoading
-                    ? <Loader2 className="spinner" size={20} />
-                    : <><ShieldCheck size={18} style={{ marginRight: 8 }} />Verify &amp; Activate</>}
-                </button>
-              </form>
+              <button
+                id="resend-email-only-btn"
+                type="button"
+                className="btn btn-primary auth-submit-btn"
+                onClick={handleResend}
+                disabled={isLoading || resendTimer > 0}
+              >
+                {isLoading
+                  ? <Loader2 className="spinner" size={20} />
+                  : `Resend verification email${resendTimer > 0 ? ` (${resendTimer}s)` : ''}`}
+              </button>
 
               {/* Resend row */}
               <div className="verify-resend-row">

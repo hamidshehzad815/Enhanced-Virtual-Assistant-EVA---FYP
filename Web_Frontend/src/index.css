@@ -106,6 +106,26 @@ body {
 .font-logo {
   font-family: var(--font-logo);
 }
+
+.auth-logo,
+.branding-logo,
+.logo-text {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  letter-spacing: -0.02em;
+  text-shadow: none;
+  filter: none;
+  -webkit-text-fill-color: currentColor;
+  background: transparent;
+}
+
+.auth-logo::before,
+.branding-logo::before,
+.logo-text::before {
+  content: none;
+}
+
 .font-headline {
   font-family: var(--font-headline);
 }

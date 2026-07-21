@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Palette, Globe, RefreshCw, Bell, BellOff, Mail, Moon, Clock, 
@@ -6,18 +6,20 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSettings } from '../contexts/SettingsContext';
+import apiRequest from '../services/api';
 import './Settings.css';
 
 export const Settings = () => {
   const navigate = useNavigate();
-  const { user, logout, updateProfile } = useAuth();
+  const { user, logout, updateProfile, checkAuth, updateUserSnapshot } = useAuth();
   const { 
     settings, 
     learningSchedules, 
     updateSettings, 
     addSchedule, 
     updateSchedule, 
-    deleteSchedule 
+    deleteSchedule,
+    fetchSettings
   } = useSettings();
 
   // Selected Category (for tabbed view on desktop)
@@ -27,6 +29,36 @@ export const Settings = () => {
   const [isEditingProfile, setIsEditingProfile] = useState(false);
   const [profileName, setProfileName] = useState(user?.name || '');
   const [profileEmail, setProfileEmail] = useState(user?.email || '');
+  const [avatarPreview, setAvatarPreview] = useState(user?.avatar_url || user?.profile_picture || '');
+
+  const [googleCalendarConnected, setGoogleCalendarConnected] = useState(false);
+
+  const fetchIntegrationStatus = async () => {
+    try {
+      const res = await apiRequest('/api/integrations');
+      if (res.status === 'success' && Array.isArray(res.data)) {
+        const hasGoogle = res.data.some(
+          (item) => item.provider === 'google_calendar' && item.is_active === true
+        );
+        setGoogleCalendarConnected(hasGoogle);
+      } else {
+        setGoogleCalendarConnected(false);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch integrations list:', err);
+      setGoogleCalendarConnected(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchIntegrationStatus();
+  }, []);
+
+  useEffect(() => {
+    setProfileName(user?.name || '');
+    setProfileEmail(user?.email || '');
+    setAvatarPreview(user?.avatar_url || user?.profile_picture || '');
+  }, [user]);
 
   // Forms
   const [newQuietHour, setNewQuietHour] = useState({ label: 'Sleep Time', start: '22:00', end: '07:00', enabled: true });
@@ -34,12 +66,41 @@ export const Settings = () => {
 
   const handleProfileSave = async (e) => {
     e.preventDefault();
-    const res = await updateProfile({ name: profileName, email: profileEmail });
+    const res = await updateProfile({ name: profileName });
     if (res.success) {
       setIsEditingProfile(false);
       alert('Profile updated successfully!');
     } else {
       alert(res.message || 'Failed to update profile');
+    }
+  };
+
+  const handleAvatarUpload = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    const token = localStorage.getItem('access_token');
+    const baseUrl = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
+    const url = `${baseUrl}/api/profile/avatar`;
+    const form = new FormData();
+    form.append('avatar', file);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        body: form
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok) throw new Error(data?.message || 'Upload failed');
+      const nextAvatarUrl = data?.data?.user?.avatar_url || data?.data?.user?.profile_picture || data?.user?.avatar_url || data?.user?.profile_picture || data?.avatar_url || data?.profile_picture || '';
+      if (nextAvatarUrl) {
+        setAvatarPreview(nextAvatarUrl);
+        if (updateUserSnapshot) updateUserSnapshot({ avatar_url: nextAvatarUrl, profile_picture: nextAvatarUrl });
+      }
+      if (checkAuth) await checkAuth();
+      alert('Avatar updated');
+    } catch (err) {
+      console.error('Avatar upload failed', err);
+      alert('Failed to upload avatar. Please try again.');
     }
   };
 
@@ -72,7 +133,65 @@ export const Settings = () => {
       alert('Schedule label is required');
       return;
     }
-    const res = await addSchedule(newScheduleForm);
+    // Convert frontend form shape to backend-expected payload
+    // Backend expects: { label, slots: [{ day: number (0=Mon), time: 'HH:mm', duration_minutes: number }] }
+    const payload = {
+      label: String(newScheduleForm.label || '').trim(),
+      slots: (Array.isArray(newScheduleForm.slots) ? newScheduleForm.slots : []).map(s => ({
+        day: Number(s.day_of_week ?? s.day),
+        time: String((s.start_time ?? s.time) || '').trim(),
+        duration_minutes: Number(s.duration_minutes ?? s.durationMinutes ?? 0)
+      }))
+    };
+
+    // Helper: Convert time string "HH:mm" to minutes from midnight
+    const parseTimeToMinutes = (timeStr) => {
+      const [h, m] = timeStr.split(':').map(Number);
+      return h * 60 + m;
+    };
+
+    // Helper: Check if two time intervals overlap (supporting midnight wrapping)
+    const timesOverlap = (start1, end1, start2, end2) => {
+      const splitInterval = (start, end) => {
+        if (end <= start) {
+          return [[start, 1440], [0, end]];
+        }
+        return [[start, end]];
+      };
+
+      const intervals1 = splitInterval(start1, end1);
+      const intervals2 = splitInterval(start2, end2);
+
+      for (const [s1, e1] of intervals1) {
+        for (const [s2, e2] of intervals2) {
+          if (Math.max(s1, s2) < Math.min(e1, e2)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    // Validate that the new study slot does not overlap with any active quiet hours
+    const quietHours = settings.quiet_hours || [];
+    const hasOverlap = payload.slots.some(slot => {
+      const studyStart = parseTimeToMinutes(slot.time);
+      const studyEndVal = (studyStart + slot.duration_minutes) % 1440;
+      
+      return quietHours.some(qh => {
+        if (qh.enabled === false) return false;
+        const qhStart = parseTimeToMinutes(qh.start);
+        const qhEnd = parseTimeToMinutes(qh.end);
+        return timesOverlap(studyStart, studyEndVal, qhStart, qhEnd);
+      });
+    });
+
+    if (hasOverlap) {
+      alert("Error: This study schedule slot conflicts with your defined Quiet Hours/Sleep Time. Please choose a different time.");
+      return;
+    }
+
+    const res = await addSchedule(payload);
     if (res.success) {
       alert('Schedule created!');
       setNewScheduleForm({ label: 'Weekday Slot', slots: [{ day_of_week: 1, start_time: '16:00', duration_minutes: 90 }] });
@@ -89,6 +208,103 @@ export const Settings = () => {
     }
   };
 
+  const handleMasterNotificationToggle = async (enabled) => {
+    const notificationFields = {
+      notifications_enabled: enabled,
+      push_notifications_enabled: enabled,
+      email_notifications_enabled: enabled,
+    };
+    await updateSettings(notificationFields);
+  };
+
+  const [isConnectingCalendar, setIsConnectingCalendar] = useState(false);
+
+  useEffect(() => {
+    if (!window.google?.accounts?.oauth2) {
+      const script = document.createElement('script');
+      script.src = 'https://accounts.google.com/gsi/client';
+      script.async = true;
+      script.defer = true;
+      document.body.appendChild(script);
+    }
+  }, []);
+
+  const handleGoogleCalendarConnect = () => {
+    if (!window.google?.accounts?.oauth2) {
+      alert('Google authentication service is still loading. Please try again in a moment.');
+      return;
+    }
+
+    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '424904983644-1r590marhlk27lgab1pja3ufcirtfkqb.apps.googleusercontent.com';
+    
+    setIsConnectingCalendar(true);
+
+    try {
+      const client = window.google.accounts.oauth2.initCodeClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/calendar',
+        ux_mode: 'popup',
+        callback: async (response) => {
+          if (response.error) {
+            setIsConnectingCalendar(false);
+            alert(`Google Calendar integration failed: ${response.error}`);
+            return;
+          }
+          if (response.code) {
+            try {
+              const res = await apiRequest('/api/integrations/google/connect', {
+                method: 'POST',
+                body: JSON.stringify({ server_auth_code: response.code })
+              });
+              if (res.status === 'success' || res.message?.includes('connected')) {
+                alert('Google Calendar connected successfully!');
+                await fetchSettings();
+                await fetchIntegrationStatus();
+              } else {
+                alert(res.message || 'Failed to link Google Calendar. Please try again.');
+              }
+            } catch (err) {
+              alert(err.message || 'Failed to exchange authorization tokens.');
+            } finally {
+              setIsConnectingCalendar(false);
+            }
+          } else {
+            setIsConnectingCalendar(false);
+          }
+        }
+      });
+      client.requestCode();
+    } catch (err) {
+      setIsConnectingCalendar(false);
+      console.error(err);
+      alert('Failed to initialize Google OAuth connection popup.');
+    }
+  };
+
+  const handleGoogleCalendarDisconnect = async () => {
+    if (!window.confirm('Are you sure you want to disconnect Google Calendar? This will disable schedule synchronization.')) {
+      return;
+    }
+
+    setIsConnectingCalendar(true);
+    try {
+      const res = await apiRequest('/api/integrations/google', {
+        method: 'DELETE'
+      });
+      if (res.status === 'success' || res.message?.includes('disconnected')) {
+        alert('Google Calendar disconnected successfully.');
+        await fetchSettings();
+        await fetchIntegrationStatus();
+      } else {
+        alert(res.message || 'Failed to disconnect. Please try again.');
+      }
+    } catch (err) {
+      alert(err.message || 'Failed to communicate with the server.');
+    } finally {
+      setIsConnectingCalendar(false);
+    }
+  };
+
   const getDayName = (dayNum) => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
     return days[dayNum] || 'Monday';
@@ -98,6 +314,7 @@ export const Settings = () => {
 
   return (
     <div className="settings-workspace animate-fade-in">
+      <input id="avatar-file-input" type="file" accept="image/*" style={{ display: 'none' }} onChange={handleAvatarUpload} />
       
       {/* 1. Left Sidebar: Settings Categories Nav */}
       <div className="settings-left-pane">
@@ -108,7 +325,11 @@ export const Settings = () => {
 
         {/* Profile Card Header */}
         <div className="settings-profile-summary">
-          <div className="settings-avatar-circle">{initials}</div>
+          <div className="settings-avatar-circle" style={{ position: 'relative' }}>
+            {avatarPreview ? (
+              <img src={avatarPreview} alt="avatar" />
+            ) : initials}
+          </div>
           <div className="settings-profile-details">
             <h4>{user?.name || 'Areej'}</h4>
             <p>@{user?.username || 'username'}</p>
@@ -178,6 +399,19 @@ export const Settings = () => {
             <div className="settings-card-saas">
               {isEditingProfile ? (
                 <form onSubmit={handleProfileSave} className="profile-edit-saas-form">
+                  <div className="profile-identity-display">
+                    <div className={`identity-avatar ${avatarPreview ? 'has-image' : ''}`}>
+                      {avatarPreview ? <img src={avatarPreview} alt="Profile avatar" /> : initials}
+                      <label className="avatar-edit-btn" title="Edit avatar" htmlFor="avatar-file-input" role="button" tabIndex={0} aria-label="Edit avatar" onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { const input = document.getElementById('avatar-file-input'); if (input) input.click(); } }}>
+                        <Edit size={18} color="#fff" />
+                      </label>
+                    </div>
+                    <div className="identity-info">
+                      <h4>{user?.name || 'Areej'}</h4>
+                      <p className="username">@{user?.username || 'areej_student'}</p>
+                      <p className="email">{user?.email || 'student@domain.com'}</p>
+                    </div>
+                  </div>
                   <div className="input-group">
                     <label className="input-label">Full Name</label>
                     <input
@@ -194,8 +428,7 @@ export const Settings = () => {
                       type="email"
                       className="input-field"
                       value={profileEmail}
-                      onChange={(e) => setProfileEmail(e.target.value)}
-                      required
+                      disabled
                     />
                   </div>
                   <div className="profile-form-actions">
@@ -209,7 +442,9 @@ export const Settings = () => {
                 </form>
               ) : (
                 <div className="profile-identity-display">
-                  <div className="identity-avatar">{initials}</div>
+                  <div className={`identity-avatar ${avatarPreview ? 'has-image' : ''}`}>
+                    {avatarPreview ? <img src={avatarPreview} alt="Profile avatar" /> : initials}
+                  </div>
                   <div className="identity-info">
                     <h4>{user?.name || 'Areej'}</h4>
                     <p className="username">@{user?.username || 'areej_student'}</p>
@@ -252,33 +487,48 @@ export const Settings = () => {
               <div className="settings-saas-row border-top">
                 <div className="row-meta">
                   <span className="row-title">Language (Localization)</span>
-                  <p className="row-desc">Select your preferred system locale language.</p>
+                  <p className="row-desc">English is the only supported interface language for this release.</p>
                 </div>
                 <select
-                  value={settings.language}
-                  onChange={(e) => updateSettings({ language: e.target.value })}
+                  value="en"
+                  disabled
                   className="row-select font-body"
                 >
                   <option value="en">English (EN)</option>
-                  <option value="ar">العربية (AR)</option>
-                  <option value="ur">اردو (UR)</option>
                 </select>
               </div>
-
               {/* Google Calendar Sync */}
               <div className="settings-saas-row border-top">
                 <div className="row-meta">
                   <span className="row-title">Google Calendar Integration</span>
-                  <p className="row-desc">Synchronize study schedules and timelines automatically with Google calendar.</p>
+                  <p className="row-desc">Synchronize study schedules and timelines automatically with Google Calendar.</p>
                 </div>
-                <label className="toggle-switch-saas">
-                  <input
-                    type="checkbox"
-                    checked={settings.google_calendar_sync_enabled}
-                    onChange={(e) => updateSettings({ google_calendar_sync_enabled: e.target.checked })}
-                  />
-                  <span className="toggle-slider-saas" />
-                </label>
+                <div className="google-calendar-action-box">
+                  {settings.google_calendar_sync_enabled ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                      <span className="collab-status-badge accepted" style={{ fontSize: '12px', padding: '4px 8px', borderRadius: '4px', backgroundColor: 'rgba(34, 197, 94, 0.12)', color: '#22c55e', fontWeight: 'bold' }}>✓ Connected</span>
+                      <button 
+                        type="button"
+                        className="btn btn-secondary disconnect-btn" 
+                        onClick={handleGoogleCalendarDisconnect}
+                        disabled={isConnectingCalendar}
+                        style={{ padding: '6px 12px', fontSize: '12px', borderRadius: '6px', cursor: 'pointer' }}
+                      >
+                        Disconnect
+                      </button>
+                    </div>
+                  ) : (
+                    <button 
+                      type="button"
+                      className="btn btn-primary connect-btn" 
+                      onClick={handleGoogleCalendarConnect}
+                      disabled={isConnectingCalendar}
+                      style={{ padding: '8px 16px', fontSize: '13px', borderRadius: '6px', cursor: 'pointer', background: 'linear-gradient(135deg, #4285F4 0%, #357AE8 100%)', color: 'white', border: 'none', fontWeight: '600' }}
+                    >
+                      {isConnectingCalendar ? 'Connecting...' : 'Connect Calendar'}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -301,7 +551,7 @@ export const Settings = () => {
                   <input
                     type="checkbox"
                     checked={settings.notifications_enabled}
-                    onChange={(e) => updateSettings({ notifications_enabled: e.target.checked })}
+                    onChange={(e) => handleMasterNotificationToggle(e.target.checked)}
                   />
                   <span className="toggle-slider-saas" />
                 </label>
@@ -548,27 +798,32 @@ export const Settings = () => {
 
                 <div className="crud-list-saas border-top">
                   <span className="list-subtitle">Configured Schedules Directory</span>
-                  {learningSchedules.length > 0 ? (
-                    <div className="schedules-grid-list-saas">
-                      {learningSchedules.map((sched) => (
-                        <div key={sched.id} className="schedule-tile-saas">
-                          <div className="sched-left">
-                            <strong>{sched.label}</strong>
-                            {sched.slots && sched.slots.map((s, i) => (
-                              <span key={i} className="sched-slot-span">
-                                {getDayName(s.day_of_week)} at {s.start_time} ({s.duration_minutes} mins)
-                              </span>
-                            ))}
-                          </div>
-                          <button className="tile-delete-btn" onClick={() => handleRemoveSchedule(sched.id)}>
-                            <Trash2 size={14} />
-                          </button>
+                      {learningSchedules.length > 0 ? (
+                        <div className="schedules-grid-list-saas">
+                          {learningSchedules.map((sched) => (
+                            <div key={sched.id} className="schedule-tile-saas">
+                              <div className="sched-left">
+                                <strong>{sched.label}</strong>
+                                {sched.slots && sched.slots.map((s, i) => {
+                                  const dayNum = (s.day_of_week !== undefined && s.day_of_week !== null) ? s.day_of_week : (s.day !== undefined ? s.day : null);
+                                  const timeStr = (s.start_time ?? s.time) || '';
+                                  const dur = s.duration_minutes ?? s.durationMinutes ?? '';
+                                  return (
+                                    <span key={i} className="sched-slot-span">
+                                      {getDayName(dayNum)} at {timeStr} ({dur} mins)
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                              <button className="tile-delete-btn" onClick={() => handleRemoveSchedule(sched.id)}>
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="no-items-lbl">No custom learning schedule slots defined.</p>
-                  )}
+                      ) : (
+                        <p className="no-items-lbl">No custom learning schedule slots defined.</p>
+                      )}
                 </div>
               </div>
             </div>

@@ -12,7 +12,7 @@ export const Welcome = () => {
       <div className="welcome-glow-mesh"></div>
       
       <header className="welcome-navbar">
-        <div className="navbar-logo">
+        <div className="navbar-logo" onClick={() => navigate('/') } style={{ cursor: 'pointer' }}>
           <span className="logo-text font-logo">EVA</span>
           <span className="logo-badge">AI</span>
         </div>

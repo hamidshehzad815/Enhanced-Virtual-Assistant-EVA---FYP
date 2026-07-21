@@ -9,11 +9,16 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [errors, setErrors] = useState({});
 
+  const setAuthenticatedSession = (userData = null) => {
+    setUser(userData);
+    setIsAuthenticated(Boolean(userData || localStorage.getItem('access_token')));
+    setErrors({});
+  };
+
   const checkAuth = async () => {
     const token = localStorage.getItem('access_token');
     if (!token) {
-      setIsAuthenticated(false);
-      setUser(null);
+      setAuthenticatedSession(null);
       setIsLoading(false);
       return;
     }
@@ -22,15 +27,13 @@ export const AuthProvider = ({ children }) => {
       const response = await apiRequest('/api/auth/me');
       if (response.status === 'success' || response.data) {
         const userData = response.data?.user || response.data || response;
-        setUser(userData);
-        setIsAuthenticated(true);
+        setAuthenticatedSession(userData);
       }
     } catch (err) {
       console.error('Auth check failed:', err);
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
-      setIsAuthenticated(false);
-      setUser(null);
+      setAuthenticatedSession(null);
     } finally {
       setIsLoading(false);
     }
@@ -71,17 +74,36 @@ export const AuthProvider = ({ children }) => {
           return { success: true, isVerified: false, message: 'Email not verified' };
         }
 
-        setUser(userData);
-        setIsAuthenticated(true);
+        setAuthenticatedSession(userData);
         setIsLoading(false);
         return { success: true, isVerified: true };
       }
       
-      return { success: false, message: response.message || response.msg || 'Login failed' };
+      // Map common backend responses to field-specific errors for better UX
+      const msg = response.message || response.msg || 'Login failed';
+      const lower = String(msg || '').toLowerCase();
+      if (response.status === 404 || lower.includes('not found') || lower.includes('no account')) {
+        setErrors({ loginEmail: 'No account found with this email. Please register first.' });
+      } else if (response.status === 401 || lower.includes('password') || lower.includes('incorrect')) {
+        setErrors({ loginPassword: 'Incorrect password. Please try again.' });
+      } else {
+        setErrors({ general: msg });
+      }
+      setIsLoading(false);
+      return { success: false, message: msg };
     } catch (err) {
       const field = err.field || (err.data?.field);
       const message = err.message || 'Server not reachable';
-      setErrors(field ? { [field]: message } : { general: message });
+      // Translate common error statuses into field errors
+      if (err.status === 404 || (err.data && String(err.data.message || '').toLowerCase().includes('not found'))) {
+        setErrors({ loginEmail: 'No account found with this email. Please register first.' });
+      } else if (err.status === 401 || (err.data && String(err.data.message || '').toLowerCase().includes('password'))) {
+        setErrors({ loginPassword: 'Incorrect password. Please try again.' });
+      } else if (field) {
+        setErrors({ [field]: message });
+      } else {
+        setErrors({ general: message });
+      }
       setIsLoading(false);
       return { success: false, message };
     }
@@ -107,8 +129,11 @@ export const AuthProvider = ({ children }) => {
     } catch (err) {
       const field = err.field || err.data?.field;
       const message = err.message || 'Server not reachable';
+      const detail = err.data?.errors && typeof err.data.errors === 'object'
+        ? Object.values(err.data.errors)[0]
+        : null;
       if (field) setErrors({ [field]: message });
-      return { success: false, message };
+      return { success: false, message: detail || message };
     }
   };
 
@@ -121,8 +146,7 @@ export const AuthProvider = ({ children }) => {
     } finally {
       localStorage.removeItem('access_token');
       localStorage.removeItem('refresh_token');
-      setUser(null);
-      setIsAuthenticated(false);
+      setAuthenticatedSession(null);
       setIsLoading(false);
     }
   };
@@ -146,6 +170,10 @@ export const AuthProvider = ({ children }) => {
       setErrors(field ? { [field]: message } : { general: message });
       return { success: false, message };
     }
+  };
+
+  const updateUserSnapshot = (updates) => {
+    setUser(prev => (prev ? { ...prev, ...updates } : prev));
   };
 
   const forgotPassword = async (email) => {
@@ -198,7 +226,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, errors, login, signup, logout, checkAuth, updateProfile, forgotPassword, resetPassword, verifyEmailApi }}>
+    <AuthContext.Provider value={{ user, isAuthenticated, isLoading, errors, login, signup, logout, checkAuth, setAuthenticatedSession, updateProfile, updateUserSnapshot, forgotPassword, resetPassword, verifyEmailApi }}>
       {children}
     </AuthContext.Provider>
   );

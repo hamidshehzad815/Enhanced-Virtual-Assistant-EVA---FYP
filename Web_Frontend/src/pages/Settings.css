@@ -40,6 +40,40 @@
   justify-content: center;
   font-weight: 700;
   font-size: 15px;
+  overflow: hidden;
+  position: relative;
+}
+
+.settings-avatar-circle img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.avatar-edit-btn {
+  position: absolute;
+  /* bottom-right overlap (~20%) */
+  right: -6px;
+  bottom: -6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--color-primary);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: 0 6px 14px rgba(16, 24, 40, 0.14);
+  border: 2px solid rgba(255,255,255,0.9);
+}
+
+/* icon sizing inside the edit button */
+.avatar-edit-btn svg {
+  display: block;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
 }
 
 .settings-profile-details h4 {
@@ -174,6 +208,28 @@
   font-weight: 700;
   font-size: 22px;
   box-shadow: var(--shadow-sm);
+  overflow: visible;
+}
+
+.identity-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* larger button for profile identity avatar */
+.identity-avatar { position: relative; }
+.identity-avatar .avatar-edit-btn {
+  right: -8px;
+  bottom: -8px;
+  width: 24px;
+  height: 24px;
+  border: 2px solid rgba(255,255,255,0.9);
+  box-shadow: 0 8px 18px rgba(16, 24, 40, 0.14);
+}
+.identity-avatar .avatar-edit-btn svg {
+  width: 18px;
+  height: 18px;
 }
 
 .identity-info {

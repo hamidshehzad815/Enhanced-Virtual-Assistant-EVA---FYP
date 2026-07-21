@@ -10,27 +10,175 @@ export const ChatProvider = ({ children }) => {
   const { fetchDashboard } = useCalendar();
   const [messages, setMessages] = useState([]);
   const [sessionId, setSessionId] = useState(null);
+  const [selectedSessionId, setSelectedSessionId] = useState(null);
   const [isEvaTyping, setIsEvaTyping] = useState(false);
-  const [conversations, setConversations] = useState([
-    {
-      id: '1',
-      title: 'NLP Exam Planning',
-      lastMessage: 'Added exam for Monday 5pm',
-      timeAgo: '20 min ago'
-    },
-    {
-      id: '2',
-      title: 'Python Roadmap',
-      lastMessage: 'Learning plan ready — 5 topics',
-      timeAgo: '2 hr ago'
-    },
-    {
-      id: '3',
-      title: 'Weekly Schedule',
-      lastMessage: 'All classes added to calendar',
-      timeAgo: '5 hr ago'
+  const [conversations, setConversations] = useState([]);
+
+  const CHAT_CONVERSATIONS_KEY = 'eva_chat_conversations';
+  const getStoredConversations = () => {
+    try {
+      const raw = localStorage.getItem(CHAT_CONVERSATIONS_KEY);
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
     }
-  ]);
+  };
+
+  const saveStoredConversations = (items) => {
+    try {
+      localStorage.setItem(CHAT_CONVERSATIONS_KEY, JSON.stringify(items));
+    } catch (err) {
+      console.error('Unable to save chat conversations:', err);
+    }
+  };
+
+  const getSessionMessages = (sessionId) => {
+    try {
+      const raw = localStorage.getItem(`eva_chat_messages_${sessionId}`);
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const saveSessionMessages = (sessionId, items) => {
+    try {
+      localStorage.setItem(`eva_chat_messages_${sessionId}`, JSON.stringify(items));
+    } catch (err) {
+      console.error('Unable to save session messages:', err);
+    }
+  };
+
+  const buildTitleFromMessage = (text) => {
+    if (!text) return 'EVA Chat';
+    return text.length > 26 ? `${text.slice(0, 24).trim()}...` : text;
+  };
+
+  const mapBackendSession = (session) => ({
+    id: session.session_id || session.id || session._id,
+    title: session.title || 'EVA Chat',
+    lastMessage: session.last_message_preview || 'Continue the conversation',
+    updated_at: session.last_message_at || session.updated_at || session.created_at,
+  });
+
+  const mapBackendMessages = (history = []) => history.map((item) => ({
+    id: item.id || item._id || `${item.role}-${item.created_at || Date.now()}`,
+    text: item.text || item.content || '',
+    role: item.role || 'user',
+    isEva: item.role === 'eva',
+    timestamp: item.timestamp || item.created_at || new Date().toISOString(),
+    input_type: item.input_type || 'text',
+    intent: item.intent || null,
+    collaborationData: item.action || item.entities || null,
+  }));
+
+  const loadChatSessions = async () => {
+    try {
+      const response = await apiRequest('/api/chat/sessions');
+      const sessions = response?.data?.sessions || response?.sessions || [];
+      const mappedSessions = sessions.map(mapBackendSession);
+      if (mappedSessions.length > 0) {
+        setConversations(mappedSessions);
+        saveStoredConversations(mappedSessions);
+        return mappedSessions;
+      }
+    } catch (err) {
+      console.warn('Could not load backend chat sessions, falling back to local history.', err);
+    }
+
+    const stored = getStoredConversations();
+    setConversations(stored);
+    return stored;
+  };
+
+  const loadSessionHistory = async (sessionId) => {
+    if (!sessionId || sessionId === 'new') return [];
+
+    try {
+      const response = await apiRequest(`/api/chat/sessions/${sessionId}/messages`);
+      const history = response?.data?.messages || response?.messages || [];
+      const mapped = mapBackendMessages(history);
+      if (mapped.length > 0) {
+        setMessages(mapped);
+        saveSessionMessages(sessionId, mapped);
+        return mapped;
+      }
+    } catch (err) {
+      console.warn('Failed to load chat history from backend, using local cache.', err);
+    }
+
+    const storedMessages = getSessionMessages(sessionId);
+    if (storedMessages && storedMessages.length > 0) {
+      setMessages(storedMessages);
+      return storedMessages;
+    }
+
+    setMessages([]);
+    saveSessionMessages(sessionId, []);
+    return [];
+  };
+
+  const createChatSession = async (title = 'New Conversation') => {
+    // Client-side initialization for a new chat session.
+    // The backend will create the actual session when the first message is sent.
+    const tempSessionId = 'new';
+    localStorage.setItem('chat_session_id', tempSessionId);
+    setSessionId(tempSessionId);
+    setSelectedSessionId(tempSessionId);
+    setMessages([]);
+    saveSessionMessages(tempSessionId, []);
+    return tempSessionId;
+  };
+
+  const getOrCreateSession = async () => {
+    let activeSession = selectedSessionId || localStorage.getItem('chat_session_id');
+    const sessions = await loadChatSessions();
+    if (activeSession && !sessions.find((item) => item.id === activeSession)) {
+      activeSession = null;
+      localStorage.removeItem('chat_session_id');
+    }
+    if (!activeSession && sessions.length > 0) {
+      activeSession = sessions[0].id;
+    }
+    if (activeSession) {
+      setSessionId(activeSession);
+      setSelectedSessionId(activeSession);
+      localStorage.setItem('chat_session_id', activeSession);
+      await loadSessionHistory(activeSession);
+      return activeSession;
+    }
+    return createChatSession();
+  };
+
+  const upsertConversation = (id, title, lastMessageText) => {
+    if (!id) return;
+    const existing = getStoredConversations();
+    const now = new Date().toISOString();
+    const updated = existing.filter((item) => item.id !== id);
+    updated.unshift({
+      id,
+      title: title || `EVA Chat ${updated.length + 1}`,
+      lastMessage: lastMessageText || 'Continue the conversation',
+      updated_at: now,
+    });
+    setConversations(updated);
+    saveStoredConversations(updated);
+  };
+
+  const loadConversation = (id) => {
+    if (!id) return;
+    const storedMessages = getSessionMessages(id);
+    if (storedMessages && storedMessages.length > 0) {
+      setMessages(storedMessages);
+    } else {
+      setMessages([]);
+      saveSessionMessages(id, []);
+    }
+    setIsEvaTyping(false);
+    setSessionId(id);
+    setSelectedSessionId(id);
+    localStorage.setItem('chat_session_id', id);
+  };
 
   // Load mock messages initially to preserve visual aesthetic
   const loadMockMessages = () => {
@@ -51,104 +199,152 @@ export const ChatProvider = ({ children }) => {
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
-      loadMockMessages();
-      // Try to create/get a session ID
-      getOrCreateSession();
-    } else {
-      setMessages([]);
-      setSessionId(null);
-    }
+    const initializeChat = async () => {
+      if (!isAuthenticated) {
+        setMessages([]);
+        setSessionId(null);
+        setConversations([]);
+        setSelectedSessionId(null);
+        return;
+      }
+
+      const sessions = await loadChatSessions();
+      if (sessions.length > 0) {
+        const savedId = localStorage.getItem('chat_session_id');
+        const activeSession = sessions.find((item) => item.id === savedId)
+          ? savedId
+          : sessions[0].id;
+
+        if (activeSession) {
+          setSessionId(activeSession);
+          setSelectedSessionId(activeSession);
+          localStorage.setItem('chat_session_id', activeSession);
+          await loadSessionHistory(activeSession);
+          return;
+        }
+      }
+
+      await createChatSession('Workspace Chat');
+    };
+
+    initializeChat();
   }, [isAuthenticated]);
 
-  const getOrCreateSession = async () => {
-    let activeSession = localStorage.getItem('chat_session_id');
-    if (activeSession) {
-      setSessionId(activeSession);
-      return activeSession;
-    }
-    
-    try {
-      const response = await apiRequest('/api/chat/session', {
-        method: 'POST',
-        body: JSON.stringify({ title: 'Workspace Chat' })
-      });
-      
-      const newSessionId = response.data?.session_id || response.data?.session?._id || response.session_id;
-      if (newSessionId) {
-        localStorage.setItem('chat_session_id', newSessionId);
-        setSessionId(newSessionId);
-        return newSessionId;
-      }
-    } catch (err) {
-      console.error('Failed to create chat session:', err);
-    }
-    return null;
+  const selectConversation = async (id) => {
+    if (!id) return;
+    setSelectedSessionId(id);
+    setSessionId(id);
+    localStorage.setItem('chat_session_id', id);
+    await loadSessionHistory(id);
   };
 
   const sendMessage = async (text, type = 'text') => {
     if (!text.trim()) return;
-    
+
+    let activeSession = sessionId || selectedSessionId || localStorage.getItem('chat_session_id');
+    if (!activeSession) {
+      activeSession = await getOrCreateSession();
+    }
+
+    if (!activeSession) {
+      throw new Error('Could not establish chat session');
+    }
+
     const userMsg = {
       id: Date.now().toString(),
       text: text.trim(),
+      role: 'user',
       isEva: false,
-      timestamp: new Date()
+      timestamp: new Date().toISOString(),
     };
-    
-    setMessages(prev => [...prev, userMsg]);
+
+    setMessages((prevMessages) => {
+      const nextMessages = [...prevMessages, userMsg];
+      saveSessionMessages(activeSession, nextMessages);
+      return nextMessages;
+    });
     setIsEvaTyping(true);
-    
+
     try {
-      // Ensure we have a session
-      let activeSession = sessionId;
-      if (!activeSession) {
-        activeSession = await getOrCreateSession();
-      }
-      
-      if (!activeSession) {
-        throw new Error('Could not establish chat session');
+      let response;
+      const requestBody = {
+        message: text.trim(),
+        input_type: type,
+      };
+      if (activeSession && activeSession !== 'new') {
+        requestBody.session_id = activeSession;
       }
 
-      const response = await apiRequest('/api/chat/process', {
+      response = await apiRequest('/api/chat/process', {
         method: 'POST',
-        body: JSON.stringify({
-          message: text.trim(),
-          session_id: activeSession,
-          input_type: type
-        })
+        body: JSON.stringify(requestBody),
       });
+
+      const returnedSessionId = response?.session_id || response?.data?.session_id;
+      if (returnedSessionId && activeSession === 'new') {
+        localStorage.setItem('chat_session_id', returnedSessionId);
+        setSessionId(returnedSessionId);
+        setSelectedSessionId(returnedSessionId);
+        activeSession = returnedSessionId;
+        
+        // Transfer messages cache from 'new' to the actual session ID
+        const currentMsgs = getSessionMessages('new') || [];
+        saveSessionMessages(returnedSessionId, currentMsgs);
+        localStorage.removeItem('eva_chat_messages_new');
+      }
 
       const replyMsg = {
         id: (Date.now() + 1).toString(),
-        text: response.response_text || response.message || 'I processed your command.',
+        text: response?.response_text || response?.message || 'I processed your command.',
+        role: 'eva',
         isEva: true,
-        timestamp: new Date()
+        timestamp: new Date().toISOString(),
+        collaborationData: response?.action || response?.data || null,
       };
-      
-      setMessages(prev => [...prev, replyMsg]);
-      
-      // If a task or goal was created, sync the dashboard data
-      if (response.intent && response.intent !== 'general') {
+
+      setMessages((prevMessages) => {
+        const nextMessages = [...prevMessages, replyMsg];
+        saveSessionMessages(activeSession, nextMessages);
+        return nextMessages;
+      });
+      upsertConversation(activeSession, buildTitleFromMessage(text), replyMsg.text);
+
+      if (response?.intent && response.intent !== 'general') {
         fetchDashboard();
       }
-      
     } catch (err) {
       console.error('Failed to send message to AI:', err);
       const errMsg = {
         id: (Date.now() + 1).toString(),
         text: `Error: ${err.message || 'Could not communicate with AI server.'}`,
+        role: 'eva',
         isEva: true,
-        timestamp: new Date()
+        timestamp: new Date().toISOString(),
+        collaborationData: err.data?.data || err.data || null,
       };
-      setMessages(prev => [...prev, errMsg]);
+      setMessages((prevMessages) => {
+        const nextMessages = [...prevMessages, errMsg];
+        saveSessionMessages(activeSession, nextMessages);
+        return nextMessages;
+      });
+      upsertConversation(activeSession, buildTitleFromMessage(text), errMsg.text);
     } finally {
       setIsEvaTyping(false);
     }
   };
 
-  const clearChat = () => {
-    loadMockMessages();
+  const clearChat = async () => {
+    setIsEvaTyping(false);
+    const newSessionId = await createChatSession('New Conversation');
+
+    if (newSessionId) {
+      loadConversation(newSessionId);
+      return newSessionId;
+    }
+
+    setMessages([]);
+    saveStoredConversations(getStoredConversations());
+    return null;
   };
 
   return (
@@ -157,6 +353,8 @@ export const ChatProvider = ({ children }) => {
       isEvaTyping,
       conversations,
       sessionId,
+      selectedSessionId,
+      selectConversation,
       sendMessage,
       clearChat
     }}>

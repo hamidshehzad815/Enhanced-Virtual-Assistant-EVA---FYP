@@ -1,17 +1,55 @@
-import React, { useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, Calendar as CalendarIcon, Clock, CheckCircle2, Award, ChevronRight, Activity, ArrowUpRight } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useCalendar } from '../contexts/CalendarContext';
+import apiRequest from '../services/api';
 import './Home.css';
 
 export const Home = () => {
   const navigate = useNavigate();
   const { user } = useAuth();
-  const { dashboardData, fetchDashboard } = useCalendar();
+  const { dashboardData, fetchDashboard, toggleTask } = useCalendar();
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+
+  const fetchNotifications = async () => {
+    try {
+      const response = await apiRequest('/api/notifications?limit=5');
+      if (response.status === 'success' && response.data) {
+        setNotifications(response.data.notifications || []);
+        setUnreadCount(response.data.unread_count || 0);
+      }
+    } catch (err) {
+      console.error('Failed to fetch notifications:', err);
+    }
+  };
+
+  const handleMarkAsRead = async (notifId) => {
+    try {
+      await apiRequest(`/api/notifications/${notifId}/read`, { method: 'PATCH' });
+      fetchNotifications();
+    } catch (err) {
+      console.error('Failed to mark notification as read:', err);
+    }
+  };
+
+  const handleMarkAllRead = async () => {
+    try {
+      await apiRequest('/api/notifications/read-all', { method: 'PATCH' });
+      fetchNotifications();
+    } catch (err) {
+      console.error('Failed to mark all notifications as read:', err);
+    }
+  };
 
   useEffect(() => {
     fetchDashboard();
+    fetchNotifications();
+
+    const interval = setInterval(fetchNotifications, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const getGreeting = () => {
@@ -23,68 +61,46 @@ export const Home = () => {
 
   const userName = user?.name || 'Areej';
 
-  // Fallbacks
-  const fallbackUpNext = {
-    title: 'NLP Mid Exam',
-    day: 'Thursday',
-    taskTime: '3:00 PM',
-  };
+  const upNext = dashboardData?.up_next
+    ? {
+        title: dashboardData.up_next.title,
+        day: dashboardData.up_next.day || null,
+        taskTime: dashboardData.up_next.time || null,
+      }
+    : null;
 
-  const fallbackProgress = {
-    completed_tasks: 3,
-    total_tasks: 5,
-    completion_percentage: 60
-  };
+  const progressPercent = dashboardData?.daily_progress
+    ? Math.round(dashboardData.daily_progress.completion_percentage)
+    : 0;
 
-  const fallbackLearning = [
-    {
-      title: 'Python Roadmap',
-      nextTopic: 'OOP Concepts',
-      time: '04:30 PM'
-    },
-    {
-      title: 'Flutter Animations',
-      nextTopic: 'CustomPaint',
-      time: '07:15 PM'
-    }
-  ];
+  const learningList = Array.isArray(dashboardData?.learning)
+    ? dashboardData.learning
+        .filter(Boolean)
+        .map((item) => ({
+          title: item.title || 'Untitled learning goal',
+          nextTopic: item.next_topic?.title || 'No upcoming topic',
+          time: item.next_topic?.time || item.next_topic?.day || 'Pending',
+        }))
+    : [];
 
-  const fallbackSchedule = [
-    { time: '08:00 AM', title: 'Math Lecture', tag: 'completed' },
-    { time: '10:00 AM', title: 'Intro to AI', tag: 'pending' },
-    { time: '01:00 PM', title: 'Physics Lab', tag: 'ongoing' },
-    { time: '03:30 PM', title: 'Group Study', tag: 'due' },
-    { time: '05:00 PM', title: 'NLP Exam Prep', tag: 'pending' }
-  ];
-
-  const upNext = dashboardData?.up_next ? {
-    title: dashboardData.up_next.title,
-    day: dashboardData.up_next.day || 'Today',
-    taskTime: dashboardData.up_next.time || 'All day'
-  } : fallbackUpNext;
-
-  const progressPercent = dashboardData?.daily_progress 
-    ? Math.round(dashboardData.daily_progress.completion_percentage) 
-    : fallbackProgress.completion_percentage;
-
-  const learningList = dashboardData?.learning && dashboardData.learning.length > 0 
-    ? dashboardData.learning.map(item => ({
-        title: item.title,
-        nextTopic: item.next_topic?.title || 'No upcoming topic',
-        time: item.next_topic?.time || 'Pending'
-      })) 
-    : fallbackLearning;
-
-  const scheduleList = dashboardData?.today_schedule && dashboardData.today_schedule.length > 0
-    ? dashboardData.today_schedule.map(item => ({
-        time: item.time || 'All day',
-        title: item.title,
-        tag: item.display_status || item.status
-      }))
-    : fallbackSchedule;
+  const scheduleList = Array.isArray(dashboardData?.today_schedule)
+    ? dashboardData.today_schedule
+        .filter(Boolean)
+        .map((item) => ({
+          id: item.id || item._id || item.task_id || item.taskId,
+          time: item.time || null,
+          day: item.day || null,
+          title: item.title || 'Untitled session',
+          tag: item.display_status || item.status || 'pending',
+          status: item.status || item.display_status || 'pending',
+          editable: item.editable !== false,
+        }))
+    : [];
 
   const getTagColorClass = (tag) => {
-    switch (tag.toLowerCase()) {
+    const normalizedTag = String(tag || 'pending').toLowerCase();
+
+    switch (normalizedTag) {
       case 'completed':
       case 'complete':
         return 'tag-completed';
@@ -114,9 +130,50 @@ export const Home = () => {
           <p className="dashboard-subtext">Here is your academic status overview for today.</p>
         </div>
         <div className="header-actions">
-          <button className="notif-btn">
-            <Bell size={18} />
-          </button>
+          <div style={{ position: 'relative' }}>
+            <button 
+              className="notif-btn"
+              onClick={() => setShowNotifDropdown(!showNotifDropdown)}
+            >
+              <Bell size={18} />
+              {unreadCount > 0 && <span className="notif-badge">{unreadCount}</span>}
+            </button>
+
+            {showNotifDropdown && (
+              <div className="notif-dropdown">
+                <div className="notif-dropdown-header">
+                  <h4>Notifications</h4>
+                  {unreadCount > 0 && (
+                    <button className="mark-all-read-btn" onClick={handleMarkAllRead}>
+                      Mark all as read
+                    </button>
+                  )}
+                </div>
+                <div className="notif-list">
+                  {notifications.length > 0 ? (
+                    notifications.map((notif) => (
+                      <div 
+                        key={notif._id} 
+                        className={`notif-item ${!notif.is_read ? 'unread' : ''}`}
+                        onClick={() => {
+                          handleMarkAsRead(notif._id);
+                          setShowNotifDropdown(false);
+                        }}
+                      >
+                        <span className="notif-item-title">{notif.title}</span>
+                        <span className="notif-item-msg">{notif.message}</span>
+                        <span className="notif-item-time">
+                          {new Date(notif.created_at || notif.sent_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="empty-notifs">No notifications</div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
           <div className="user-profile-summary" onClick={() => navigate('/settings')}>
             <div className="summary-avatar">
               {userName.charAt(0).toUpperCase()}
@@ -146,18 +203,22 @@ export const Home = () => {
             </div>
 
             <div className="focus-cards-grid">
-              {learningList.map((item, idx) => (
-                <div key={idx} className="focus-bento-tile">
-                  <div className="focus-tile-header">
-                    <h4>{item.title}</h4>
-                    <span className="time-badge">{item.time}</span>
+              {learningList.length > 0 ? (
+                learningList.map((item, idx) => (
+                  <div key={idx} className="focus-bento-tile">
+                    <div className="focus-tile-header">
+                      <h4>{item.title}</h4>
+                      <span className="time-badge">{item.time}</span>
+                    </div>
+                    <div className="focus-tile-detail">
+                      <Clock size={13} className="sub-icon" />
+                      <span>Next: <strong>{item.nextTopic}</strong></span>
+                    </div>
                   </div>
-                  <div className="focus-tile-detail">
-                    <Clock size={13} className="sub-icon" />
-                    <span>Next: <strong>{item.nextTopic}</strong></span>
-                  </div>
-                </div>
-              ))}
+                ))
+              ) : (
+                <p className="font-body">No learning activity available from the backend yet.</p>
+              )}
             </div>
           </div>
 
@@ -174,22 +235,42 @@ export const Home = () => {
             </div>
 
             <div className="timeline-wrapper">
-              {scheduleList.map((item, idx) => (
-                <div key={idx} className="timeline-item">
-                  <div className="timeline-time-col font-body">{item.time}</div>
-                  <div className="timeline-node">
-                    <div className={`timeline-dot-core ${item.tag.toLowerCase()}`}></div>
-                  </div>
-                  <div className="timeline-content-col">
-                    <div className="timeline-event-card">
-                      <span className="event-title">{item.title}</span>
-                      <span className={`schedule-tag font-body ${getTagColorClass(item.tag)}`}>
-                        {item.tag.toUpperCase()}
-                      </span>
+              {scheduleList.length > 0 ? (
+                scheduleList.map((item, idx) => {
+                  const normalizedTag = String(item.tag || 'pending').toLowerCase();
+
+                  return (
+                    <div key={idx} className="timeline-item">
+                      <div className="timeline-time-col font-body">
+                        {item.time || item.day || 'All day'}
+                      </div>
+                      <div className="timeline-node">
+                        <div className={`timeline-dot-core ${normalizedTag}`}></div>
+                      </div>
+                              <div className="timeline-content-col">
+                              <div className="timeline-event-card">
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                  <span className="event-title">{item.title}</span>
+                                  <span className={`schedule-tag font-body ${getTagColorClass(item.tag)}`}>
+                                    {String(item.tag || 'pending').toUpperCase()}
+                                  </span>
+                                </div>
+                                <button
+                                  className="timeline-complete-btn"
+                                  onClick={() => toggleTask(item.id, item.status)}
+                                  disabled={!item.editable}
+                                  aria-label={item.status === 'complete' || item.status === 'completed' ? 'Mark as pending' : 'Mark as complete'}
+                                >
+                                  <CheckCircle2 size={16} />
+                                </button>
+                              </div>
+                            </div>
                     </div>
-                  </div>
-                </div>
-              ))}
+                  );
+                })
+              ) : (
+                <p className="font-body">No timeline sessions returned by the backend for this user.</p>
+              )}
             </div>
           </div>
         </div>
@@ -247,10 +328,10 @@ export const Home = () => {
             </div>
             
             <div className="up-next-core">
-              <h4 className="up-next-title">{upNext.title}</h4>
+              <h4 className="up-next-title">{upNext?.title || 'No upcoming task'}</h4>
               <div className="up-next-details">
-                <span className="detail-pill day">{upNext.day}</span>
-                <span className="detail-pill time">{upNext.taskTime}</span>
+                <span className="detail-pill day">{upNext?.day || 'No date'}</span>
+                <span className="detail-pill time">{upNext?.taskTime || 'No time'}</span>
               </div>
             </div>
 

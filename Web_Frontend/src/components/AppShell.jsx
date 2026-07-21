@@ -10,6 +10,7 @@ export const AppShell = ({ children }) => {
   const { logout, user } = useAuth();
   
   const [isMoreOpen, setIsMoreOpen] = useState(false);
+  const avatarUrl = user?.avatar_url || user?.profile_picture || user?.avatar || '';
 
   // Tabs for mobile nav (includes "More" tab)
   const mobileTabs = [
@@ -47,15 +48,17 @@ export const AppShell = ({ children }) => {
     <div className="app-container">
       {/* Desktop Sidebar Navigation */}
       <aside className="desktop-sidebar">
-        <div className="sidebar-brand">
+        <button className="sidebar-brand" onClick={() => navigate('/') }>
           <span className="auth-logo font-logo" style={{ marginBottom: 0, fontSize: '28px' }}>Eva</span>
           <span className="brand-badge">WEB</span>
-        </div>
+        </button>
 
         {user && (
           <div className="sidebar-profile">
             <div className="profile-avatar">
-              {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+              {avatarUrl ? (
+                <img src={avatarUrl} alt="Profile avatar" />
+              ) : (user.name ? user.name.charAt(0).toUpperCase() : 'U')}
             </div>
             <div className="profile-details">
               <span className="profile-name">{user.name || 'User'}</span>

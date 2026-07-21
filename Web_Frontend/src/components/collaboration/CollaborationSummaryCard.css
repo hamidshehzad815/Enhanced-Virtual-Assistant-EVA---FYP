@@ -1,0 +1,260 @@
+/* CollaborationSummaryCard.css */
+
+.collaboration-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 16px;
+  background: linear-gradient(135deg, #FFFFFF 0%, #F9FAFB 100%);
+  border: 1px solid #E5E7EB;
+  border-radius: 10px;
+  transition: all 0.2s ease;
+}
+
+.collaboration-summary-card:hover {
+  border-color: #D1D5DB;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* Card Header */
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.card-title-section {
+  flex: 1;
+}
+
+.card-title-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.task-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  line-height: 1.4;
+}
+
+/* Expand Button */
+.expand-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  padding: 0;
+  background-color: transparent;
+  border: none;
+  cursor: pointer;
+  color: #6B7280;
+  transition: all 0.2s ease;
+}
+
+.expand-btn:hover {
+  color: #111827;
+}
+
+.expand-btn svg {
+  transition: transform 0.2s ease;
+}
+
+.expand-btn svg.rotated {
+  transform: rotate(180deg);
+}
+
+/* Card Details */
+.card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+}
+
+.detail-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: #6B7280;
+}
+
+.detail-icon {
+  color: #9CA3AF;
+  min-width: 14px;
+  flex-shrink: 0;
+}
+
+.detail-icon.time-icon {
+  margin-left: 8px;
+}
+
+.detail-label {
+  line-height: 1.4;
+}
+
+.detail-label strong {
+  color: #111827;
+  font-weight: 600;
+}
+
+/* Collaborators Section */
+.collaborators-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #E5E7EB;
+}
+
+.collaborators-section.expanded-section {
+  padding-top: 8px;
+}
+
+.collaborators-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #374151;
+}
+
+.collaborators-header svg {
+  color: #9CA3AF;
+}
+
+.collaborators-count {
+  color: #6B7280;
+}
+
+/* Collaborators Preview (when collapsed) */
+.collaborators-preview {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+.collab-avatar-mini {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  min-width: 24px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3B82F6, #1E40AF);
+  color: white;
+  font-size: 10px;
+  font-weight: 600;
+  border: 1px solid #FFFFFF;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.collab-avatar-mini.more {
+  background: linear-gradient(135deg, #9CA3AF, #6B7280);
+  font-size: 9px;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .collaboration-summary-card {
+    padding: 12px 14px;
+    gap: 10px;
+  }
+
+  .card-header {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .expand-btn {
+    align-self: flex-end;
+  }
+
+  .task-title {
+    font-size: 13px;
+  }
+
+  .detail-row {
+    font-size: 11px;
+  }
+
+  .detail-icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  .collaborators-count {
+    font-size: 11px;
+  }
+
+  .collab-avatar-mini {
+    width: 22px;
+    height: 22px;
+    font-size: 9px;
+  }
+}
+
+@media (max-width: 480px) {
+  .collaboration-summary-card {
+    padding: 10px 12px;
+    gap: 8px;
+  }
+
+  .card-title-with-icon {
+    gap: 8px;
+  }
+
+  .task-title {
+    font-size: 12px;
+  }
+
+  .expand-btn {
+    width: 20px;
+    height: 20px;
+  }
+
+  .card-details {
+    gap: 4px;
+  }
+
+  .detail-row {
+    font-size: 10px;
+    gap: 6px;
+  }
+
+  .detail-icon {
+    width: 11px;
+    height: 11px;
+  }
+
+  .collaborators-section {
+    gap: 6px;
+    padding-top: 6px;
+  }
+
+  .collaborators-header {
+    font-size: 11px;
+    gap: 5px;
+  }
+
+  .collaborators-preview {
+    gap: 3px;
+    padding: 6px 0;
+  }
+
+  .collab-avatar-mini {
+    width: 20px;
+    height: 20px;
+    font-size: 8px;
+  }
+}
