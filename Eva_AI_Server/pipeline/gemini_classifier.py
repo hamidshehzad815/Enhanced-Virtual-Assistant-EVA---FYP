@@ -33,11 +33,20 @@ import time
 from typing import Any, Dict, Optional
 
 from config.settings import settings
+from utils.learning_utils import SUPPORTED_TOPICS
 
 try:
     import google.generativeai as genai
 except Exception:  # pragma: no cover - optional dependency
     genai = None
+
+# Single source of truth for what EVA's roadmap engine actually supports (see
+# utils/learning_utils.py). Built once at import time so the prompt can never
+# drift out of sync with the real supported-topics list again — it previously
+# hardcoded 5 example languages, so requests for anything else (e.g. MongoDB,
+# Go, Rust, PostgreSQL — all fully supported) were wrongly classified as
+# out_of_scope instead of "command".
+_SUPPORTED_TOPICS_TEXT = ", ".join(sorted(SUPPORTED_TOPICS))
 
 
 # Must stay identical to the CLF1 label set, or routing in main.py breaks.
@@ -59,9 +68,8 @@ WHAT EVA CAN DO (never claim anything else):
    reminders, collaborators, and Google Calendar sync.
    Example: "add physics exam on monday at 5pm"
 2. Learning — create / update / delete a learning roadmap for a topic. EVA
-   supports programming topics and languages (python, java, javascript, c++,
-   sql, and similar). A roadmap schedules study sessions on the user's chosen
-   learning days.
+   currently supports these exact tracks: {supported_topics}. A roadmap
+   schedules study sessions on the user's chosen learning days.
    Example: "create a python roadmap from monday"
 3. Insights — most productive hours, most productive days, completion rate,
    productivity report.
@@ -90,6 +98,14 @@ Key distinctions:
 - "add a roadmap for python" -> command (the user is asking EVA to DO it).
 - "how to cook pasta" -> out_of_scope (cooking is not EVA's job).
 - "what are the quiet hours" -> help (a settings question, not a chat command).
+- "i want to learn <anything that sounds like a language, database, or
+  framework>" -> command, EVEN IF it is not spelled exactly like the list
+  above or uses a nickname/alias (e.g. "mongo", "postgres", "c sharp",
+  "golang"). Do NOT classify these as out_of_scope yourself — EVA's roadmap
+  engine does the exact-match check and will tell the user directly if that
+  specific topic truly is not supported. Only use out_of_scope here if the
+  topic is clearly unrelated to software/tech (e.g. "learn to cook", "learn
+  guitar").
 
 TASK 2 — clean the message for a downstream parser. STRICT RULES:
 - Fix ONLY spelling and obvious grammar ("moday" -> "monday",
@@ -209,7 +225,11 @@ class GeminiInputClassifier:
         started = time.monotonic()
         try:
             response = self.model.generate_content(
-                _PROMPT.format(message=text, user_name=user_name or "the user"),
+                _PROMPT.format(
+                    message=text,
+                    user_name=user_name or "the user",
+                    supported_topics=_SUPPORTED_TOPICS_TEXT,
+                ),
                 # No response_mime_type here: it is unsupported by
                 # google-generativeai 0.4.0, which is what requirements.txt pins
                 # and therefore what the HF Space installs. Passing it raised
