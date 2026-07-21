@@ -15,6 +15,14 @@ except Exception:  # pragma: no cover - guarded runtime import
     genai = None
 
 
+class _SafeFormatDict(dict):
+    """`str.format_map` source that leaves unknown {placeholders} as-is
+    instead of raising KeyError."""
+
+    def __missing__(self, key):
+        return "{" + key + "}"
+
+
 _SYSTEM_INSTRUCTION = (
     "You are EVA, a friendly and intelligent academic assistant. "
     "Generate a short, warm, natural reply based ONLY on the provided action context. "
@@ -640,6 +648,18 @@ class GeminiService:
     ) -> str:
         action = str(action_context.get("action", "general_greeting"))
         guidance = _ACTION_GUIDANCE.get(action, "Respond naturally based on action context.")
+        # Some guidance strings (e.g. learning_missing_start_date) contain
+        # {topic}/{required_days}-style placeholders meant to carry the real
+        # value. This used to leak the raw "{topic}" text straight into the
+        # prompt instead of the actual topic, which is why Gemini once
+        # hallucinated "Python" for a MongoDB roadmap request. _SafeFormatDict
+        # leaves any placeholder not present in action_context untouched
+        # instead of raising, so guidance strings without matching keys are
+        # unaffected.
+        try:
+            guidance = guidance.format_map(_SafeFormatDict(action_context))
+        except Exception:
+            pass
         payload = {
             "action": action,
             "user_name": user_name,
