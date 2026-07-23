@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: eva-web-frontend
+    runtime: static
+    rootDir: Web_Frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE_URL
+        value: https://eva-smqq.onrender.com
+      - key: VITE_GOOGLE_CLIENT_ID
+        value: 424904983644-1r590marhlk27lgab1pja3ufcirtfkqb.apps.googleusercontent.com
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
