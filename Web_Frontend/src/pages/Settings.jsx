@@ -62,7 +62,10 @@ export const Settings = () => {
 
   // Forms
   const [newQuietHour, setNewQuietHour] = useState({ label: 'Sleep Time', start: '22:00', end: '07:00', enabled: true });
-  const [newScheduleForm, setNewScheduleForm] = useState({ label: 'Weekday Slot', slots: [{ day_of_week: 1, start_time: '16:00', duration_minutes: 90 }] });
+  // day_of_week uses the backend/mobile/AI-server convention: 0=Monday … 6=Sunday
+  const emptySlot = () => ({ day_of_week: 0, start_time: '16:00', duration_minutes: 90 });
+  const [newScheduleForm, setNewScheduleForm] = useState({ label: 'Weekday Slot', slots: [emptySlot()] });
+  const [editingScheduleId, setEditingScheduleId] = useState(null);
 
   const handleProfileSave = async (e) => {
     e.preventDefault();
@@ -128,6 +131,48 @@ export const Settings = () => {
     updateSettings({ quiet_hours: list });
   };
 
+  const handleQuietHoursEnabledToggle = (enabled) => {
+    updateSettings({ quiet_hours_enabled: enabled });
+  };
+
+  const handleAddSlotRow = () => {
+    setNewScheduleForm(prev => ({ ...prev, slots: [...prev.slots, emptySlot()] }));
+  };
+
+  const handleRemoveSlotRow = (idx) => {
+    setNewScheduleForm(prev => ({
+      ...prev,
+      slots: prev.slots.length > 1 ? prev.slots.filter((_, i) => i !== idx) : prev.slots
+    }));
+  };
+
+  const handleSlotFieldChange = (idx, field, value) => {
+    setNewScheduleForm(prev => {
+      const slots = prev.slots.map((s, i) => (i === idx ? { ...s, [field]: value } : s));
+      return { ...prev, slots };
+    });
+  };
+
+  const handleEditScheduleClick = (sched) => {
+    setEditingScheduleId(sched.id);
+    setNewScheduleForm({
+      label: sched.label || '',
+      slots: (Array.isArray(sched.slots) && sched.slots.length > 0
+        ? sched.slots
+        : [{}]
+      ).map(s => ({
+        day_of_week: Number(s.day_of_week ?? s.day ?? 0),
+        start_time: String((s.start_time ?? s.time) || '16:00'),
+        duration_minutes: Number(s.duration_minutes ?? s.durationMinutes ?? 90)
+      }))
+    });
+  };
+
+  const handleCancelEditSchedule = () => {
+    setEditingScheduleId(null);
+    setNewScheduleForm({ label: 'Weekday Slot', slots: [emptySlot()] });
+  };
+
   const handleCreateSchedule = async () => {
     if (!newScheduleForm.label.trim()) {
       alert('Schedule label is required');
@@ -173,11 +218,13 @@ export const Settings = () => {
     };
 
     // Validate that the new study slot does not overlap with any active quiet hours
-    const quietHours = settings.quiet_hours || [];
+    // (only when quiet hours are actually enabled — matches the backend's own gating,
+    // which treats quiet_hours as inert unless quiet_hours_enabled is true)
+    const quietHours = settings.quiet_hours_enabled ? (settings.quiet_hours || []) : [];
     const hasOverlap = payload.slots.some(slot => {
       const studyStart = parseTimeToMinutes(slot.time);
       const studyEndVal = (studyStart + slot.duration_minutes) % 1440;
-      
+
       return quietHours.some(qh => {
         if (qh.enabled === false) return false;
         const qhStart = parseTimeToMinutes(qh.start);
@@ -191,12 +238,16 @@ export const Settings = () => {
       return;
     }
 
-    const res = await addSchedule(payload);
+    const res = editingScheduleId
+      ? await updateSchedule(editingScheduleId, payload)
+      : await addSchedule(payload);
+
     if (res.success) {
-      alert('Schedule created!');
-      setNewScheduleForm({ label: 'Weekday Slot', slots: [{ day_of_week: 1, start_time: '16:00', duration_minutes: 90 }] });
+      alert(editingScheduleId ? 'Schedule updated!' : 'Schedule created!');
+      setEditingScheduleId(null);
+      setNewScheduleForm({ label: 'Weekday Slot', slots: [emptySlot()] });
     } else {
-      alert(res.message || 'Failed to create schedule');
+      alert(res.message || (editingScheduleId ? 'Failed to update schedule' : 'Failed to create schedule'));
     }
   };
 
@@ -205,6 +256,8 @@ export const Settings = () => {
     const res = await deleteSchedule(id);
     if (!res.success) {
       alert(res.message || 'Could not delete schedule');
+    } else if (editingScheduleId === id) {
+      handleCancelEditSchedule();
     }
   };
 
@@ -305,8 +358,9 @@ export const Settings = () => {
     }
   };
 
+  // 0=Monday … 6=Sunday — matches the backend/mobile/AI-server day-of-week convention.
   const getDayName = (dayNum) => {
-    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
     return days[dayNum] || 'Monday';
   };
 
@@ -611,9 +665,23 @@ export const Settings = () => {
             {/* Quiet Hours inline CRUD section */}
             <div className="inline-crud-container">
               <h3 className="inline-crud-title font-logo">Quiet Hours Slots</h3>
-              
+
               <div className="settings-card-saas quiet-hour-crud">
-                <div className="crud-header">
+                <div className="settings-saas-row">
+                  <div className="row-meta">
+                    <span className="row-title">Enable Quiet Hours</span>
+                    <p className="row-desc">Master switch — blocks below only take effect while this is on.</p>
+                  </div>
+                  <label className="toggle-switch-saas">
+                    <input
+                      type="checkbox"
+                      checked={!!settings.quiet_hours_enabled}
+                      onChange={(e) => handleQuietHoursEnabledToggle(e.target.checked)}
+                    />
+                    <span className="toggle-slider-saas" />
+                  </label>
+                </div>
+                <div className="crud-header border-top">
                   <span>Define Quiet Interval</span>
                 </div>
                 <div className="crud-add-form-saas">
@@ -723,7 +791,7 @@ export const Settings = () => {
             <div className="inline-crud-container" style={{ marginTop: 0 }}>
               <div className="settings-card-saas study-schedule-crud">
                 <div className="crud-header">
-                  <span>Create Routine Template Slot</span>
+                  <span>{editingScheduleId ? 'Edit Routine Template Slot' : 'Create Routine Template Slot'}</span>
                 </div>
                 <div className="study-slots-form">
                   <div className="input-group">
@@ -736,63 +804,68 @@ export const Settings = () => {
                       placeholder="e.g. Weekend Focus routine"
                     />
                   </div>
+
+                  {newScheduleForm.slots.map((slot, idx) => (
+                    <div className="study-form-row" key={idx}>
+                      <select
+                        value={slot.day_of_week}
+                        onChange={(e) => handleSlotFieldChange(idx, 'day_of_week', Number(e.target.value))}
+                        className="study-form-select"
+                      >
+                        <option value="0">Monday</option>
+                        <option value="1">Tuesday</option>
+                        <option value="2">Wednesday</option>
+                        <option value="3">Thursday</option>
+                        <option value="4">Friday</option>
+                        <option value="5">Saturday</option>
+                        <option value="6">Sunday</option>
+                      </select>
+
+                      <input
+                        type="time"
+                        value={slot.start_time}
+                        onChange={(e) => handleSlotFieldChange(idx, 'start_time', e.target.value)}
+                        className="study-form-time"
+                      />
+
+                      <select
+                        value={slot.duration_minutes}
+                        onChange={(e) => handleSlotFieldChange(idx, 'duration_minutes', Number(e.target.value))}
+                        className="study-form-select"
+                      >
+                        <option value="30">30 min</option>
+                        <option value="60">60 min</option>
+                        <option value="90">90 min</option>
+                        <option value="120">120 min</option>
+                      </select>
+
+                      <button
+                        type="button"
+                        className="tile-delete-btn"
+                        title="Remove this day/session"
+                        onClick={() => handleRemoveSlotRow(idx)}
+                        disabled={newScheduleForm.slots.length <= 1}
+                      >
+                        <X size={14} />
+                      </button>
+                    </div>
+                  ))}
+
                   <div className="study-form-row">
-                    <select
-                      value={newScheduleForm.slots[0].day_of_week}
-                      onChange={(e) => {
-                        const day = Number(e.target.value);
-                        setNewScheduleForm(prev => {
-                          const slots = [...prev.slots];
-                          slots[0].day_of_week = day;
-                          return { ...prev, slots };
-                        });
-                      }}
-                      className="study-form-select"
-                    >
-                      <option value="1">Monday</option>
-                      <option value="2">Tuesday</option>
-                      <option value="3">Wednesday</option>
-                      <option value="4">Thursday</option>
-                      <option value="5">Friday</option>
-                      <option value="6">Saturday</option>
-                      <option value="0">Sunday</option>
-                    </select>
-
-                    <input
-                      type="time"
-                      value={newScheduleForm.slots[0].start_time}
-                      onChange={(e) => {
-                        const time = e.target.value;
-                        setNewScheduleForm(prev => {
-                          const slots = [...prev.slots];
-                          slots[0].start_time = time;
-                          return { ...prev, slots };
-                        });
-                      }}
-                      className="study-form-time"
-                    />
-
-                    <select
-                      value={newScheduleForm.slots[0].duration_minutes}
-                      onChange={(e) => {
-                        const dur = Number(e.target.value);
-                        setNewScheduleForm(prev => {
-                          const slots = [...prev.slots];
-                          slots[0].duration_minutes = dur;
-                          return { ...prev, slots };
-                        });
-                      }}
-                      className="study-form-select"
-                    >
-                      <option value="30">30 min</option>
-                      <option value="60">60 min</option>
-                      <option value="90">90 min</option>
-                      <option value="120">120 min</option>
-                    </select>
-
-                    <button className="crud-add-btn study-add-btn" onClick={handleCreateSchedule}>
-                      <Plus size={16} /> Create
+                    <button type="button" className="btn btn-outlined" onClick={handleAddSlotRow}>
+                      <Plus size={14} style={{ marginRight: '4px' }} /> Add another day/session
                     </button>
+                  </div>
+
+                  <div className="study-form-row">
+                    <button className="crud-add-btn study-add-btn" onClick={handleCreateSchedule}>
+                      <Plus size={16} /> {editingScheduleId ? 'Save Changes' : 'Create'}
+                    </button>
+                    {editingScheduleId && (
+                      <button type="button" className="btn btn-outlined" onClick={handleCancelEditSchedule}>
+                        Cancel
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -815,9 +888,14 @@ export const Settings = () => {
                                   );
                                 })}
                               </div>
-                              <button className="tile-delete-btn" onClick={() => handleRemoveSchedule(sched.id)}>
-                                <Trash2 size={14} />
-                              </button>
+                              <div className="sched-tile-actions">
+                                <button className="tile-delete-btn" title="Edit schedule" onClick={() => handleEditScheduleClick(sched)}>
+                                  <Edit size={14} />
+                                </button>
+                                <button className="tile-delete-btn" title="Delete schedule" onClick={() => handleRemoveSchedule(sched.id)}>
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
                             </div>
                           ))}
                         </div>
