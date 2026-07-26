@@ -77,7 +77,6 @@ export const Roadmap = () => {
   const [showInfoDrawer, setShowInfoDrawer] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [scheduleDates, setScheduleDates] = useState([]);
-  const [now, setNow] = useState(new Date());
   const [showRescheduleDropdown, setShowRescheduleDropdown] = useState(false);
 
   const { fetchDashboard, fetchTasks } = useCalendar() || {};
@@ -213,24 +212,13 @@ export const Roadmap = () => {
   }, [selectedRoadmapId]);
 
   useEffect(() => {
-    const isAvailableToReschedule = activeNode && (
-      getSessionActionState(activeNode) === 'near' || 
-      getSessionActionState(activeNode) === 'active'
-    );
+    const isAvailableToReschedule = activeNode && getAvailableActions(activeNode).includes('reschedule');
     if (isAvailableToReschedule && selectedRoadmapId && selectedRoadmapId !== '1' && selectedRoadmapId !== '2') {
       fetchScheduleDates(selectedRoadmapId);
     } else {
       setScheduleDates([]);
     }
   }, [activeNode, selectedRoadmapId]);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => {
-      setNow(new Date());
-    }, 60000);
-
-    return () => window.clearInterval(timer);
-  }, []);
 
   const handleUpdateSessionStatus = async (status) => {
     if (!selectedRoadmapId || !activeNode) return;
@@ -330,29 +318,50 @@ export const Roadmap = () => {
     });
   };
 
-  const getSessionActionState = (node) => {
-    const normalizedStatus = (node?.status || '').toLowerCase();
-    const normalizedNodeState = (node?.session_state || '').toLowerCase();
-    const isCompleted = normalizedStatus === 'completed' || normalizedStatus === 'complete' || normalizedNodeState === 'completed';
-    if (isCompleted) return 'completed';
+  // The following mirror the Flutter app's session logic exactly (source of
+  // truth: Frontend/lib/presentation/widgets/session_popup.dart and
+  // winding_trail.dart), instead of recomputing state from raw date math —
+  // the backend already sends the authoritative `session_state`/`is_current`
+  // fields (Eva_Backend_Server/utils/learningSessionState.js).
+  const getNodeState = (node) => (node?.session_state || '').toLowerCase();
+  const getNodeStatus = (node) => (node?.status || '').toLowerCase();
+  const isNodeCompleted = (node) => {
+    const status = getNodeStatus(node);
+    return status === 'completed' || status === 'complete' || getNodeState(node) === 'completed';
+  };
+  const isNodeSkipped = (node) => getNodeStatus(node) === 'skipped' || getNodeState(node) === 'skipped';
 
-    const isSkipped = normalizedStatus === 'skipped' || normalizedNodeState === 'skipped';
-    if (isSkipped) return 'skipped';
+  // Mirrors winding_trail.dart's tap gate: only the current session, or a
+  // terminal (completed/skipped) one, can ever be opened. A non-current
+  // pending session ("upcoming") is not reachable at all.
+  const isSessionReachable = (node) =>
+    isNodeCompleted(node) || isNodeSkipped(node) || Boolean(node?.is_current);
 
-    const scheduledTimestamp = node?.scheduled_timestamp ||
-      (node?.scheduled_date_raw ? new Date(node.scheduled_date_raw).getTime() : null) ||
-      (node?.scheduled_date ? new Date(node.scheduled_date).getTime() : null);
-    if (!scheduledTimestamp || Number.isNaN(scheduledTimestamp)) return 'upcoming';
+  // Mirrors SessionPopup's `_canAct`.
+  const canActOnSession = (node) =>
+    Boolean(node?.is_current) && !isNodeCompleted(node) && !isNodeSkipped(node) && getNodeState(node) !== 'locked';
 
-    const diffMs = scheduledTimestamp - now.getTime();
-    const oneDayMs = 24 * 60 * 60 * 1000;
+  // Mirrors SessionPopup's `_buildActionDropdown()`.
+  const getAvailableActions = (node) => {
+    if (!canActOnSession(node)) return [];
+    const state = getNodeState(node);
+    const actions = [];
+    if (state === 'ongoing' || state === 'overdue') actions.push('complete');
+    if (state === 'unlocked_future') actions.push('skip');
+    if (state !== 'locked' && state !== 'completed' && state !== 'skipped') actions.push('reschedule');
+    return actions;
+  };
 
-    if (diffMs > oneDayMs) return 'locked';
-    if (diffMs <= 0) return 'active';
-    return 'near';
+  // Mirrors SessionPopup's resource `isAccessible` gate — resources are only
+  // openable while the session is actually in progress/overdue, or once it's
+  // been resolved (completed/skipped); otherwise they're shown but inert.
+  const isResourceAccessible = (node) => {
+    const state = getNodeState(node);
+    return state === 'ongoing' || state === 'overdue' || isNodeCompleted(node) || isNodeSkipped(node);
   };
 
   const handleNodeClick = (node) => {
+    if (!isSessionReachable(node)) return;
     setActiveNode(node);
     setShowRescheduleDropdown(false);
   };
@@ -494,20 +503,20 @@ export const Roadmap = () => {
               <div className="winding-nodes-list">
                 {currentRoadmap.sessions.map((node, index) => {
                   const isEven = index % 2 === 0;
-                  const sessionActionState = getSessionActionState(node);
-                  const isCompleted = sessionActionState === 'completed';
-                  const isActive = sessionActionState === 'active';
-                  const isLocked = sessionActionState === 'locked';
-                  const isUpcoming = sessionActionState === 'near' || sessionActionState === 'upcoming';
+                  const isCompleted = isNodeCompleted(node);
+                  const isSkipped = isNodeSkipped(node);
+                  const isLocked = !isCompleted && !isSkipped && getNodeState(node) === 'locked';
+                  const isActive = !isCompleted && !isSkipped && canActOnSession(node);
+                  const isUpcoming = !isCompleted && !isSkipped && !isLocked && !isActive;
                   const isFocused = activeNode?.id === node.id;
                   const color = currentRoadmap.color;
 
                   return (
-                    <div 
-                      key={node.id} 
+                    <div
+                      key={node.id}
                       className={`trail-node-row ${isEven ? 'left-align' : 'right-align'}`}
                     >
-                      <button 
+                      <button
                         type="button"
                         className={`trail-node-card ${isCompleted ? 'completed' : ''} ${isActive ? 'active' : ''} ${isLocked ? 'locked' : ''} ${isUpcoming ? 'upcoming' : ''} ${isFocused ? 'focused' : ''}`}
                         onClick={() => handleNodeClick(node)}
@@ -530,9 +539,9 @@ export const Roadmap = () => {
                             <div className="node-state-badges">
                               {isLocked && <span className="state-pill locked">Locked</span>}
                               {isCompleted && <span className="state-pill completed">Completed</span>}
-                              {node.status?.toLowerCase() === 'skipped' && <span className="state-pill skipped" style={{ backgroundColor: 'rgba(148, 163, 184, 0.12)', color: 'var(--color-text-secondary)' }}>Skipped</span>}
+                              {isSkipped && <span className="state-pill skipped" style={{ backgroundColor: 'rgba(148, 163, 184, 0.12)', color: 'var(--color-text-secondary)' }}>Skipped</span>}
                               {isActive && <span className="state-pill available">Active</span>}
-                              {!isLocked && !isCompleted && node.status?.toLowerCase() !== 'skipped' && !isActive && <span className="upcoming-card-label">Upcoming</span>}
+                              {isUpcoming && <span className="upcoming-card-label">Upcoming</span>}
                             </div>
                           </div>
                           <p className="node-desc-trimmed">{node.description || 'Topic Overview'}</p>
@@ -591,17 +600,7 @@ export const Roadmap = () => {
                 <div className="node-actions-container">
                   <span className="resource-section-lbl">Session Actions</span>
                   {(() => {
-                    const sessionActionState = getSessionActionState(activeNode);
-
-                    if (sessionActionState === 'locked' || sessionActionState === 'upcoming') {
-                      return (
-                        <div className="action-buttons-row">
-                          <span className="upcoming-session-hint">This session is locked until it is within 24 hours of its scheduled time.</span>
-                        </div>
-                      );
-                    }
-
-                    if (sessionActionState === 'completed') {
+                    if (isNodeCompleted(activeNode)) {
                       return (
                         <div className="action-buttons-row">
                           <span className="upcoming-session-hint" style={{ color: '#22c55e' }}>✓ This topic has been completed.</span>
@@ -609,48 +608,59 @@ export const Roadmap = () => {
                       );
                     }
 
-                    if (sessionActionState === 'skipped') {
+                    if (isNodeSkipped(activeNode)) {
                       return (
                         <div className="action-buttons-row">
                           <span className="upcoming-session-hint" style={{ color: 'var(--color-text-secondary)' }}>This topic was skipped.</span>
-                          <button 
-                            className="action-btn reschedule-btn"
-                            onClick={() => handleUpdateSessionStatus('pending')}
-                            style={{ marginLeft: '12px' }}
-                          >
-                            Restore Topic
-                          </button>
                         </div>
                       );
                     }
 
-                    // Otherwise it is 'near' or 'active' (less than 24 hours left, or past schedule)
+                    if (!canActOnSession(activeNode)) {
+                      return (
+                        <div className="action-buttons-row">
+                          <span className="upcoming-session-hint">
+                            {getNodeState(activeNode) === 'locked'
+                              ? 'This session is locked until it is within 24 hours of its scheduled time.'
+                              : 'Only the current session in your roadmap can be actioned. Complete or skip earlier sessions first.'}
+                          </span>
+                        </div>
+                      );
+                    }
+
+                    const actions = getAvailableActions(activeNode);
                     return (
                       <div className="action-buttons-row">
-                        <button 
-                          className="action-btn complete-btn"
-                          onClick={() => handleUpdateSessionStatus('completed')}
-                        >
-                          <CheckCircle size={14} /> Mark as Completed
-                        </button>
-                        <button 
-                          className={`action-btn reschedule-btn ${showRescheduleDropdown ? 'active' : ''}`}
-                          onClick={() => setShowRescheduleDropdown(!showRescheduleDropdown)}
-                        >
-                          <ChevronDown size={14} style={{ transform: showRescheduleDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} /> Reschedule
-                        </button>
-                        <button 
-                          className="action-btn skip-btn"
-                          onClick={() => handleUpdateSessionStatus('skipped')}
-                        >
-                          <Play size={14} /> Skip
-                        </button>
+                        {actions.includes('complete') && (
+                          <button
+                            className="action-btn complete-btn"
+                            onClick={() => handleUpdateSessionStatus('completed')}
+                          >
+                            <CheckCircle size={14} /> Mark as Completed
+                          </button>
+                        )}
+                        {actions.includes('reschedule') && (
+                          <button
+                            className={`action-btn reschedule-btn ${showRescheduleDropdown ? 'active' : ''}`}
+                            onClick={() => setShowRescheduleDropdown(!showRescheduleDropdown)}
+                          >
+                            <ChevronDown size={14} style={{ transform: showRescheduleDropdown ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }} /> Reschedule
+                          </button>
+                        )}
+                        {actions.includes('skip') && (
+                          <button
+                            className="action-btn skip-btn"
+                            onClick={() => handleUpdateSessionStatus('skipped')}
+                          >
+                            <Play size={14} /> Skip
+                          </button>
+                        )}
                       </div>
                     );
                   })()}
-                  
+
                   {/* Reschedule Dropdown */}
-                  {showRescheduleDropdown && scheduleDates.length > 0 && (getSessionActionState(activeNode) === 'near' || getSessionActionState(activeNode) === 'active') && (
+                  {showRescheduleDropdown && scheduleDates.length > 0 && getAvailableActions(activeNode).includes('reschedule') && (
                     <div className="reschedule-dropdown-container">
                       <label className="reschedule-lbl">Reschedule Topic</label>
                       <div className="custom-dropdown-container-saas">
@@ -680,22 +690,37 @@ export const Roadmap = () => {
               {activeNode.resources && activeNode.resources.length > 0 ? (
                 <div className="details-resources">
                   <span className="resource-section-lbl">YouTube Video Tutorial</span>
-                  {activeNode.resources.map((res, rIdx) => (
-                    <a 
-                      key={rIdx} 
-                      href={res.url || 'https://youtube.com'} 
-                      target="_blank" 
-                      rel="noopener noreferrer"
-                      className="youtube-resource-btn"
-                    >
-                      <PlayCircle size={18} className="yt-icon" />
-                      <div className="btn-text">
-                        <span>{res.title || 'Watch Tutorial'}</span>
-                        <p>Open YouTube in a new tab</p>
+                  {activeNode.resources.map((res, rIdx) => {
+                    // Mirrors the mobile app: resources are only openable while
+                    // this session is in progress/overdue, or already resolved
+                    // (completed/skipped) — otherwise they're visible but inert.
+                    const accessible = isResourceAccessible(activeNode);
+                    const inner = (
+                      <>
+                        <PlayCircle size={18} className="yt-icon" />
+                        <div className="btn-text">
+                          <span>{res.title || 'Watch Tutorial'}</span>
+                          <p>{accessible ? 'Open YouTube in a new tab' : 'Unlocks once this session is active'}</p>
+                        </div>
+                        {accessible ? <ExternalLink size={14} className="launch-icon" /> : <Lock size={14} className="launch-icon" />}
+                      </>
+                    );
+                    return accessible ? (
+                      <a
+                        key={rIdx}
+                        href={res.url || 'https://youtube.com'}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="youtube-resource-btn"
+                      >
+                        {inner}
+                      </a>
+                    ) : (
+                      <div key={rIdx} className="youtube-resource-btn disabled" aria-disabled="true">
+                        {inner}
                       </div>
-                      <ExternalLink size={14} className="launch-icon" />
-                    </a>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <div className="details-resources-empty">

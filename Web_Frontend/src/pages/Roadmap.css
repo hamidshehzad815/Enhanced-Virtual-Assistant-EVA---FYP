@@ -808,6 +808,17 @@
   border-color: #ef4444;
 }
 
+.youtube-resource-btn.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.youtube-resource-btn.disabled:hover {
+  transform: none;
+  box-shadow: none;
+}
+
 .yt-icon {
   color: #ef4444;
   flex-shrink: 0;
