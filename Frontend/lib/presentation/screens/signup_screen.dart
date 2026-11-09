@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:validation_helper/validation_helper.dart';
+import '../../core/utils/auth_validators.dart';
 import '../../core/theme/app_text_style.dart';
 import '../../core/theme/app_colours.dart';
 import '../../data/models/user_model.dart';
 import '../providers/auth_viewmodel.dart';
+import '../widgets/password_strength_meter.dart';
 import 'package:lottie/lottie.dart';
 
 class SignupScreen extends StatefulWidget {
@@ -35,9 +36,10 @@ class _SignupScreenState extends State<SignupScreen> {
     final auth = context.read<AuthViewModel>();
     final user = UserModel(
       name: _nameController.text.trim(),
-      username: _userNameController.text.trim(),
+      username: _userNameController.text.trim().toLowerCase(),
       email: _emailController.text.trim(),
-      password: _passwordController.text.trim(),
+      // Never trim the password: spaces are part of it.
+      password: _passwordController.text,
     );
 
     final result = await auth.signup(user);
@@ -106,7 +108,8 @@ class _SignupScreenState extends State<SignupScreen> {
         ),
       );
     } else if (result.message.isNotEmpty) {
-      if (result.field == null) {
+      // Field-level problems are already shown under their inputs.
+      if (result.field == null && result.errors.isEmpty) {
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(result.message)));
@@ -147,6 +150,16 @@ class _SignupScreenState extends State<SignupScreen> {
     );
   }
 
+  /// Drop a server-side error as soon as the user edits a field again.
+  void _clearServerErrors(AuthViewModel auth) {
+    if (auth.nameError != null ||
+        auth.userNameError != null ||
+        auth.emailError != null ||
+        auth.passwordError != null) {
+      auth.clearErrors();
+    }
+  }
+
   Widget _label(String text) {
     return Text(
       text,
@@ -184,13 +197,10 @@ class _SignupScreenState extends State<SignupScreen> {
                   color: primaryText,
                 ),
                 decoration: _inputDecoration('Enter your name', isDark),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter your full name';
-                  }
-                  return null;
-                },
-                autovalidateMode: AutovalidateMode.onUserInteraction,
+                autofillHints: const [AutofillHints.name],
+                onChanged: (_) => _clearServerErrors(auth),
+                validator: AuthValidators.name,
+                autovalidateMode: AutovalidateMode.onUnfocus,
               ),
               const SizedBox(height: 16),
           
@@ -202,26 +212,22 @@ class _SignupScreenState extends State<SignupScreen> {
               TextFormField(
                 controller: _userNameController,
                 forceErrorText: auth.userNameError,
-                textCapitalization: TextCapitalization.words,
+                textCapitalization: TextCapitalization.none,
+                autocorrect: false,
+                enableSuggestions: false,
+                autofillHints: const [AutofillHints.newUsername],
+                onChanged: (_) => _clearServerErrors(auth),
                 style: AppTextStyles.body.copyWith(
                   fontSize: 14,
                   color: primaryText,
                 ),
-                decoration: _inputDecoration('e.g. johndoe', isDark),
-                validator: (value) {
-                  if (value == null || value.trim().isEmpty) {
-                    return 'Please enter your user name';
-                  }
-          
-                  final regex = RegExp(r'^[a-z]+$');
-          
-                  if (!regex.hasMatch(value)) {
-                    return 'Only small letters allowed';
-                  }
-          
-                  return null;
-                },
-                autovalidateMode: AutovalidateMode.onUserInteraction,
+                decoration: _inputDecoration('e.g. john_doe', isDark).copyWith(
+                  helperText:
+                      'Letters, numbers, periods and underscores. 3–30 characters.',
+                  helperMaxLines: 2,
+                ),
+                validator: AuthValidators.username,
+                autovalidateMode: AutovalidateMode.onUnfocus,
               ),
               const SizedBox(height: 16),
               //username small , no char
@@ -238,7 +244,9 @@ class _SignupScreenState extends State<SignupScreen> {
                   color: primaryText,
                 ),
                 decoration: _inputDecoration('Your email', isDark),
-                validator: Validations.emailValidation,
+                autofillHints: const [AutofillHints.email],
+                onChanged: (_) => _clearServerErrors(auth),
+                validator: AuthValidators.email,
                 autovalidateMode: AutovalidateMode.onUnfocus,
               ),
               const SizedBox(height: 16),
@@ -254,7 +262,9 @@ class _SignupScreenState extends State<SignupScreen> {
                   fontSize: 14,
                   color: primaryText,
                 ),
-                decoration: _inputDecoration('8 characters minimum', isDark)
+                autofillHints: const [AutofillHints.newPassword],
+                onChanged: (_) => _clearServerErrors(auth),
+                decoration: _inputDecoration('At least 8 characters', isDark)
                     .copyWith(
                       suffixIcon: IconButton(
                         icon: Icon(
@@ -268,8 +278,17 @@ class _SignupScreenState extends State<SignupScreen> {
                             setState(() => _obscurePassword = !_obscurePassword),
                       ),
                     ),
-                validator: (value) => Validations.strongPassword(value),
+                validator: (value) => AuthValidators.password(
+                  value,
+                  email: _emailController.text,
+                  username: _userNameController.text,
+                ),
                 autovalidateMode: AutovalidateMode.onUnfocus,
+              ),
+              PasswordStrengthMeter(
+                controller: _passwordController,
+                emailController: _emailController,
+                usernameController: _userNameController,
               ),
               const SizedBox(height: 24),
           

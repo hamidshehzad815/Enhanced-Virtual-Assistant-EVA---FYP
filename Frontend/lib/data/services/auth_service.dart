@@ -5,6 +5,22 @@ import '../models/user_model.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 class AuthService {
+  /// Normalised failure map. Keeps the server's per-field `errors`
+  /// ({"password": "..."}), the offending `field` and the machine-readable
+  /// `code` (e.g. EMAIL_NOT_VERIFIED) so the UI can show each message under
+  /// the right input instead of one generic error.
+  static Map<String, dynamic> _failure(dynamic body, String fallback) {
+    final data = body is Map ? body : const <String, dynamic>{};
+    final errors = data["errors"];
+    return {
+      "success": false,
+      "field": data["field"],
+      "code": data["code"],
+      "errors": errors is Map ? errors : null,
+      "msg": data["message"] ?? data["msg"] ?? fallback,
+    };
+  }
+
   /// Login API
   static Future<Map<String, dynamic>> loginUser(
     String email,
@@ -26,11 +42,7 @@ class AuthService {
       if (response.statusCode == 200) {
         return {"success": true, ...data};
       }
-      return {
-        "success": false,
-        "field": data["field"],
-        "msg": data["message"] ?? data["msg"] ?? "Login failed",
-      };
+      return _failure(data, "Login failed");
     } catch (e) {
       return {"success": false, "msg": "Server not reachable: $e"};
     }
@@ -56,11 +68,7 @@ class AuthService {
         return {"success": true, ...data};
       }
       // ERROR RESPONSE
-      return {
-        "success": false,
-        "field": data["field"],
-        "msg": data["message"] ?? data["msg"] ?? "Signup failed",
-      };
+      return _failure(data, "Signup failed");
     } catch (e) {
       return {"success": false, "msg": "Server not reachable: $e"};
     }
@@ -137,10 +145,7 @@ class AuthService {
           "isNewUser": data['data']?['is_new_user'] ?? false,
         };
       }
-      return {
-        "success": false,
-        "msg": data['message'] ?? data['msg'] ?? "Google sign-in failed",
-      };
+      return _failure(data, "Google sign-in failed");
     } catch (e) {
       return {"success": false, "msg": "Server not reachable: $e"};
     }
@@ -161,10 +166,11 @@ class AuthService {
       if (response.statusCode == 200) {
         return {
           "success": true,
-          "msg": "Password reset link sent to your email",
+          "msg": "If an account exists for this email, a reset link is on its way",
         };
       }
-      return {"success": false, "msg": "Failed to send reset link"};
+      final data = response.body.isNotEmpty ? jsonDecode(response.body) : {};
+      return _failure(data, "Failed to send reset link");
     } catch (e) {
       return {"success": false, "msg": "Server not reachable: $e"};
     }

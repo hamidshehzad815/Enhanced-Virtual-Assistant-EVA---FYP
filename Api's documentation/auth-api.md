@@ -149,10 +149,10 @@ Create a local (`auth_provider: local`) account. Does **not** return tokens; use
 
 | Field | Type | Required | Validation |
 |-------|------|----------|------------|
-| `name` | `string` | Yes | Max 100 chars |
-| `username` | `string` | Yes | 3–30 chars; `[a-z0-9_]`; stored lowercase; unique |
-| `email` | `string` | Yes | Valid email format; stored lowercase; unique |
-| `password` | `string` | Yes | Min 6 characters |
+| `name` | `string` | Yes | 2–100 chars; letters, spaces, `.` `'` `-` only |
+| `username` | `string` | Yes | 3–30 chars; starts with a letter; then `a-z 0-9 . _` (input is lowercased); no `..`/`__`, can't end in `.`/`_`; reserved words (`admin`, `support`, …) rejected; unique |
+| `email` | `string` | Yes | Valid email format (max 254); stored lowercase; unique |
+| `password` | `string` | Yes | 8–64 chars; at least one letter **and** one number or symbol; not a common password (`password123`, `qwerty123`, …) or trivial pattern (`aaaaaaaa1`, `12345678`); must not contain the email name or username. Letters + digits only (e.g. Google/Chrome generated) is accepted |
 | `timezone` | `string` | No | IANA timezone; default `"Asia/Karachi"` if omitted/invalid |
 
 ### Success `201`
@@ -237,11 +237,11 @@ Email is matched case-insensitively.
 
 | Status | Message (typical) |
 |--------|-------------------|
-| `400` | `Email and password are required` |
-| `401` | `Invalid email or password` |
-| `401` | `Account is deactivated` |
-| `401` | `Please verify your email before logging in` |
-| `401` | `Please login with Google` (Google-only account, no local password) |
+| `400` | Missing/invalid `email` or `password` — body has `errors: { email?, password? }` (login never checks password *strength*) |
+| `401` | `Incorrect email or password` — `code: INVALID_CREDENTIALS` (same message for unknown email and wrong password) |
+| `401` | `This account uses Google sign-in…` — `code: USE_GOOGLE_SIGNIN` |
+| `401` | `This account has been deactivated` — `code: ACCOUNT_DEACTIVATED` (only revealed after the password is correct) |
+| `403` | `Please verify your email before signing in…` — `code: EMAIL_NOT_VERIFIED` (only revealed after the password is correct) |
 
 ---
 
@@ -525,7 +525,7 @@ Reset token expires in **1 hour**.
 | Field | Type | Required | Validation |
 |-------|------|----------|------------|
 | `token` | `string` | Yes | Plain token from reset email / deep link |
-| `new_password` | `string` | Yes | Min 6 characters |
+| `new_password` | `string` | Yes | Same rules as registration `password`; must also differ from the current password |
 | `confirm_password` | `string` | Yes | Must equal `new_password` |
 
 ### Success `200`
@@ -543,10 +543,8 @@ Clears `password_reset_token`, `password_reset_expires`, and **`refresh_token_ha
 
 | Status | When |
 |--------|------|
-| `400` | `token, new_password, and confirm_password are required` |
-| `400` | `Password must be at least 6 characters` |
-| `400` | `new_password and confirm_password do not match` |
-| `400` | `Invalid or expired reset token` |
+| `400` | Validation failed — `message` is the first specific problem (e.g. `Password must be at least 8 characters`, `This password is too common…`, `New password cannot be the same as your current password`) and `errors` maps each field (`new_password`, `confirm_password`, `token`) to its message |
+| `400` | `This reset link is invalid or has expired…` — `code: INVALID_RESET_TOKEN`, `field: token` |
 
 ### Email link vs this endpoint
 

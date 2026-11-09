@@ -317,7 +317,7 @@ Notes:
 ```
 - Rules:
   - all fields required
-  - min 6 chars
+  - same password rules as registration (8–64 chars, a letter plus a number or symbol, not common), must differ from the current password
   - passwords must match
 - Behavior:
   - validates hashed token + expiry + active user

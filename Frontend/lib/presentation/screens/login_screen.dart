@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
-import 'package:validation_helper/validation_helper.dart';
+import '../../core/utils/auth_validators.dart';
 import '../../core/theme/app_text_style.dart';
 import '../../core/theme/app_colours.dart';
 import '../providers/auth_viewmodel.dart';
@@ -28,47 +28,58 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _performLogin() async {
     final auth = context.read<AuthViewModel>();
-      final result = await auth.login(
-        _emailController.text.trim(),
-        _passwordController.text.trim(),
-        rememberMe: _rememberMe,
-      );
+    // Never trim the password: spaces are part of it.
+    final result = await auth.login(
+      _emailController.text.trim(),
+      _passwordController.text,
+      rememberMe: _rememberMe,
+    );
 
     if (!mounted) return;
 
     if (result.success) {
       if (result.isVerified == false) {
-        showDialog(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('Email Not Verified'),
-            content: const Text(
-              'Please verify your email first. Check your inbox!',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () {
-                  context.go('/auth', extra: {'initialIndex': 0});
-                  Navigator.of(context).pop();
-                },
-                child: const Text('OK'),
-              ),
-            ],
-          ),
-        );
+        _showUnverifiedDialog();
       } else {
         context.go('/');
       }
-    } else if (result.message.isNotEmpty) {
+    } else if (result.emailNotVerified) {
+      // Correct password, but the account still needs verifying.
+      _showUnverifiedDialog();
+    } else if (result.errors.isEmpty && result.message.isNotEmpty) {
+      // Field-level problems are shown under the inputs; everything else
+      // (wrong credentials, deactivated account, no connection...) here.
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(SnackBar(content: Text(result.message)));
     }
   }
 
+  void _showUnverifiedDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Email Not Verified'),
+        content: const Text(
+          'Please verify your email first. Check your inbox (and spam folder) for the verification link.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              context.go('/auth', extra: {'initialIndex': 0});
+              Navigator.of(context).pop();
+            },
+            child: const Text('OK'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _showForgetPasswordDialog() {
     final dialogEmailController = TextEditingController();
     bool isSubmitting = false;
+    String? dialogEmailError;
 
     showDialog(
       context: context,
@@ -93,8 +104,15 @@ class _LoginScreenState extends State<LoginScreen> {
                   TextField(
                     controller: dialogEmailController,
                     keyboardType: TextInputType.emailAddress,
+                    autofillHints: const [AutofillHints.email],
+                    onChanged: (_) {
+                      if (dialogEmailError != null) {
+                        setDialogState(() => dialogEmailError = null);
+                      }
+                    },
                     decoration: InputDecoration(
                       hintText: 'Email address',
+                      errorText: dialogEmailError,
                       prefixIcon: const Icon(Icons.email_outlined),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(12),
@@ -116,30 +134,12 @@ class _LoginScreenState extends State<LoginScreen> {
                       : () async {
                           final email = dialogEmailController.text.trim();
 
-                          if (email.isEmpty) {
-                            ScaffoldMessenger.of(dialogContext).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Please enter your email address',
-                                ),
-                              ),
-                            );
+                          final emailError = AuthValidators.email(email);
+                          if (emailError != null) {
+                            setDialogState(() => dialogEmailError = emailError);
                             return;
                           }
-
-                          final emailRegex = RegExp(
-                            r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$',
-                          );
-                          if (!emailRegex.hasMatch(email)) {
-                            ScaffoldMessenger.of(dialogContext).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                  'Please enter a valid email address',
-                                ),
-                              ),
-                            );
-                            return;
-                          }
+                          setDialogState(() => dialogEmailError = null);
 
                           setDialogState(() => isSubmitting = true);
 
@@ -147,6 +147,16 @@ class _LoginScreenState extends State<LoginScreen> {
                           final result = await auth.forgetPassword(email);
 
                           if (!mounted) return;
+
+                          // Server rejected the address: keep the dialog open
+                          // and show the message under the field.
+                          if (!result.success && result.errors['email'] != null) {
+                            setDialogState(() {
+                              isSubmitting = false;
+                              dialogEmailError = result.errors['email'];
+                            });
+                            return;
+                          }
 
                           // Close dialog first
                           Navigator.pop(dialogContext);
@@ -156,7 +166,7 @@ class _LoginScreenState extends State<LoginScreen> {
                             SnackBar(
                               content: Text(
                                 result.success
-                                    ? 'Check your email for the reset link'
+                                    ? 'If an account exists for $email, a reset link is on its way. Check your inbox and spam folder.'
                                     : result.message,
                               ),
                               backgroundColor: result.success
@@ -193,6 +203,13 @@ class _LoginScreenState extends State<LoginScreen> {
         );
       },
     );
+  }
+
+  /// Drop a server-side error as soon as the user edits the field again.
+  void _clearServerErrors(AuthViewModel auth) {
+    if (auth.emailError != null || auth.passwordError != null) {
+      auth.clearErrors();
+    }
   }
 
   InputDecoration _inputDecoration(String hint, bool isDark) {
@@ -266,7 +283,9 @@ class _LoginScreenState extends State<LoginScreen> {
                   color: primaryText,
                 ),
                 decoration: _inputDecoration('Your email', isDark),
-                validator: Validations.emailValidation,
+                autofillHints: const [AutofillHints.username, AutofillHints.email],
+                onChanged: (_) => _clearServerErrors(auth),
+                validator: AuthValidators.email,
                 autovalidateMode: AutovalidateMode.onUnfocus,
               ),
               const SizedBox(height: 16),
@@ -295,7 +314,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         setState(() => _obscurePassword = !_obscurePassword),
                   ),
                 ),
-                validator: (value) => Validations.strongPassword(value),
+                autofillHints: const [AutofillHints.password],
+                onChanged: (_) => _clearServerErrors(auth),
+                // Login only requires a password to be typed; strength rules
+                // apply when creating or resetting one.
+                validator: AuthValidators.loginPassword,
                 autovalidateMode: AutovalidateMode.onUnfocus,
               ),
               const SizedBox(height: 14),

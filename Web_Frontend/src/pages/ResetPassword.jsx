@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Loader2, KeyRound, CheckCircle, Eye, EyeOff, ArrowLeft, AlertTriangle } from 'lucide-react';
+import PasswordStrength from '../components/PasswordStrength';
+import { validatePassword, validateConfirmPassword } from '../utils/authValidation';
 import './Auth.css';
 
 export const ResetPassword = () => {
@@ -34,12 +36,13 @@ export const ResetPassword = () => {
       return;
     }
 
-    // Validate
+    // Validate (same rules the server enforces)
     const errs = {};
-    if (!newPassword) errs.newPassword = 'Password is required';
-    else if (newPassword.length < 6) errs.newPassword = 'Minimum 6 characters';
-    if (!confirmPassword) errs.confirmPassword = 'Please confirm your password';
-    else if (newPassword !== confirmPassword) errs.confirmPassword = 'Passwords do not match';
+    const passwordProblem = validatePassword(newPassword);
+    if (passwordProblem) errs.newPassword = passwordProblem;
+    const confirmProblem = validateConfirmPassword(newPassword, confirmPassword);
+    if (!passwordProblem && confirmProblem) errs.confirmPassword = confirmProblem;
+    else if (passwordProblem && !confirmPassword) errs.confirmPassword = confirmProblem;
 
     if (Object.keys(errs).length) {
       setFieldErrors(errs);
@@ -55,6 +58,12 @@ export const ResetPassword = () => {
       setTimeout(() => {
         navigate('/auth', { state: { initialIndex: 0 } });
       }, 3000);
+    } else if (result.fieldErrors?.new_password || result.fieldErrors?.confirm_password) {
+      // Show the server's specific message (e.g. "too common", "same as current") under the right input.
+      setFieldErrors({
+        ...(result.fieldErrors.new_password && { newPassword: result.fieldErrors.new_password }),
+        ...(result.fieldErrors.confirm_password && { confirmPassword: result.fieldErrors.confirm_password }),
+      });
     } else {
       setAlertMsg({
         type: 'error',
@@ -142,10 +151,12 @@ export const ResetPassword = () => {
                       id="new-password"
                       type={showNewPw ? 'text' : 'password'}
                       className={`input-field ${fieldErrors.newPassword ? 'error' : ''}`}
-                      placeholder="Minimum 6 characters"
+                      placeholder="At least 8 characters"
                       value={newPassword}
-                      onChange={e => setNewPassword(e.target.value)}
+                      onChange={e => { setNewPassword(e.target.value); setFieldErrors(f => ({ ...f, newPassword: undefined })); }}
+                      onBlur={() => newPassword && setFieldErrors(f => ({ ...f, newPassword: validatePassword(newPassword) || undefined }))}
                       autoComplete="new-password"
+                      maxLength={64}
                     />
                     <button type="button" className="password-toggle" onClick={() => setShowNewPw(!showNewPw)}>
                       {showNewPw ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -163,8 +174,10 @@ export const ResetPassword = () => {
                       className={`input-field ${fieldErrors.confirmPassword ? 'error' : ''}`}
                       placeholder="Re-enter your new password"
                       value={confirmPassword}
-                      onChange={e => setConfirmPassword(e.target.value)}
+                      onChange={e => { setConfirmPassword(e.target.value); setFieldErrors(f => ({ ...f, confirmPassword: undefined })); }}
+                      onBlur={() => confirmPassword && setFieldErrors(f => ({ ...f, confirmPassword: validateConfirmPassword(newPassword, confirmPassword) || undefined }))}
                       autoComplete="new-password"
+                      maxLength={64}
                     />
                     <button type="button" className="password-toggle" onClick={() => setShowConfirmPw(!showConfirmPw)}>
                       {showConfirmPw ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -173,13 +186,7 @@ export const ResetPassword = () => {
                   {fieldErrors.confirmPassword && <span className="error-text">{fieldErrors.confirmPassword}</span>}
                 </div>
 
-                {/* Password strength hint */}
-                {newPassword.length > 0 && (
-                  <div className="pw-strength-hint">
-                    <div className={`pw-strength-bar ${newPassword.length >= 10 ? 'strong' : newPassword.length >= 6 ? 'medium' : 'weak'}`} />
-                    <span>{newPassword.length >= 10 ? 'Strong password' : newPassword.length >= 6 ? 'Good — try adding more characters' : 'Too short'}</span>
-                  </div>
-                )}
+                <PasswordStrength password={newPassword} />
 
                 <button
                   id="reset-password-submit"

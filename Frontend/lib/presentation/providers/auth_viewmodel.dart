@@ -8,20 +8,31 @@ class AuthResult {
   final bool success;
   final bool? isVerified;
   final String? field;
+  final String? code;
+  final Map<String, String> errors;
   final String message;
 
   AuthResult({
     required this.success,
     this.isVerified,
     this.field,
+    this.code,
+    this.errors = const {},
     required this.message,
   });
 
+  bool get emailNotVerified => code == 'EMAIL_NOT_VERIFIED';
+
   factory AuthResult.fromMap(Map<String, dynamic> data) {
+    final rawErrors = data['errors'];
     return AuthResult(
       success: data['success'] == true,
       isVerified: data['data']?['user']?['is_verified'] == true,
       field: data['field'] as String?,
+      code: data['code'] as String?,
+      errors: rawErrors is Map
+          ? rawErrors.map((k, v) => MapEntry(k.toString(), v.toString()))
+          : const {},
       message: data['msg'] ?? data['message'] ?? '',
     );
   }
@@ -194,6 +205,34 @@ class AuthViewModel extends ChangeNotifier {
   }
 
   void _applyFieldError(AuthResult result) {
+    // Prefer the server's per-field messages: each one goes under its input.
+    if (result.errors.isNotEmpty) {
+      var placed = false;
+      result.errors.forEach((field, message) {
+        switch (field) {
+          case 'email':
+            _emailError = message;
+            placed = true;
+            break;
+          case 'password':
+          case 'new_password':
+            _passwordError = message;
+            placed = true;
+            break;
+          case 'name':
+            _nameError = message;
+            placed = true;
+            break;
+          case 'username':
+          case 'userName':
+            _userNameError = message;
+            placed = true;
+            break;
+        }
+      });
+      if (placed) return;
+    }
+
     if (result.field == 'email') {
       _emailError = result.message;
     } else if (result.field == 'password') {

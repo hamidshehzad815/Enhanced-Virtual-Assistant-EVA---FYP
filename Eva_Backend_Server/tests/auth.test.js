@@ -148,11 +148,114 @@ describe("Auth API", () => {
       name: "Hamid",
       username: "hamid",
       email: "hamid@example.com",
-      password: "alllowercase1", // no uppercase, no symbol
+      password: "password123", // on the common-password list
     });
 
     expect(response.status).toBe(400);
     expect(response.body.errors).toHaveProperty("password");
+    expect(response.body.message).toMatch(/too common/i);
+  });
+
+  test("POST /api/auth/register -> accepts a Google/Chrome generated password (letters + digits only)", async () => {
+    User.findOne.mockResolvedValueOnce(null).mockResolvedValueOnce(null);
+    User.create.mockResolvedValue({
+      _id: USER_ID,
+      email: "hamid@example.com",
+      name: "Hamid",
+      username: "hamid_815",
+      is_verified: false,
+    });
+    UserSetting.createDefaultSettings.mockResolvedValue({});
+    sendVerificationEmail.mockResolvedValue(true);
+
+    const response = await request(app).post("/api/auth/register").send({
+      name: "Hamid Shehzad",
+      username: "hamid_815",
+      email: "Hamid@Example.com",
+      password: "kPq7ZmWx2NvBt9Rd",
+    });
+
+    expect(response.status).toBe(201);
+    expect(User.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        email: "hamid@example.com",
+        username: "hamid_815",
+        name: "Hamid Shehzad",
+      }),
+    );
+  });
+
+  test("POST /api/auth/register -> 409 with field when email is taken", async () => {
+    User.findOne.mockResolvedValueOnce({ _id: USER_ID });
+
+    const response = await request(app).post("/api/auth/register").send({
+      name: "Hamid",
+      username: "hamid",
+      email: "hamid@example.com",
+      password: "kPq7ZmWx2NvBt9Rd",
+    });
+
+    expect(response.status).toBe(409);
+    expect(response.body.field).toBe("email");
+    expect(response.body.errors.email).toMatch(/already exists/i);
+  });
+
+  test("POST /api/auth/login -> 400 with field errors when fields are missing", async () => {
+    const response = await request(app).post("/api/auth/login").send({});
+
+    expect(response.status).toBe(400);
+    expect(response.body.errors).toHaveProperty("email");
+    expect(response.body.errors).toHaveProperty("password");
+    expect(User.findOne).not.toHaveBeenCalled();
+  });
+
+  test("POST /api/auth/login -> 401 generic message for wrong password", async () => {
+    const select = jest.fn().mockResolvedValue({
+      _id: USER_ID,
+      is_active: true,
+      is_verified: true,
+      password_hash: "hash",
+      comparePassword: jest.fn().mockResolvedValue(false),
+    });
+    User.findOne.mockReturnValue({ select });
+
+    const response = await request(app).post("/api/auth/login").send({
+      email: "hamid@example.com",
+      password: "wrong-password",
+    });
+
+    expect(response.status).toBe(401);
+    expect(response.body.code).toBe("INVALID_CREDENTIALS");
+    expect(response.body.message).toBe("Incorrect email or password");
+  });
+
+  test("POST /api/auth/login -> 403 EMAIL_NOT_VERIFIED only after the password is correct", async () => {
+    const select = jest.fn().mockResolvedValue({
+      _id: USER_ID,
+      is_active: true,
+      is_verified: false,
+      password_hash: "hash",
+      comparePassword: jest.fn().mockResolvedValue(true),
+    });
+    User.findOne.mockReturnValue({ select });
+
+    const response = await request(app).post("/api/auth/login").send({
+      email: "hamid@example.com",
+      password: "whatever1",
+    });
+
+    expect(response.status).toBe(403);
+    expect(response.body.code).toBe("EMAIL_NOT_VERIFIED");
+  });
+
+  test("POST /api/auth/forgot-password -> 400 for a malformed email", async () => {
+    const response = await request(app)
+      .post("/api/auth/forgot-password")
+      .send({ email: "not-an-email" });
+
+    expect(response.status).toBe(400);
+    expect(response.body.errors).toHaveProperty("email");
+    expect(User.findOne).not.toHaveBeenCalled();
   });
 
   test("POST /api/auth/login -> 200 and tokens", async () => {
@@ -275,7 +378,9 @@ describe("Auth API", () => {
       _id: USER_ID,
       email: "hamid@example.com",
       is_active: true,
+      username: "hamid",
       password_hash: "old-hash",
+      comparePassword: jest.fn().mockResolvedValue(false),
       password_reset_token: "token-hash",
       password_reset_expires: new Date(Date.now() + 1000 * 60 * 10),
       refresh_token_hash: "refresh-hash",
@@ -288,21 +393,57 @@ describe("Auth API", () => {
 
     const response = await request(app).post("/api/auth/reset-password").send({
       token: "plain-token",
-      new_password: "Secret123!",
-      confirm_password: "Secret123!",
+      new_password: "kPq7ZmWx2NvBt9Rd", // Google-style: letters + digits only
+      confirm_password: "kPq7ZmWx2NvBt9Rd",
     });
 
     expect(response.status).toBe(200);
     expect(response.body.status).toBe("success");
     expect(response.body.message).toMatch(/Password reset successful/i);
-    expect(userDoc.password_hash).toBe("Secret123!");
+    expect(userDoc.password_hash).toBe("kPq7ZmWx2NvBt9Rd");
+  });
+
+  test("POST /api/auth/reset-password -> 400 when new password equals the current one", async () => {
+    const userDoc = {
+      _id: USER_ID,
+      email: "hamid@example.com",
+      username: "hamid",
+      is_active: true,
+      password_hash: "old-hash",
+      comparePassword: jest.fn().mockResolvedValue(true),
+      save: jest.fn().mockResolvedValue(),
+    };
+    User.findOne.mockReturnValue({ select: jest.fn().mockResolvedValue(userDoc) });
+
+    const response = await request(app).post("/api/auth/reset-password").send({
+      token: "plain-token",
+      new_password: "kPq7ZmWx2NvBt9Rd",
+      confirm_password: "kPq7ZmWx2NvBt9Rd",
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.errors.new_password).toMatch(/same as your current/i);
+    expect(userDoc.save).not.toHaveBeenCalled();
+  });
+
+  test("POST /api/auth/reset-password -> 400 INVALID_RESET_TOKEN for unknown/expired token", async () => {
+    User.findOne.mockReturnValue({ select: jest.fn().mockResolvedValue(null) });
+
+    const response = await request(app).post("/api/auth/reset-password").send({
+      token: "expired-token",
+      new_password: "kPq7ZmWx2NvBt9Rd",
+      confirm_password: "kPq7ZmWx2NvBt9Rd",
+    });
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe("INVALID_RESET_TOKEN");
   });
 
   test("POST /api/auth/reset-password -> 400 when passwords mismatch", async () => {
     const response = await request(app).post("/api/auth/reset-password").send({
       token: "plain-token",
-      new_password: "Secret123!",
-      confirm_password: "Secret999!",
+      new_password: "kPq7ZmWx2NvBt9Rd",
+      confirm_password: "kPq7ZmWx2NvBt9Re",
     });
 
     expect(response.status).toBe(400);
@@ -313,12 +454,13 @@ describe("Auth API", () => {
   test("POST /api/auth/reset-password -> 400 with errors.password when weak", async () => {
     const response = await request(app).post("/api/auth/reset-password").send({
       token: "plain-token",
-      new_password: "weakpass",
-      confirm_password: "weakpass",
+      new_password: "password123",
+      confirm_password: "password123",
     });
 
     expect(response.status).toBe(400);
-    expect(response.body.errors).toHaveProperty("password");
+    expect(response.body.errors).toHaveProperty("new_password");
+    expect(response.body.message).toMatch(/too common/i);
   });
 
   test("POST /api/auth/google -> 201 for new Google user", async () => {

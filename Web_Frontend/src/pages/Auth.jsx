@@ -4,6 +4,13 @@ import apiRequest from '../services/api';
 import { Player } from '@lottiefiles/react-lottie-player';
 import { Eye, EyeOff, Loader2, Mail, ArrowLeft, RefreshCw, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import PasswordStrength from '../components/PasswordStrength';
+import {
+  validateName,
+  validateUsername,
+  validateEmail,
+  validatePassword,
+} from '../utils/authValidation';
 import './Auth.css';
 
 // ─────────────────────────────────────────────
@@ -48,6 +55,7 @@ export const Auth = () => {
   // ── Verification (post-signup) ───────────────
   const [verifyToken, setVerifyToken]     = useState('');
   const [resendTimer, setResendTimer]     = useState(0);
+  const [verifyJustSent, setVerifyJustSent] = useState(true); // false when arriving from a blocked login
   const timerRef = useRef(null);
 
   // ── Shared UI state ──────────────────────────
@@ -62,8 +70,30 @@ export const Auth = () => {
 
   const go = (s) => { clearAll(); setScreen(s); };
 
-  const validateEmail = (e) => /\S+@\S+\.\S+/.test(e);
-  const validateUsername = (value) => /^[a-z]+$/.test(value) && value.length >= 3 && value.length <= 30;
+  // Validate one signup field on blur so users get feedback as they go.
+  const validateSignupField = (field) => {
+    const validators = {
+      signupName: () => validateName(signupName),
+      signupUsername: () => validateUsername(signupUsername),
+      signupEmail: () => validateEmail(signupEmail),
+      signupPassword: () => validatePassword(signupPassword, { email: signupEmail, username: signupUsername }),
+    };
+    const message = validators[field]();
+    setFieldErrors(prev => {
+      const next = { ...prev };
+      if (message) next[field] = message; else delete next[field];
+      return next;
+    });
+  };
+
+  // Clear a field's error as soon as the user edits it.
+  const clearFieldError = (field) =>
+    setFieldErrors(prev => {
+      if (!prev[field]) return prev;
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
 
   // Resend timer countdown
   const startResendTimer = () => {
@@ -189,28 +219,39 @@ export const Auth = () => {
   const handleLogin = async (e) => {
     e.preventDefault();
     clearAll();
+    // Login only checks that the fields are filled in / look like an email —
+    // never password strength, so existing passwords keep working.
     const errs = {};
-    if (!loginEmail) errs.loginEmail = 'Email is required';
-    else if (!validateEmail(loginEmail)) errs.loginEmail = 'Enter a valid email';
+    const emailProblem = validateEmail(loginEmail);
+    if (emailProblem) errs.loginEmail = emailProblem;
     if (!loginPassword) errs.loginPassword = 'Password is required';
-    else if (loginPassword.length < 6) errs.loginPassword = 'Min 6 characters';
     if (Object.keys(errs).length) { setFieldErrors(errs); return; }
 
     setIsLoading(true);
-    const result = await login(loginEmail, loginPassword);
+    const result = await login(loginEmail.trim(), loginPassword);
     setIsLoading(false);
 
     if (result.success) {
       if (result.isVerified === false) {
         // Email not verified — push to verification screen
-        setSignupEmail(loginEmail);
-        startResendTimer();
+        setSignupEmail(loginEmail.trim());
+        setVerifyJustSent(false);
         go(SCREEN.VERIFY_EMAIL);
       } else {
         navigate('/');
       }
+    } else if (result.code === 'EMAIL_NOT_VERIFIED') {
+      // Correct password, but the account still needs verifying.
+      setSignupEmail(loginEmail.trim());
+      setVerifyJustSent(false);
+      go(SCREEN.VERIFY_EMAIL);
+    } else if (result.fieldErrors?.email || result.fieldErrors?.password) {
+      setFieldErrors({
+        ...(result.fieldErrors.email && { loginEmail: result.fieldErrors.email }),
+        ...(result.fieldErrors.password && { loginPassword: result.fieldErrors.password }),
+      });
     } else {
-      setAlertMsg({ type: 'error', text: result.message || 'Invalid credentials' });
+      setAlertMsg({ type: 'error', text: result.message || 'Incorrect email or password' });
     }
   };
 
@@ -220,22 +261,14 @@ export const Auth = () => {
     clearAll();
 
     const errs = {};
-    if (!signupName.trim()) errs.signupName = 'Full name is required';
-    if (!signupUsername.trim()) {
-      errs.signupUsername = 'Username is required';
-    } else if (!validateUsername(signupUsername.trim())) {
-      errs.signupUsername = 'Username must be 3-30 lowercase letters only';
-    }
-    if (!signupEmail.trim()) {
-      errs.signupEmail = 'Email is required';
-    } else if (!validateEmail(signupEmail.trim())) {
-      errs.signupEmail = 'Enter a valid email';
-    }
-    if (!signupPassword) {
-      errs.signupPassword = 'Password is required';
-    } else if (signupPassword.length < 6) {
-      errs.signupPassword = 'Password must be at least 6 characters';
-    }
+    const nameProblem = validateName(signupName);
+    if (nameProblem) errs.signupName = nameProblem;
+    const usernameProblem = validateUsername(signupUsername);
+    if (usernameProblem) errs.signupUsername = usernameProblem;
+    const emailProblem = validateEmail(signupEmail);
+    if (emailProblem) errs.signupEmail = emailProblem;
+    const passwordProblem = validatePassword(signupPassword, { email: signupEmail, username: signupUsername });
+    if (passwordProblem) errs.signupPassword = passwordProblem;
     if (Object.keys(errs).length) {
       setFieldErrors(errs);
       setIsLoading(false);
@@ -266,8 +299,18 @@ export const Auth = () => {
     setIsLoading(false);
 
     if (result && result.success) {
+      setVerifyJustSent(true);
       startResendTimer();
       setScreen(SCREEN.VERIFY_EMAIL);
+    } else if (result?.fieldErrors && Object.keys(result.fieldErrors).length) {
+      // Show each server message under its own input.
+      const fe = result.fieldErrors;
+      setFieldErrors({
+        ...(fe.name && { signupName: fe.name }),
+        ...(fe.username && { signupUsername: fe.username }),
+        ...(fe.email && { signupEmail: fe.email }),
+        ...(fe.password && { signupPassword: fe.password }),
+      });
     } else {
       setAlertMsg({ type: 'error', text: result?.message || 'Signup failed. Please try again.' });
     }
@@ -322,14 +365,22 @@ export const Auth = () => {
   const handleForgotEmail = async (e) => {
     e.preventDefault();
     clearAll();
-    if (!forgotEmail || !validateEmail(forgotEmail)) {
-      setFieldErrors({ forgotEmail: 'Enter a valid email address' });
+    const emailProblem = validateEmail(forgotEmail);
+    if (emailProblem) {
+      setFieldErrors({ forgotEmail: emailProblem });
       return;
     }
     setIsLoading(true);
-    await forgotPassword(forgotEmail); // backend always returns generic success
+    const result = await forgotPassword(forgotEmail.trim());
     setIsLoading(false);
-    // Always navigate to FORGOT_SENT — never reveal whether email exists
+    if (!result.success) {
+      // Real failure (network / server) — tell the user instead of pretending it was sent.
+      if (result.fieldErrors?.email) setFieldErrors({ forgotEmail: result.fieldErrors.email });
+      else setAlertMsg({ type: 'error', text: result.message || 'Could not send the reset link. Please try again.' });
+      return;
+    }
+    // For valid requests the backend answers the same whether or not the account
+    // exists, so this screen never reveals which emails are registered.
     go(SCREEN.FORGOT_SENT);
   };
 
@@ -400,7 +451,7 @@ export const Auth = () => {
                     className={`input-field ${fieldErrors.loginEmail || apiErrors.email ? 'error' : ''}`}
                     placeholder="Your email"
                     value={loginEmail}
-                    onChange={e => setLoginEmail(e.target.value)}
+                    onChange={e => { setLoginEmail(e.target.value); clearFieldError('loginEmail'); }}
                     autoComplete="email"
                   />
                   {(fieldErrors.loginEmail || apiErrors.email) && (
@@ -417,7 +468,7 @@ export const Auth = () => {
                       className={`input-field ${fieldErrors.loginPassword || apiErrors.password ? 'error' : ''}`}
                       placeholder="Your password"
                       value={loginPassword}
-                      onChange={e => setLoginPassword(e.target.value)}
+                      onChange={e => { setLoginPassword(e.target.value); clearFieldError('loginPassword'); }}
                       autoComplete="current-password"
                     />
                     <button type="button" className="password-toggle" onClick={() => setShowLoginPw(!showLoginPw)}>
@@ -480,7 +531,8 @@ export const Auth = () => {
                     className={`input-field ${fieldErrors.signupName || apiErrors.name ? 'error' : ''}`}
                     placeholder="Your full name"
                     value={signupName}
-                    onChange={e => setSignupName(e.target.value)}
+                    onChange={e => { setSignupName(e.target.value); clearFieldError('signupName'); }}
+                    onBlur={() => signupName && validateSignupField('signupName')}
                     autoComplete="name"
                   />
                   {(fieldErrors.signupName || apiErrors.name) && (
@@ -496,9 +548,16 @@ export const Auth = () => {
                     className={`input-field ${fieldErrors.signupUsername || apiErrors.username || apiErrors.userName ? 'error' : ''}`}
                     placeholder="e.g. johndoe"
                     value={signupUsername}
-                    onChange={e => setSignupUsername(e.target.value.toLowerCase())}
+                    onChange={e => { setSignupUsername(e.target.value.toLowerCase().replace(/\s/g, '')); clearFieldError('signupUsername'); }}
+                    onBlur={() => signupUsername && validateSignupField('signupUsername')}
                     autoComplete="username"
+                    autoCapitalize="none"
+                    spellCheck={false}
+                    maxLength={30}
                   />
+                  {!(fieldErrors.signupUsername || apiErrors.username || apiErrors.userName) && (
+                    <span className="field-hint">Letters, numbers, periods and underscores. 3–30 characters.</span>
+                  )}
                   {(fieldErrors.signupUsername || apiErrors.username || apiErrors.userName) && (
                     <span className="error-text">
                       {fieldErrors.signupUsername || apiErrors.username || apiErrors.userName}
@@ -514,7 +573,8 @@ export const Auth = () => {
                     className={`input-field ${fieldErrors.signupEmail || apiErrors.email ? 'error' : ''}`}
                     placeholder="Your email"
                     value={signupEmail}
-                    onChange={e => setSignupEmail(e.target.value)}
+                    onChange={e => { setSignupEmail(e.target.value); clearFieldError('signupEmail'); }}
+                    onBlur={() => signupEmail && validateSignupField('signupEmail')}
                     autoComplete="email"
                   />
                   {(fieldErrors.signupEmail || apiErrors.email) && (
@@ -529,10 +589,12 @@ export const Auth = () => {
                       id="signup-password"
                       type={showSignupPw ? 'text' : 'password'}
                       className={`input-field ${fieldErrors.signupPassword || apiErrors.password ? 'error' : ''}`}
-                      placeholder="8 characters minimum"
+                      placeholder="At least 8 characters"
                       value={signupPassword}
-                      onChange={e => setSignupPassword(e.target.value)}
+                      onChange={e => { setSignupPassword(e.target.value); clearFieldError('signupPassword'); }}
+                      onBlur={() => signupPassword && validateSignupField('signupPassword')}
                       autoComplete="new-password"
+                      maxLength={64}
                     />
                     <button type="button" className="password-toggle" onClick={() => setShowSignupPw(!showSignupPw)}>
                       {showSignupPw ? <EyeOff size={18} /> : <Eye size={18} />}
@@ -541,6 +603,7 @@ export const Auth = () => {
                   {(fieldErrors.signupPassword || apiErrors.password) && (
                     <span className="error-text">{fieldErrors.signupPassword || apiErrors.password}</span>
                   )}
+                  <PasswordStrength password={signupPassword} context={{ email: signupEmail, username: signupUsername }} />
                 </div>
 
                 <button id="signup-submit" type="submit" className="btn btn-primary auth-submit-btn" disabled={isLoading}>
@@ -571,16 +634,21 @@ export const Auth = () => {
 
               <h2 className="auth-card-title font-logo">Verify Your Email</h2>
 
-              {/* Success banner — email was just sent */}
-              <div className="auth-alert auth-alert--success" style={{ width: '100%', textAlign: 'left', marginBottom: 16 }}>
-                <strong>✓ Verification email sent!</strong><br />
-                We emailed a verification link to <strong>{signupEmail || 'your inbox'}</strong>.
-                Click that link to activate your account.
-              </div>
+              {verifyJustSent ? (
+                <div className="auth-alert auth-alert--success" style={{ width: '100%', textAlign: 'left', marginBottom: 16 }}>
+                  <strong>✓ Verification email sent!</strong><br />
+                  We emailed a verification link to <strong>{signupEmail || 'your inbox'}</strong>.
+                  Click that link to activate your account.
+                </div>
+              ) : (
+                <div className="auth-alert auth-alert--info" style={{ width: '100%', textAlign: 'left', marginBottom: 16 }}>
+                  <strong>Your email isn’t verified yet.</strong><br />
+                  Open the verification link we sent to <strong>{signupEmail || 'your inbox'}</strong>, or request a new one below.
+                </div>
+              )}
 
               <p className="auth-card-subtitle font-body" style={{ marginBottom: 20 }}>
-                We emailed a verification link to <strong>{signupEmail || 'your inbox'}</strong>.
-                Check your <strong>spam / junk</strong> folder if you do not see it.
+                Check your <strong>spam / junk</strong> folder if you do not see the email.
               </p>
 
               <Alert type={alertMsg.type} text={alertMsg.text} />

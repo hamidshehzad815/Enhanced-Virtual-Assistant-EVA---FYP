@@ -511,6 +511,35 @@
 .pw-strength-bar.medium::after { width: 66%; background: #f59e0b; }
 .pw-strength-bar.strong::after { width: 100%; background: #22c55e; }
 
+.pw-feedback { margin: -4px 0 12px; }
+.pw-feedback .pw-strength-hint { margin: 0 0 6px; }
+
+.pw-rules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.pw-rules li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.pw-rules li.ok { color: #16a34a; }
+
+.field-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
 /* ── Responsive ────────────────────────────────────────── */
 
 @media (max-width: 900px) {

@@ -9,6 +9,7 @@ const { User, UserSetting } = require("../models");
 const {
   BadRequestError,
   UnauthorizedError,
+  ForbiddenError,
   ConflictError,
 } = require("../middleware/errorHandler");
 const logger = require("../config/logger");
@@ -23,9 +24,27 @@ const { verifyGoogleIdToken } = require("../utils/googleIdToken");
 const { generateUniqueUsername } = require("../utils/googleUsername");
 const {
   validateRegistration,
+  validateLogin,
+  validateEmail,
   validatePassword,
+  validateResetPassword,
   throwIfErrors,
 } = require("../utils/authValidation");
+
+/** Build an ApiError subclass instance carrying a machine-readable `code`. */
+const withCode = (error, code, field) => {
+  error.code = code;
+  if (field) error.field = field;
+  return error;
+};
+
+/** 409 that points at a specific form field. */
+const fieldConflict = (field, message) => {
+  const error = new ConflictError(message);
+  error.field = field;
+  error.errors = { [field]: message };
+  return error;
+};
 
 const serializeAuthUser = (user) => ({
   _id: user._id,
@@ -111,23 +130,25 @@ const issueAuthTokensResponse = async (
  */
 const register = async (req, res, next) => {
   try {
-    const { name, username, email, password, timezone } = req.body;
+    const { name, username, email, password, timezone } = req.body || {};
 
     // Validate fields (required + format) with per-field error messages.
     throwIfErrors(validateRegistration({ name, username, email, password }));
 
+    const normalizedName = name.trim().replace(/\s+/g, " ");
+    const normalizedUsername = username.trim().toLowerCase();
+    const normalizedEmail = email.trim().toLowerCase();
+
     // Check if email already exists
-    const existingEmail = await User.findOne({ email: email.toLowerCase() });
+    const existingEmail = await User.findOne({ email: normalizedEmail });
     if (existingEmail) {
-      throw new ConflictError("Email already registered");
+      throw fieldConflict("email", "An account with this email already exists");
     }
 
     // Check if username already exists
-    const existingUsername = await User.findOne({
-      username: username.toLowerCase(),
-    });
+    const existingUsername = await User.findOne({ username: normalizedUsername });
     if (existingUsername) {
-      throw new ConflictError("Username already taken");
+      throw fieldConflict("username", "This username is already taken");
     }
 
     // Generate verification token
@@ -137,9 +158,9 @@ const register = async (req, res, next) => {
     const userTimezone = normalizeTimezone(timezone || "Asia/Karachi");
 
     const user = await User.create({
-      name,
-      username: username.toLowerCase(),
-      email: email.toLowerCase(),
+      name: normalizedName,
+      username: normalizedUsername,
+      email: normalizedEmail,
       password_hash: password,
       timezone: userTimezone,
       auth_provider: "local",
@@ -183,41 +204,59 @@ const register = async (req, res, next) => {
  */
 const login = async (req, res, next) => {
   try {
-    const { email, password } = req.body;
+    const { email, password } = req.body || {};
 
-    // Validate required fields
-    if (!email || !password) {
-      throw new BadRequestError("Email and password are required");
-    }
+    // Login checks presence/format only — never password strength, so users
+    // with older/simpler passwords can still sign in.
+    throwIfErrors(validateLogin({ email, password }));
 
     // Find user by email (include password_hash)
-    const user = await User.findOne({ email: email.toLowerCase() }).select(
-      "+password_hash",
-    );
+    const user = await User.findOne({
+      email: email.trim().toLowerCase(),
+    }).select("+password_hash");
+
+    // Same message for "no such user" and "wrong password" (no enumeration).
+    const invalidCredentials = () =>
+      withCode(
+        new UnauthorizedError("Incorrect email or password"),
+        "INVALID_CREDENTIALS",
+      );
 
     if (!user) {
-      throw new UnauthorizedError("Invalid email or password");
+      throw invalidCredentials();
     }
 
-    // Check if user is active
-    if (!user.is_active) {
-      throw new UnauthorizedError("Account is deactivated");
-    }
-
-    // Check if user has a password (local auth)
+    // Google-only accounts have no password to check.
     if (!user.password_hash) {
-      throw new UnauthorizedError("Please login with Google");
+      throw withCode(
+        new UnauthorizedError(
+          "This account uses Google sign-in. Please continue with Google",
+        ),
+        "USE_GOOGLE_SIGNIN",
+      );
     }
 
     // Verify password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
-      throw new UnauthorizedError("Invalid email or password");
+      throw invalidCredentials();
     }
 
-    // Check if email is verified
+    // Only reveal account state once the password is proven correct.
+    if (!user.is_active) {
+      throw withCode(
+        new UnauthorizedError("This account has been deactivated"),
+        "ACCOUNT_DEACTIVATED",
+      );
+    }
+
     if (!user.is_verified) {
-      throw new UnauthorizedError("Please verify your email before logging in");
+      throw withCode(
+        new ForbiddenError(
+          "Please verify your email before signing in. Check your inbox for the verification link",
+        ),
+        "EMAIL_NOT_VERIFIED",
+      );
     }
 
     // Generate tokens
@@ -570,12 +609,13 @@ const resendVerification = async (req, res, next) => {
  */
 const forgotPassword = async (req, res, next) => {
   try {
-    const { email } = req.body;
-    if (!email) {
-      throw new BadRequestError("Email is required");
+    const { email } = req.body || {};
+    const emailError = validateEmail(email);
+    if (emailError) {
+      throwIfErrors({ email: emailError });
     }
 
-    const normalizedEmail = String(email).toLowerCase().trim();
+    const normalizedEmail = email.trim().toLowerCase();
     const user = await User.findOne({ email: normalizedEmail }).select("+password_hash");
 
     // Generic response to avoid account enumeration.
@@ -616,27 +656,13 @@ const forgotPassword = async (req, res, next) => {
  */
 const resetPassword = async (req, res, next) => {
   try {
-    const { token, new_password, confirm_password } = req.body;
+    const { token, new_password, confirm_password } = req.body || {};
 
-    if (!token || !new_password || !confirm_password) {
-      throw new BadRequestError(
-        "token, new_password, and confirm_password are required",
-      );
-    }
+    throwIfErrors(
+      validateResetPassword({ token, new_password, confirm_password }),
+    );
 
-    // Enforce the same password policy as registration.
-    const passwordError = validatePassword(new_password);
-    if (passwordError) {
-      throwIfErrors({ password: passwordError });
-    }
-
-    if (new_password !== confirm_password) {
-      throwIfErrors({
-        confirm_password: "New password and confirm password do not match",
-      });
-    }
-
-    const hashedToken = crypto.createHash("sha256").update(token).digest("hex");
+    const hashedToken = crypto.createHash("sha256").update(token.trim()).digest("hex");
     const user = await User.findOne({
       password_reset_token: hashedToken,
       password_reset_expires: { $gt: new Date() },
@@ -644,7 +670,29 @@ const resetPassword = async (req, res, next) => {
     }).select("+password_reset_token +password_reset_expires +password_hash +refresh_token_hash");
 
     if (!user) {
-      throw new BadRequestError("Invalid or expired reset token");
+      throw withCode(
+        new BadRequestError(
+          "This reset link is invalid or has expired. Please request a new one",
+        ),
+        "INVALID_RESET_TOKEN",
+        "token",
+      );
+    }
+
+    // Rules that depend on who the user is.
+    const personalError = validatePassword(new_password, {
+      email: user.email,
+      username: user.username,
+    });
+    if (personalError) {
+      throwIfErrors({ new_password: personalError });
+    }
+
+    // Real sites refuse to "reset" to the password you already have.
+    if (user.password_hash && (await user.comparePassword(new_password))) {
+      throwIfErrors({
+        new_password: "New password cannot be the same as your current password",
+      });
     }
 
     user.password_hash = new_password;
@@ -698,6 +746,20 @@ const renderResetPasswordPage = (req, res) => {
     .msg { margin-top:16px; padding:12px 14px; border-radius:8px; font-size:14px; display:none; }
     .msg.error { display:block; background:#fef2f2; color:#b91c1c; }
     .msg.success { display:block; background:#ecfdf5; color:#047857; }
+    .field-error { display:none; margin-top:6px; font-size:12.5px; color:#b91c1c; }
+    .field-error.show { display:block; }
+    input.invalid { border-color:#dc2626; }
+    .pw-wrap { position:relative; }
+    .pw-wrap input { padding-right:64px; }
+    .toggle { position:absolute; right:6px; top:50%; transform:translateY(-50%); width:auto; margin:0; padding:6px 10px; background:none; color:#2563eb; font-size:13px; font-weight:600; }
+    .meter { height:5px; border-radius:9px; background:#e5e7eb; margin-top:10px; overflow:hidden; }
+    .meter > div { height:100%; width:0; border-radius:9px; transition:width .25s, background .25s; }
+    .meter-label { font-size:12px; margin-top:4px; color:#6b7280; min-height:16px; }
+    .rules { list-style:none; margin:10px 0 0; padding:0; font-size:12.5px; color:#6b7280; }
+    .rules li { padding-left:20px; position:relative; margin:3px 0; }
+    .rules li::before { content:'\\25CB'; position:absolute; left:0; }
+    .rules li.ok { color:#047857; }
+    .rules li.ok::before { content:'\\2713'; }
   </style>
 </head>
 <body>
@@ -707,11 +769,23 @@ const renderResetPasswordPage = (req, res) => {
       <p>Reset your password</p>
     </div>
     <div class="body">
-      <form id="form">
+      <form id="form" novalidate>
         <label for="pw">New password</label>
-        <input id="pw" type="password" autocomplete="new-password" placeholder="At least 6 characters" />
+        <div class="pw-wrap">
+          <input id="pw" type="password" autocomplete="new-password" placeholder="At least 8 characters" maxlength="64" />
+          <button type="button" class="toggle" id="toggle" aria-label="Show or hide password">Show</button>
+        </div>
+        <div class="field-error" id="pw-err"></div>
+        <div class="meter"><div id="meter-bar"></div></div>
+        <div class="meter-label" id="meter-label"></div>
+        <ul class="rules">
+          <li id="r-len">8–64 characters</li>
+          <li id="r-letter">At least one letter</li>
+          <li id="r-num">At least one number or symbol</li>
+        </ul>
         <label for="cpw">Confirm new password</label>
-        <input id="cpw" type="password" autocomplete="new-password" placeholder="Re-enter password" />
+        <input id="cpw" type="password" autocomplete="new-password" placeholder="Re-enter password" maxlength="64" />
+        <div class="field-error" id="cpw-err"></div>
         <button id="submit" type="submit">Reset password</button>
       </form>
       <div id="msg" class="msg"></div>
@@ -722,26 +796,100 @@ const renderResetPasswordPage = (req, res) => {
     var form = document.getElementById('form');
     var msg = document.getElementById('msg');
     var btn = document.getElementById('submit');
+    var pwEl = document.getElementById('pw');
+    var cpwEl = document.getElementById('cpw');
+    var pwErr = document.getElementById('pw-err');
+    var cpwErr = document.getElementById('cpw-err');
+    var bar = document.getElementById('meter-bar');
+    var barLabel = document.getElementById('meter-label');
     function show(kind, text){ msg.className = kind ? ('msg ' + kind) : 'msg'; msg.textContent = text; }
+    function fieldError(el, errEl, text){
+      errEl.textContent = text || '';
+      errEl.className = text ? 'field-error show' : 'field-error';
+      if (text) el.classList.add('invalid'); else el.classList.remove('invalid');
+    }
+    var COMMON = ['password','password1','password12','password123','passw0rd','12345678','123456789','1234567890','qwerty123','qwertyui','iloveyou','welcome1','welcome123','admin123','abc12345','abcd1234','1q2w3e4r','changeme','11111111','00000000'];
+    // Same rules as the server (utils/authValidation.js). The server stays authoritative.
+    function checks(p){
+      return {
+        len: p.length >= 8 && p.length <= 64,
+        letter: /[A-Za-z\\u00C0-\\u024F]/.test(p),
+        num: /[0-9]|[^A-Za-z0-9\\s]/.test(p)
+      };
+    }
+    function isTrivial(p){
+      if (new Set(p.split("")).size <= 2) return true;
+      var l = p.toLowerCase(), asc = true, desc = true;
+      for (var i = 1; i < l.length; i++) { var d = l.charCodeAt(i) - l.charCodeAt(i-1); if (d !== 1) asc = false; if (d !== -1) desc = false; }
+      return l.length >= 6 && (asc || desc);
+    }
+    function validatePw(p){
+      if (!p) return 'Password is required';
+      if (p.length < 8) return 'Password must be at least 8 characters';
+      if (p.length > 64) return 'Password cannot be longer than 64 characters';
+      if (!/[A-Za-z\\u00C0-\\u024F]/.test(p)) return 'Password must include at least one letter';
+      if (!/[0-9]|[^A-Za-z0-9\\s]/.test(p)) return 'Password must include at least one number or symbol';
+      if (COMMON.indexOf(p.toLowerCase()) !== -1 || isTrivial(p)) return 'This password is too common. Please choose a stronger one';
+      return null;
+    }
+    function strength(p){
+      var c = checks(p);
+      if (!p) return { pct: 0, color: '#e5e7eb', label: '' };
+      if (!(c.len && c.letter && c.num) || validatePw(p)) return { pct: 25, color: '#ef4444', label: 'Weak' };
+      var score = 0;
+      if (p.length >= 12) score++;
+      if (p.length >= 16) score++;
+      if (/[a-z]/.test(p) && /[A-Z]/.test(p)) score++;
+      if (/[0-9]/.test(p) && /[^A-Za-z0-9]/.test(p)) score++;
+      if (score >= 3) return { pct: 100, color: '#16a34a', label: 'Strong' };
+      if (score >= 1) return { pct: 66, color: '#f59e0b', label: 'Good' };
+      return { pct: 45, color: '#f59e0b', label: 'Fair' };
+    }
+    function refresh(){
+      var p = pwEl.value, c = checks(p);
+      document.getElementById('r-len').className = c.len ? 'ok' : '';
+      document.getElementById('r-letter').className = c.letter ? 'ok' : '';
+      document.getElementById('r-num').className = c.num ? 'ok' : '';
+      var s = strength(p);
+      bar.style.width = s.pct + '%'; bar.style.background = s.color;
+      barLabel.textContent = s.label;
+    }
+    pwEl.addEventListener('input', function(){ refresh(); fieldError(pwEl, pwErr, ''); });
+    cpwEl.addEventListener('input', function(){ fieldError(cpwEl, cpwErr, ''); });
+    pwEl.addEventListener('blur', function(){ if (pwEl.value) fieldError(pwEl, pwErr, validatePw(pwEl.value)); });
+    cpwEl.addEventListener('blur', function(){ if (cpwEl.value && cpwEl.value !== pwEl.value) fieldError(cpwEl, cpwErr, 'Passwords do not match'); });
+    document.getElementById('toggle').addEventListener('click', function(){
+      var hidden = pwEl.type === 'password';
+      pwEl.type = hidden ? 'text' : 'password';
+      cpwEl.type = pwEl.type;
+      this.textContent = hidden ? 'Hide' : 'Show';
+    });
     if (!TOKEN) { show('error', 'Invalid or missing reset link. Please request a new password reset from the app.'); btn.disabled = true; }
     form.addEventListener('submit', function(e){
       e.preventDefault();
-      var pw = document.getElementById('pw').value;
-      var cpw = document.getElementById('cpw').value;
-      if (pw.length < 6) { show('error', 'Password must be at least 6 characters.'); return; }
-      if (pw !== cpw) { show('error', 'Passwords do not match.'); return; }
-      btn.disabled = true; show('', 'Resetting…');
+      show('', '');
+      var pw = pwEl.value, cpw = cpwEl.value;
+      var pwProblem = validatePw(pw);
+      var cpwProblem = !cpw ? 'Please confirm your new password' : (pw !== cpw ? 'Passwords do not match' : null);
+      fieldError(pwEl, pwErr, pwProblem);
+      fieldError(cpwEl, cpwErr, pwProblem ? null : cpwProblem);
+      if (pwProblem || cpwProblem) return;
+      btn.disabled = true; btn.textContent = 'Resetting…';
       fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: TOKEN, new_password: pw, confirm_password: cpw })
       })
-      .then(function(r){ return r.json().then(function(d){ return { ok: r.ok, d: d }; }); })
+      .then(function(r){ return r.json().catch(function(){ return {}; }).then(function(d){ return { ok: r.ok, d: d }; }); })
       .then(function(res){
-        if (res.ok) { form.style.display = 'none'; show('success', 'Password reset successful. Open the EVA app and log in with your new password.'); }
-        else { show('error', (res.d && res.d.message) ? res.d.message : 'Reset failed. The link may have expired.'); btn.disabled = false; }
+        if (res.ok) { form.style.display = 'none'; show('success', 'Password reset successful. Open the EVA app and log in with your new password.'); return; }
+        var errs = (res.d && res.d.errors) || {};
+        if (errs.new_password) fieldError(pwEl, pwErr, errs.new_password);
+        if (errs.confirm_password) fieldError(cpwEl, cpwErr, errs.confirm_password);
+        if (!errs.new_password && !errs.confirm_password) show('error', (res.d && res.d.message) ? res.d.message : 'Reset failed. The link may have expired.');
+        btn.disabled = false; btn.textContent = 'Reset password';
       })
-      .catch(function(){ show('error', 'Network error. Please try again.'); btn.disabled = false; });
+      .catch(function(){ show('error', 'Network error. Please check your connection and try again.'); btn.disabled = false; btn.textContent = 'Reset password'; });
     });
   </script>
 </body>

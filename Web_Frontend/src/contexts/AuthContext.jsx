@@ -3,6 +3,20 @@ import apiRequest from '../services/api';
 
 const AuthContext = createContext(null);
 
+/** Turn a thrown apiRequest error into { message, code, fieldErrors }. */
+const parseApiError = (err, fallback) => {
+  const data = err?.data || {};
+  const raw = err?.message || '';
+  const networkDown = err instanceof TypeError || /failed to fetch|networkerror|load failed/i.test(raw);
+  return {
+    message: networkDown
+      ? "Can't reach the server. Please check your connection and try again."
+      : (data.message || raw || fallback),
+    code: data.code,
+    fieldErrors: data.errors && typeof data.errors === 'object' && !Array.isArray(data.errors) ? data.errors : {},
+  };
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
@@ -79,33 +93,17 @@ export const AuthProvider = ({ children }) => {
         return { success: true, isVerified: true };
       }
       
-      // Map common backend responses to field-specific errors for better UX
       const msg = response.message || response.msg || 'Login failed';
-      const lower = String(msg || '').toLowerCase();
-      if (response.status === 404 || lower.includes('not found') || lower.includes('no account')) {
-        setErrors({ loginEmail: 'No account found with this email. Please register first.' });
-      } else if (response.status === 401 || lower.includes('password') || lower.includes('incorrect')) {
-        setErrors({ loginPassword: 'Incorrect password. Please try again.' });
-      } else {
-        setErrors({ general: msg });
-      }
+      setErrors({ general: msg });
       setIsLoading(false);
       return { success: false, message: msg };
     } catch (err) {
-      const field = err.field || (err.data?.field);
-      const message = err.message || 'Server not reachable';
-      // Translate common error statuses into field errors
-      if (err.status === 404 || (err.data && String(err.data.message || '').toLowerCase().includes('not found'))) {
-        setErrors({ loginEmail: 'No account found with this email. Please register first.' });
-      } else if (err.status === 401 || (err.data && String(err.data.message || '').toLowerCase().includes('password'))) {
-        setErrors({ loginPassword: 'Incorrect password. Please try again.' });
-      } else if (field) {
-        setErrors({ [field]: message });
-      } else {
-        setErrors({ general: message });
-      }
+      const { message, code, fieldErrors } = parseApiError(err, 'Login failed');
+      // Field-level problems (empty/invalid email) go under the inputs; credential,
+      // verification and account-state problems are shown as one alert.
+      setErrors(Object.keys(fieldErrors).length ? fieldErrors : { general: message });
       setIsLoading(false);
-      return { success: false, message };
+      return { success: false, message, code, fieldErrors };
     }
   };
 
@@ -127,13 +125,9 @@ export const AuthProvider = ({ children }) => {
       }
       return { success: false, message: response.message || 'Signup failed' };
     } catch (err) {
-      const field = err.field || err.data?.field;
-      const message = err.message || 'Server not reachable';
-      const detail = err.data?.errors && typeof err.data.errors === 'object'
-        ? Object.values(err.data.errors)[0]
-        : null;
-      if (field) setErrors({ [field]: message });
-      return { success: false, message: detail || message };
+      const { message, fieldErrors } = parseApiError(err, 'Signup failed');
+      setErrors(fieldErrors);
+      return { success: false, message, fieldErrors };
     }
   };
 
@@ -185,7 +179,8 @@ export const AuthProvider = ({ children }) => {
       });
       return { success: response.status === 'success' || response.success, message: response.message };
     } catch (err) {
-      return { success: false, message: err.message || 'Failed to send reset link' };
+      const { message, fieldErrors } = parseApiError(err, 'Failed to send reset link');
+      return { success: false, message, fieldErrors };
     }
   };
 
@@ -198,7 +193,8 @@ export const AuthProvider = ({ children }) => {
       });
       return { success: response.status === 'success' || response.success, message: response.message };
     } catch (err) {
-      return { success: false, message: err.message || 'Failed to reset password' };
+      const { message, code, fieldErrors } = parseApiError(err, 'Failed to reset password');
+      return { success: false, message, code, fieldErrors };
     }
   };
 

@@ -105,8 +105,17 @@ const normalizeError = (err) => {
 
   // Mongoose duplicate key error
   if (err.code === 11000) {
-    const field = Object.keys(err.keyValue)[0];
-    return new ConflictError(`${field} already exists`);
+    const field = Object.keys(err.keyValue || {})[0] || "value";
+    const conflict = new ConflictError(
+      field === "email"
+        ? "An account with this email already exists"
+        : field === "username"
+          ? "This username is already taken"
+          : `${field} already exists`,
+    );
+    conflict.field = field;
+    conflict.errors = { [field]: conflict.message };
+    return conflict;
   }
 
   // JWT errors
@@ -189,6 +198,17 @@ const errorHandler = (err, req, res, next) => {
   // Add validation errors if present
   if (error.errors) {
     response.errors = error.errors;
+  }
+
+  // Which input the error belongs to (lets clients highlight the right field)
+  if (error.field) {
+    response.field = error.field;
+  }
+
+  // Machine-readable reason (e.g. EMAIL_NOT_VERIFIED) so clients can branch
+  // without string-matching the human message.
+  if (error.code && typeof error.code === "string") {
+    response.code = error.code;
   }
 
   // Add stack trace in development
